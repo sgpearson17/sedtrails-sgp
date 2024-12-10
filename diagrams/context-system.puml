@@ -2,26 +2,30 @@
 !include <C4/C4_Container>
 
 title SEDTrails System Context Diagram
-scale 2
+' scale 2
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
 
 
-System(sedtrails, "SEDTrails", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
+System(sedtrails, "SEDTrails Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
 
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
 
-System_Ext(analyticalSystem, "Analytical Tooling System", "Provide statistical analysis tools to postproces simuation results", $type="Any")
+System_Ext(connectivityNetworkSys, "Connectivity Network System", "Performs connectiviy network analysis", $type="Any")
+System_Ext(statisticsSys, "Statistical Analysis Tooling System", "Performs various statistical analysis", $type="Any")
 
-Rel(modeler, sedtrails, "provides input parameters and select outputs to be saved to", "Configuration file")
-Rel(analyst, sedtrails, "access simulation outputs from", "NETCDF")
-Rel(modeler, flowSystem, "runs flow field computations in", "?")
+Rel(analyst, connectivityNetworkSys, "post-process simulation outputs in")
+Rel(analyst, statisticsSys, "post-process simulation outputs in")
 
-Rel(flowSystem, sedtrails, "provides flow field data to ", "NETCDF")
-Rel(analyst, analyticalSystem, "uses simuation outputs in ", "NETCDF")
+Rel(modeler, sedtrails, "defines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, flowSystem, "produces flow-field data using")
+Rel(connectivityNetworkSys, sedtrails, "access simulation outputs from", "NETCDF")
+Rel(statisticsSys, sedtrails, "access simulation outputs from", "NETCDF")
+
+Rel(flowSystem, sedtrails, "provides flow-field data to ", "NETCDF")
 
 SHOW_LEGEND()
 @enduml
