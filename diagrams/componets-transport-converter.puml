@@ -15,12 +15,12 @@ Container_Boundary(transportConverter, "Transport Converter"){
     Rel(formatConverter, physicsConverter, "provides flow-field data to", "standard data structure")
 }
 
-Container(sedtrailsApp, "sedTRAILS Applicaiton", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(physicsConverter, sedtrailsApp, "provides transformed transport fields to", "memory/NETCDF")
+Rel(physicsConverter, particleTracer, "provides transformed transport fields to", "memory/NETCDF")
 Rel(physicsConverter, fileSystem, "write pathway files to", "NETCDF")
 
 Rel(flowSystem, formatConverter, "provides flow-field data to ", "NETCDF")
