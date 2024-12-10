@@ -1,0 +1,31 @@
+@startuml SedtrailComponent
+' !include <C4/C4_Container>
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+' LAYOUT_LANDSCAPE()
+
+title sedTRAILS: Component Diagram for Transport Converter
+' scale 2
+
+Container_Boundary(transportConverter, "Transport Converter"){ 
+    Component(formatConverter, "Format Converter", "Python", "converts flow-field data from various Eulerian flow modeling systems into a standard data structure")
+    Component(physicsConverter, "Physics Converter", "Python", "converts flow-field data from various Eulerian flow modeling systems into particle velocity using standard physical units")
+        
+    Rel(formatConverter, physicsConverter, "provides flow-field data to", "standard data structure")
+}
+
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
+SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
+
+Rel(physicsConverter, particleTracer, "provides transformed transport fields to", "memory/NETCDF")
+Rel(physicsConverter, fileSystem, "write pathway files to", "NETCDF")
+
+Rel(flowSystem, formatConverter, "provides flow-field data to ", "NETCDF")
+
+
+SHOW_LEGEND()
+@enduml
+

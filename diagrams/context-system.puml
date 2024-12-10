@@ -1,0 +1,34 @@
+@startuml SedtrailContext
+!include <C4/C4_Container>
+
+title SEDTrails System Context Diagram
+' scale 2
+
+Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
+
+
+System(sedtrails, "SEDTrails Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
+
+
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
+
+
+System_Ext(connectivityNetworkSys, "Connectivity Network System", "Performs connectiviy network analysis", $type="Any")
+System_Ext(statisticsSys, "Statistical Analysis Tooling System", "Performs various statistical analysis", $type="Any")
+SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
+
+Rel(analyst, connectivityNetworkSys, "post-process simulation outputs in")
+Rel(analyst, statisticsSys, "post-process simulation outputs in")
+Rel(sedtrails, fileSystem, "write ouput files to", "NETCDF")
+
+
+Rel(modeler, sedtrails, "defines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, flowSystem, "produces flow-field data using")
+Rel(connectivityNetworkSys, sedtrails, "access simulation outputs from", "NETCDF")
+Rel(statisticsSys, sedtrails, "access simulation outputs from", "NETCDF")
+
+Rel(flowSystem, sedtrails, "provides flow-field data to ", "NETCDF")
+
+SHOW_LEGEND()
+@enduml
