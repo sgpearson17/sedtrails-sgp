@@ -3,7 +3,7 @@
 
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-LAYOUT_LANDSCAPE()
+' LAYOUT_LANDSCAPE()
 
 title sedTRAILS: Component Diagram for Transport Converter
 ' scale 2
