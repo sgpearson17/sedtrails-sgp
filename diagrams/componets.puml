@@ -1,14 +1,14 @@
 @startuml SedtrailComponent
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-title Sedtrail Component Diagram
-scale 2
+title sedTRAILS Component Diagram
+' scale 2
 
 ' TODO: change name of the system to sedTRAILS
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
 
-Container_Boundary(sedtrailsApp, "SEDTrails Application"){ 
+Container_Boundary(sedtrailsApp, "sedTRAILS Application"){ 
     Component(particleSeed, "Particle Seeding Tool", "Python", "?")
     Component(particleTracer, "Lagrangian Particle Traceer", "Python", "computes particle pathways (x,y,t) based on transport fields")
     Component(transportConverter, "Transport Converter", "Python", "converts...")
