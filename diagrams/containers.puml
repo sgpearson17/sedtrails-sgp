@@ -7,7 +7,7 @@ title SEDTrails Container Diagram
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
 
-System_Boundary(sedtrailsSystem, "SEDTrails"){ 
+System_Boundary(sedtrailsSystem, "SEDTrails Particle Tracking System"){ 
     Container(sedtrailsApp, "SEDTrails Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a costal system")
     Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow to convert data formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
@@ -29,8 +29,7 @@ Rel(analyst, connectivityNetworkSys, "post-process simulation outputs in", "Any"
 Rel(analyst, statisticsSys, "post-process simulation outputs in", "Any")
 
 
-
-Rel(modeler, flowSystem, "runs flow-field computations in", "Any")
+Rel(modeler, flowSystem, "produces flow-field data using", "Any")
 
 Rel(flowSystem, transportConverter, "provides flow-field data to ", "NETCDF")
 
