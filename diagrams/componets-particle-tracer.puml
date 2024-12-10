@@ -5,7 +5,7 @@
 
 ' LAYOUT_LANDSCAPE()
 
-title sedTRAILS: Component Diagram for sedTRAILS Application
+title sedTRAILS: Component Diagram for Lagrangian Particle Tracer
 ' scale 2
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
@@ -14,7 +14,7 @@ Container(transportConverter, "Transport Converter", "Python", "An application t
 
 Container(cache, "Simulation Caching and State Tracker", "Python", "keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
 
-Container_Boundary(sedtrailsApp, "sedTRAILS Application"){ 
+Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){ 
     Component(seedingTool, "Particle Seeding Tool", "Python", "computes initial particle positions and  particle's release times using various particle release strategies")
     Component(particleTracer, "Particle Tracer", "Python", "converts flow-field data from various Eulerian flow modeling systems into particle velocity using standard physical units")
     Component(pathwayWriter, "Pathway File Writer", "Python, NETCDF", "writes particle pathways to files")
