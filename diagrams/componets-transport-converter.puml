@@ -6,7 +6,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title sedTRAILS: Component Diagram for Transport Converter
-' scale 2
+scale 2
 
 Container_Boundary(transportConverter, "Transport Converter"){ 
     Component(formatConverter, "Format Converter", "Python", "converts flow-field data from various Eulerian flow modeling systems into a standard data structure")

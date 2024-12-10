@@ -2,7 +2,7 @@
 !include <C4/C4_Container>
 
 title SEDTrails System Context Diagram
-' scale 2
+scale 2
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")

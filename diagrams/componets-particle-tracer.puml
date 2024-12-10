@@ -6,7 +6,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title sedTRAILS: Component Diagram for Lagrangian Particle Tracer
-' scale 2
+scale 2
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
