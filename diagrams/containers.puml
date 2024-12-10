@@ -11,15 +11,15 @@ Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
 
 System_Boundary(sedtrailsSystem, "sedTRAILS Particle Tracking System"){ 
-    Container(sedtrailsApp, "sedTRAILS Application", "Python", "An desktop application that computes the position of sand particles (x,y,t) in a costal system")
+    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a costal system")
     Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow-field data to convert it to compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
     Container(cache, "Simulation Caching and State Tracker", "Python", "keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
     
-    Rel(transportConverter, sedtrailsApp, "provides transformed transport data to")
-    Rel(sedtrailsApp, pathwayVisualizer, "provides pathways to", "NETCDF")
-    Rel(cache, sedtrailsApp,  "logs and tracks states")
-    Rel( cache, transportConverter, "logs and tracks states")
+    Rel(transportConverter, sedtrailsTracer, "provides transformed transport data to")
+    Rel(sedtrailsTracer, pathwayVisualizer, "provides pathways to", "NETCDF")
+    Rel(sedtrailsTracer, cache,  "uses")
+    Rel(transportConverter, cache,  "uses")
 }
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
@@ -27,12 +27,12 @@ System_Ext(connectivityNetworkSys, "Connectivity Network System", "Performs conn
 System_Ext(statisticsSys, "Statistical Analysis Tooling System", "Performs various statistical analysis", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
-Rel(sedtrailsApp, fileSystem, "write transformed transport files to", "NETCDF")
+Rel(sedtrailsTracer, fileSystem, "write transformed transport files to", "NETCDF")
 Rel(transportConverter, fileSystem, "write pathway files to", "NETCDF")
 
-Rel(modeler, sedtrailsApp, "defines simulation parameters and outputs for", "Configuration file")
-Rel(connectivityNetworkSys, sedtrailsApp, "access simulation outputs from", "NETCDF")
-Rel(statisticsSys, sedtrailsApp, "access simulation outputs from", "NETCDF")
+Rel(modeler, sedtrailsTracer, "defines simulation parameters and outputs for", "Configuration file")
+Rel(connectivityNetworkSys, sedtrailsTracer, "access simulation outputs from", "NETCDF")
+Rel(statisticsSys, sedtrailsTracer, "access simulation outputs from", "NETCDF")
 Rel(analyst, pathwayVisualizer, "create visualizations of sand pathways using", "Python")
 Rel(analyst, connectivityNetworkSys, "post-process simulation outputs in", "Any")
 Rel(analyst, statisticsSys, "post-process simulation outputs in", "Any")
