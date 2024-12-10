@@ -12,11 +12,14 @@ Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
 
 System_Boundary(sedtrailsSystem, "sedTRAILS Particle Tracking System"){ 
     Container(sedtrailsApp, "sedTRAILS Application", "Python", "An desktop application that computes the position of sand particles (x,y,t) in a costal system")
-    Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow to convert data formats and physical units.")
+    Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow-field data to convert it to compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
+    Container(cache, "Simulation Caching and State Tracker", "Python", "keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
     
     Rel(transportConverter, sedtrailsApp, "provides transformed transport data to")
     Rel(sedtrailsApp, pathwayVisualizer, "provides pathways to", "NETCDF")
+    Rel(cache, sedtrailsApp,  "logs and tracks states")
+    Rel( cache, transportConverter, "logs and tracks states")
 }
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
