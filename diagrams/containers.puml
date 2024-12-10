@@ -1,0 +1,24 @@
+@startuml SedtrailContainer
+!include <C4/C4_Container>
+
+title SEDTrails Container Diagram
+scale 2
+
+Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
+
+System_Boundary(sedtrailsSystem, "SEDTrails"){ 
+    Container(sedtrailsApp, "SEDTrails application", "Python", "A stand-alone desktop application that computes the position of sand particles (x,y,t) in a costal system")
+}
+
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
+
+Rel(modeler, sedtrailsApp, "provides input parameters and select outputs to be saved to", "Configuration file")
+Rel(analyst, sedtrailsApp, "access simulation outputs from", "NETCDF")
+Rel(modeler, flowSystem, "runs flow field computations in", "?")
+
+Rel(flowSystem, sedtrailsApp, "provides flow field data to ", "NETCDF")
+
+
+SHOW_LEGEND()
+@enduml
