@@ -1,4 +1,4 @@
-@startuml SedtrailComponent
+@startuml SedtrailComponentsTracer
 !include ./c4/C4_Component.puml
 ' !theme C4_sandstone from ./c4/themes
 
@@ -6,7 +6,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title sedTRAILS: Component Diagram for Lagrangian Particle Tracer
-scale 1
+scale 2
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 

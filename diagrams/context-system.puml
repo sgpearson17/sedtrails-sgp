@@ -3,7 +3,7 @@
 
 ' !theme C4_sandstone from ./c4/themes
 title SEDTrails System Context Diagram
-scale 1
+scale 2
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
