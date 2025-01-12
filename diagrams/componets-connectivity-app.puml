@@ -1,0 +1,24 @@
+@startuml SedtrailComponent
+!include ./c4/C4_Component.puml
+' !theme C4_sandstone from ./c4/themes
+
+
+' LAYOUT_LANDSCAPE()
+
+title sedTRAILS: Component Diagram for Connectivity Network Application
+scale 1
+
+AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
+
+Person(modeler, "Analyst", "wants to postprocess simulation outputs")
+
+Container_Boundary(connectivityNet, "Connectivity Network Application"){
+    
+}
+    
+Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a costal system")
+
+
+SHOW_LEGEND()
+@enduml
+
