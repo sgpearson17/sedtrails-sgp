@@ -1,10 +1,8 @@
 @startuml SedtrailContainer
-!include <C4/C4_Container>
+!include ./c4/C4_Container.puml
 
 title sedTRAILS Container Diagram
-scale 2
-
-
+scale 1
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
@@ -14,6 +12,9 @@ System_Boundary(sedtrailsSystem, "sedTRAILS Particle Tracking System"){
     Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow-field data to convert it to compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
     Container(cache, "Simulation Caching and State Tracker", "Python", "keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
+
+    Container(connectivityNetworkSys, "Connectivity Network Application", "Python", "Tools connectiviy network analysis")
+    Container(statisticsSys, "Statistical Analysis Application", "Python", "Tools for various statistical analysis")
     
     Rel(transportConverter, sedtrailsTracer, "provides transformed transport data to")
     Rel(sedtrailsTracer, pathwayVisualizer, "provides pathways to", "NETCDF")
@@ -22,8 +23,7 @@ System_Boundary(sedtrailsSystem, "sedTRAILS Particle Tracking System"){
 }
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
-System_Ext(connectivityNetworkSys, "Connectivity Network System", "Performs connectiviy network analysis", $type="Any")
-System_Ext(statisticsSys, "Statistical Analysis Tooling System", "Performs various statistical analysis", $type="Any")
+
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 Rel(sedtrailsTracer, fileSystem, "write transformed transport files to", "NETCDF")
