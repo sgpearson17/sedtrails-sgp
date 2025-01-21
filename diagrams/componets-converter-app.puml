@@ -1,7 +1,5 @@
-@startuml SedtrailComponent
-' !include <C4/C4_Container>
-
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+@startuml SedtrailComponentsConverter
+!include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
 
@@ -21,7 +19,7 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(physicsConverter, particleTracer, "provides transformed transport fields to", "memory/NETCDF")
-Rel(physicsConverter, fileSystem, "write pathway files to", "NETCDF")
+Rel(physicsConverter, fileSystem, "reads/writes pathway files to", "NETCDF")
 
 Rel(flowSystem, formatConverter, "provides flow-field data to ", "NETCDF")
 
