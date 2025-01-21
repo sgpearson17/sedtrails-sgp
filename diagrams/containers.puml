@@ -34,7 +34,7 @@ Rel(connectivityNetworkSys, sedtrailsTracer, "Accesses simulation outputs from",
 Rel(statisticsSys, sedtrailsTracer, "Accesses simulation outputs from", "NETCDF")
 Rel(analyst, pathwayVisualizer, "Creates visualizations of sand pathways using", "Python")
 Rel(analyst, connectivityNetworkSys, "Post-processes simulation outputs in", "Any")
-Rel(analyst, statisticsSys, "Post-processe simulation outputs in", "Any")
+Rel(analyst, statisticsSys, "Post-processes simulation outputs in", "Any")
 
 Rel(modeler, flowSystem, "Produces flow-field data using", "Any")
 Rel(flowSystem, transportConverter, "Provides flow-field data to ", "NETCDF")
