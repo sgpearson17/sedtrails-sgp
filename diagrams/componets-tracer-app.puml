@@ -5,46 +5,46 @@
 
 ' LAYOUT_LANDSCAPE()
 
-title sedTRAILS: Component Diagram for Lagrangian Particle Tracer
+title SedTRAILS: Component Diagram for Lagrangian Particle Tracer
 scale 2
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
-Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 
-Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow-field data to convert it to compatible formats and physical units.")
+Container(transportConverter, "Transport Converter", "Python", "An application that converts processes transport flow-field data to compatible formats and physical units.")
 
-Container(cache, "Simulation Caching and State Tracker", "Python", "keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
+Container(cache, "Simulation Caching and State Tracker", "Python", "Keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
 
 Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){ 
-    Component(seedingTool, "Particle Seeding Tool", "Python", "computes initial particle positions (x,y) and  particle's release times (t) using various particle release strategies")
+    Component(seedingTool, "Particle Seeding Tool", "Python", "Computes initial particle positions (x,y) and  particle's release times (t) using various particle release strategies")
     
     ' What is the relationship of this componet with other components?
     ' Is the particle Tracer something already done by other components?
     ' With which componens the Transport Converter interacts?
-    Component(particleTracer, "Particle Tracer", "Python", "computes particle pathways based on particle positions and transport flow-field data", $tags="review")
+    Component(particleTracer, "Particle Tracer", "Python", "Computes particle pathways based on particle positions and transport flow-field data", $tags="review")
 
 
-    Component(dataWriter, "Particle Data Interface", "Python, NETCDF", "Write particle position and property data to file, if appropriate timestep")s
+    Component(dataWriter, "Particle Data Interface", "Python, NETCDF", "Writes particle position and property data to file, if appropriate timestep")s
 
-    Component(particleStatusCheker, "Particle Status Checker", "Python", "checks whether particles are active, dead, alive, stuck, etc., during simulation")
-    Component(particleBurialCheker, "Particle Burial Checker", "Python",  "Check wether particles are trapped or free")
-    Component(particleBurialCheker, "Particle Burial Checker", "Python", "Check wether particles are trapped or free")
+    Component(particleStatusCheker, "Particle Status Checker", "Python", "Checks whether particles are active, dead, alive, stuck, etc., during simulation")
+    Component(particleBurialCheker, "Particle Burial Checker", "Python",  "Checks whether particles are trapped or free")
+    Component(particleBurialCheker, "Particle Burial Checker", "Python", "Checks whether particles are trapped or free")
     Component(positionCalculator, "Particle Position Calculator", "Fortran/Python", "Calculates particle positions at next time step based on flow-field values using Runge-Kutta 4 solver")
     Component(propertyInterpolator, "Particle Property Interpolator", "Python", "Interpolates particle properties at new position from scalar fields (e.g., depth, concentration)​")
 
 
-    Rel(modeler, seedingTool, "defines seeding parameters for", "Configuration file")
-    Rel(modeler, particleTracer, "defines simulation parameters for", "Configuration file")
+    Rel(modeler, seedingTool, "Defines seeding parameters for", "Configuration file")
+    Rel(modeler, particleTracer, "Defines simulation parameters for", "Configuration file")
     ' Rel(seedingTool, particleTracer, "provides particle positions and release times to ", "Python")
-    Rel(particleTracer, dataWriter, "provides output pathways to", "Python object")
+    Rel(particleTracer, dataWriter, "Provides output pathways to", "Python object")
     Rel(particleTracer, cache, "uses")
     Rel(seedingTool, cache, "uses")
-    Rel(seedingTool, particleStatusCheker, "provides particle postitions to", "Python object")
-    Rel(particleStatusCheker, particleBurialCheker, "provides particle positions to", "Python object")
-    Rel(particleBurialCheker, positionCalculator, "provides particle positions to", "Python object")
-    Rel(positionCalculator, propertyInterpolator,"provides particle positions to", "Python object")
-    Rel(propertyInterpolator, dataWriter, "provides particle positions to", "Python object")
+    Rel(seedingTool, particleStatusCheker, "Provides particle postitions to", "Python object")
+    Rel(particleStatusCheker, particleBurialCheker, "Provides particle positions to", "Python object")
+    Rel(particleBurialCheker, positionCalculator, "Provides particle positions to", "Python object")
+    Rel(positionCalculator, propertyInterpolator,"Provides particle positions to", "Python object")
+    Rel(propertyInterpolator, dataWriter, "Provides particle positions to", "Python object")
 
 
 
@@ -55,10 +55,10 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 
-Rel(dataWriter, fileSystem, "write pathway files to", "NETCDF")
-Rel(transportConverter, particleTracer, "provides transformed transport flow-field data to", "Python")
+Rel(dataWriter, fileSystem, "Write pathway files to", "NETCDF")
+Rel(transportConverter, particleTracer, "Provides transformed transport flow-field data to", "Python")
 
-Rel(seedingTool, fileSystem, "reads/writes seeding parameters from/to", "NETCDF")
+Rel(seedingTool, fileSystem, "Reads/writes seeding parameters from/to", "NETCDF")
 
 SHOW_LEGEND()
 @enduml

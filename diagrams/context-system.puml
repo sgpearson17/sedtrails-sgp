@@ -2,30 +2,30 @@
 !include ./c4/C4_Context.puml
 
 ' !theme C4_sandstone from ./c4/themes
-title SEDTrails System Context Diagram
+title SedTRAILS System Context Diagram
 scale 2
 
-Person(modeler, "Modeler", "wants to track sand particles in a costal system")
-Person(analyst, "Analyst", "wants postprocess and visualize simulation outputs")
+Person(modeler, "Modeler", "Tracks sand particles in a costal system")
+Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 
 
-System(sedtrails, "SEDTrails Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
+System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
 
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(analyst, sedtrails, "post-process simulation outputs in")
+Rel(analyst, sedtrails, "Post-process simulation outputs in")
 Rel(sedtrails, fileSystem, "reads/writes files to", "NETCDF, CSV, TXT")
 
-Rel(modeler, sedtrails, "defines simulation parameters and outputs for", "Configuration file")
-Rel(modeler, flowSystem, "produces flow-field data using")
+Rel(modeler, sedtrails, "Defines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, flowSystem, "Produces flow-field data using")
 
-' Rel(connectivityNetworkSys, sedtrails, "access simulation outputs from", "NETCDF")
-' Rel(statisticsSys, sedtrails, "access simulation outputs from", "NETCDF")
+' Rel(connectivityNetworkSys, sedtrails, "Accesses simulation outputs from", "NETCDF")
+' Rel(statisticsSys, sedtrails, "Accesses simulation outputs from", "NETCDF")
 
-Rel(flowSystem, sedtrails, "provides flow-field data to ", "NETCDF")
+Rel(flowSystem, sedtrails, "Provides flow-field data to ", "NETCDF")
 
 SHOW_LEGEND()
 @enduml

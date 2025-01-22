@@ -5,12 +5,12 @@
 
 ' LAYOUT_LANDSCAPE()
 
-title sedTRAILS: Component Diagram for Connectivity Network Application
+title SedTRAILS: Component Diagram for Connectivity Network Application
 scale 2
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
-Person(modeler, "Analyst", "wants to postprocess simulation outputs")
+Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 
 Container_Boundary(connectivityNet, "Connectivity Network Application"){
     
