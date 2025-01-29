@@ -4,28 +4,30 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Transport Converter
-scale 2
+scale 1
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 
-Container_Boundary(transportConverter, "Transport Converter Plugin"){ 
-    Component(formatConverter, "Format Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into the SedTRAILS standard data structure")
-    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into particle velocity using standard physical units")
-        
-    Rel(formatConverter, physicsConverter, "Provides flow-field data to", "standard data structure")
+Container_Boundary(transportConverter, "Transport Converter"){ 
+    
+    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from an specific Eulerian flow modeling systems and convert into the SedTRAILS standard data structure")
 
-    Rel(modeler, physicsConverter, "defines setting for", "config file")
+    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-defined conversion methods")
+        
+    Rel(formatConverter, physicsConverter, "Provides flow-field data to", "SedTRAILS data structure, Python object")
+
+    Rel(modeler, physicsConverter, "defines methods for", "Plain text/ configuration file")
 
 }
 
 
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
-System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind and produces results a custom data structure", $type="Any")
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(physicsConverter, particleTracer, "Provides transformed transport fields to", "memory/NETCDF")
-Rel(physicsConverter, fileSystem, "Reads/writes pathway files to", "NETCDF")
+Rel(physicsConverter, particleTracer, "Provides transformed transport fields to", "Python object")
+Rel(physicsConverter, fileSystem, "Reads/writes converted data files to", "NETCDF")
 
 Rel(flowSystem, formatConverter, "provides flow-field data to ", "Any")
 
