@@ -10,16 +10,14 @@ Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 
 Container_Boundary(transportConverter, "Transport Converter"){ 
     
-    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from an specific Eulerian flow modeling systems and convert into the SedTRAILS standard data structure")
+    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from an specific Eulerian flow modeling system and convert it to the SedTRAILS standard data structure")
 
-    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-defined conversion methods")
+    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-prefered conversion methods")
         
     Rel(formatConverter, physicsConverter, "Provides flow-field data to", "SedTRAILS data structure, Python object")
 
-    Rel(modeler, physicsConverter, "defines methods for", "Plain text/ configuration file")
-
+    Rel(modeler, physicsConverter, "specify methods for", "Plain text/ configuration file")
 }
-
 
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
