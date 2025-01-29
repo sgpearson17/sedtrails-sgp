@@ -8,11 +8,17 @@
 title SedTRAILS: Component Diagram for Lagrangian Particle Tracer
 scale 2
 
+' terminilogy:
+' pathway: a collection of particle positions and properties at different time steps    
+
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 
-Container(transportConverter, "Transport Converter", "Python", "An application that converts processes transport flow-field data to compatible formats and physical units.")
+' make burial cheker  checker a library. 
+' aldo the particle status checker will have different  methods for determin the stutuss types and how are they implemented.
+
+Container(transportConverter, "Transport Converter", "Python", "An application that pre-process transport flow-field data to convert it to compatible formats and physical units.")
 
 Container(cache, "Simulation Caching and State Tracker", "Python", "Keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
 

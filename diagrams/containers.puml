@@ -1,8 +1,8 @@
 @startuml SedtrailContainer
 !include ./c4/C4_Container.puml
 
-title SedTRAILS Container Diagram
-scale 2
+title sedTRAILS Container Diagram
+scale 1.5
 
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 Person(analyst, "Analyst", "Postprocesses and visualize simulation outputs")

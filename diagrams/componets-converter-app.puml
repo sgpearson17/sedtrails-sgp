@@ -6,12 +6,18 @@
 title SedTRAILS: Component Diagram for Transport Converter
 scale 2
 
-Container_Boundary(transportConverter, "Transport Converter"){ 
-    Component(formatConverter, "Format Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into a standard data structure")
+Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+
+Container_Boundary(transportConverter, "Transport Converter Plugin"){ 
+    Component(formatConverter, "Format Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into the SedTRAILS standard data structure")
     Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into particle velocity using standard physical units")
         
     Rel(formatConverter, physicsConverter, "Provides flow-field data to", "standard data structure")
+
+    Rel(modeler, physicsConverter, "defines setting for", "config file")
+
 }
+
 
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
@@ -21,8 +27,7 @@ SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, 
 Rel(physicsConverter, particleTracer, "Provides transformed transport fields to", "memory/NETCDF")
 Rel(physicsConverter, fileSystem, "Reads/writes pathway files to", "NETCDF")
 
-Rel(flowSystem, formatConverter, "Provides flow-field data to ", "NETCDF")
-
+Rel(flowSystem, formatConverter, "provides flow-field data to ", "Any")
 
 SHOW_LEGEND()
 @enduml
