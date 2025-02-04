@@ -11,9 +11,7 @@ Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 ' PRINCIPLES OF DEVELOPING:
 ' Modularity and extensibility in every component
 
-
 System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
-
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
