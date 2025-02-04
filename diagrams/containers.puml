@@ -17,43 +17,42 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
     Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
     Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
-    Container(dataManager, "Data Management Module", "Python", "An application that manage files produced by the SedTRAILS Pacticle Tracer System")
+    Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-    Container(connectivityNetworkSys, "Connectivity Network Application", "Python", "Tools for connectivity network analysis")
+    ' Container(connectivityNetworkSys, "Connectivity Network Application", "Python", "Tools for connectivity network analysis")
 
-    Container(statisticsSys, "Statistical Analysis Application", "Python", "Tools for various statistical analysis")
+    ' Container(statisticsSys, "Statistical Analysis Application", "Python", "Tools for various statistical analysis")
 
-    Container(analystInterface, "Simulation Analysis Interface", "Python", "An application that analyst uses to post-process simulation outputs")
-    ' CONTINUE HERE
-    
-    Rel(transportConverter, sedtrailsTracer, "Provides transformed transport data to", "Python object")
-    Rel(sedtrailsTracer, pathwayVisualizer, "Provides pathway data to", "NETCDF")
+    Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
+ 
+    Rel(transportConverter, sedtrailsTracer, "Provides converted flow-field data to", "Python object")
+
     Rel(cache, sedtrailsTracer, "tracks simulation states and outputs of", "Any")
     Rel(configInterpreter, transportConverter, "provides configuration for physics convertions to", "Python object")
     Rel(configInterpreter, sedtrailsTracer, "provides configuration for", "Python object")
-}
+    Rel(sedtrailsTracer, dataManager, "provides simulation outputs to", "Python object")
 
+    Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
+    Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any") 
+    Rel(cache, transportConverter, "provides chached flow-field files to", "NETCDF")
+    Rel(dataManager, pathwayVisualizer, "provides pathway data to", "NETCDF, Python")
+}
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF, CSV, TXT, other")
 
-Rel(sedtrailsTracer, dataManager, "provides simulation outputs to", "Python object")
-
-Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object")
-
-Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any")
-Rel(cache, transportConverter, "provides chached flow-field files to", "NETCDF")
-
 Rel(modeler, configInterpreter, "Defines simulation parameters and outputs for", "Configuration file")
 
+' Rel(dataManager, connectivityNetworkSys,  "Accesses simulation outputs using", "NETCDF")
+' Rel(dataManager, statisticsSys,  "provides simulation outputs to", "NETCDF")
 
-Rel(dataManager, connectivityNetworkSys,  "Accesses simulation outputs using", "NETCDF")
-Rel(dataManager, statisticsSys,  "provides simulation outputs to", "NETCDF")
 Rel(analyst, pathwayVisualizer, "Creates visualizations of sand pathways using", "Python")
-Rel(analyst, connectivityNetworkSys, "Post-processes simulation outputs in", "Any")
-Rel(analyst, statisticsSys, "Post-processes simulation outputs in", "Any")
+Rel(analyst, analystApp, "Post-processes simulation outputs in", "Any")
+Rel(analystApp, fileSystem, "Reads simulation outputs and writes analysis results", "Any")
+
+' Rel(analyst, statisticsSys, "Post-processes simulation outputs in", "Any")
 
 Rel(modeler, flowSystem, "Produces flow-field data using", "Any")
 Rel(transportConverter, flowSystem, "Reads flow-field data from", "NETCDF")
