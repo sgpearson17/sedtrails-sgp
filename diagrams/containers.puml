@@ -12,7 +12,7 @@ Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){ 
     Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
 
-    Container(configInterpreter, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
+    Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
 
     Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
@@ -27,14 +27,14 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
  
     Rel(transportConverter, sedtrailsTracer, "Provides converted flow-field data to", "Python object")
 
-    Rel(cache, sedtrailsTracer, "tracks simulation states and outputs of", "Any")
-    Rel(configInterpreter, transportConverter, "provides configuration for physics convertions to", "Python object")
-    Rel(configInterpreter, sedtrailsTracer, "provides configuration for", "Python object")
+    Rel(cache, sedtrailsTracer, "tracks simulation states and outputs, and provides cached flow-field data", "Python object")
+    Rel(configInterface, transportConverter, "provides configuration for physics convertions to", "Python object")
+    Rel(configInterface, sedtrailsTracer, "provides configuration for", "Python object")
     Rel(sedtrailsTracer, dataManager, "provides simulation outputs to", "Python object")
 
     Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
     Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any") 
-    Rel(cache, transportConverter, "provides chached flow-field files to", "NETCDF")
+    ' Rel(cache, transportConverter, "provides chached flow-field files to", "NETCDF")
     Rel(dataManager, pathwayVisualizer, "provides pathway data to", "NETCDF, Python")
 }
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
@@ -43,7 +43,7 @@ SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, 
 
 Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF, CSV, TXT, other")
 
-Rel(modeler, configInterpreter, "Defines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, configInterface, "Defines simulation parameters and outputs for", "Configuration file")
 
 ' Rel(dataManager, connectivityNetworkSys,  "Accesses simulation outputs using", "NETCDF")
 ' Rel(dataManager, statisticsSys,  "provides simulation outputs to", "NETCDF")
