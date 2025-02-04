@@ -31,8 +31,8 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(physicsConverter, dataManager, "Provides converted flow-field data to", "Python object")
-Rel(physicsConverter, particleTracer, "Provides transformed transport fields to", "Python object")
-Rel(physicsConverter, fileSystem, "Reads/writes converted data files to", "NETCDF")
+Rel(physicsConverter, particleTracer, "Provides converted transport flow-field data to", "Python object")
+Rel(dataManager, fileSystem, "Reads/writes converted flow-field data to", "NETCDF")
 
 Rel( formatConverter, flowSystem, "reads flow-field input data from", "NETCDF")
 
