@@ -14,7 +14,7 @@ plantuml -tpng <file.puml>
 ```
 
 **Requirements** 
-- Jaav
+- Java
 - GraphViz
 
 ### [For Patform A]
@@ -48,4 +48,16 @@ Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take par
 
 [CCF files can be converted to a multitude of formats, including BibTex,  EndNote, codemeta, plain JSON, schema.org, RIS, and Zenodo JSON ]
 
+### Author Contributions:
+| [Role](https://credit.niso.org/contributor-roles-defined/) | Author |
+|------|--------|
+| Conceptualization |  |
+| Funding acquisition | |
+| Project management |  |
+| Research |  |
+| Software |  |
+| Supervision |  |
+
 ## Acknowlegdements
+
+> The *SedTRAILS Project* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology. 
