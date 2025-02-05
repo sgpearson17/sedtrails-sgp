@@ -35,11 +35,16 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
     Component(positionCalculator, "Particle Position Calculator", "Fortran/Python", "Calculates particle positions at next time step based on flow-field values using Runge-Kutta 4 solver")
     Component(propertyInterpolator, "Particle Property Interpolator", "Python", "Interpolates particle properties at new position from scalar fields (e.g., depth, concentration)​")
 
+    Component(difusionLibrary, "Difusion Library", "Python", "A library of methods to perform difusion calculations​")
+
+
     Rel(pathwayInterface, dataManager, "Provides output pathways to", "Python object")
     Rel(cache, seedingTool,  "Access seeding particles initial positions", "Python object")
     Rel(seedingTool, particleCheker, "Provides particle postitions to", "Python object")
     Rel(particleCheker, burialLibrary, "Access burial methods from", "Python object")
     Rel(particleCheker, statusLibrary, "Access status methods from", "Python object")
+    Rel(positionCalculator, difusionLibrary, "Access difussion methods from", "Python object")
+
 
     Rel(particleCheker, positionCalculator, "Provides particle positions to", "Python object")
     Rel(positionCalculator, propertyInterpolator,"Provides particle positions to", "Python object")
@@ -54,6 +59,9 @@ Rel(cache, transportConverter, "Access state of converted transport field-data",
 
 Rel(cache, positionCalculator, "Provides cached flow-field data", "Python object")
 Rel(configInterface, seedingTool, "Provides seeding parameters to", "Python object")
+Rel(configInterface, propertyInterpolator, "Provides interpolation fields configurations to", "Python object")
+Rel(configInterface, positionCalculator, "Provides numerical settings to", "Python object")
+Rel(configInterface, particleCheker, "Provides configurations to", "Python object")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
