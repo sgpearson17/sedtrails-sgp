@@ -1,10 +1,10 @@
-@startuml SedtrailComponentsConverter
+@startuml SedtrailComponentsTransportConverter
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Transport Converter
-scale 1
+scale 2
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 

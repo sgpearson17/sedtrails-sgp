@@ -1,10 +1,10 @@
-@startuml SedtrailComponentsConverter
+@startuml SedtrailComponentsAnalysis
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Simulation Analysis Application
-scale 1
+scale 2
 
 Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 

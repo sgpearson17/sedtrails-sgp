@@ -1,10 +1,10 @@
-@startuml SedtrailComponentsConverter
+@startuml SedtrailComponentsCache
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Simulation Caching and State Tracker
-scale 1
+scale 2
 
 Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
 

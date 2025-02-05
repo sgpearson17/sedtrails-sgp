@@ -1,10 +1,10 @@
-@startuml SedtrailComponentsConverter
+@startuml SedtrailComponentsDataManagement
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Data Management Module
-scale 1
+scale 2
 
 Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 

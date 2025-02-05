@@ -2,7 +2,7 @@
 !include ./c4/C4_Container.puml
 
 title sedTRAILS Container Diagram
-scale 1.5
+scale 2
 ' LAYOUT_LANDSCAPE()
 
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
