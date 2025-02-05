@@ -30,18 +30,18 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
     Rel(cache, sedtrailsTracer, "tracks simulation states and outputs, and provides cached flow-field data", "Python object")
     Rel(configInterface, transportConverter, "provides configuration for physics convertions to", "Python object")
     Rel(configInterface, sedtrailsTracer, "provides configuration for", "Python object")
-    Rel(sedtrailsTracer, dataManager, "provides simulation outputs to", "Python object")
+    Rel(sedtrailsTracer, dataManager, "provides output pathways data to", "Python object")
 
     Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
     Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any") 
 
-    Rel(dataManager, pathwayVisualizer, "provides pathway data to", "NETCDF, Python")
+    Rel(dataManager, pathwayVisualizer, "provides particle pathway data to", "NETCDF, Python")
 }
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF, CSV, TXT, other")
+Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF")
 
 Rel(modeler, configInterface, "Defines simulation parameters and outputs for", "Configuration file")
 
@@ -51,8 +51,6 @@ Rel(modeler, configInterface, "Defines simulation parameters and outputs for", "
 Rel(analyst, pathwayVisualizer, "Creates visualizations of sand pathways using", "Python")
 Rel(analyst, analystApp, "Post-processes simulation outputs in", "Any")
 Rel(analystApp, fileSystem, "Reads simulation outputs and writes analysis results", "Any")
-
-' Rel(analyst, statisticsSys, "Post-processes simulation outputs in", "Any")
 
 Rel(modeler, flowSystem, "Produces flow-field data using", "Any")
 Rel(transportConverter, flowSystem, "Reads flow-field data from", "NETCDF")
