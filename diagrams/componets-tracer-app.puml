@@ -23,9 +23,9 @@ Container(dataManager, "Data Management Module", "Python", "An application that 
 Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){ 
     Component(seedingTool, "Particle Seeding Tool", "Python", "Computes initial particle positions (x,y) and  particle's release times (t) using various particle release strategies")
 
-    ComponentDb(burialLibrary, "Particle Burial Library", "Python", "Library of methods to determine particle burial status")
+    Component(burialLibrary, "Particle Burial Library", "Python", "Library of methods to determine particle burial status")
 
-    ComponentDb(statusLibrary, "Particle Status Library", "Python", "Library of particle status types its methods")
+    Component(statusLibrary, "Particle Status Library", "Python", "Library of particle status types its methods")
 
     Component(pathwayInterface, "Particle Pathway Interface", "Python, NETCDF", "Provides access to particles positions and properties, and if appropriate timesteps")
 
