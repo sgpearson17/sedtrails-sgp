@@ -36,7 +36,7 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
     Component(propertyInterpolator, "Particle Property Interpolator", "Python", "Interpolates particle properties at new position from scalar fields (e.g., depth, concentration)​")
 
     Rel(pathwayInterface, dataManager, "Provides output pathways to", "Python object")
-    Rel(cache, seedingTool,  "Access seeding particles initial positions to", "Python object")
+    Rel(cache, seedingTool,  "Access seeding particles initial positions", "Python object")
     Rel(seedingTool, particleCheker, "Provides particle postitions to", "Python object")
     Rel(particleCheker, burialLibrary, "Access burial methods from", "Python object")
     Rel(particleCheker, statusLibrary, "Access status methods from", "Python object")
@@ -49,7 +49,8 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
 }
 
 Rel(modeler, configInterface, "Defines seeding parameters for", "Plain text, configuration file")
-Rel(cache, dataManager, "Provides simulation states, and retrieves cached data via", "Any") 
+Rel(cache, dataManager, "Provides simulation states, and retrieves cached data via", "Python") 
+Rel(cache, transportConverter, "Access state of converted transport field-data", "Python") 
 
 Rel(cache, positionCalculator, "Provides cached flow-field data", "Python object")
 Rel(configInterface, seedingTool, "Provides seeding parameters to", "Python object")
@@ -58,7 +59,7 @@ SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, 
 
 Rel(transportConverter, positionCalculator, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
 Rel(transportConverter, particleCheker, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
-
+Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
 Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF, CSV, TXT, other")
 
 SHOW_LEGEND()
