@@ -5,7 +5,6 @@ title sedTRAILS Container Diagram
 scale 1.5
 ' LAYOUT_LANDSCAPE()
 
-
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 
@@ -19,15 +18,13 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
     Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
     Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-    ' Container(connectivityNetworkSys, "Connectivity Network Application", "Python", "Tools for connectivity network analysis")
-
-    ' Container(statisticsSys, "Statistical Analysis Application", "Python", "Tools for various statistical analysis")
-
     Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
  
-    Rel(transportConverter, sedtrailsTracer, "Provides converted flow-field data to", "Python object")
+    Rel(transportConverter, sedtrailsTracer, "provides converted flow-field data to", "Python object")
 
     Rel(cache, sedtrailsTracer, "tracks simulation states and outputs, and provides cached flow-field data", "Python object")
+    Rel(cache, transportConverter, "access state of converted transport field-data in", "Python object")
+
     Rel(configInterface, transportConverter, "provides configuration for physics convertions to", "Python object")
     Rel(configInterface, sedtrailsTracer, "provides configuration for", "Python object")
     Rel(sedtrailsTracer, dataManager, "provides output pathways data to", "Python object")
@@ -41,19 +38,16 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF")
+Rel(dataManager, fileSystem, "read/writes files to", "NETCDF")
 
-Rel(modeler, configInterface, "Defines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, configInterface, "efines simulation parameters and outputs for", "Configuration file")
 
-' Rel(dataManager, connectivityNetworkSys,  "Accesses simulation outputs using", "NETCDF")
-' Rel(dataManager, statisticsSys,  "provides simulation outputs to", "NETCDF")
+Rel(analyst, pathwayVisualizer, "creates visualizations of sand pathways using", "Python")
+Rel(analyst, analystApp, "post-processes simulation outputs in", "Any")
+Rel(analystApp, fileSystem, "reads simulation outputs and writes analysis results", "Any")
 
-Rel(analyst, pathwayVisualizer, "Creates visualizations of sand pathways using", "Python")
-Rel(analyst, analystApp, "Post-processes simulation outputs in", "Any")
-Rel(analystApp, fileSystem, "Reads simulation outputs and writes analysis results", "Any")
-
-Rel(modeler, flowSystem, "Produces flow-field data using", "Any")
-Rel(transportConverter, flowSystem, "Reads flow-field data from", "NETCDF")
+Rel(modeler, flowSystem, "produces flow-field data using", "Any")
+Rel(transportConverter, flowSystem, "reads flow-field data from", "NETCDF")
 
 SHOW_LEGEND()
 @enduml
