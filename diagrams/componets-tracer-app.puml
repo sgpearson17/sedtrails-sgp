@@ -20,14 +20,22 @@ Container(configInterface, "Simulation Configuration Interface", "Python", "An a
 Container(cache, "Simulation Caching and State Tracker", "Python", "Keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
 Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){ 
+Container(processingTimeTracker, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
+
+
+Container_Boundary(sedtrailsTracer, "Parallel Lagrangian Particle Tracer"){ 
     Component(seedingTool, "Particle Seeding Tool", "Python", "Computes initial particle positions (x,y) and  particle's release times (t) using various particle release strategies")
 
-    Component(burialLibrary, "Particle Burial Library", "Python", "Library of methods to determine particle burial status")
+    Component(tracingOrquestrator, "Particle Tracing Orquestrator", "Python", "Orquestrates the parallel execution of particle tracing routines using a multi-processing strategy. A process is assigned to each particle")
 
-    Component(statusLibrary, "Particle Status Library", "Python", "Library of particle status types its methods")
+    ' Component(burialLibrary, "Particle Burial Library", "Python", "Library of methods to determine particle burial status")
+
+    Component(statusLibrary, "Particle Status Library", "Python", "Library of mehtods to determine a particle status types and burial state")
 
     Component(pathwayInterface, "Particle Pathway Interface", "Python, NETCDF", "Provides access to particles positions and properties, and if appropriate timesteps")
+    
+    Component(processingTimeInterface, "Processing Time Interface", "Python", "Provides accesss to start/end times of routinges in the Lagra​ngian Particle Tracer")
+
 
     ' Component(particleStatusCheker, "Particle Status Checker", "Python", "Checks whether particles are active, dead, alive, stuck, etc., during simulation")
     Component(particleCheker, "Particle States Checker", "Python",  "Applies status and burial methods to determine a particle status (e.g., active, dead, alive, stuck, etc) and burial state")
@@ -36,13 +44,27 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
     Component(propertyInterpolator, "Particle Property Interpolator", "Python", "Interpolates particle properties at new position from scalar fields (e.g., depth, concentration)​")
 
     Component(difusionLibrary, "Difusion Library", "Python", "A library of methods to perform difusion calculations​")
+    
+    Component(flowDataRetriever, "Flow Field Data Retriever", "Python", "Retrieves flow-field data from the transport converter or the simulation chaching and state tracker")
 
-    Component(processingTimeInterface, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
+    Component(postionCollector, "Particle Result Collector", "Python", "collects the final particle positions and properties for all particles at the end of the simulation")
+
+    ' continue here
+
+    Component(flowDataBuffer, "Flow Field Data Buffer", "Python, Memory", "Stores flow-field data for fast access during particle tracing for a given time step")
+
+    Rel(flowDataRetriever, flowDataBuffer, "Loads flow-field data for time step to", "Python object")
 
     Rel(pathwayInterface, dataManager, "Provides output pathways to", "Python object")
     Rel(cache, seedingTool,  "Access seeding particles initial positions", "Python object")
-    Rel(seedingTool, particleCheker, "Provides particle postitions to", "Python object")
-    Rel(particleCheker, burialLibrary, "Access burial methods from", "Python object")
+    ' Rel(seedingTool, particleCheker, "Provides particle postitions to", "Python object")
+
+    Rel(seedingTool, tracingOrquestrator, "Provides number of intial particles to", "Python object")
+
+    Rel(tracingOrquestrator, particleCheker, "Provides intial particle postions for a process to", "Python object")
+
+
+    ' Rel(particleCheker, burialLibrary, "Access burial methods from", "Python object")
     Rel(particleCheker, statusLibrary, "Access status methods from", "Python object")
     Rel(positionCalculator, difusionLibrary, "Access difussion methods from", "Python object")
 
@@ -52,7 +74,7 @@ Container_Boundary(sedtrailsTracer, " Lagrangian Particle Tracer"){
     Rel(propertyInterpolator, particleCheker, "Provides new particle positions to", "Python object")
 }
 
-Rel(modeler, configInterface, "Defines seeding parameters for", "Plain text, configuration file")
+Rel(modeler, configInterface, "Defines seeding parameters for", "YAML, configuration file")
 Rel(cache, dataManager, "Provides simulation states, and retrieves cached data via", "Python") 
 Rel(cache, transportConverter, "Access state of converted transport field-data", "Python") 
 
@@ -60,8 +82,10 @@ Rel(seedingTool, processingTimeInterface, "provides processing start/end times t
 Rel(particleCheker, processingTimeInterface, "provides processing start/end times to", "Python object")
 Rel(propertyInterpolator, processingTimeInterface, "provides processing start/end times to", "Python object")
 Rel(positionCalculator, processingTimeInterface, "provides processing start/end times to", "Python object")
-Rel(processingTimeInterface, dataManager, "provides procesing times estimations to", "Python object")
+Rel(processingTimeTracker, processingTimeInterface,  "access processing start/end times using", "Python object")
 
+Rel(processingTimeTracker, dataManager, "provides procesing times estimations to", "Python object")
+Rel(flowDataRetriever, transportConverter, "requests converted flow field data to", "Python object")
 
 Rel(cache, positionCalculator, "Provides cached flow-field data", "Python object")
 Rel(configInterface, seedingTool, "Provides seeding parameters to", "Python object")
@@ -71,12 +95,11 @@ Rel(configInterface, particleCheker, "Provides configurations to", "Python objec
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(transportConverter, positionCalculator, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
+Rel(flowDataBuffer, positionCalculator, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
+Rel(flowDataBuffer, propertyInterpolator, "Provides converted transport flow-field data to", "SedTRAILS data, XArray")
 
-Rel(transportConverter, propertyInterpolator, "Provides converted transport flow-field data to", "SedTRAILS data, XArray")
-
-Rel(transportConverter, particleCheker, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
-Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
+Rel(flowDataBuffer, particleCheker, "Provides converted transport flow-field data to", "SedTRAILS data, Python object")
+Rel(flowDataBuffer, dataManager, "provides converted flow-field data to", "Python object") 
 Rel(dataManager, fileSystem, "Read/Writes files to", "NETCDF, CSV, TXT, other")
 
 SHOW_LEGEND()
