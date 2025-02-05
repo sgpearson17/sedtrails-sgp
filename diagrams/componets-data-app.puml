@@ -1,0 +1,38 @@
+@startuml SedtrailComponentsConverter
+!include ./c4/C4_Component.puml
+
+' LAYOUT_LANDSCAPE()
+
+title SedTRAILS: Component Diagram for Data Management Module
+scale 1
+
+Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
+
+Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
+Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
+
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+
+Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+
+SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
+
+Container_Boundary(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System"){
+    Component(fileReader, "NetCDF Reader", "Python", "Reads NetCDF files produced by the SedTRAILS Particle Tracer System")
+    Component(fileWriter, "NetCDF Writer", "Python", "Writes NetCDF files produced by the SedTRAILS Particle Tracer System")
+}
+
+Rel(fileReader, fileSystem, "Reads files from", "NETCDF")
+Rel(fileWriter, fileSystem, "Writes files to", "NETCDF")
+Rel(transportConverter, fileWriter, "provides converted flow-field data to", "Python object")
+Rel(particleTracer, fileWriter, "provides output pathway data to", "Python object")
+Rel(cache, fileWriter, "provides simulation state data to", "Python object")
+
+Rel(fileReader, cache, "provides simulation chached data to", "Python object")
+
+Rel(fileReader, pathwayVisualizer, "provides particle pathway data to", "NETCDF, Python")
+Rel(analyst, pathwayVisualizer, "Creates visualizations of particles pathways using", "Python")
+
+SHOW_LEGEND()
+@enduml
+
