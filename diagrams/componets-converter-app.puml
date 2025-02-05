@@ -1,4 +1,4 @@
-@startuml SedtrailComponentsConverter
+@startuml SedtrailComponentsTransportConverter
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()
@@ -6,23 +6,33 @@
 title SedTRAILS: Component Diagram for Transport Converter
 scale 2
 
+Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+
+Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
+
 Container_Boundary(transportConverter, "Transport Converter"){ 
-    Component(formatConverter, "Format Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into a standard data structure")
-    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field data from various Eulerian flow modeling systems into particle velocity using standard physical units")
+    
+    Component(formatConverter, "Format Converter Interface", "Python", "An interface to read flow-field data from an specific Eulerian flow modeling system and convert it to the SedTRAILS standard data structure")
+
+    Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-prefered conversion methods")
         
-    Rel(formatConverter, physicsConverter, "Provides flow-field data to", "standard data structure")
+    Rel(formatConverter, physicsConverter, "Provides flow-field data to", "SedTRAILS data structure, Python object")
+    Rel(modeler, configInterface, "Defines simulation parameters and outputs for", "Plain text file")
+    Rel(configInterface, physicsConverter, "provides configurations for physics convertions (e.g. method selection)", "Python object")
 }
 
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
-System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
+Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
+
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind and produces results a custom data structure", $type="Any")
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(physicsConverter, particleTracer, "Provides transformed transport fields to", "memory/NETCDF")
-Rel(physicsConverter, fileSystem, "Reads/writes pathway files to", "NETCDF")
+Rel(physicsConverter, dataManager, "Provides converted flow-field data to", "Python object")
+Rel(physicsConverter, particleTracer, "Provides converted transport flow-field data to", "Python object")
+Rel(dataManager, fileSystem, "Reads/writes converted flow-field data to", "NETCDF")
 
-Rel(flowSystem, formatConverter, "Provides flow-field data to ", "NETCDF")
-
+Rel( formatConverter, flowSystem, "reads flow-field input data from", "NETCDF")
 
 SHOW_LEGEND()
 @enduml

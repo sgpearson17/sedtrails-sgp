@@ -1,44 +1,53 @@
 @startuml SedtrailContainer
 !include ./c4/C4_Container.puml
 
-title SedTRAILS Container Diagram
+title sedTRAILS Container Diagram
 scale 2
+' LAYOUT_LANDSCAPE()
 
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
-Person(analyst, "Analyst", "Postprocesses and visualize simulation outputs")
+Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 
 System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){ 
-    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the position of sand particles (x,y,t) in a costal system")
-    Container(transportConverter, "Transport Converter", "Python", "An application that converts processes transport flow-field data to compatible formats and physical units.")
+    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
+
+    Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
+
+    Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
-    Container(cache, "Simulation Caching and State Tracker", "Python", "Keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
+    Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
+    Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-    Container(connectivityNetworkSys, "Connectivity Network Application", "Python", "Tools for connectivity network analysis")
-    Container(statisticsSys, "Statistical Analysis Application", "Python", "Tools for various statistical analysis")
-    
-    Rel(transportConverter, sedtrailsTracer, "Provides transformed transport data to")
-    Rel(sedtrailsTracer, pathwayVisualizer, "Provides pathways to", "NETCDF")
-    Rel(sedtrailsTracer, cache,  "uses")
-    Rel(transportConverter, cache,  "uses")
+    Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
+ 
+    Rel(transportConverter, sedtrailsTracer, "provides converted flow-field data to", "Python object")
+
+    Rel(cache, sedtrailsTracer, "tracks simulation states and outputs, and provides cached flow-field data", "Python object")
+    Rel(cache, transportConverter, "access state of converted transport field-data in", "Python object")
+
+    Rel(configInterface, transportConverter, "provides configuration for physics convertions to", "Python object")
+    Rel(configInterface, sedtrailsTracer, "provides configuration for", "Python object")
+    Rel(sedtrailsTracer, dataManager, "provides output pathways data to", "Python object")
+
+    Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
+    Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any") 
+
+    Rel(dataManager, pathwayVisualizer, "provides particle pathway data to", "NETCDF, Python")
 }
-
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
-
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
-Rel(sedtrailsTracer, fileSystem, "Writes transformed transport files to", "NETCDF")
-Rel(transportConverter, fileSystem, "Write pathway files to", "NETCDF")
 
-Rel(modeler, sedtrailsTracer, "Defines simulation parameters and outputs for", "Configuration file")
-Rel(connectivityNetworkSys, sedtrailsTracer, "Accesses simulation outputs from", "NETCDF")
-Rel(statisticsSys, sedtrailsTracer, "Accesses simulation outputs from", "NETCDF")
-Rel(analyst, pathwayVisualizer, "Creates visualizations of sand pathways using", "Python")
-Rel(analyst, connectivityNetworkSys, "Post-processes simulation outputs in", "Any")
-Rel(analyst, statisticsSys, "Post-processes simulation outputs in", "Any")
+Rel(dataManager, fileSystem, "read/writes files to", "NETCDF")
 
-Rel(modeler, flowSystem, "Produces flow-field data using", "Any")
-Rel(flowSystem, transportConverter, "Provides flow-field data to ", "NETCDF")
+Rel(modeler, configInterface, "efines simulation parameters and outputs for", "Configuration file")
 
+Rel(analyst, pathwayVisualizer, "creates visualizations of sand pathways using", "Python")
+Rel(analyst, analystApp, "post-processes simulation outputs in", "Any")
+Rel(analystApp, fileSystem, "reads simulation outputs and writes analysis results", "Any")
+
+Rel(modeler, flowSystem, "produces flow-field data using", "Any")
+Rel(transportConverter, flowSystem, "reads flow-field data from", "NETCDF")
 
 SHOW_LEGEND()
 @enduml

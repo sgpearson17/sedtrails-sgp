@@ -1,0 +1,40 @@
+@startuml SedtrailComponentsAnalysis
+!include ./c4/C4_Component.puml
+
+' LAYOUT_LANDSCAPE()
+
+title SedTRAILS: Component Diagram for Simulation Analysis Application
+scale 2
+
+Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
+
+
+
+SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
+
+Container_Boundary(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses"){
+
+    Component(fileReader, "NetCDF Reader", "Python", "Reads SedTRAILS simulation outputs")
+    Component(fileWriter, "Results Writer", "Python", "Writes analysis results to files")
+    Component(statistics, "Statistics Module", "Python", "Tools for statistical analysis")
+    Component(connectivity, "Connectivity Network Module", "Python", "Tools for connectivity network analysis")
+    Component(cli, "CLI/GUI ?", "Python", "User interface for the application")
+
+    Rel(fileReader, statistics, "provides simulation data to", "Python object")
+    Rel(fileReader, connectivity, "provides simulation data to", "Python object")
+    Rel(connectivity, fileWriter, "provides results to", "Python object")
+    Rel(statistics, fileWriter, "provides results to", "Python object")
+}
+
+' Can we asume that  the connectivity and statistics modules can use the same data format/type
+
+Rel(fileReader, fileSystem, "Reads simulation output files from", "NETCDF")
+Rel(fileWriter, fileSystem , "Write analysis results to", "NETCDF")
+Rel(analyst, cli, "post-process simulation data using", "?")
+Rel(cli, statistics, "access analysis tools",)
+Rel(cli, connectivity, "access analysis tools",)
+
+
+SHOW_LEGEND()
+@enduml
+
