@@ -9,16 +9,22 @@ Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 
 System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){ 
-    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
+    Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An parallel application that computes the current and future position of sand particles (x,y,t) in a costal system")
 
     Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
 
-    Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+    Container(transportConverter, "Transport Converter", "Python", "An parallel application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of sand particle pathways.")
-    Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
+    Container(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state, and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs")
     Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
     Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
+
+    Container(processingTimeTracker, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
+    Rel(processingTimeTracker, transportConverter, "access start/end processing times for", "Python object")
+
+    Rel(processingTimeTracker, sedtrailsTracer, "access start/end processing times for", "Python object")
+    
  
     Rel(transportConverter, sedtrailsTracer, "provides converted flow-field data to", "Python object")
 
@@ -39,11 +45,10 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(dataManager, fileSystem, "read/writes files to", "NETCDF")
-
-Rel(modeler, configInterface, "efines simulation parameters and outputs for", "Configuration file")
+Rel(modeler, configInterface, "Defines simulation configurations and outputs for", "YAML, Configuration file")
 
 Rel(analyst, pathwayVisualizer, "creates visualizations of sand pathways using", "Python")
-Rel(analyst, analystApp, "post-processes simulation outputs in", "Any")
+Rel(analyst, analystApp, "post-processes simulation outputs in", "Terminal")
 Rel(analystApp, fileSystem, "reads simulation outputs and writes analysis results", "Any")
 
 Rel(modeler, flowSystem, "produces flow-field data using", "Any")
