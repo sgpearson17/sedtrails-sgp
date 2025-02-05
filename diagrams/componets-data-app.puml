@@ -44,6 +44,8 @@ Rel(cache, logWriter, "Provides processing logs to", "Python object")
 
 Rel(transportConverter, simulBuffer, "provides converted flow-field data to", "XArray")
 Rel(particleTracer, simulBuffer, "provides output pathway data to", "XArray")
+Rel(particleTracer, logBuffer, "provides processing time estimations to", "Python object")
+
 Rel(cache, simulBuffer, "provides simulation state data to", "XArray")
 
 Rel(fileReader, cache, "provides simulation chached data to", "XArray")
