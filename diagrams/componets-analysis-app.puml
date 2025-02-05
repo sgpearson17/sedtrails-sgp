@@ -18,10 +18,10 @@ Container_Boundary(analystApp, "Simulation Analysis Application", "Python", "An 
     Component(fileWriter, "Results Writer", "Python", "Writes analysis results to files")
     Component(statistics, "Statistics Module", "Python", "Tools for statistical analysis")
     Component(connectivity, "Connectivity Network Module", "Python", "Tools for connectivity network analysis")
-    Component(cli, "CLI/GUI ?", "Python", "User interface for the application")
+    Component(cli, "CLI", "Python, Typer", "Exposes analys tools  via command line interface")
 
     Rel(fileReader, statistics, "provides simulation data to", "Python object")
-    Rel(fileReader, connectivity, "provides simulation data to", "Python object")
+    Rel(fileReader, connectivity, "provides simulation data to", "Python object")   
     Rel(connectivity, fileWriter, "provides results to", "Python object")
     Rel(statistics, fileWriter, "provides results to", "Python object")
 }
