@@ -34,7 +34,7 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
 
     Rel(transportConverter, dataManager, "provides converted flow-field data to", "Python object") 
     Rel(cache, dataManager, "provides simulation states, and retrieves cached data via", "Any") 
-    ' Rel(cache, transportConverter, "provides chached flow-field files to", "NETCDF")
+
     Rel(dataManager, pathwayVisualizer, "provides pathway data to", "NETCDF, Python")
 }
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
