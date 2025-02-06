@@ -11,14 +11,14 @@ Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop app
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 
 Container_Boundary(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files"){
-    Component(configReader, "Configuration Reader", "Python", "Reads simulation configuration files and provides configurations to other components")
-    Component(configValidator, "Configuration Validator", "Python", "Validates simulation configuration files")
-    Rel(configReader, configValidator, "provides file content to", "Python object")
+    Component(configController, "Configuration Controller", "Python", "Reads simulation configuration files, applies default configuration values, and provides configurations to other components")
+    Component(configValidator, "Validator", "YAML", "Validates simulation configuration files against SedTRAILS configuration schema")
+    Rel(configController, configValidator, "provides file content to", "Python object")
 }
 
-Rel(modeler, configReader, "Defines simulation parameters and outputs for", "Plain text, Configuration file")
-Rel(configReader, particleTracer, "provides cofigurations to", "Python object")
-Rel(configReader, transportConverter, "provides cofigurations to", "Python object")
+Rel(modeler, configController, "Defines simulation parameters and outputs for", "YAML, Configuration file")
+Rel(configController, particleTracer, "provides cofigurations to", "Python object")
+Rel(configController, transportConverter, "provides cofigurations to", "Python object")
 
 SHOW_LEGEND()
 @enduml
