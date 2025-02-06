@@ -6,7 +6,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Connectivity Network Application
-scale 2
+scale 1.5
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
