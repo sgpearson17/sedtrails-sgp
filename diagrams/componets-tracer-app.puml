@@ -6,7 +6,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Lagrangian Particle Tracer
-scale 2
+scale 1.5
 
 ' terminilogy:
 ' pathway: a collection of particle positions and properties at different time steps    

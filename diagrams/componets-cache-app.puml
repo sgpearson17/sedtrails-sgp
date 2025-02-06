@@ -4,7 +4,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Simulation Caching and State Tracker
-scale 2
+scale 1.5
 
 Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
 

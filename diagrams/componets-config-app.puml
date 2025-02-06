@@ -4,7 +4,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Simulation Configuration Interface
-scale 2
+scale 1.5
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")

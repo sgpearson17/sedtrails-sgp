@@ -4,7 +4,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Data Management Module
-scale 2
+scale 1.5
 
 Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
 

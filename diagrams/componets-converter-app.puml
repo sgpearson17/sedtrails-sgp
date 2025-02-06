@@ -4,7 +4,7 @@
 ' LAYOUT_LANDSCAPE()
 
 title SedTRAILS: Component Diagram for Transport Converter
-scale 2
+scale 1.5
 
 ' SHALL THIS ALSO IMPLEMENT PARALLEL PROCESSING?
 
