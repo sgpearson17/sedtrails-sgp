@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sedtrails"
+version = "0.0.1"
+dependencies = [
+]
+requires-python = ">=3.13"
+authors = [
+  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
+  {name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl"},
+  {name = "Johan Reys", email = "johan.reyns@deltares.nl"},
+]
+maintainers = [
+  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"}
+]
+description = "Sediment TRAnsport vIsualization and Lagrangian Simulator"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E.*"]
+keywords = ["sediment", "analysis"]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Programming Language :: Python"
+]
+
+[project.optional-dependencies]
+cli = [
+  "typer",
+]
+dev = [
+    "pytest",
+    "flake8",
+]
+
+[project.urls]
+Homepage = "https://github.com/sedtrails/sedtrails"
+Documentation = "https://readthedocs.org"
+Repository = "https://github.com/sedtrails/sedtrails.git"
+"Bug Tracker" = "https://github.com/sedtrails/sedtrails/issues"
+Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
+
+[project.scripts]
