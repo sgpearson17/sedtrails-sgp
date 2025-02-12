@@ -1,2 +1,8 @@
 out/
 .DS_Store
+
+
+# Python
+venv/
+__pycache__/
+dist/
