@@ -6,7 +6,13 @@ authors:
     email: N.Pannozzo@tudelft.nl
     orcid: 'https://orcid.org/0000-0002-8082-9251'
     affiliation: Delft University of Technology
-    
+
+  - family-names: Shafiei
+    given-names: Hassan
+    email: h.shafiei@tudelft.nl
+    orcid: 'https://orcid.org/0000-0000-0000-0000'
+    affiliation: Delft University of Technology
+
   - family-names: van Westen
     given-names: Bart
     email: Bart.vanWesten@deltares.nl
@@ -27,7 +33,7 @@ authors:
 
 cff-version: 1.2.0
 keywords: 
-  - awesome
+  - awesome-test
   - software
 message: If you use this software, please cite it using these metadata.
 title: SedTRAILS

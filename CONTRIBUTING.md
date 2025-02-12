@@ -1,70 +1,116 @@
 # Contributing Guidelines
 
-[In this document shall describe how you would like others to contribute to your code and what code of conduct shall they follow to avoid conflicts and misunderstandings during the collaboration process.]
+Any kind of contribution to **SedTRAILS** is welcome, from a simple comment or a question, to a full fledged [pull request](https://help.github.com/articles/about-pull-requests/). 
 
-## Installation for Developers
-[Describe the steps  that *developer* should follow to install the source code and set up a development environment for each of the intended platforms (e.g. Windows 10, macOS, etc.).]
+A contribution can be associated with the following cases:
 
-**Requirements** 
-- [List the software and/or technologies on which the code depends, and add hyperlinks to the sources whenever possible.]
-- [State any relevant hardware requirements.]
+- You have a question.
+- You think you may have found a bug, including unexpected behavior.
+- You want to make changes to the code base to fix a bug, make improvements, add a new functionality, or to update the documentation.
+- You want to improve SedTRAILS's documentation
 
-#### [For Patform A]
+The figure below summarizes the workflow our team follow for developing SedTRAILS, we encourage contributors to adopt it whenever possible. The sections below outlines the steps to make a contribution to SedTRAILS for each of the aforementioned cases.
 
-[List and describe each step required to set up a development environment and install the source code. Use a description/example format.] [For example:]
+![sedtrails development workflow](docs/img/sedtrails-workflow.png)
 
-[1. Create and activate a virtual environment using `virtualenv`]
+## A.  You have a question
 
-```bash
-[$ virtualenv ./myvenv]
-[$ source ./myvenv/bin/activate]
-```
+1. Use the search functionality [here](https://github.com/sedtrails/sedtrails/issues) to see if someone already filed the same issue.
+1. If your issue search did not yield any relevant results, open a new issue.
+1. Apply the "Question" label. Additionally, apply other labels when relevant.
 
-[2. Install dependencies ]
-```bash
-[$ pip install -r requirements.txt]
-```
+## B. You think you may have found a bug
 
-## Types of Contributions
+1. Use the search functionality [here](https://github.com/sedtrails/sedtrails/issues) to see if someone already filed the same issue.
+1. If your issue search did not yield any relevant results, open a new issue and provide enough information to understand the cause and the context of the problem. Depending on the issue, you may also want to include:
+    - the [SHA hashcode](https://help.github.com/articles/autolinked-references-and-urls/#commit-shas) of the commit that is causing your problem
+    - some identifying information (name and version number) for dependencies you're using
+    - information about the operating system
 
-A contribution can be one of the following cases:
+## C. You want to make changes to the code base
 
-[List all ways you want others to contribute with the code. Below is a list of typical cases as examples:]
+SedTRAILS is been developed for **Python 3.11**
+
+### Announce your plan
+
+1. (**important**) Announce your plan to the rest of the community *before you start working*. This announcement should be in the form of a (new) issue on the Github repository.
+2. (**important**) Wait until a consensus is reached about your idea being a good idea.
+
+
+### Set up a local development environment to work on your changes
+
+If you are a part of the SedTRAILS team and have write access to the SedTRAILS GitHub repository, skip to the subsection [Develop your contribution](CONTRIBUTING.md#develop-your-contribution). If you are a first-time contributor, follow the below steps:
+
+1. Go to the [SedTRAILS GitHub repository](https://github.com/sedtrails/sedtrails) and click on 'Fork'. This will create a copy of the SedTRAILS repository in your GitHub account. 
+            
+1. Clone the project to your local computer:
+        
+    ```bash
+    git clone git@github.com:<your-username>/sedtrails.git
+    ```
+
+1. Change the directory
+
+    ```bash
+    cd sedtrails
+    ```
+
+1. Add the upstream repository
+
+    ```bash
+    git remote add upstream https://github.com/sedtrails/sedtrails.git
+    ```  
+
+1. Now, `git remote -v` will show two remote repositories named:
+
+    * `upstream`, which refers to the SedTRAILS repository 
+    * `origin`, which refers to your personal fork
+
+### Develop your contribution
+
+1. Create a branch of the latest commit on the `dev` branch to work on your feature.
+
+    ```bash
+    git switch dev
+    git checkout -b my-feature
+    ```  
+
+2. If you are contributing via a fork, make sure to pull in changes from the 'upstream' repository to stay up to date with the `main` branch while working on your feature branch. Follow the instructions [here](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-repository-for-a-fork) and [here](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork).
+
+3. Set up a development environment on your computer by installing SedTRAILS in development mode with the following command: (Consider using a virtual environment for this purpose.)
+
+    ```bash
+    # On the root of the repository:
+    pip install -e .[dev]
+    ```
     
-1. [you have a question;]
-2. [you think you may have found a bug (including unexpected behaviour);]
-3. [you want to make some changes to the code base (e.g. to fix a bug, to add a new feature, to update 4. documentation).]
+4. Set up your code editor to follow [PEP 8](https://peps.python.org/pep-0008/) (remove trailing white space, no tabs, etc.). Check your source code with [flake8](https://flake8.pycqa.org/en/latest/).
 
-[The sections below outline the steps in each case.]
+5. Make sure the existing tests pass by running `pytest` from the root of the repository. 
 
-## Questions
-    
-[Edit the section accordingly, though the text below is generic and a common practice]
-1. use the search functionality `[here](<link-to-issues-page>)` to see if someone already filed the same issue;
-2. if your issue search did not yield any relevant results, make a new issue;
-3. apply the "Question" label; apply other labels when relevant.
+6. Write tests for any new lines of code you add. 
 
-## Find Bugs
+7. Include in-code documentation in form of comments and docstrings. Use the [numpydoc](https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard) documentation style.
 
-If you think you may have found a bug:
+8. Update the user/developer documentation if relevant. Undocumented contributions will not be merged.
 
-1. use the search functionality `[here](<link-to-issues-page>)` to see if someone already filed the same issue;
-2. if your issue search did not yield any relevant results, make a new issue, making sure to provide enough information to the rest of the community to understand the cause and context of the problem. Depending on the issue, you may want to include:
-    - the [SHA hashcode](https://help.github.com/articles/autolinked-references-and-urls/#commit-shas) of the commit that is causing your problem;
-    - some identifying information (name and version number) for dependencies you're using;
-    - information about the operating system;
-    - detailed steps to reproduce the bug.
-3. apply relevant labels to the newly created issue.
+### Submitting your contribution
 
-## Changes to Source Code: fix bugs and add features
+1. Push your feature branch to (your fork of) the SedTRAILS GitHub repository.
 
-1. (important) announce your plan to the rest of the community before you start working. This announcement should be in the form of a (new) issue;
-2. (important) wait until some consensus is reached about your idea is a good idea;
-3. if needed, fork the repository to your own Github profile and create your feature branch out of the latest master commit. While working on your feature branch, make sure to stay up to date with the master branch by pulling in changes;
-4. make sure the existing tests still work;
-5. add your tests (if applicable);
-6. update or expand the documentation;
-7. push your feature branch to (your fork of) this repository on GitHub;
-8. create the pull request, e.g. following the instructions [here](https://docs.github.com/en/github/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
+1. Create a pull request, for an example, following the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
 
-> If you feel like you have a valuable contribution to make, but you don't know how to write or run tests for it or create the documentation: don't let this discourage you from making the pull request; we can help you! Just go ahead and submit the pull request, but keep in mind that you might be asked to append additional commits to your pull request.
+
+## D. You want to improve the SedTRAILS documentation
+
+We use Sphinx and Markdown to write documentation for the SedTRAILS. The root of the documentation is the `docs/` directory.
+
+1. [Announce your plan.](#announce-your-plan)
+1. Follow the same steps to set up a development environment for [making changes to the code base](#set-up-a-local-development-environment-to-work-on-your-changes).
+1. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirments.txt` (Sphnix will also be installed).
+1. Update the documentation using Markdown. If unfamiliar with writing Markdown for MyST consult their [guides and documentation](https://myst-parser.readthedocs.io/en/latest/syntax/optional.html)
+1. Make sure your contributions are built without errors. Go to the `docs` directory in the terminal with `cd docs/`. Then, build the documentation using `make html`.
+1. [Submit your contribution](#submitting-your-contribution) for review.
+
+
+> In case you feel you've made a valuable contribution, but you don't know how to write or run tests for it, or how to generate the documentation; don't let this discourage you from making the pull request. We can help you! Just go ahead and submit the pull request. But keep in mind that you might be asked to append additional commits to your pull request.
