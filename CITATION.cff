@@ -2,10 +2,10 @@
 ---
 authors: 
   -
-    family-names: Doe
-    given-names: John
-    email: j.doe@tudelft.nl
-    orcid: 'https://orcid.org/0000-0000-0000-0000'
+    family-names: Pannozzo
+    given-names: Natascia
+    email: N.Pannozzo@tudelft.nl
+    orcid: 'https://orcid.org/0000-0002-8082-9251'
     affiliation: Delft University of Technology
 cff-version: 1.2.0
 keywords: 
