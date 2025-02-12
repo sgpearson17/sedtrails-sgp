@@ -1,24 +1,36 @@
 # YAML 1.2
 ---
 authors: 
-  -
-    family-names: Doe
-    given-names: John
-    email: j.doe@tudelft.nl
-    orcid: 'https://orcid.org/0000-0000-0000-0000'
+  - family-names: Pannozzo
+    given-names: Natascia
+    email: N.Pannozzo@tudelft.nl
+    orcid: 'https://orcid.org/0000-0002-8082-9251'
     affiliation: Delft University of Technology
-  -
-    family-names: van Westen
+    
+  - family-names: van Westen
     given-names: Bart
     email: Bart.vanWesten@deltares.nl
     orcid: 'https://orcid.org/0000-0001-7903-6062'
     affiliation: Deltares
+
+  - family-names: Pearson
+    given-names: Stuart Grant
+    email: s.g.pearson@tudelft.nl
+    orcid: 'https://orcid.org/0000-0002-3986-4469'
+    affiliation: Delft University of Technology
+    
+  - family-names: Reyns	
+    given-names: Johan
+    email: johan.reyns@deltares.nl
+    orcid: 'https://orcid.org/0000-0002-0849-1532'
+    affiliation: Deltares/IHE Delft
+
 cff-version: 1.2.0
 keywords: 
   - awesome
   - software
 message: If you use this software, please cite it using these metadata.
-title: Awesome Code
-version: '1.0'
+title: SedTRAILS
+version: '0.1'
 license: MIT
 ...
