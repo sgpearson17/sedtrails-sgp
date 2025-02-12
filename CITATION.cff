@@ -7,6 +7,12 @@ authors:
     email: j.doe@tudelft.nl
     orcid: 'https://orcid.org/0000-0000-0000-0000'
     affiliation: Delft University of Technology
+  -
+    family-names: van Westen
+    given-names: Bart
+    email: Bart.vanWesten@deltares.nl
+    orcid: 'https://orcid.org/0000-0001-7903-6062'
+    affiliation: Deltares
 cff-version: 1.2.0
 keywords: 
   - awesome
