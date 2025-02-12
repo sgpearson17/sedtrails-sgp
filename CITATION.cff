@@ -2,6 +2,13 @@
 ---
 authors: 
   -
+
+    family-names: Pannozzo
+    given-names: Natascia
+    email: N.Pannozzo@tudelft.nl
+    orcid: 'https://orcid.org/0000-0002-8082-9251'
+    affiliation: Delft University of Technology
+
     family-names: Pearson
     given-names: Stuart Grant
     email: s.g.pearson@tudelft.nl
