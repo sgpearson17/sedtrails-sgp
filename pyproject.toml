@@ -14,7 +14,8 @@ authors = [
   {name = "Johan Reys", email = "johan.reyns@deltares.nl"},
 ]
 maintainers = [
-  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"}
+  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
+  {name = "Johan Reys", email = "johan.reyns@deltares.nl"},
 ]
 description = "Sediment TRAnsport vIsualization and Lagrangian Simulator"
 readme = "README.md"
