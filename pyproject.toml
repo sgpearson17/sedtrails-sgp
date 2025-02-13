@@ -12,6 +12,7 @@ authors = [
   {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
   {name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl"},
   {name = "Johan Reys", email = "johan.reyns@deltares.nl"},
+  # Add more authors as needed
 ]
 maintainers = [
   {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
