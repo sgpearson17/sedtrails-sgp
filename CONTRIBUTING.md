@@ -100,17 +100,34 @@ If you are a part of the SedTRAILS team and have write access to the SedTRAILS G
 
 1. Create a pull request, for an example, following the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
 
+### Using keywords in issues and pull requests
+
+- If your pull request can fix an issue, you would want to link that pull request to the specific issue it addresses. By doing so, when your pull request is merged, the issue will be closed automatically. To do this, you need to use one of the following keywords in your pull request's description or in a commit message:
+  - `close`
+  - `closes`
+  - `closed`
+  - `fix`
+  - `fixes`
+  - `fixed`
+  - `resolve`
+  - `resolves`
+  - `resolved`
+- Note that your pull request must be on the default branch. You can read more about it [here](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue) on GitHub Docs.
 
 ## D. You want to improve the SedTRAILS documentation
 
 We use Sphinx and Markdown to write documentation for the SedTRAILS. The root of the documentation is the `docs/` directory.
 
-1. [Announce your plan.](#announce-your-plan)
-1. Follow the same steps to set up a development environment for [making changes to the code base](#set-up-a-local-development-environment-to-work-on-your-changes).
-1. Install the dependencies in `docs/requirements.txt` using `pip install -r docs/requirments.txt` (Sphnix will also be installed).
-1. Update the documentation using Markdown. If unfamiliar with writing Markdown for MyST consult their [guides and documentation](https://myst-parser.readthedocs.io/en/latest/syntax/optional.html)
-1. Make sure your contributions are built without errors. Go to the `docs` directory in the terminal with `cd docs/`. Then, build the documentation using `make html`.
-1. [Submit your contribution](#submitting-your-contribution) for review.
+- [Contributing Guidelines](#contributing-guidelines)
+  - [A.  You have a question](#a--you-have-a-question)
+  - [B. You think you may have found a bug](#b-you-think-you-may-have-found-a-bug)
+  - [C. You want to make changes to the code base](#c-you-want-to-make-changes-to-the-code-base)
+    - [Announce your plan](#announce-your-plan)
+    - [Set up a local development environment to work on your changes](#set-up-a-local-development-environment-to-work-on-your-changes)
+    - [Develop your contribution](#develop-your-contribution)
+    - [Submitting your contribution](#submitting-your-contribution)
+    - [Using keywords in issues and pull requests](#using-keywords-in-issues-and-pull-requests)
+  - [D. You want to improve the SedTRAILS documentation](#d-you-want-to-improve-the-sedtrails-documentation)
 
 
 > In case you feel you've made a valuable contribution, but you don't know how to write or run tests for it, or how to generate the documentation; don't let this discourage you from making the pull request. We can help you! Just go ahead and submit the pull request. But keep in mind that you might be asked to append additional commits to your pull request.
