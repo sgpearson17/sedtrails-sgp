@@ -16,7 +16,9 @@ release = '0.0.1'
 
 extensions = [
     'myst_parser',
-    "sphinx_rtd_theme"]
+    "sphinx_rtd_theme",
+    "sphinx.ext.autodoc",
+    ]
 
 myst_enable_extensions = [
     "amsmath",
