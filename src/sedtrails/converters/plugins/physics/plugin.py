@@ -19,3 +19,5 @@ class BasePhysicsPlugin(ABC):
         Computes the physics of particles in the simulation based on particle types.
         """
         pass
+
+    # additional methods can be added here
