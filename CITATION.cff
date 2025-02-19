@@ -31,6 +31,12 @@ authors:
     orcid: 'https://orcid.org/0000-0002-0849-1532'
     affiliation: Deltares/IHE Delft
 
+  - family-names: Aguilera Chaves
+    given-names: Monica
+    email: monica.aguilerachaves@deltares.nl
+    orcid: 'https://orcid.org/0000-0000-0000-0000'
+    affiliation: Deltares
+
 cff-version: 1.2.0
 keywords: 
   - awesome-test
