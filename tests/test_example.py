@@ -1,9 +1,9 @@
 """
 This is an example of how to use the pytest framework to test your code.
+For more examples and information, see the pytest documentation: https://docs.pytest.org/
 """
 
 import pytest
-
 
 ##########################
 # Code to be tested
