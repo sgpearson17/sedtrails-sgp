@@ -1,0 +1,11 @@
+name: sedtrails
+
+dependencies:
+  - python=3.13
+  - numpy
+  - pandas
+  - matplotlib
+  - xarray
+  - typer
+  - pytest
+  - flake8
