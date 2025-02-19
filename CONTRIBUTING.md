@@ -11,7 +11,7 @@ A contribution can be associated with the following cases:
 
 The figure below summarizes the workflow our team follow for developing SedTRAILS, we encourage contributors to adopt it whenever possible. The sections below outlines the steps to make a contribution to SedTRAILS for each of the aforementioned cases.
 
-![sedtrails development workflow](docs/img/sedtrails-workflow.png)
+![sedtrails development workflow](docs/_static/img/sedtrails-workflow.png)
 
 ## A.  You have a question
 

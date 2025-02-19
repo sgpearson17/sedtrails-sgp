@@ -1,0 +1,22 @@
+name: Deploy Sphinx Documentation
+
+on:
+    workflow_dispatch:
+    push:
+      branches: main
+
+permissions:
+  contents: write
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+    - id: deployment
+      uses: sphinx-notes/pages@v3
