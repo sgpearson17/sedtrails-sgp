@@ -28,3 +28,9 @@ documentation for details.
    :caption: DEVELOPER DOCUMENTATION
 
    developer/contribution
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API DOCUMENTATION
+
+   api-refs
