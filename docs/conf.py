@@ -7,8 +7,8 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'SedTRAILS'
-copyright = '2025, Manuel G. Garcia'
-author = 'Manuel G. Garcia'
+copyright = '2025, SedTRAILS Team'
+author = 'SedTRAILS Team'
 release = '0.0.1'
 
 # -- General configuration ---------------------------------------------------
