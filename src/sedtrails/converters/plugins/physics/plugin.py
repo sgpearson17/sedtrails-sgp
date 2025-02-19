@@ -10,6 +10,9 @@ class BasePhysicsPlugin(ABC):
     Abstract base class for physics plugins.
     """
 
+    def __init__(self):
+        return None
+
     @abstractmethod
     def convert(self, *args, **kwargs):
         """
