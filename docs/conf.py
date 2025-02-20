@@ -14,9 +14,16 @@ release = '0.0.1'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path('..', 'src').resolve()))
+
 extensions = [
     'myst_parser',
-    "sphinx_rtd_theme"]
+    "sphinx_rtd_theme",
+    "sphinx.ext.autodoc",
+    ]
 
 myst_enable_extensions = [
     "amsmath",
