@@ -1,1 +1,1 @@
-# A place for the Data Management Module
+"""A directory for the Data Management Module"""

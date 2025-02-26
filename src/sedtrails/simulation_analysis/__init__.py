@@ -1,1 +1,1 @@
-# A place for the Simulation Snalysis Application
+"""A directory for the Simulation Snalysis Application"""

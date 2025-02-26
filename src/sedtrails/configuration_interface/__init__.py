@@ -1,1 +1,1 @@
-# A place for the Simulation Analysis Interface
+"""A directory for the Simulation Analysis Interface"""

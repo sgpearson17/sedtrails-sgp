@@ -1,1 +1,1 @@
-# A place for the Pathway Visualizer
+"""A directory for the Pathway Visualizer"""

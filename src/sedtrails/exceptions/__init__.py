@@ -1,3 +1,1 @@
-"""
-Custom exceptions go in this directory.
-"""
+"""Custom exceptions go in this directory."""
