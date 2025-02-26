@@ -1,5 +1,8 @@
 name: sedtrails
 
+channels:
+  - conda-forge
+  
 dependencies:
   - python=3.13
   - numpy
@@ -12,3 +15,7 @@ dependencies:
   - sphinx=8.2.0
   - myst-parser=4.0.1
   - sphinx-rtd-theme
+  - pyyaml
+  - jsonschema
+  - re
+  - typing
