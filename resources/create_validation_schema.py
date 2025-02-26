@@ -166,10 +166,10 @@ def md_table_to_json_schema_template(md_filepath, json_schema_filepath):
         json.dump(json_schema, f, indent=2)
 
 
-md_file = r"D:\OSS\github_repos\sedtrailsdev\resources\sedtrails_config.md"
+md_file = r"./sedtrails_config.md"
 
 # Save to a JSON file
-output_file = r"D:\OSS\github_repos\sedtrailsdev\resources\config_schema.json"
+output_file = r"./config_schema.json"
 json_schema = md_table_to_json_schema_template(md_file,output_file)
 
 

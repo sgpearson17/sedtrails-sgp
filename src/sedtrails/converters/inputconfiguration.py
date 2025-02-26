@@ -7,7 +7,7 @@ class YAMLConfigValidator:
     """
     A class to load, validate, and process a YAML configuration file based on a JSON Schema.
 
-    This updated version uses the draft 2020-12 standard and supports default directives
+    This version uses the draft 7 standard and supports default directives
     for folder names. For any property whose default is given as a dictionary with a "$ref",
     a "transform" (currently supporting "dirname"), and optional "prefix" or "suffix", the directive
     is resolved using the referenced value from the root configuration.
@@ -143,7 +143,7 @@ class YAMLConfigValidator:
 
     def load_and_validate(self) -> Dict[str, Any]:
         """
-        Loads the YAML file, validates it against the JSON schema (draft 2020-12),
+        Loads the YAML file, validates it against the JSON schema,
         applies default values (including processing default folder directives), and
         returns the resulting configuration as a nested dictionary.
 
