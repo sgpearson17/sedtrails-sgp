@@ -2,5 +2,5 @@
 Validator
 =========
 
-Validates simuation configuration files against the SedTRAILS configuration schema.
+Validates simulation configuration files against the SedTRAILS configuration schema.
 """
