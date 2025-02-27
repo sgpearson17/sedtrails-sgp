@@ -1,5 +1,5 @@
 """
 Log Writer
 ==========
-Writes log files produced by the SedTrails Particle Tracer Syste. 
+Writes log files produced by the SedTRAILS Particle Tracer System.
 """
