@@ -47,6 +47,6 @@ Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
 [project.scripts]
 
 [tool.pytest.ini_options]
-testpaths = tests
-pythonpath = src
-
+addopts = [
+    "--import-mode=importlib",
+]
