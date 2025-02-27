@@ -1,6 +1,6 @@
 """
 Log Data Buffer
 ===============
-Temporarly stores chuncks of logs in memorey, while they 
+Temporarily stores chunks of logs in memory, while they 
 wait to be written to a log file.
 """
