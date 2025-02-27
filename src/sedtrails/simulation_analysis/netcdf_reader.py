@@ -1,5 +1,5 @@
 """
-NetCDF Rearder
+NetCDF Reader
 ==============
 
 Reads SedTRAILS simulation outputs
