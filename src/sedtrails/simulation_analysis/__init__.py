@@ -1,1 +1,1 @@
-"""A directory for the Simulation Snalysis Application"""
+"""A directory for the Simulation Analysis Application"""
