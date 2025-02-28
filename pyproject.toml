@@ -6,6 +6,17 @@ build-backend = "hatchling.build"
 name = "sedtrails"
 version = "0.0.1"
 dependencies = [
+   "jsonschema",
+   "numpy",
+   "pyyaml",
+   "pandas",
+   "matplotlib",
+   "xarray",
+   "typer",
+   "sphinx=8.2.0",
+   "myst-parser=4.0.1",
+   "sphinx-rtd-theme",
+   "pytest"  
 ]
 requires-python = ">=3.12"
 authors = [

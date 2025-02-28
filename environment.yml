@@ -17,5 +17,4 @@ dependencies:
   - sphinx-rtd-theme
   - pyyaml
   - jsonschema
-  - re
-  - typing
+  

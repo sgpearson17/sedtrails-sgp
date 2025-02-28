@@ -1,13 +1,26 @@
 import os
-import yaml
+import tempfile
+
 import pytest
+import yaml
+
 from sedtrails.converters.inputconfiguration import YAMLConfigValidator
 
 
 class TestYAMLConfigValidator:
     def setup_method(self):
-        # Create an instance with a dummy file path (not used for direct method tests)
-        self.validator = YAMLConfigValidator("dummy_path")
+        # Create a temporary dummy schema file for tests that do not require a real schema.
+        self.dummy_schema = {}
+        self.dummy_schema_file = tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".yml"
+        )
+        yaml.dump(self.dummy_schema, self.dummy_schema_file)
+        self.dummy_schema_file.close()
+        self.validator = YAMLConfigValidator(self.dummy_schema_file.name)
+
+    def teardown_method(self):
+        # Remove the temporary dummy schema file.
+        os.remove(self.dummy_schema_file.name)
 
     # -----------------------------
     # Tests for _resolve_json_pointer
@@ -41,14 +54,9 @@ class TestYAMLConfigValidator:
             "$ref": "#/path",
             "transform": "dirname",
             "prefix": "pre_",
-            "suffix": "_suf"
+            "suffix": "_suf",
         }
         result = self.validator._resolve_default_directive(directive, root_data)
-        # Expected steps:
-        #   1. Resolve "$ref" → "/a/b/c.txt"
-        #   2. Transform "dirname" → os.path.dirname("/a/b/c.txt") gives "/a/b"
-        #   3. Apply prefix → "pre_/a/b"
-        #   4. Append suffix and normalize → os.path.normpath("pre_/a/b_suf")
         expected = os.path.normpath("pre_" + os.path.dirname("/a/b/c.txt") + "_suf")
         assert result == expected
 
@@ -83,39 +91,35 @@ class TestYAMLConfigValidator:
                         "$ref": "#/path",
                         "transform": "dirname",
                         "prefix": "pre_",
-                        "suffix": "_suf"
-                    }
+                        "suffix": "_suf",
+                    },
                 },
-                "name": {
-                    "type": "string",
-                    "default": "default_name"
-                },
+                "name": {"type": "string", "default": "default_name"},
                 "nested": {
                     "type": "object",
                     "properties": {
-                        "value": {
-                            "type": "string",
-                            "default": "nested_default"
-                        }
-                    }
-                }
+                        "value": {"type": "string", "default": "nested_default"}
+                    },
+                },
             }
         }
-        # Data missing "folder", "name", and nested.default.
+        # Data missing "folder", "name", and nested.value.
         data = {"path": "/a/b/c.txt", "nested": {}}
         self.validator._apply_defaults(schema, data, data)
-        expected_folder = os.path.normpath("pre_" + os.path.dirname("/a/b/c.txt") + "_suf")
+        expected_folder = os.path.normpath(
+            "pre_" + os.path.dirname("/a/b/c.txt") + "_suf"
+        )
         assert data["folder"] == expected_folder
         assert data["name"] == "default_name"
         assert data["nested"]["value"] == "nested_default"
 
     # -----------------------------
-    # Tests for load_and_validate
+    # Tests for validate_yaml
     # -----------------------------
-    def test_load_and_validate_success(self, tmp_path):
+    def test_validate_yaml_success(self, tmp_path):
         # Define a schema that requires "path" and provides defaults for "name" and "folder"
         schema = {
-            "$schema": "http://json-schema.org/draft-07/schema",
+            "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
@@ -126,45 +130,47 @@ class TestYAMLConfigValidator:
                         "$ref": "#/path",
                         "transform": "dirname",
                         "prefix": "pre_",
-                        "suffix": "_suf"
-                    }
-                }
+                        "suffix": "_suf",
+                    },
+                },
             },
-            "required": ["path"]
+            "required": ["path"],
         }
-        # Create a temporary YAML file containing only "path"
+        # Create a temporary schema file with the desired schema.
+        schema_file = tmp_path / "schema.yml"
+        schema_file.write_text(yaml.dump(schema))
+        # Create a temporary YAML configuration file containing only "path"
         config_data = {"path": "/a/b/c.txt"}
-        file_path = tmp_path / "config.yml"
-        file_path.write_text(yaml.dump(config_data))
-        # Instantiate the validator, set the schema, and load the config.
-        validator_instance = YAMLConfigValidator(str(file_path))
-        validator_instance.schema = schema
-        config = validator_instance.load_and_validate()
-
-        expected_folder = os.path.normpath("pre_" + os.path.dirname("/a/b/c.txt") + "_suf")
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(yaml.dump(config_data))
+        # Instantiate the validator with the schema file.
+        validator_instance = YAMLConfigValidator(str(schema_file))
+        config = validator_instance.validate_yaml(str(config_file))
+        expected_folder = os.path.normpath(
+            "pre_" + os.path.dirname("/a/b/c.txt") + "_suf"
+        )
         assert config["path"] == "/a/b/c.txt"
         assert config["name"] == "default_name"
         assert config["folder"] == expected_folder
 
-    def test_load_and_validate_validation_error(self, tmp_path):
-        # Schema requires "path", so if it's missing the validator should error.
+    def test_validate_yaml_validation_error(self, tmp_path):
+        # Schema requires "path", so if it's missing, validation should error.
         schema = {
-            "$schema": "http://json-schema.org/draft-07/schema",
+            "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
-            "properties": {
-                "path": {"type": "string"}
-            },
-            "required": ["path"]
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
         }
+        # Create a temporary schema file.
+        schema_file = tmp_path / "schema.yml"
+        schema_file.write_text(yaml.dump(schema))
         # Create a YAML file missing the required "path" property.
         config_data = {"name": "some_name"}
-        file_path = tmp_path / "config_invalid.yml"
-        file_path.write_text(yaml.dump(config_data))
-        validator_instance = YAMLConfigValidator(str(file_path))
-        validator_instance.schema = schema
-
+        config_file = tmp_path / "config_invalid.yml"
+        config_file.write_text(yaml.dump(config_data))
+        validator_instance = YAMLConfigValidator(str(schema_file))
         with pytest.raises(ValueError) as excinfo:
-            validator_instance.load_and_validate()
+            validator_instance.validate_yaml(str(config_file))
         assert "YAML file validation error" in str(excinfo.value)
 
     # -----------------------------
@@ -181,7 +187,6 @@ class TestYAMLConfigValidator:
         # Test export with writing to a file.
         output_file = tmp_path / "schema_output.yml"
         yaml_str_2 = self.validator.export_schema_to_yaml(str(output_file))
-        # Read file and compare.
         file_content = output_file.read_text()
         loaded_schema_file = yaml.safe_load(file_content)
         assert loaded_schema_file == schema
