@@ -1,12 +1,8 @@
 @startuml SedtrailComponentsTransportConverter
 !include ./c4/C4_Component.puml
 
-' LAYOUT_LANDSCAPE()
-
 title SedTRAILS: Component Diagram for Transport Converter
 scale 1.5
-
-' SHALL THIS ALSO IMPLEMENT PARALLEL PROCESSING?
 
 Person(modeler, "Modeler", "wants to track sand particles in a costal system")
 
@@ -27,7 +23,7 @@ Container_Boundary(transportConverter, "Transport Converter"){
     Rel(configInterface, physicsConverter, "provides configurations for physics convertions (e.g. method selection)", "Python object")
 }
 
-Container(processingTimeTracker, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
+Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outrputs, errors and computational performance metrics")
 
 Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
 
@@ -37,7 +33,7 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(physicsConverter, dataManager, "Provides converted flow-field data to", "Python object")
-Rel(processingTimeTracker, physicsConverter, "access start/end times of routines in", "Python object")
+Rel(sedtrailsLogger, physicsConverter, "access start/end times of routines in", "Python object")
 
 Rel(physicsConverter, particleTracer, "Provides converted transport flow-field data to", "Python object")
 Rel(dataManager, fileSystem, "Reads/writes converted flow-field data to", "NETCDF")
