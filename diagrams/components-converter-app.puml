@@ -1,8 +1,6 @@
 @startuml SedtrailComponentsTransportConverter
 !include ./c4/C4_Component.puml
 
-' LAYOUT_LANDSCAPE()
-
 title SedTRAILS: Component Diagram for Transport Converter
 scale 1.5
 
