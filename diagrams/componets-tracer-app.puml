@@ -44,7 +44,7 @@ Container_Boundary(sedtrailsTracer, "Parallel Lagrangian Particle Tracer"){
     Component(positionCalculator, "Particle Position Calculator", "Fortran/Python", "Calculates particle positions at next time step based on flow-field values using Runge-Kutta 4 solver")
     Component(propertyInterpolator, "Particle Property Interpolator", "Python", "Interpolates particle properties at new position from scalar fields (e.g., depth, concentration)​")
 
-    Component(difusionLibrary, "Difusion Library", "Python", "A library of methods to perform difusion calculations​")
+    Component(difusionLibrary, "Diffusion Library", "Python", "A library of methods to perform diffusion calculations​")
     
     Component(flowDataRetriever, "Flow Field Data Retriever", "Python", "Retrieves flow-field data from the transport converter or the simulation chaching and state tracker")
 

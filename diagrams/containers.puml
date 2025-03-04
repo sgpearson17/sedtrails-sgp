@@ -20,7 +20,7 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
 
     Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
 
-    Container(processingTimeTracker, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
+    Container(processingTimeTracker, "Processing Performance Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
     Rel(processingTimeTracker, transportConverter, "access start/end processing times for", "Python object")
 
     Rel(processingTimeTracker, sedtrailsTracer, "access start/end processing times for", "Python object")
