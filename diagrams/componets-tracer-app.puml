@@ -18,11 +18,12 @@ Person(modeler, "Modeler", "Tracks sand particles in a costal system")
 
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 Container(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files")
-Container(cache, "Simulation Caching and State Tracker", "Python", "Keeps track of simulation state and cache simulation outputs to allow restarts, and reusing simulation outputs")
+
+Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation output, allow restarts, and reusing simulation inputs and outputs")
+
 Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-Container(processingTimeTracker, "Processing Time Tracker", "Python", "Estimates processing times of various routines in the Lagrangian Particle Tracer ​for computational performance analysis, and provides access to the results​")
-
+Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outrputs, errors and computational performance metrics")
 
 Container_Boundary(sedtrailsTracer, "Parallel Lagrangian Particle Tracer"){ 
     Component(seedingTool, "Particle Seeding Tool", "Python", "Computes initial particle positions (x,y) and  particle's release times (t) using various particle release strategies")
@@ -83,9 +84,9 @@ Rel(seedingTool, processingTimeInterface, "provides processing start/end times t
 Rel(particleCheker, processingTimeInterface, "provides processing start/end times to", "Python object")
 Rel(propertyInterpolator, processingTimeInterface, "provides processing start/end times to", "Python object")
 Rel(positionCalculator, processingTimeInterface, "provides processing start/end times to", "Python object")
-Rel(processingTimeTracker, processingTimeInterface,  "access processing start/end times using", "Python object")
+Rel(sedtrailsLogger, processingTimeInterface,  "access processing start/end times using", "Python object")
 
-Rel(processingTimeTracker, dataManager, "provides procesing times estimations to", "Python object")
+Rel(sedtrailsLogger, dataManager, "provides procesing times estimations to", "Python object")
 Rel(flowDataRetriever, transportConverter, "requests converted flow field data to", "Python object")
 
 Rel(cache, positionCalculator, "Provides cached flow-field data", "Python object")

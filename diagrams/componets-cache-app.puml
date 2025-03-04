@@ -3,28 +3,22 @@
 
 ' LAYOUT_LANDSCAPE()
 
-title SedTRAILS: Component Diagram for Simulation Caching and State Tracker
+title SedTRAILS: Component Diagram for Simulation Cache and Recovery Application
 scale 1.5
-
-Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "An application that computes the current and future position of sand particles (x,y,t) in a costal system")
 
 Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Pacticle Tracer System")
 
-Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outrputs, errors and computational performance metrics")
 
-Container_Boundary(cache, "Simulation Caching and State Tracker", "Python", "Tracks simulation state and recovers simulation outputs to allow restarts, and reusing simulation inputs and outputs"){
-    Component(logger, "Processing Logger", "Python", "Logs the states of processing routines in the SedTRAILS Particle Tracer System")
-    Component(cacheData, "Cached Data Manager", "Python", "Manage cached simulation data for restarts and reuse")
+Container_Boundary(cache, "Simulation Caching and Recovery", "Python", "Provides functionality to recover simulation output, allow restarts, and reusing simulation inputs and outputs"){
+    Component(caching, "Caching", "Python", "Implements a checkpoint strategy to record processing routines in the SedTRAILS Particle Tracer System")
+    Component(recovery, "Recovery", "Python", "Recovers the state of a simulation data after a crash or restart")
 }
 
-Rel(logger, transportConverter, "access state of converted flow-field data for a simulation", "Python object")
-Rel(logger, sedtrailsTracer, "access states of simulation outpus from", "Python object")
-Rel(logger, cacheData , "request, if required, cached data to", "Python object")
+Rel(recovery, dataManager , "request, if required, cached data to", "Python object")
 
 Rel(dataManager, cacheData, "provides cached transport field-data and simulation outputs to", "Python object")
-Rel(cacheData, transportConverter, "provides cached transport field-data to", "Python object")
-Rel(cacheData, sedtrailsTracer, "provides cached simulation outputs to", "Python object")
-Rel(logger, dataManager, "stores log files via", "Python object")
+Rel(caching, sedtrailsLogger, "stores log files via", "Python object")
 
 SHOW_LEGEND()
 @enduml
