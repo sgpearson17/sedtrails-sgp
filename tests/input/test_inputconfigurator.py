@@ -4,7 +4,7 @@ import tempfile
 import pytest
 import yaml
 
-from sedtrails.converters.inputconfiguration import YAMLConfigValidator
+from sedtrails.configuration_interface.validator import YAMLConfigValidator
 
 
 class TestYAMLConfigValidator:
