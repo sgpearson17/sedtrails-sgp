@@ -13,8 +13,8 @@ dependencies = [
    "matplotlib",
    "xarray",
    "typer",
-   "sphinx=8.2.0",
-   "myst-parser=4.0.1",
+   "sphinx==8.2.0",
+   "myst-parser==4.0.1",
    "sphinx-rtd-theme",
    "pytest"  
 ]
