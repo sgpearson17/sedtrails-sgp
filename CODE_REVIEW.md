@@ -17,7 +17,7 @@ When reviewing code contributions keep in mind the following checklist. Not all 
 - [ ] Follow Single Responsibility principle?
 - [ ] Are different errors handled correctly?
 - [ ] Are errors and warnings logged?
-    Magic values avoided?
+- [ ] Magic values avoided? (constant values without context)
 - [ ] No unnecessary comments?
 - [ ] Minimal nesting used?
 
