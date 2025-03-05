@@ -12,7 +12,7 @@ When reviewing code contributions keep in mind the following checklist. Not all 
     - [ ] Are docstrings using Numpy style?
     - [ ] Unecessary whitespace removed?
 
-Best Practices
+## Best Practices
 
     - [ ] Follow Single Responsibility principle?
     - [ ] Are different errors handled correctly?
@@ -21,25 +21,25 @@ Best Practices
     - [ ] No unnecessary comments?
     - [ ] Minimal nesting used?
 
-Maintainability
+## Maintainability
 
     - [ ] Is the code easy to read?
     - [ ] Is the code not repeated (DRY Principle)?
     - [ ] Is the code method/class not too long?
 
-Architecture
+## Architecture
 
     - [ ] Are separations of concerned followed?
     - [ ] Relevant Parameters are configurable?
 
-Testing
+## Testing
 
     - [ ] Do unit tests pass?
     - [ ] Have edge cases been tested?
     - [ ] Are invalid inputs validated?
     - [ ] Are inputs sanitised?
 
-Documentation
+## Documentation
 
     - [ ] Is there sufficient documentation?
     - [ ] Is the ReadMe.md file up to date?
