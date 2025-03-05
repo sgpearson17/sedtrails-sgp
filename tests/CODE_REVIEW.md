@@ -44,3 +44,4 @@ Documentation
     - [ ] Is there sufficient documentation?
     - [ ] Is the ReadMe.md file up to date?
 
+> Adapted from: https://www.codereviewchecklist.com
