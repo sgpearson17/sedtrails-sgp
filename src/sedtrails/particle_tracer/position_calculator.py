@@ -40,9 +40,6 @@ class ParticlePositionCalculator:
             Coordinates of grid nodes.
         grid_u, grid_v : array_like, shape (N,)
             Velocity components at the grid nodes.
-        fnconn : array_like, shape (3, n_faces) or (n_faces, 3)
-            Face–node connectivity defining triangles. If shape is (3, n_faces),
-            it is transposed to (n_faces, 3).
         igeo : int, optional
             Option flag. If igeo==1, grid velocities are adjusted for geographic
             coordinates (i.e. scaled by cosine(latitude) and a geofactor).
