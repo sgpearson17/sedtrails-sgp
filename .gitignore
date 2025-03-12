@@ -5,6 +5,7 @@ __pycache__/
 
 # Data files
 *.nc
+*.dat
 
 # C extensions
 *.so
