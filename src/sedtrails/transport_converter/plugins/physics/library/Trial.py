@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Feb 19 14:26:35 2025
-
-@author: aguilera
-"""
-
 # Practice Soulsby, migrating from Matlab to Python
 
 import numpy as np
@@ -24,12 +17,12 @@ theta_max_A = np.array([[0.5, 0.7, 0.9, 0.1],
     [0.4, 0.5, 0.3, 0.5],
     [0.3, 0.5, 0.1, 0.2]])
 
-theta_cr_A = 0.2 
+theta_cr_A = 1
 
 w_s_t = 0.1
 
 u_star_m = np.array([[0.5, 0.5, 0.5, 0.5], 
-    [0.5, 0.5, 0.5, 0.5],
+    [0.5, 0.5, 0.5, 0.5], 
     [0.5, 0.5, 0.5, 0.5]]) # I am not sure if it is a matrix or not
 
 u_star_max = np.array([[0.08, 0.08, 0.08, 0.08], 
@@ -89,7 +82,7 @@ for ii in range(0,theta_max_A.shape[0]):
             R[ii][jj] = Rs[ii][jj]
         else: # otherwise use Rb (for bed load)
             R[ii][jj] = Rb[ii][jj]
-# print(Rb)
-# print(Rs)
-# print(R)
+print(Rb)
+print(Rs)
+print(R)
 # print(B)
