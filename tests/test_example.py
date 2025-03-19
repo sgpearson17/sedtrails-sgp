@@ -5,14 +5,15 @@ For more examples and information, see the pytest documentation: https://docs.py
 
 import pytest
 
+
 ##########################
 # Code to be tested
 ##########################
 def func(x):
-    """
-    This function increments the input by 1
-    """
-    return x + 1
+                                """
+                                This function increments the input by 1
+                                """
+                                return x + 1
 
 
 ##########################
@@ -21,6 +22,7 @@ def func(x):
 # Fitures are values that are passed to test functions
 # Fixtures are defined using the pytest.fixture decorator
 
+
 # This is a global fixture, available to all tests in this file
 @pytest.fixture
 def input_value():
@@ -28,12 +30,13 @@ def input_value():
 
 
 ##########################
-# Tests can be grouped into classes 
-# This is not required, but can be useful for organising 
+# Tests can be grouped into classes
+# This is not required, but can be useful for organising
 # tests that are related to the same function/class/file
 ##########################
 
-class TestFunc():
+
+class TestFunc:
     """Test the func function"""
 
     def test_func_pass(self, input_value):
@@ -66,4 +69,3 @@ class TestFunc():
 
 # To runs specific tests, you can specify the test file, class, and function:
 # pytest tests/test_example.py::TestFunc::test_func_pass
-
