@@ -1,60 +1,175 @@
-import time
-import yaml
+from pathlib import Path
+
 import typer
 
+app = typer.Typer(
+    help="Sedtrails: Configure, run, and analyze sediment particle tracking."
+)
 
-class SedtrailsCLI:
-    def __init__(self):
-        # Create the Typer app instance
-        self.app = typer.Typer()
-        # Register CLI commands
-        self.register_commands()
 
-    def load_config(self, config_path: str) -> dict:
-        """
-        Loads configuration from a YAML file.
-        """
-        try:
-            with open(config_path, "r") as file:
-                config = yaml.safe_load(file)
-            return config
-        except Exception as e:
-            typer.echo(f"Error loading config from {config_path}: {e}")
-            raise typer.Exit(1)
+# Subcommand to load and validate a YAML configuration file.
+@app.command("load-config")
+def load_config(
+    config_file: Path = typer.Option(
+        "sedtrails.yml",
+        "--config",
+        "-c",
+        help="Path to the SedTRAILS configuration file.",
+    ),
+) -> dict:
+    """
+    Load and validate a YAML configuration file using an existing validator.
+    Returns a dictionary with the valid configuration settings.
 
-    def register_commands(self):
-        @self.app.command()
-        def run_loop(config: str = "config.yml"):
-            """
-            Runs a time loop based on configuration from a YAML file.
-            The YAML file should include 'interval' (seconds) and 'iterations'.
-            """
-            conf = self.load_config(config)
-            # default to 1 second if not specified
-            interval = conf.get("interval", 1)
-            # default to 10 iterations if not specified
-            iterations = conf.get("iterations", 10)
-            typer.echo(f"Starting time loop with {iterations} iterations and \
-                       {interval} seconds interval.")
-            for i in range(iterations):
-                typer.echo(f"Iteration {i + 1}")
-                time.sleep(interval)
-            typer.echo("Time loop completed.")
+    Parameters
+    ----------
+      config_file : Path
+         Path to the YAML configuration file.
 
-        @self.app.command()
-        def close():
-            """
-            Closes the application gracefully.
-            """
-            typer.echo("Closing the application. Goodbye!")
-            raise typer.Exit()
+    Returns
+    -------
+      dict
+         A dictionary with the validated configuration settings.
 
-    def run(self):
-        # Run the Typer application, which parses command line arguments and
-        # executes commands
-        self.app()
+    """
+    try:
+        typer.echo(f"Loading and validating configuration from '{config_file}'...")
+        # Assume the existence of a ConfigValidator class in a separate module.
+        # from config_validator import ConfigValidator
+        # config = ConfigValidator.validate(config_file)
+        # Dummy dictionary result for demonstration purposes:
+        config = {"setting1": "value1", "setting2": "value2"}
+        typer.echo("Configuration validated successfully:")
+        typer.echo(str(config))
+        return config
+    except Exception as e:
+        typer.echo(f"Error loading configuration: {e}")
+        raise typer.Exit(code=1)
+
+
+# Subcommand to run a simulation; it also validates the configuration.
+@app.command("run-simulation")
+def run_simulation(
+    config_file: Path = typer.Option(
+        "sedtrails.yml",
+        "--config",
+        "-c",
+        help="Path to the SedTRAILS configuration file.",
+    ),
+    output_file: Path = typer.Option(
+        "sedtrails.nc",
+        "--output",
+        "-o",
+        help="Path to the output SedTRAILS netCDF file.",
+    ),
+):
+    """
+    Validate the configuration and run a simulation based on it.
+    The simulation results are written to a netCDF file.
+
+    Parameters
+    ----------
+      config_file : Path
+         Path to the SedTRAILS configuration file.
+      output_file : Path
+         Path to the output SedTRAILS netCDF file.
+
+    """
+    # First, load and validate the configuration.
+    try:
+        typer.echo(f"Validating configuration from '{config_file}'...")
+        # from config_validator import ConfigValidator
+        # config = ConfigValidator.validate(config_file)
+        config = {
+            "setting1": "value1",
+            "setting2": "value2",
+        }  # Dummy config for example
+        typer.echo("Configuration validated successfully.")
+    except Exception as e:
+        typer.echo(f"Error validating configuration: {e}")
+        raise typer.Exit(code=1)
+
+    # Run the simulation with the validated configuration.
+    try:
+        typer.echo("Running simulation...")
+        pass
+        typer.echo(f"Simulation complete. Output saved to '{output_file}'.")
+    except Exception as e:
+        typer.echo(f"Error running simulation: {e}")
+        raise typer.Exit(code=1)
+
+
+# Subcommand to perform statistical analysis on the simulation results.
+@app.command("analyze")
+def analyze(
+    input_file: Path = typer.Option(
+        "sedtrails.nc",
+        "--input",
+        "-i",
+        help="Input SedTRAILS netCDF file containing particle tracks.",
+    ),
+    output_file: Path = typer.Option(
+        "analysis.nc",
+        "--output",
+        "-o",
+        help="Output SedTRAILS netCDF file containing statistical and connectivity results.",
+    ),
+):
+    """
+    Read the simulation netCDF file (if it exists) and perform a statistical analysis on the results.
+    The analysis is saved to a netCDF file.
+
+    Parameters
+    ----------
+      input_file : Path
+         Path to the input SedTRAILS netCDF file containing particle tracks.
+      output_file : Path
+         Path to the output SedTRAILS netCDF file containing statistical and connectivity results.
+    """
+    try:
+        typer.echo(f"Performing statistical analysis on '{input_file}'...")
+        pass
+        typer.echo(f"Analysis complete. Results saved to '{output_file}'.")
+    except Exception as e:
+        typer.echo(f"Error performing analysis: {e}")
+        raise typer.Exit(code=1)
+
+
+# Subcommand to perform network analysis on the simulation results.
+@app.command("network-analysis")
+def network_analysis(
+    input_file: Path = typer.Option(
+        "sedtrails.nc",
+        "--input",
+        "-i",
+        help="Input netCDF file containing particle tracking results.",
+    ),
+    output_file: Path = typer.Option(
+        "sedtrails.nc",
+        "--output",
+        "-o",
+        help="Path to the output SedTRAILS netCDF file containing statistical and connectivity results.",
+    ),
+):
+    """
+    Perform a network analysis on the simulation results.
+    The network analysis results are written to a netCDF file.
+
+    Parameters
+    ----------
+      input_file : Path
+         Path to the input SedTRAILS netCDF file containing particle tracks.
+      output_file : Path
+         Path to the output SedTRAILS netCDF file containing statistical and connectivity results.
+    """
+    try:
+        typer.echo(f"Performing network analysis on '{input_file}'...")
+        pass
+        typer.echo(f"Network analysis complete. Results saved to '{output_file}'.")
+    except Exception as e:
+        typer.echo(f"Error performing network analysis: {e}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
-    cli = SedtrailsCLI()
-    cli.run()
+    app()
