@@ -61,3 +61,4 @@ Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
 addopts = [
     "--import-mode=importlib",
 ]
+pythonpath= "src"
