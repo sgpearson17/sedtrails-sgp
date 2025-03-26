@@ -8,8 +8,6 @@ from numpy import ndarray
 from typing import List, Optional
 
 
-
-
 @dataclass
 class Time:
     """
@@ -45,7 +43,6 @@ class Position:
     time: Time
 
 
-
 @dataclass
 class ParticleTrace:
     """"
@@ -76,9 +73,6 @@ class Particle(ABC):
     trace: Optional[ParticleTrace] = None
 
 
-
-
-
 @dataclass
 class Mud(Particle):
     """
@@ -91,6 +85,8 @@ class Mud(Particle):
     """
 
     particle_velocity: float
+    #TODO: define the physical properties of the passive particles
+    physical_properties: dict = {}
 
 
 @dataclass
@@ -105,6 +101,8 @@ class Sand(Particle):
     """
 
     particle_velocity: float
+    #TODO: define the physical properties of the passive particles
+    physical_properties: dict = {}
 
 
 @dataclass
@@ -119,6 +117,8 @@ class Passive(Particle):
     """
 
     particle_velocity: float
+    #TODO: define the physical properties of the passive particles
+    physical_properties: dict = {}
 
 
 @dataclass
@@ -172,7 +172,6 @@ class Physics:
     """
     # TODO: define which attributes are needed for the Physics class
     pass
-
 
 
 if __name__ == "__main__":
