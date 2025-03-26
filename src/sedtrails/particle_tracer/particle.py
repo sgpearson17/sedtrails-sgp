@@ -2,7 +2,7 @@
 Classes for representing internal data structures of the particle tracer.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC
 from numpy import ndarray
 from typing import List, Optional
@@ -20,9 +20,13 @@ class Time:
     """
 
     time: float
+
+    def __post_init__(self):
+        if not isinstance(self.time, (int, float)):
+            raise TypeError(f"Expected 'time' to be a float or int, got {type(self.time).__name__}")
     
 
-@ dataclass
+@dataclass
 class Position:
     """
     Class representing the position of a Particle on a particular time.
@@ -43,13 +47,26 @@ class Position:
     time: Time
 
 
+    def __post_init__(self):
+        if not isinstance(self.x, (int, float)):
+            raise TypeError(f"Expected 'x' to be a float or int, got {type(self.x).__name__}")
+        if not isinstance(self.y, (int, float)):
+            raise TypeError(f"Expected 'y' to be a float or int, got {type(self.y).__name__}")
+        if not isinstance(self.time, Time):
+            raise TypeError(f"Expected 'time' to be an instance of Time, got {type(self.time).__name__}")
+
+
 @dataclass
 class ParticleTrace:
     """"
     Represents a collection of particle positions and values over time.
     """
 
-    positions: List[Position] = []
+    positions: List[Position] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not all(isinstance(pos, Position) for pos in self.positions if len(self.positions) > 0):
+            raise TypeError("All positions must be instances of the Position class.")
 
     def current_position(self):
         """
@@ -70,7 +87,13 @@ class Particle(ABC):
     """
 
     name: str
-    trace: Optional[ParticleTrace] = None
+    trace: Optional[ParticleTrace] = field(default=None, init=False)
+
+    def __post_init__(self):
+        if not isinstance(self.name, str):
+            raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
+        if self.trace is not None and not isinstance(self.trace, ParticleTrace):
+            raise TypeError(f"Expected 'trace' to be an instance of ParticleTrace, got {type(self.trace).__name__}")
 
 
 @dataclass
@@ -86,7 +109,11 @@ class Mud(Particle):
 
     particle_velocity: float
     #TODO: define the physical properties of the passive particles
-    physical_properties: dict = {}
+    physical_properties: dict = field(default_factory=dict)
+    
+    def __post_init__(self):
+        # TODO: validate data types once the physical properties are defined
+        pass
 
 
 @dataclass
@@ -102,7 +129,11 @@ class Sand(Particle):
 
     particle_velocity: float
     #TODO: define the physical properties of the passive particles
-    physical_properties: dict = {}
+    physical_properties: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+    # TODO: validate data types once the physical properties are defined
+        pass
 
 
 @dataclass
@@ -118,7 +149,11 @@ class Passive(Particle):
 
     particle_velocity: float
     #TODO: define the physical properties of the passive particles
-    physical_properties: dict = {}
+    physical_properties: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        # TODO: validate data types once the physical properties are defined
+        pass
 
 
 @dataclass
@@ -162,6 +197,10 @@ class InterpolatedValue:
     sediment_concentration: float
     wave_velocity: ndarray
 
+    def __post_init__(self):
+        # TODO: validate data types once the physical properties are defined
+        pass
+
 
 class Physics:
     """
@@ -173,8 +212,14 @@ class Physics:
     # TODO: define which attributes are needed for the Physics class
     pass
 
+    def __post_init__(self):
+        # TODO: validate data types once the physical properties are defined
+        pass
+
 
 if __name__ == "__main__":
-    mud = Mud(name="Mud-1", particle_velocity=0.1)
+    p = Particle(name="Test Particle")
+    # s = Sand(name="Test Sand Particle", particle_velocity=0.5)
+    # print(s)
 
     
