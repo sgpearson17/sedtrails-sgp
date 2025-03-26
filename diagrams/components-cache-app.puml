@@ -17,7 +17,7 @@ Container_Boundary(cache, "Simulation Caching and Recovery", "Python", "Provides
 
 Rel(recovery, dataManager , "request, if required, cached data to", "Python object")
 
-Rel(dataManager, cacheData, "provides cached transport field-data and simulation outputs to", "Python object")
+
 Rel(caching, sedtrailsLogger, "stores log files via", "Python object")
 
 SHOW_LEGEND()
