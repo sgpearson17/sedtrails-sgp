@@ -177,6 +177,9 @@ class TestYAMLConfigValidator:
     # Tests for export_schema_to_yaml: file contents
     # -----------------------------
     def test_export_schema_to_yaml(self, tmp_path):
+        """
+        Test yaml file contents to see if a yaml file with the correct input schema is saved to the file system
+        """
         schema = {"test": "value"}
         self.validator.schema = schema
         # Test export without writing to a file.
@@ -186,16 +189,19 @@ class TestYAMLConfigValidator:
 
         # Test export with writing to a file.
         output_file = tmp_path / "schema_output.yml"
-        yaml_str_2 = self.validator.export_schema_to_yaml(str(output_file))
+        yaml_str_exported = self.validator.export_schema_to_yaml(str(output_file))
         file_content = output_file.read_text()
         loaded_schema_file = yaml.safe_load(file_content)
         assert loaded_schema_file == schema
-        assert yaml_str_2 == file_content
+        assert yaml_str_exported == file_content
 
     # -----------------------------
     # Tests for export_schema_to_yaml: file creation
     # -----------------------------
     def test_yaml_file_creation(self, tmp_path):
+        """
+        Test if a yaml file is saved to the file saved
+        """
         # Define the data to be written to the YAML file
         schema = {"test": "value"}
         self.validator.schema = schema
