@@ -7,7 +7,9 @@ runner = CliRunner()
 
 class TestSedtrailsCLI:
     def test_load_config_default(self):
-        # Use default config file name ("sedtrails.yml")
+        """
+        Use default config file name ("sedtrails.yml")
+        """
         result = runner.invoke(app, ["load-config"])
         assert result.exit_code == 0
         assert (
@@ -18,7 +20,9 @@ class TestSedtrailsCLI:
         assert "setting1" in result.stdout
 
     def test_load_config_custom(self):
-        # Pass a custom configuration file name
+        """
+        Pass a custom configuration file name
+        """
         custom_config = "dummy_config.yml"
         result = runner.invoke(app, ["load-config", "--config", custom_config])
         assert result.exit_code == 0
@@ -29,7 +33,9 @@ class TestSedtrailsCLI:
         assert "Configuration validated successfully" in result.stdout
 
     def test_run_simulation_default(self):
-        # Test run-simulation with default config and output file names.
+        """
+        Test run-simulation with default config and output file names.
+        """
         result = runner.invoke(app, ["run-simulation"])
         assert result.exit_code == 0
         # Ensure it validates configuration and then simulates.
@@ -39,7 +45,9 @@ class TestSedtrailsCLI:
         assert "Simulation complete. Output saved to 'sedtrails.nc'" in result.stdout
 
     def test_run_simulation_custom(self):
-        # Test run-simulation with custom config and output file.
+        """
+        Test run-simulation with custom config and output file.
+        """
         custom_config = "custom_config.yml"
         custom_output = "custom_output.nc"
         result = runner.invoke(
@@ -55,14 +63,18 @@ class TestSedtrailsCLI:
         )
 
     def test_analyze_default(self):
-        # Test the analyze subcommand with default file names.
+        """
+        Test the analyze subcommand with default file names.
+        """
         result = runner.invoke(app, ["analyze"])
         assert result.exit_code == 0
         assert "Performing statistical analysis on 'sedtrails.nc'" in result.stdout
         assert "Analysis complete. Results saved to 'analysis.nc'" in result.stdout
 
     def test_analyze_custom(self):
-        # Test the analyze subcommand with custom input and output file names.
+        """
+        Test the analyze subcommand with custom input and output file names.
+        """
         custom_input = "custom_simulation.nc"
         custom_output = "custom_analysis.nc"
         result = runner.invoke(
@@ -73,7 +85,9 @@ class TestSedtrailsCLI:
         assert f"Analysis complete. Results saved to '{custom_output}'" in result.stdout
 
     def test_network_analysis_default(self):
-        # Test the network-analysis subcommand with default file names.
+        """
+        Test the network-analysis subcommand with default file names.
+        """
         result = runner.invoke(app, ["network-analysis"])
         assert result.exit_code == 0
         assert "Performing network analysis on 'sedtrails.nc'" in result.stdout
@@ -83,7 +97,9 @@ class TestSedtrailsCLI:
         )
 
     def test_network_analysis_custom(self):
-        # Test the network-analysis subcommand with custom file names.
+        """
+        Test the network-analysis subcommand with custom file names.
+        """
         custom_input = "custom_simulation.nc"
         custom_output = "custom_network.nc"
         result = runner.invoke(
