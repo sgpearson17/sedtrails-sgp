@@ -1,0 +1,990 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Configuration Schema",
+  "type": "object",
+  "properties": {
+    "General": {
+      "type": "object",
+      "properties": {
+        "preprocess": {
+          "type": "integer",
+          "default": 1,
+          "description": "1 = pre-process, 0 = use existing files with default names"
+        },
+        "computePathways": {
+          "type": "integer",
+          "default": 1,
+          "description": "(re)run everything = 1, load existing pathways = 0;"
+        },
+        "inputModelType": {
+          "type": "string",
+          "default": "'dfm'",
+          "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis, etc..."
+        },
+        "supportedModelTypes": {
+          "type": "string",
+          "default": "{'dfm','d3d4'}"
+        },
+        "nRuns": {
+          "type": "integer",
+          "default": 1
+        },
+        "displayInputMetadata": {
+          "type": "integer",
+          "default": 0,
+          "description": "display all metadata"
+        },
+        "numScheme": {
+          "type": "string",
+          "default": "'rk4'",
+          "description": "numerical scheme ('rk4' = Runge Kutta 4)"
+        }
+      }
+    },
+    "Folder settings": {
+      "type": "object",
+      "properties": {
+        "inputDir": {
+          "type": "string",
+          "default": "['']",
+          "description": "parent directory containing folders with D-Flow FM model output"
+        },
+        "outputDir": {
+          "type": "string",
+          "default": {"$ref": "#/properties/input_output_directories/properties/inputDir", "transform": "dirname", "suffix": "/../output"},
+          "description": "directory for processed DFM model output (i.e., sedtrails input)"
+        },
+        "sharedDir": {
+          "type": "string",
+          "default": {"$ref": "#/properties/input_output_directories/properties/inputDir", "transform": "dirname", "suffix": "/../share"},
+          "description": "general project setup directory for sedtrails with common files"
+        },
+        "dataDir": {
+          "type": "string",
+          "default": {"$ref": "#/properties/input_output_directories/properties/inputDir", "transform": "dirname", "suffix": "/../data"},
+          "description": "directory containing validation data"
+        }
+      },
+      "required": [
+        "inputDir"
+      ]
+    },
+    "Domain": {
+      "type": "object",
+      "properties": {
+        "useFullModelExtents": {
+          "type": "integer",
+          "default": 1,
+          "description": "use full model domain (1) or only a subset (0)?"
+        },
+        "subset_x": {
+          "type": "number",
+          "default": "[]",
+          "description": "[35000 52000];"
+        },
+        "subset_y": {
+          "type": "number",
+          "default": "[]",
+          "description": "[1000 21000];"
+        },
+        "sedtrailsDomainPol": {
+          "type": "string",
+          "default": "[]",
+          "description": "[setupDir filesep 'WS_exampleBounds.pol'];"
+        },
+        "subset_m": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in m-direction (0=all)"
+        },
+        "subset_n": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in n-direction (0=all)"
+        },
+        "subset_t": {
+          "type": "integer",
+          "default": "49:124",
+          "description": "1:49;"
+        },
+        "subset_t_bed": {
+          "type": "integer",
+          "default": 1,
+          "description": "choose first time step for bed level (i.e. initial bed level)"
+        },
+        "subset_k": {
+          "type": "integer",
+          "default": 0,
+          "description": "grain size fractions (0=all) (NOT YET IMPLEMENTED HERE FOR FM)"
+        },
+        "DFLOW-FM": {
+          "type": "object",
+          "properties": {
+            "supportedSandTransportFormulations": {
+              "type": "string",
+              "default": "{'sedtrails_nc','merged_nc'}"
+            },
+            "fmOutputType": {
+              "type": "string",
+              "default": "'sedtrails_nc'"
+            }
+          }
+        },
+        "Delft3D4": {
+          "type": "object",
+          "properties": {
+            "d3d_nested": {
+              "type": "integer",
+              "default": 0,
+              "description": "is Delft3D model nested? (Y=1, N=0)"
+            },
+            "d3d_nested_polFile": {
+              "type": "string",
+              "default": "[]",
+              "description": "define polygon inside which to include fine nested model and exclude coarser main model"
+            },
+            "d3d_depAvgFlow": {
+              "type": "integer",
+              "default": 1,
+              "description": "use depth-averaged flow from Delft3D?"
+            },
+            "d3d_verticalLayer": {
+              "type": "integer",
+              "default": 1,
+              "description": "vertical sigma or z-layer of model (1 = lowest layer, max = surface)"
+            }
+          }
+        }
+      }
+    },
+    "Time": {
+      "type": "object",
+      "properties": {
+        "startAtModelStart": {
+          "type": "integer",
+          "default": 1,
+          "description": "1= start sedtrails at the starting timestep of the input model; 0=specify start time elsewhere"
+        },
+        "starttime": {
+          "type": "number",
+          "default": -999.0,
+          "description": "[datenum] initial starttime for sedtrails is obviously wrong and needs to be specified elsewhere (or by selecting S.startAtModelStart = 1)"
+        },
+        "runtime": {
+          "type": "number",
+          "default": "12.5/24",
+          "description": "days"
+        },
+        "accelerationfactor": {
+          "type": "number",
+          "default": 1.0,
+          "description": "scaling factor for old sedtrails formulation"
+        },
+        "timestep": {
+          "type": "number",
+          "default": 30.0,
+          "description": "[s] 60 is default for sediment transport"
+        },
+        "freezeFirstTimestep": {
+          "type": "integer",
+          "default": 0,
+          "description": "troubleshooting weird thing where particles don't move in firsttimestep..."
+        }
+      }
+    },
+    "Physics": {
+      "type": "object",
+      "properties": {
+        "Constants": {
+          "type": "object",
+          "properties": {
+            "g": {
+              "type": "number",
+              "default": 9.81,
+              "description": "gravity [m/s^2]"
+            },
+            "vkarman": {
+              "type": "number",
+              "default": 0.4,
+              "description": "von Karman's constant [-]"
+            },
+            "visc_kin": {
+              "type": "number",
+              "default": 1.36e-06,
+              "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rhoW": {
+              "type": "number",
+              "default": 1027.0,
+              "description": "water density [kg/m3] (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rhoS": {
+              "type": "number",
+              "default": 2650.0,
+              "description": "particle density [kg/m3] (quartz)"
+            },
+            "frictionAngle": {
+              "type": "number",
+              "default": 30.0,
+              "description": "friction angle of sediment (30 deg default)"
+            },
+            "diffusioncoefficient": {
+              "type": "number",
+              "default": 0.1,
+              "description": "random walk diffusion coefficient"
+            }
+          }
+        },
+        "Additional bed shear stress": {
+          "type": "object",
+          "properties": {
+            "waves_modifyBedShear": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not modify bed shear stress, 1 = add spatially constant, temporally varying bed shear stress to approximate waves"
+            },
+            "waves_bedShearModFile": {
+              "type": "string",
+              "default": "[]",
+              "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner)"
+            }
+          }
+        },
+        "Bed slope": {
+          "type": "object",
+          "properties": {
+            "bedSlope_calculate": {
+              "type": "integer",
+              "default": 0,
+              "description": "calculate local bedslope in x and y directions"
+            },
+            "bedSlope_dx": {
+              "type": "number",
+              "default": 100.0,
+              "description": "resolution to which bedslope should be reinterpolated"
+            },
+            "bedslope_checkPlot": {
+              "type": "integer",
+              "default": 0,
+              "description": "create a check plot to make sure bedslopes are in the right direction"
+            },
+            "bedSlope_caxisFactor": {
+              "type": "number",
+              "default": 100.0,
+              "description": "factor for tuning colour axis in check plot (i.e., 1/caxisFactor =1/100 => shows slopes of 1/100)"
+            },
+            "bedSlope_alphaBS": {
+              "type": "number",
+              "default": 1.0,
+              "description": "longitudinal bedslope transport effect tuning factor"
+            },
+            "bedSlope_alphaBN": {
+              "type": "number",
+              "default": 1.5,
+              "description": "transverse bedslope transport effect tuning factor"
+            }
+          }
+        }
+      }
+    },
+    "Processes": {
+      "type": "object",
+      "properties": {
+        "flowvel": {
+          "type": "integer",
+          "default": 1,
+          "description": "flow velocities"
+        },
+        "sand": {
+          "type": "integer",
+          "default": 1,
+          "description": "sand transport velocity"
+        },
+        "mud": {
+          "type": "integer",
+          "default": 0,
+          "description": "mud transport velocity"
+        },
+        "bio": {
+          "type": "integer",
+          "default": 0,
+          "description": "biological particle vectors (e.g., larvae, mangrove propagules)"
+        },
+        "lum": {
+          "type": "integer",
+          "default": 0,
+          "description": "fields for luminescence analysis"
+        },
+        "General": {
+          "type": "object",
+          "properties": {
+            "initialParticleFreedom": {
+              "type": "integer",
+              "default": 1,
+              "description": "initial state of particle (0 = trapped, 1 = free) [-]"
+            }
+          }
+        },
+        "Sand": {
+          "type": "object",
+          "properties": {
+            "dTracer": {
+              "type": "number",
+              "default": 0.0002,
+              "description": "grain size of tracer sediment [m]"
+            },
+            "supportedSandTransportFormulations": {
+              "type": "string",
+              "default": "{'soulsby2011','pannozzo','vanwesten'}"
+            },
+            "sandVelFormulation": {
+              "type": "string",
+              "default": "'soulsby2011'",
+              "description": "sand velocity transport formulation (default = soulsby2011)"
+            },
+            "sandVelDefinition": {
+              "type": "string",
+              "default": "{'all','non-linear wave only'}"
+            },
+            "Soulsby 2011": {
+              "type": "object",
+              "properties": {
+                "soulsby2011_bedInteraction": {
+                  "type": "integer",
+                  "default": 0,
+                  "description": "bed interaction module (0 = concrete bed, 1 = bed interaction)"
+                },
+                "dBackground": {
+                  "type": "number",
+                  "default": "[]",
+                  "description": "grain size of background sediment [m]"
+                },
+                "soulsby2011_F0": {
+                  "type": "integer",
+                  "default": 1,
+                  "description": "initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
+                },
+                "soulsby2011_gamma_e": {
+                  "type": "number",
+                  "default": 0.1,
+                  "description": "long-term equilibrium proportion of free particles [-]"
+                },
+                "soulsby2011_theta_s": {
+                  "type": "number",
+                  "default": 0.1,
+                  "description": "transition scale value [-]"
+                },
+                "soulsby2011_b_e": {
+                  "type": "number",
+                  "default": 1.7e-07,
+                  "description": "maximum free-to-trapped transition probability per second [1/s]"
+                },
+                "soulsby2011_mu_d": {
+                  "type": "number",
+                  "default": 0.5,
+                  "description": "dynamic friction coefficient (0.5-1.0) [-]"
+                },
+                "useNearBedVel": {
+                  "type": "integer",
+                  "default": 1,
+                  "description": "(=1) use near-bed velocity as per Soulsby et al (2011) or use depth-averaged velocity instead (=0) % Bart: near-bed current velocity based on eq 1 from https://doi.org/10.1016/j.renene.2017.03.096"
+                },
+                "nearBedVel_Lewis2017": {
+                  "type": "integer",
+                  "default": 1,
+                  "description": "Use Lewis 2017 formulation for computing near-bed velocity"
+                },
+                "near_bed_Uc_z": {
+                  "type": "number",
+                  "default": 0.4,
+                  "description": "Should be improved! Integral of lowest 1m should be taken, now approximated with z = 0.4m"
+                },
+                "near_bed_Uc_alpha": {
+                  "type": "number",
+                  "default": 7.0,
+                  "description": "power law coefficient for near-bed current velocity"
+                },
+                "near_bed_Uc_beta": {
+                  "type": "number",
+                  "default": 0.32,
+                  "description": "bed roughness coefficient for near-bed current velocity"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Barriers": {
+      "type": "object",
+      "properties": {
+        "includeBarriers": {
+          "type": "integer",
+          "default": 0,
+          "description": "include thin dams/permeable structures"
+        },
+        "BarrierPolFile": {
+          "type": "string",
+          "default": "'"
+        }
+      }
+    },
+    "Sources": {
+      "type": "object",
+      "properties": {
+        "General settings": {
+          "type": "object",
+          "properties": {
+            "src_sourceFile": {
+              "type": "string",
+              "default": "[]",
+              "description": "option to specify source file, for repeatability"
+            },
+            "src_class": {
+              "type": "string",
+              "default": "'clusters'",
+              "description": "specify class of source to be used (choose from 'clusters','pointSource','lineSource','regularGrid','densePatch')"
+            },
+            "src_type": {
+              "type": "string",
+              "default": "'instantaneous'",
+              "description": "type of release: 'instantaneous' or 'continuous'"
+            },
+            "src_lifespan": {
+              "type": "number",
+              "default": 9e+99,
+              "description": "[s] life span of particles in seconds (99e9 for non-biological particles)"
+            },
+            "src_releaseinterval": {
+              "type": "number",
+              "default": 7200.0,
+              "description": "[s] release interval in seconds"
+            },
+            "release_start": {
+              "type": "number",
+              "default": -999.0,
+              "description": "[datenum]"
+            },
+            "release_stop": {
+              "type": "number",
+              "default": "S.release_start+1/24",
+              "description": "[datenum]"
+            },
+            "src_pps(1)": {
+              "type": "number",
+              "default": 1.0,
+              "description": "particles per timestep"
+            },
+            "src_pps(2)": {
+              "type": "number",
+              "default": 1.0,
+              "description": "particles per second"
+            },
+            "releaseStartDelay": {
+              "type": "number",
+              "default": "60/60/24",
+              "description": "delay of release start time after simulation start time"
+            },
+            "releaseStopDelay": {
+              "type": "number",
+              "default": "2*60/60/24",
+              "description": "delay of release stop time after simulation start time"
+            }
+          }
+        },
+        "Cluster source": {
+          "type": "object",
+          "properties": {
+            "src_cluster_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file with bounding polygon for cluster analysis"
+            },
+            "src_cluster_zCutoff": {
+              "type": "number",
+              "default": 1.0,
+              "description": "[m] cutoff elevation threshold for cluster analysis"
+            },
+            "src_cluster_xWeight": {
+              "type": "number",
+              "default": 1.0,
+              "description": "relative weight to apply to x-coordinate in cluster analysis"
+            },
+            "src_cluster_yWeight": {
+              "type": "number",
+              "default": 1.0,
+              "description": "relative weight to apply to y-coordinate in cluster analysis"
+            },
+            "src_cluster_zWeight": {
+              "type": "number",
+              "default": 10.0,
+              "description": "relative weight to apply to z-coordinate in cluster analysis (extra weight on z emphasizes similar bathymetric features)"
+            },
+            "src_cluster_k": {
+              "type": "number",
+              "default": 100.0,
+              "description": "number of clusters to create"
+            },
+            "src_cluster_iter": {
+              "type": "number",
+              "default": 40.0,
+              "description": "number of iterations to complete in cluster analysis"
+            },
+            "src_cluster_showCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not show cluster check plots, 1 = show them"
+            },
+            "src_cluster_saveCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not save cluster check plots, 1 = save them"
+            }
+          }
+        },
+        "Point source": {
+          "type": "object",
+          "properties": {
+            "src_pointSource_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file with list of transect end points"
+            },
+            "src_pointSource_points": {
+              "type": "string",
+              "default": "[]",
+              "description": "list of xy coordinates of transect end points"
+            },
+            "src_pointSource_showCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not show cluster check plots, 1 = show them"
+            },
+            "src_pointSource_saveCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not save cluster check plots, 1 = save them"
+            }
+          }
+        },
+        "Line source": {
+          "type": "object",
+          "properties": {
+            "src_lineSource_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file with list of transect end points"
+            },
+            "src_lineSource_endPoints": {
+              "type": "string",
+              "default": "[]",
+              "description": "list of xy coordinates of transect end points"
+            },
+            "src_lineSource_k": {
+              "type": "number",
+              "default": 100.0,
+              "description": "number of source points per transect to create"
+            },
+            "src_lineSource_showCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not show cluster check plots, 1 = show them"
+            },
+            "src_lineSource_saveCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not save cluster check plots, 1 = save them"
+            }
+          }
+        },
+        "Grid source": {
+          "type": "object",
+          "properties": {
+            "src_regularGrid_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file with bounding polygon for cluster analysis"
+            },
+            "src_regularGrid_zCutoff": {
+              "type": "number",
+              "default": 1.0,
+              "description": "[m] cutoff elevation threshold for cluster analysis"
+            },
+            "src_regularGrid_dx": {
+              "type": "number",
+              "default": 100.0,
+              "description": "square grid cells where dx=dy"
+            },
+            "src_regularGrid_dy": {
+              "type": "number",
+              "default": "[]",
+              "description": "square grid cells where dx=dy"
+            },
+            "src_regularGrid_addJitter": {
+              "type": "integer",
+              "default": 0,
+              "description": "move particles from grid centers by a random distance (1=on, 0=off)"
+            },
+            "src_regularGrid_jitterPct": {
+              "type": "number",
+              "default": 0.1,
+              "description": "fraction of grid cell size to jitter by [-]"
+            },
+            "src_regularGrid_showCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not show cluster check plots, 1 = show them"
+            },
+            "src_regularGrid_saveCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not save cluster check plots, 1 = save them"
+            }
+          }
+        }
+      }
+    },
+    "Connectivity": {
+      "type": "object",
+      "properties": {
+        "Connectivity Parameters": {
+          "type": "object",
+          "properties": {
+            "connectivity_autoDefine": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_analyze": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_timeVarying": {
+              "type": "integer",
+              "default": 0,
+              "description": "time-varying adjacency matrix = 1, total adjacency matrix (cumulative across time) = 0"
+            },
+            "connectivity_calculate_moduleBorders": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        },
+        "Plotting": {
+          "type": "object",
+          "properties": {
+            "connectivity_plot": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_network": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_topFractionLinks": {
+              "type": "string",
+              "default": "[]",
+              "description": "plot top fraction of links (e.g., 0.1)"
+            },
+            "connectivity_plot_adjMat": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_netgross": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_nodeMetrics": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_modules": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_plot_moduleBorders": {
+              "type": "integer",
+              "default": 0
+            },
+            "connectivity_adjmat": {
+              "type": "string",
+              "default": "[]"
+            }
+          }
+        },
+        "Connectivity auto-define": {
+          "type": "object",
+          "properties": {
+            "connSetup_useAlphaShape": {
+              "type": "integer",
+              "default": 0,
+              "description": "by default, use convex hull to compute outer polygon (0 or []), otherwise use AlphaShape (1)"
+            },
+            "connSetup_holeThreshold": {
+              "type": "number",
+              "default": 0.0,
+              "description": "Maximum area or volume of interior holes or voids to fill in, specified as a finite, nonnegative scalar."
+            },
+            "connSetup_bufferDist": {
+              "type": "number",
+              "default": 0.0,
+              "description": "buffer distance [m] by which to offset boundaries of polyshape for auto-defining connectivity"
+            },
+            "connSetup_cluster_k": {
+              "type": "number",
+              "default": 5.0,
+              "description": "number of clusters to create"
+            },
+            "connSetup_cluster_iter": {
+              "type": "number",
+              "default": 40.0,
+              "description": "number of iterations to complete in cluster analysis"
+            },
+            "connSetup_showCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not show cluster check plots, 1 = show them"
+            },
+            "connSetup_saveCheckPlots": {
+              "type": "integer",
+              "default": 0,
+              "description": "0 = do not save cluster check plots, 1 = save them"
+            },
+            "connSetup_perimeterPolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file containing perimeter polygon to manually limit extents"
+            },
+            "connSetup_islandsPolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file containing island polygons"
+            },
+            "connectivity_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file containing polygons for connectivity analysis"
+            },
+            "plot_mgmtPolygons_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": "polygons for comparing management cells to connectivity modules"
+            },
+            "connectivity_mergePolygonMode": {
+              "type": "integer",
+              "default": 1,
+              "description": "merge polygons via: 1 = default mode (counting pixels) or 2 = merging nearby polygons"
+            },
+            "connectivity_polygonMerging_distThreshold": {
+              "type": "number",
+              "default": 1.0,
+              "description": "Threshold for grouping polygons [plot units]"
+            },
+            "connectivity_polygonCreator_showCheckPlots": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        }
+      }
+    },
+    "Pathways": {
+      "type": "object",
+      "properties": {
+        "queryPathways": {
+          "type": "integer",
+          "default": 1,
+          "description": "query pathways to/from a given polygon"
+        },
+        "query_polygon": {
+          "type": "string",
+          "default": "[]",
+          "description": "name of polygon to query"
+        },
+        "analyzePathways": {
+          "type": "integer",
+          "default": 0,
+          "description": "analyze pathways = 1; don't analyze pathways = 0;"
+        }
+      }
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "outputtimestep": {
+          "type": "number",
+          "default": 600.0,
+          "description": "[s] 3600 is default for sediment transport"
+        },
+        "storetracks": {
+          "type": "integer",
+          "default": 1,
+          "description": "store full particle tracks"
+        },
+        "storeendpositions": {
+          "type": "integer",
+          "default": 0,
+          "description": "don't store end positions (unnecessary if full track stored)"
+        }
+      }
+    },
+    "Plot Settings": {
+      "type": "object",
+      "properties": {
+        "General": {
+          "type": "object",
+          "properties": {
+            "plot_animation": {
+              "type": "integer",
+              "default": 0,
+              "description": "animate particles? 1=Y / 0=N"
+            },
+            "plot_overview_age": {
+              "type": "integer",
+              "default": 1,
+              "description": "plot by particle age"
+            },
+            "plot_overview_origin": {
+              "type": "integer",
+              "default": 1,
+              "description": "plot by distance from origin"
+            },
+            "plot_overview_origin_rotationtheta": {
+              "type": "number",
+              "default": -90.0,
+              "description": "rotation angle for plotting origin colour"
+            },
+            "plot_staticMaskOn": {
+              "type": "integer",
+              "default": 0
+            },
+            "plot_randomMaskOn": {
+              "type": "integer",
+              "default": 0,
+              "description": "plot random fraction of particles? 1=Y / 0=N"
+            },
+            "plot_randomThreshold": {
+              "type": "number",
+              "default": 0.0,
+              "description": "i.e., only plot S.plot_randomThreshold"
+            },
+            "plot_elevMaskOn": {
+              "type": "integer",
+              "default": 1,
+              "description": "[-]"
+            },
+            "plot_elevThreshold": {
+              "type": "number",
+              "default": 2.0,
+              "description": "[m] elvation threshold below which to plot particles (i.e., don't plot particles on land)"
+            },
+            "plot_pointSize": {
+              "type": "number",
+              "default": 8.0,
+              "description": "how large should points be in scatter plots"
+            },
+            "plot_printScaling": {
+              "type": "number",
+              "default": 1.0,
+              "description": "how much to scale plots when saving figures"
+            },
+            "plot_printDimensions": {
+              "type": "number",
+              "default": "[29.7 21.0]",
+              "description": "default = A4 paper"
+            },
+            "plot_dx": {
+              "type": "number",
+              "default": 100.0,
+              "description": "dx for interpolating bed"
+            },
+            "plot_MLW": {
+              "type": "number",
+              "default": -1.0,
+              "description": "mean low water [m]"
+            },
+            "plot_MHW": {
+              "type": "number",
+              "default": 1.0,
+              "description": "mean high water [m]"
+            },
+            "plot_depthContours": {
+              "type": "string",
+              "default": "[2.5 5 10 15 20 25]",
+              "description": "depth contours to plot [m] (positive up)"
+            },
+            "plot_land_PolFile": {
+              "type": "string",
+              "default": "[]",
+              "description": ".pol file with land and island polygons"
+            },
+            "plot_xlim": {
+              "type": "number",
+              "default": "[]",
+              "description": "x limits of plot"
+            },
+            "plot_ylim": {
+              "type": "number",
+              "default": "[]",
+              "description": "y limits of plot"
+            },
+            "plot_monitoringPoint": {
+              "type": "number",
+              "default": "[]",
+              "description": "monitoring point for checking e.g. tidal signal"
+            },
+            "plot_monitoringPoint_velComponent": {
+              "type": "string",
+              "default": "'E'",
+              "description": "'E' for X-component, 'N' for Y-component"
+            },
+            "plot_monitoringPoint_signalType": {
+              "type": "string",
+              "default": "'velocity'",
+              "description": "'velocity' or 'waterlevel' but water level not yet enabled"
+            },
+            "plot_timeseriesYlim": {
+              "type": "number",
+              "default": "[]",
+              "description": "y-limit for plotting timeseries"
+            },
+            "plotPathways": {
+              "type": "integer",
+              "default": 0,
+              "description": "plot pathways = 1, don't plot pathways = 0"
+            }
+          }
+        },
+        "Validation": {
+          "type": "object",
+          "properties": {
+            "plotTracerValidation": {
+              "type": "integer",
+              "default": 0,
+              "description": "plot validation data  1=Y / 0=N"
+            },
+            "plot_tracerValidationDataPath": {
+              "type": "string",
+              "default": "[]",
+              "description": "filepath to validation data"
+            },
+            "plotDrifterValidation": {
+              "type": "integer",
+              "default": 0,
+              "description": "plot validation data  1=Y / 0=N"
+            },
+            "plot_drifterValidationDataPath": {
+              "type": "string",
+              "default": "[]",
+              "description": "filepath to validation data"
+            },
+            "plot_drifterTrackComparison": {
+              "type": "integer",
+              "default": 0,
+              "description": "plot drifter track comparison (1=y, 0-n)"
+            }
+          }
+        }
+      }
+    }
+  }
+}
