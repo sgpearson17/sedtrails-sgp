@@ -94,14 +94,14 @@ class ParticlePositionCalculator:
         # Use the trifinder to determine which triangle contains each particle.
         tri_idx = self.trifinder(part_x, part_y)
         interp_vals = np.zeros_like(part_x)
-        valid = tri_idx >= 0
-        if not np.any(valid):
+        valid_idx = tri_idx >= 0
+        if not np.any(valid_idx):
             return interp_vals
 
         # Get vertex indices for the containing triangle for valid particles.
-        v1 = self.tri.triangles[tri_idx[valid], 1]
-        v2 = self.tri.triangles[tri_idx[valid], 2]
-        v0 = self.tri.triangles[tri_idx[valid], 0]
+        v1 = self.tri.triangles[tri_idx[valid_idx], 1]
+        v2 = self.tri.triangles[tri_idx[valid_idx], 2]
+        v0 = self.tri.triangles[tri_idx[valid_idx], 0]
 
         # Coordinates for triangle vertices.
         x0 = self.grid_x[v0]
@@ -115,15 +115,17 @@ class ParticlePositionCalculator:
         den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         with np.errstate(divide="ignore", invalid="ignore"):
             w1 = (
-                (y1 - y2) * (part_x[valid] - x2) + (x2 - x1) * (part_y[valid] - y2)
+                (y1 - y2) * (part_x[valid_idx] - x2)
+                + (x2 - x1) * (part_y[valid_idx] - y2)
             ) / den
             w2 = (
-                (y2 - y0) * (part_x[valid] - x2) + (x0 - x2) * (part_y[valid] - y2)
+                (y2 - y0) * (part_x[valid_idx] - x2)
+                + (x0 - x2) * (part_y[valid_idx] - y2)
             ) / den
         w3 = 1.0 - w1 - w2
 
         # Weighted sum of field values.
-        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+        interp_vals[valid_idx] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
         return interp_vals
 
     @staticmethod
@@ -153,13 +155,13 @@ class ParticlePositionCalculator:
 
         tri_idx = trifinder(part_x_chunk, part_y_chunk)
         interp_vals = np.zeros_like(part_x_chunk)
-        valid = tri_idx >= 0
-        if not np.any(valid):
+        valid_idx = tri_idx >= 0
+        if not np.any(valid_idx):
             return interp_vals
 
-        v0 = triangles[tri_idx[valid], 0]
-        v1 = triangles[tri_idx[valid], 1]
-        v2 = triangles[tri_idx[valid], 2]
+        v0 = triangles[tri_idx[valid_idx], 0]
+        v1 = triangles[tri_idx[valid_idx], 1]
+        v2 = triangles[tri_idx[valid_idx], 2]
         x0 = grid_x[v0]
         y0 = grid_y[v0]
         x1 = grid_x[v1]
@@ -169,15 +171,15 @@ class ParticlePositionCalculator:
         den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         with np.errstate(divide="ignore", invalid="ignore"):
             w1 = (
-                (y1 - y2) * (part_x_chunk[valid] - x2)
-                + (x2 - x1) * (part_y_chunk[valid] - y2)
+                (y1 - y2) * (part_x_chunk[valid_idx] - x2)
+                + (x2 - x1) * (part_y_chunk[valid_idx] - y2)
             ) / den
             w2 = (
-                (y2 - y0) * (part_x_chunk[valid] - x2)
-                + (x0 - x2) * (part_y_chunk[valid] - y2)
+                (y2 - y0) * (part_x_chunk[valid_idx] - x2)
+                + (x0 - x2) * (part_y_chunk[valid_idx] - y2)
             ) / den
         w3 = 1.0 - w1 - w2
-        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+        interp_vals[valid_idx] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
         return interp_vals
 
     def parallel_interpolate_field(
