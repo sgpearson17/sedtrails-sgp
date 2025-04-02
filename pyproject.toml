@@ -62,4 +62,4 @@ pythonpath = "src"
 addopts = [
     "--import-mode=importlib",
 ]
-pythonpath= "src"
+

@@ -14,7 +14,6 @@ Dependencies: numpy, matplotlib, multiprocessing, typing, math
 """
 
 import multiprocessing as mp
-from math import pi
 from typing import Callable, Tuple
 
 import matplotlib.tri as mtri
@@ -258,7 +257,6 @@ class ParticlePositionCalculator:
         x0: NDArray,
         y0: NDArray,
         dt: np.float64,
-        rndfac: np.float64,
         parallel: bool = False,
         num_workers: int = None,
     ) -> Tuple[NDArray, NDArray, NDArray, NDArray]:
@@ -328,19 +326,4 @@ class ParticlePositionCalculator:
         x_new = x0 + dt / 6.0 * (up1 + 2.0 * up2 + 2.0 * up3 + up4)
         y_new = y0 + dt / 6.0 * (vp1 + 2.0 * vp2 + 2.0 * vp3 + vp4)
 
-        # Add random diffusion if requested.
-        if rndfac > 0.0:
-            vel_mag = np.sqrt(((x_new - x0) / dt) ** 2 + ((y_new - y0) / dt) ** 2)
-            rndnr_mag = np.random.randn(*vel_mag.shape)
-            mag_diff = np.abs(rndnr_mag * rndfac) * vel_mag
-            rndnr_angle = np.random.rand(*vel_mag.shape)
-            angle_diff = rndnr_angle * 2 * pi
-            xdiff = mag_diff * np.cos(angle_diff) * dt
-            ydiff = mag_diff * np.sin(angle_diff) * dt
-            x_new += xdiff
-            y_new += ydiff
-        else:
-            xdiff = np.zeros_like(x_new)
-            ydiff = np.zeros_like(y_new)
-
-        return x_new, y_new, xdiff, ydiff
+        return x_new, y_new
