@@ -70,36 +70,11 @@ def test_update_particles_no_velocity(simple_interpolator):
     part_x = np.array([0.2, 0.4, 0.1])
     part_y = np.array([0.2, 0.1, 0.4])
     dt = 0.1
-    rndfac = 0.0  # disable diffusion
-    x_new, y_new, xdiff, ydiff = simple_interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=False
+    x_new, y_new = simple_interpolator.update_particles(
+        part_x, part_y, dt, parallel=False
     )
     np.testing.assert_allclose(x_new, part_x)
     np.testing.assert_allclose(y_new, part_y)
-    np.testing.assert_allclose(xdiff, 0.0)
-    np.testing.assert_allclose(ydiff, 0.0)
-
-
-# -----------------------------------------------------------------------------
-# Tests for particle update with diffusion
-# -----------------------------------------------------------------------------
-
-
-def test_update_particles_with_diffusion(simple_interpolator):
-    """
-    When a nonzero diffusion factor is used, diffusion increments should be
-    added to the updated particle positions.
-    """
-    part_x = np.array([0.2, 0.4, 0.1])
-    part_y = np.array([0.2, 0.1, 0.4])
-    dt = 0.1
-    rndfac = 0.5
-    np.random.seed(42)
-    x_new, y_new, xdiff, ydiff = simple_interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=False
-    )
-    assert np.any(np.abs(xdiff) > 0)
-    assert np.any(np.abs(ydiff) > 0)
 
 
 # -----------------------------------------------------------------------------
@@ -115,12 +90,11 @@ def test_parallel_vs_serial(simple_interpolator):
     part_x = np.linspace(0.1, 0.9, 50)
     part_y = np.linspace(0.1, 0.9, 50)
     dt = 0.1
-    rndfac = 0.0
-    x_serial, y_serial, _, _ = simple_interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=False
+    x_serial, y_serial = simple_interpolator.update_particles(
+        part_x, part_y, dt, parallel=False
     )
-    x_parallel, y_parallel, _, _ = simple_interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=True, num_workers=2
+    x_parallel, y_parallel = simple_interpolator.update_particles(
+        part_x, part_y, dt, parallel=True, num_workers=2
     )
     np.testing.assert_allclose(x_serial, x_parallel)
     np.testing.assert_allclose(y_serial, y_parallel)
@@ -145,14 +119,11 @@ def test_geographic_adjustment():
 
     interpolator = ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=1)
     dt = 1.0
-    rndfac = 0.0
     part_x = np.array([0.2], dtype=np.float64)
     part_y = np.array([0.2], dtype=np.float64)
     expected_u = 1.0 / (np.cos(np.deg2rad(45.0)) * interpolator.geofac)
     expected_x_new = part_x + dt * expected_u
-    x_new, y_new, _, _ = interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=False
-    )
+    x_new, y_new = interpolator.update_particles(part_x, part_y, dt, parallel=False)
     np.testing.assert_allclose(x_new, expected_x_new, rtol=1e-5)
     np.testing.assert_allclose(y_new, part_y, rtol=1e-5)
 
@@ -196,19 +167,16 @@ def test_mixed_network_update_particles(mixed_network_interpolator):
     part_x = np.random.uniform(0.1, 1.9, 2)
     part_y = np.random.uniform(0.1, 2.9, 2)
     dt = 0.2
-    rndfac = 0.0
 
     expected_x = part_x + dt * 1.0
     expected_y = part_y + dt * 0.5
 
-    x_new, y_new, xdiff, ydiff = mixed_network_interpolator.update_particles(
-        part_x, part_y, dt, rndfac, parallel=False
+    x_new, y_new = mixed_network_interpolator.update_particles(
+        part_x, part_y, dt, parallel=False
     )
 
     np.testing.assert_allclose(x_new, expected_x, rtol=1e-5)
     np.testing.assert_allclose(y_new, expected_y, rtol=1e-5)
-    np.testing.assert_allclose(xdiff, 0.0, atol=1e-8)
-    np.testing.assert_allclose(ydiff, 0.0, atol=1e-8)
 
 
 def test_mixed_network_parallel_interpolation(mixed_network_interpolator):
@@ -216,7 +184,10 @@ def test_mixed_network_parallel_interpolation(mixed_network_interpolator):
     Ensure that interpolation on the mixed network is consistent between serial and
     parallel execution.
     """
-    linear_func = lambda x, y: 2 * x + 3 * y
+
+    def linear_func(x, y):
+        return 2 * x + 3 * y
+
     field = linear_func(
         mixed_network_interpolator.grid_x, mixed_network_interpolator.grid_y
     )

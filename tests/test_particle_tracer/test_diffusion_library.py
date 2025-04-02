@@ -48,15 +48,14 @@ class TestDiffusion:
         """
         Test the GradientDiffusion strategy.
 
-        This test verifies that the GradientDiffusion.calculate method
-        returns two NumPy arrays of the same shape as the input positions.
+        Verifies that the calculate method returns two NumPy arrays of the same shape as the input.
         """
         strategy = GradientDiffusion()
         xdif, ydif = strategy.calculate(
             self.dt, self.x, self.y, self.u, self.v, self.nu
         )
 
-        # Check that the returned values are numpy arrays.
+        # Check that the returned values are NumPy arrays.
         assert isinstance(xdif, np.ndarray), "xdif should be a numpy array."
         assert isinstance(ydif, np.ndarray), "ydif should be a numpy array."
 
@@ -68,10 +67,8 @@ class TestDiffusion:
         """
         Test the RandomDiffusion strategy.
 
-        This test verifies that the RandomDiffusion.calculate method
-        returns two NumPy arrays of the same shape as the input positions.
-        It also checks for deterministic behavior when seeding the random
-        number generator.
+        Verifies that the calculate method returns two NumPy arrays of the same shape as the input.
+        Checks for deterministic behavior when seeding the random number generator.
         """
         strategy = RandomDiffusion()
 
@@ -81,13 +78,13 @@ class TestDiffusion:
             self.dt, self.x, self.y, self.u, self.v, self.nu
         )
 
-        # Reset the seed and calculate again to ensure deterministic output.
+        # Reset the seed and calculate again to ensure reproducibility.
         np.random.seed(42)
         xdif2, ydif2 = strategy.calculate(
             self.dt, self.x, self.y, self.u, self.v, self.nu
         )
 
-        # Check that the returned values are numpy arrays.
+        # Check that the returned values are NumPy arrays.
         assert isinstance(xdif1, np.ndarray), "xdif should be a numpy array."
         assert isinstance(ydif1, np.ndarray), "ydif should be a numpy array."
 
@@ -107,9 +104,8 @@ class TestDiffusion:
         """
         Test the DiffusionCalculator class with different strategies.
 
-        This test verifies that DiffusionCalculator correctly uses the
-        assigned diffusion strategy and that the strategy property can be
-        updated to switch between different diffusion models.
+        Verifies that DiffusionCalculator correctly uses the assigned diffusion strategy
+        and that the strategy property can be updated to switch between different diffusion models.
         """
         # Initialize with GradientDiffusion strategy.
         gradient_strategy = GradientDiffusion()
@@ -135,8 +131,7 @@ class TestDiffusion:
             self.x, self.y, self.u, self.v, self.nu, self.dt
         )
 
-        # Check that the output from random strategy is a numpy array with
-        # the expected shape.
+        # Check that the output from the random strategy is a NumPy array with the expected shape.
         assert isinstance(xdif_rand, np.ndarray), (
             "xdif from random strategy should be a numpy array."
         )

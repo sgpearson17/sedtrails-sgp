@@ -65,7 +65,8 @@ class GradientDiffusion(DiffusionStrategy):
             distances = np.sqrt((x - x[i]) ** 2 + (y - y[i]) ** 2)
             if np.all(distances == 0):  # Only one point
                 continue
-            nearest_idx = np.argmin(distances + np.eye(n) * 1e10)
+            distances[i] = np.inf
+            nearest_idx = np.argmin(distances)
             dx = x[nearest_idx] - x[i]
             dy = y[nearest_idx] - y[i]
             if dx != 0 or dy != 0:
