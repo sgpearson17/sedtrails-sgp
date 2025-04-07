@@ -9,7 +9,9 @@ from sedtrails.configuration_interface.validator import YAMLConfigValidator
 
 class TestYAMLConfigValidator:
     def setup_method(self):
-        # Create a temporary dummy schema file for tests that do not require a real schema.
+        """
+        Setup method to create a temporary dummy schema file for tests that do not require a real schema
+        """
         self.dummy_schema = {}
         self.dummy_schema_file = tempfile.NamedTemporaryFile(
             mode="w", delete=False, suffix=".yml"
@@ -19,19 +21,27 @@ class TestYAMLConfigValidator:
         self.validator = YAMLConfigValidator(self.dummy_schema_file.name)
 
     def teardown_method(self):
-        # Remove the temporary dummy schema file.
+        """
+        Teardown method to remove the temporary dummy schema file
+        """
         os.remove(self.dummy_schema_file.name)
 
     # -----------------------------
     # Tests for _resolve_json_pointer
     # -----------------------------
     def test_resolve_json_pointer_success(self):
+        """
+        Test successful resolution of a JSON pointer 
+        """
         data = {"a": {"b": "value"}}
         pointer = "#/a/b"
         result = self.validator._resolve_json_pointer(pointer, data)
         assert result == "value"
 
     def test_resolve_json_pointer_with_properties(self):
+        """
+        Test successful resolution of a JSON pointer with properties 
+        """
         data = {"a": {"b": "value"}}
         # Pointer includes "properties" tokens that should be removed.
         pointer = "#/properties/a/properties/b"
@@ -39,6 +49,9 @@ class TestYAMLConfigValidator:
         assert result == "value"
 
     def test_resolve_json_pointer_failure(self):
+        """
+        Test that resolving an invalid JSON pointer raises a ValueError
+        """
         data = {"a": {"b": "value"}}
         pointer = "#/a/c"
         with pytest.raises(ValueError):
@@ -48,6 +61,9 @@ class TestYAMLConfigValidator:
     # Tests for _resolve_default_directive
     # -----------------------------
     def test_resolve_default_directive(self):
+        """
+        Test that default directive is resolved
+        """
         # Setup root data with a key "path" holding a file path.
         root_data = {"path": "/a/b/c.txt"}
         directive = {
@@ -61,18 +77,27 @@ class TestYAMLConfigValidator:
         assert result == expected
 
     def test_resolve_default_directive_missing_ref(self):
+        """
+        Test that default directive with missing ref raises a ValueError
+        """
         root_data = {"path": "/a/b/c.txt"}
         directive = {"transform": "dirname"}
         with pytest.raises(ValueError):
             self.validator._resolve_default_directive(directive, root_data)
 
     def test_resolve_default_directive_non_string_ref(self):
+        """
+        Test that default directive with a nonstring ref raises a ValueError
+        """
         root_data = {"path": 123}
         directive = {"$ref": "#/path", "transform": "dirname"}
         with pytest.raises(ValueError):
             self.validator._resolve_default_directive(directive, root_data)
 
     def test_resolve_default_directive_unsupported_transform(self):
+        """
+        Test that default directive with unsupported transform raises a NotImplementedError
+        """        
         root_data = {"path": "/a/b/c.txt"}
         directive = {"$ref": "#/path", "transform": "unsupported"}
         with pytest.raises(NotImplementedError):
@@ -82,6 +107,9 @@ class TestYAMLConfigValidator:
     # Tests for _apply_defaults
     # -----------------------------
     def test_apply_defaults(self):
+        """
+        Test schema with default fields and values are created
+        """
         # Define a schema with defaults (including a directive for "folder")
         schema = {
             "properties": {
@@ -117,6 +145,9 @@ class TestYAMLConfigValidator:
     # Tests for validate_yaml
     # -----------------------------
     def test_validate_yaml_success(self, tmp_path):
+        """
+        Test YAML file validation when a YAML file is created successfully 
+        """
         # Define a schema that requires "path" and provides defaults for "name" and "folder"
         schema = {
             "$schema": "http://json-schema.org/draft-07/schema#",
@@ -154,6 +185,9 @@ class TestYAMLConfigValidator:
         assert config["folder"] == expected_folder
 
     def test_validate_yaml_validation_error(self, tmp_path):
+        """
+        Test YAML file validation error is generated
+        """
         # Schema requires "path", so if it's missing, validation should error.
         schema = {
             "$schema": "http://json-schema.org/draft-07/schema#",
@@ -174,9 +208,12 @@ class TestYAMLConfigValidator:
         assert "YAML file validation error" in str(excinfo.value)
 
     # -----------------------------
-    # Tests for export_schema_to_yaml
+    # Tests for export_schema_to_yaml: file contents
     # -----------------------------
     def test_export_schema_to_yaml(self, tmp_path):
+        """
+        Test yaml file contents to see if a yaml file with the correct input schema is saved to the file system
+        """
         schema = {"test": "value"}
         self.validator.schema = schema
         # Test export without writing to a file.
@@ -186,8 +223,28 @@ class TestYAMLConfigValidator:
 
         # Test export with writing to a file.
         output_file = tmp_path / "schema_output.yml"
-        yaml_str_2 = self.validator.export_schema_to_yaml(str(output_file))
+        yaml_str_exported = self.validator.export_schema_to_yaml(str(output_file))
         file_content = output_file.read_text()
         loaded_schema_file = yaml.safe_load(file_content)
         assert loaded_schema_file == schema
-        assert yaml_str_2 == file_content
+        assert yaml_str_exported == file_content
+
+    # -----------------------------
+    # Tests for export_schema_to_yaml: file creation
+    # -----------------------------
+    def test_yaml_file_creation(self, tmp_path):
+        """
+        Test if a yaml file is saved to the file saved
+        """
+        # Define the data to be written to the YAML file
+        schema = {"test": "value"}
+        self.validator.schema = schema
+
+        # Define the path for the temporary YAML file
+        output_file = tmp_path / "schema_output.yml"
+
+        # Write the data to the YAML file
+        yaml_str = self.validator.export_schema_to_yaml(str(output_file))
+
+        # Check if the YAML file has been created
+        assert output_file.exists()
