@@ -16,9 +16,9 @@ class Particle(ABC):
     Attributes
     ----------
     Dstar_Tracer : float
-        diamentionless diameter of the tracer sediment particle [m].
+        dimentionless diameter of the tracer sediment particle [-].
     Dstar_Background : float
-        diamentionless diameter of the background sediment particle [m].
+        dimentionless diameter of the background sediment particle [-].
     ratio : float
         ratio of tracer sediment particle diameter to background sediment particle diameter [-].
     """
@@ -29,13 +29,13 @@ class Particle(ABC):
     # concrete method
     def Dstar_Tracer(self, S) -> float:
         """
-        Calculates the diamentionless diameter of the tracer sediment particle [m].
+        Calculates the dimentionless diameter of the tracer sediment particle [-].
         """
         return (S.g * (S.rhoParticle / S.rhoFluid - 1) / (S.visc_kin ** 2)) ** (1/3) * S.dTracer
 
     def Dstar_Background(self, S) -> float:
         """
-        Calculates the diamentionless diameter of the background sediment particle [m].
+        Calculates the dimentionless diameter of the background sediment particle [-].
         """
         return (S.g * (S.rhoParticle / S.rhoFluid - 1) / (S.visc_kin ** 2)) ** (1/3) * S.dBackground
 
@@ -60,9 +60,9 @@ class Sand(Particle):
     theta_cr_Background : float
         critical Shields number for the background sand particle [-].
     theta_cr_Tracer_exp : float
-        adsjusted critical Shields number for the tracer sand particle to
+        adjusted critical Shields number for the tracer sand particle to
         take into account hiding/exposure when having a diameter different
-        than the background sand particles [-].
+        than the background sand particle [-].
     ustar_cr : float
         critical friction velocity for sand particle erosion [m/s].
     theta_max_Tracer : float
@@ -90,6 +90,8 @@ class Sand(Particle):
     def theta_cr_Background(self, Dstar_Background) -> float:
         """
         Calculates the critical Shields number for the background sand particle [-].
+
+        
         """
         return 0.3 / (1 + 1.2 * Dstar_Background) + 0.055 * (1 - np.exp(-0.020 * Dstar_Background))
 
@@ -99,7 +101,7 @@ class Sand(Particle):
         take into account hiding/exposure when having a diameter different than the background
         sand particles [-].
         """
-        return theta_cr_Tracer * np.sqrt(8 / (3 * (ratio ** 2) + 6 * ratio - 1)) * ((3.2260 * ratio) /\
+        return theta_cr_Tracer * np.sqrt(8 / (3 * (ratio ** 2) + 6 * ratio - 1)) * ((3.2260 * ratio) /
                     (4 * ratio - 2 * (ratio + 1 - np.sqrt(ratio ** 2 + 2 * ratio - 1/3))))
 
     def ustar_cr(self, S) -> float:
