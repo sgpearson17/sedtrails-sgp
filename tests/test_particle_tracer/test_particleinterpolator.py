@@ -1,13 +1,15 @@
+"""
+Unit tests for the ParticlePositionCalculator class, covering field interpolation, 
+particle updates with and without diffusion, parallel vs serial consistency, 
+geographic adjustments, and mixed network interpolation.
+"""
 import numpy as np
 import pytest
-
 from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
 
 # -----------------------------------------------------------------------------
 # Fixtures
 # -----------------------------------------------------------------------------
-
-
 @pytest.fixture
 def simple_interpolator():
     """
@@ -26,6 +28,9 @@ def simple_interpolator():
 
 @pytest.fixture
 def mixed_network_interpolator():
+    """
+    Creates a particle position calculator with a constant velocity field.
+    """
     # Define grid nodes.
     grid_x = np.array([0, 5, 2, 0, 5, 2, 0, 5, 2, 0, 5, 2], dtype=np.float64)
     grid_y = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], dtype=np.float64)
@@ -93,7 +98,7 @@ def test_update_particles_with_diffusion(simple_interpolator):
     dt = 0.1
     rndfac = 0.5
     np.random.seed(42)
-    x_new, y_new, xdiff, ydiff = simple_interpolator.update_particles(
+    _, _, xdiff, ydiff = simple_interpolator.update_particles(
         part_x, part_y, dt, rndfac, parallel=False
     )
     assert np.any(np.abs(xdiff) > 0)

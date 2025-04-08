@@ -1,6 +1,9 @@
+"""
+Unit tests for the YAMLConfigValidator class in the sedtrails.configuration_interface.validator module.
+"""
+
 import os
 import tempfile
-
 import pytest
 import yaml
 
@@ -8,6 +11,9 @@ from sedtrails.configuration_interface.validator import YAMLConfigValidator
 
 
 class TestYAMLConfigValidator:
+    """
+    Test suite for validating YAML configuration files using YAMLConfigValidator.
+    """
     def setup_method(self):
         """
         Setup method to create a temporary dummy schema file for tests that do not require a real schema
@@ -97,7 +103,7 @@ class TestYAMLConfigValidator:
     def test_resolve_default_directive_unsupported_transform(self):
         """
         Test that default directive with unsupported transform raises a NotImplementedError
-        """        
+        """
         root_data = {"path": "/a/b/c.txt"}
         directive = {"$ref": "#/path", "transform": "unsupported"}
         with pytest.raises(NotImplementedError):
@@ -244,7 +250,7 @@ class TestYAMLConfigValidator:
         output_file = tmp_path / "schema_output.yml"
 
         # Write the data to the YAML file
-        yaml_str = self.validator.export_schema_to_yaml(str(output_file))
+        _ = self.validator.export_schema_to_yaml(str(output_file))
 
         # Check if the YAML file has been created
         assert output_file.exists()

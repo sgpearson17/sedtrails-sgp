@@ -1,11 +1,16 @@
-from typer.testing import CliRunner
+"""
+Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
+"""
 
+from typer.testing import CliRunner
 from sedtrails.sedtrails import app
 
 runner = CliRunner()
 
-
 class TestSedtrailsCLI:
+    """
+    Test suite for the Sedtrails CLI commands.
+    """
     def test_load_config_default(self):
         """
         Use default config file name ("sedtrails.yml")
