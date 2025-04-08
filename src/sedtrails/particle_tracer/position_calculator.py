@@ -2,19 +2,18 @@
 ParticlePositionCalculator Class
 
 This class performs particle advection over an unstructured grid using a
-4‑stage Runge–Kutta integration scheme. It supports barycentric interpolation
+4-stage Runge�Kutta integration scheme. It supports barycentric interpolation
 of grid fields (e.g., velocities) via a matplotlib Triangulation, with an option
 to use multiprocessing for very large particle sets.
 
 Usage:
-    1. Initialize with grid nodes, velocities, and face‐node connectivity.
+    1. Initialize with grid nodes, velocities, and face-node connectivity.
     2. Call update_particles() with particle positions, time step, and diffusion.
 
 Dependencies: numpy, matplotlib, multiprocessing, typing, math
 """
 
 import multiprocessing as mp
-from math import pi
 from typing import Callable, Tuple
 
 import matplotlib.tri as mtri
@@ -94,14 +93,14 @@ class ParticlePositionCalculator:
         # Use the trifinder to determine which triangle contains each particle.
         tri_idx = self.trifinder(part_x, part_y)
         interp_vals = np.zeros_like(part_x)
-        valid_idx = tri_idx >= 0
-        if not np.any(valid_idx):
+        valid = tri_idx >= 0
+        if not np.any(valid):
             return interp_vals
 
         # Get vertex indices for the containing triangle for valid particles.
-        v1 = self.tri.triangles[tri_idx[valid_idx], 1]
-        v2 = self.tri.triangles[tri_idx[valid_idx], 2]
-        v0 = self.tri.triangles[tri_idx[valid_idx], 0]
+        v1 = self.tri.triangles[tri_idx[valid], 1]
+        v2 = self.tri.triangles[tri_idx[valid], 2]
+        v0 = self.tri.triangles[tri_idx[valid], 0]
 
         # Coordinates for triangle vertices.
         x0 = self.grid_x[v0]
@@ -115,17 +114,15 @@ class ParticlePositionCalculator:
         den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         with np.errstate(divide="ignore", invalid="ignore"):
             w1 = (
-                (y1 - y2) * (part_x[valid_idx] - x2)
-                + (x2 - x1) * (part_y[valid_idx] - y2)
+                (y1 - y2) * (part_x[valid] - x2) + (x2 - x1) * (part_y[valid] - y2)
             ) / den
             w2 = (
-                (y2 - y0) * (part_x[valid_idx] - x2)
-                + (x0 - x2) * (part_y[valid_idx] - y2)
+                (y2 - y0) * (part_x[valid] - x2) + (x0 - x2) * (part_y[valid] - y2)
             ) / den
         w3 = 1.0 - w1 - w2
 
         # Weighted sum of field values.
-        interp_vals[valid_idx] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
         return interp_vals
 
     @staticmethod
@@ -155,13 +152,13 @@ class ParticlePositionCalculator:
 
         tri_idx = trifinder(part_x_chunk, part_y_chunk)
         interp_vals = np.zeros_like(part_x_chunk)
-        valid_idx = tri_idx >= 0
-        if not np.any(valid_idx):
+        valid = tri_idx >= 0
+        if not np.any(valid):
             return interp_vals
 
-        v0 = triangles[tri_idx[valid_idx], 0]
-        v1 = triangles[tri_idx[valid_idx], 1]
-        v2 = triangles[tri_idx[valid_idx], 2]
+        v0 = triangles[tri_idx[valid], 0]
+        v1 = triangles[tri_idx[valid], 1]
+        v2 = triangles[tri_idx[valid], 2]
         x0 = grid_x[v0]
         y0 = grid_y[v0]
         x1 = grid_x[v1]
@@ -171,15 +168,15 @@ class ParticlePositionCalculator:
         den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         with np.errstate(divide="ignore", invalid="ignore"):
             w1 = (
-                (y1 - y2) * (part_x_chunk[valid_idx] - x2)
-                + (x2 - x1) * (part_y_chunk[valid_idx] - y2)
+                (y1 - y2) * (part_x_chunk[valid] - x2)
+                + (x2 - x1) * (part_y_chunk[valid] - y2)
             ) / den
             w2 = (
-                (y2 - y0) * (part_x_chunk[valid_idx] - x2)
-                + (x0 - x2) * (part_y_chunk[valid_idx] - y2)
+                (y2 - y0) * (part_x_chunk[valid] - x2)
+                + (x0 - x2) * (part_y_chunk[valid] - y2)
             ) / den
         w3 = 1.0 - w1 - w2
-        interp_vals[valid_idx] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
         return interp_vals
 
     def parallel_interpolate_field(
@@ -260,12 +257,11 @@ class ParticlePositionCalculator:
         x0: NDArray,
         y0: NDArray,
         dt: np.float64,
-        rndfac: np.float64,
         parallel: bool = False,
         num_workers: int = None,
     ) -> Tuple[NDArray, NDArray, NDArray, NDArray]:
         """
-        Update particle positions using a 4‑stage Runge–Kutta integration on the grid.
+        Update particle positions using a 4-stage Runge�Kutta integration on the grid.
 
         Parameters
         ----------
@@ -303,7 +299,7 @@ class ParticlePositionCalculator:
                 field, part_x, part_y, parallel=parallel, num_workers=num_workers
             )
 
-        # 4‑stage Runge–Kutta integration.
+        # 4-stage Runge�Kutta integration.
         # Stage 1.
         up1 = get_interp(grid_u_adj, x0, y0)
         vp1 = get_interp(grid_v_adj, x0, y0)
@@ -330,19 +326,4 @@ class ParticlePositionCalculator:
         x_new = x0 + dt / 6.0 * (up1 + 2.0 * up2 + 2.0 * up3 + up4)
         y_new = y0 + dt / 6.0 * (vp1 + 2.0 * vp2 + 2.0 * vp3 + vp4)
 
-        # Add random diffusion if requested.
-        if rndfac > 0.0:
-            vel_mag = np.sqrt(((x_new - x0) / dt) ** 2 + ((y_new - y0) / dt) ** 2)
-            rndnr_mag = np.random.randn(*vel_mag.shape)
-            mag_diff = np.abs(rndnr_mag * rndfac) * vel_mag
-            rndnr_angle = np.random.rand(*vel_mag.shape)
-            angle_diff = rndnr_angle * 2 * pi
-            xdiff = mag_diff * np.cos(angle_diff) * dt
-            ydiff = mag_diff * np.sin(angle_diff) * dt
-            x_new += xdiff
-            y_new += ydiff
-        else:
-            xdiff = np.zeros_like(x_new)
-            ydiff = np.zeros_like(y_new)
-
-        return x_new, y_new, xdiff, ydiff
+        return x_new, y_new
