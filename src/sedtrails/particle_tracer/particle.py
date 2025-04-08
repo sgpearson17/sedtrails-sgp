@@ -16,14 +16,14 @@ class Time:
     Attributes
     ----------
     time : float
-        The time of the time step in seconds.
+        The time of the time step in seconds since the reference date in the datafile.
     """
 
     time: float
 
     def __post_init__(self):
-        if not isinstance(self.time, (int, float)):
-            raise TypeError(f"Expected 'time' to be a float or int, got {type(self.time).__name__}")
+        if not isinstance(self.time, (float)):
+            raise TypeError(f"Expected 'time' to be a float, got {type(self.time).__name__}")
     
 
 @dataclass
@@ -38,7 +38,7 @@ class Position:
     y : float
         The y-coordinate of the particle in meters.
     time : Time
-        The time of the position in seconds.
+        The time of the position in seconds since the reference date in the datafile.
 
     """
 
@@ -48,10 +48,10 @@ class Position:
 
 
     def __post_init__(self):
-        if not isinstance(self.x, (int, float)):
-            raise TypeError(f"Expected 'x' to be a float or int, got {type(self.x).__name__}")
-        if not isinstance(self.y, (int, float)):
-            raise TypeError(f"Expected 'y' to be a float or int, got {type(self.y).__name__}")
+        if not isinstance(self.x, (float)):
+            raise TypeError(f"Expected 'x' to be a float, got {type(self.x).__name__}")
+        if not isinstance(self.y, (float)):
+            raise TypeError(f"Expected 'y' to be a float, got {type(self.y).__name__}")
         if not isinstance(self.time, Time):
             raise TypeError(f"Expected 'time' to be an instance of Time, got {type(self.time).__name__}")
 
@@ -171,7 +171,7 @@ class InterpolatedValue:
         The number of fractions of the particle.
     bed_load : ndarray
         The bed load sediment transport of the particle in kg/m/s.
-    sediment_transport : float
+    suspended_load : float
         The suspended sediment transport of the particle in kg/m/s.
     depth : float
         The water depth of the particle in meters.
@@ -190,7 +190,7 @@ class InterpolatedValue:
     averaged_velocity: float
     no_fractions: int
     bed_load: ndarray
-    sediment_transport: float
+    suspended_load: float
     depth: float
     mean_shear_stress: float
     max_shear_stress: float
