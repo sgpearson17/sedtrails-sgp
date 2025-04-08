@@ -2,7 +2,7 @@
 ParticlePositionCalculator Class
 
 This class performs particle advection over an unstructured grid using a
-4-stage Runge–Kutta integration scheme. It supports barycentric interpolation
+4-stage Rungeï¿½Kutta integration scheme. It supports barycentric interpolation
 of grid fields (e.g., velocities) via a matplotlib Triangulation, with an option
 to use multiprocessing for very large particle sets.
 
@@ -261,7 +261,7 @@ class ParticlePositionCalculator:
         num_workers: int = None,
     ) -> Tuple[NDArray, NDArray, NDArray, NDArray]:
         """
-        Update particle positions using a 4-stage Runge–Kutta integration on the grid.
+        Update particle positions using a 4-stage Rungeï¿½Kutta integration on the grid.
 
         Parameters
         ----------
@@ -299,7 +299,7 @@ class ParticlePositionCalculator:
                 field, part_x, part_y, parallel=parallel, num_workers=num_workers
             )
 
-        # 4-stage Runge–Kutta integration.
+        # 4-stage Rungeï¿½Kutta integration.
         # Stage 1.
         up1 = get_interp(grid_u_adj, x0, y0)
         vp1 = get_interp(grid_v_adj, x0, y0)
