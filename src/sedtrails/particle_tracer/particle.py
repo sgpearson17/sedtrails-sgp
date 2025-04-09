@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from abc import ABC
 from numpy import ndarray
 from typing import List, Optional
+from datetime import datetime
 
 
 @dataclass
@@ -15,16 +16,37 @@ class Time:
 
     Attributes
     ----------
-    time : float
-        The time of the time step in seconds since the reference date in the datafile.
+    time_step : int
+        The current time step in a simulation.
+
+    Methods
+    -------
     """
 
-    time: float
+    time_step: float
 
     def __post_init__(self):
         if not isinstance(self.time, float):
             raise TypeError(f"Expected 'time' to be a float, got {type(self.time).__name__}")
     
+
+    def datetime(self, reference_date: datetime, step_size: float) -> datetime:
+        """
+        Returns the datetime object representing the current time step.
+        Parameters
+        ----------
+        reference_date : datetime
+            The reference date from which the time step is calculated. This is the starting date time of the simulation.
+        step_size : float
+            The size of the time step in seconds.
+        Returns
+        -------
+        datetime
+            The datetime object representing the time step.
+        """
+        return reference_date + datetime.timedelta(seconds=self.time_step * step_size)
+        
+
 
 @dataclass
 class Position:
