@@ -31,8 +31,7 @@ class Time:
         if self.time_step < 0:
             raise ValueError(f"Expected 'time' to be a non-negative integer, got {self.time_step}")
     
-    
-    def _update(self, time_step: int):
+    def update(self, time_step: int):
         """
         Updates the time step of the simulation.
         Parameters
@@ -45,7 +44,6 @@ class Time:
         if time_step < 0:
             raise ValueError(f"Expected 'time' to be a non-negative integer, got {time_step}")
         self.time_step = time_step
-
 
     def datetime(self, reference_date: datetime, step_size: float) -> datetime:
         """
@@ -65,7 +63,6 @@ class Time:
         return reference_date + timedelta(seconds=self.time_step * step_size)
         
         
-        
 
 @dataclass
 class Position:
@@ -78,23 +75,17 @@ class Position:
         The x-coordinate of the particle in meters.
     y : float
         The y-coordinate of the particle in meters.
-    time : Time
-        The time of the position in seconds since the reference date in the datafile.
-
     """
 
     x: float
     y: float
-    time: Time
-
 
     def __post_init__(self):
         if not isinstance(self.x, float):
             raise TypeError(f"Expected 'x' to be a float, got {type(self.x).__name__}")
         if not isinstance(self.y, float):
             raise TypeError(f"Expected 'y' to be a float, got {type(self.y).__name__}")
-        if not isinstance(self.time, Time):
-            raise TypeError(f"Expected 'time' to be an instance of Time, got {type(self.time).__name__}")
+
 
 
 @dataclass
@@ -119,22 +110,46 @@ class ParticleTrace:
 @dataclass
 class Particle(ABC):
     """
-    Base class for particles in the sediment tracer model.
+    Base class for particles during a simulation time step.
 
     Attributes
     ----------
     name : str
         The name of the particle.
+    x : float
+        The x-coordinate of the particle in meters.
+    y : float
+        The y-coordinate of the particle in meters.
     """
 
     name: str
-    trace: Optional[ParticleTrace] = field(default=None, init=False)
+    _x: float  # initial position
+    _y: float   # initial position
 
     def __post_init__(self):
         if not isinstance(self.name, str):
             raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
-        if self.trace is not None and not isinstance(self.trace, ParticleTrace):
-            raise TypeError(f"Expected 'trace' to be an instance of ParticleTrace, got {type(self.trace).__name__}")
+        
+    @property
+    def x(self) -> None:
+        return self._x
+    
+    @x.setter
+    def x(self, value: int | float) -> None:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Expected 'x' to be an integer or float, got {type(value).__name__}")
+        self._x = value
+
+    @property
+    def y(self) -> None:
+        return self._y
+    
+    @y.setter
+    def y(self, value: int | float) -> None:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Expected 'y' to be an integer or float, got {type(value).__name__}")
+        self._y = value
+
 
 
 @dataclass
@@ -262,6 +277,6 @@ if __name__ == "__main__":
     p = Particle(name="Test Particle")
 
     t = Time(time_step=0)
-    t._update(5)
+    t.update(5)
     print(t.datetime(datetime(2023, 10, 1), 1.0))
     print(t.datetime(datetime(2023, 10, 1), 30))
