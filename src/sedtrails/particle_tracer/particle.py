@@ -22,7 +22,7 @@ class Time:
     time: float
 
     def __post_init__(self):
-        if not isinstance(self.time, (float)):
+        if not isinstance(self.time, float):
             raise TypeError(f"Expected 'time' to be a float, got {type(self.time).__name__}")
     
 
