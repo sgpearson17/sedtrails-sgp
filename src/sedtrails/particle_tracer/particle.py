@@ -23,7 +23,7 @@ class Time:
     -------
     """
 
-    time_step: int = field(default=0)
+    time_step: int = field(default=1)  # time step index starts at one.
 
     def __post_init__(self):
         if not isinstance(self.time_step, int):
@@ -63,29 +63,6 @@ class Time:
         return reference_date + timedelta(seconds=self.time_step * step_size)
         
         
-
-@dataclass
-class Position:
-    """
-    Class representing the position of a Particle on a particular time.
-
-    Attributes
-    ----------
-    x : float
-        The x-coordinate of the particle in meters.
-    y : float
-        The y-coordinate of the particle in meters.
-    """
-
-    x: float
-    y: float
-
-    def __post_init__(self):
-        if not isinstance(self.x, float):
-            raise TypeError(f"Expected 'x' to be a float, got {type(self.x).__name__}")
-        if not isinstance(self.y, float):
-            raise TypeError(f"Expected 'y' to be a float, got {type(self.y).__name__}")
-
 
 
 @dataclass
@@ -149,7 +126,6 @@ class Particle(ABC):
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'y' to be an integer or float, got {type(value).__name__}")
         self._y = value
-
 
 
 @dataclass
