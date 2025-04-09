@@ -48,9 +48,9 @@ class Position:
 
 
     def __post_init__(self):
-        if not isinstance(self.x, (float)):
+        if not isinstance(self.x, float):
             raise TypeError(f"Expected 'x' to be a float, got {type(self.x).__name__}")
-        if not isinstance(self.y, (float)):
+        if not isinstance(self.y, float):
             raise TypeError(f"Expected 'y' to be a float, got {type(self.y).__name__}")
         if not isinstance(self.time, Time):
             raise TypeError(f"Expected 'time' to be an instance of Time, got {type(self.time).__name__}")
