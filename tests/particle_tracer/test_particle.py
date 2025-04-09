@@ -3,7 +3,7 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 import pytest
 from sedtrails.particle_tracer.particle import Mud,Sand, Passive, \
-      Particle, ParticleTrace
+      Particle
 
 
 class TestParticle:
@@ -16,21 +16,21 @@ class TestParticle:
         Test the initialization of the Mud class.
         """
         
-        mud = Mud(name="Mud Particle", particle_velocity=0.5)
+        mud = Mud(name="Mud Particle", _x=1, _y=2, particle_velocity=0.5)
         assert isinstance(mud, Mud)
 
     def test_sand_initialization(self):
         """
         Test the initialization of the Sand class.
         """
-        sand = Sand(name="Sand Particle", particle_velocity=0.7)
+        sand = Sand(name="Sand Particle", _x=1, _y=2, particle_velocity=0.7)
         assert isinstance(sand, Sand)
 
     def test_passive_initialization(self):  
         """
         Test the initialization of the Passive class.
         """
-        passive = Passive(name="Passive Particle", particle_velocity=0.9)
+        passive = Passive(name="Passive Particle", _x=1, _y=2, particle_velocity=0.9)
         assert isinstance(passive, Passive)
 
 
@@ -49,16 +49,6 @@ class TestParticle:
         with pytest.raises(TypeError):
             Particle(name="Particle", trace=123)
 
-
-class TestParticleTrace:
-    """
-    Test suite for the ParticleTrace class.
-    """
-
-    with pytest.raises(TypeError):
-        ParticleTrace(positions=["not a position object"])
-                      
-        
 
 class TestMud:
     """
