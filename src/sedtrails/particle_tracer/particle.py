@@ -167,6 +167,7 @@ class Passive(Particle):
         pass
 
 
+
 @dataclass
 class InterpolatedValue:
     """
@@ -182,7 +183,7 @@ class InterpolatedValue:
         The number of fractions of the particle.
     bed_load : ndarray
         The bed load sediment transport of the particle in kg/m/s.
-    suspended_load : float
+    suspended_sed_transport : float
         The suspended sediment transport of the particle in kg/m/s.
     depth : float
         The water depth of the particle in meters.
@@ -190,32 +191,49 @@ class InterpolatedValue:
         The mean bed shear stress of the particle in Pa.
     max_shear_stress : float
         The maximum bed shear stress of the particle in Pa.
-    sediment_concentration : float
+    sed_concentration : float
         The suspended sediment concentration of the particle in kg/m^3.
     wave_velocity : ndarray
         The non-linear wave velocity of the particle in m/s. 
     """
 
-    # TODO: move some of these attributes to the Physics class
+    x: float
+    y: float
     bed_level: float
-    averaged_velocity: float
-    no_fractions: int
     bed_load: ndarray
-    suspended_load: float
-    depth: float
+    flow_velocity: float
+    sed_concentration: float
+    water_level: float
+    water_depth: float
+    averaged_flow_velocity: float
+    suspended_sed_transport: float
+    wave_velocity: ndarray
     mean_shear_stress: float
     max_shear_stress: float
-    sediment_concentration: float
-    wave_velocity: ndarray
-
-    def __post_init__(self):
-        # TODO: validate data types once the physical properties are defined
-        pass
 
 
+
+@dataclass
+class Fraction:
+    """
+    Class for representing fractions of a Particle.
+    A fracction is a set of particles with identical properties in a simulation.
+
+    Attributes
+    ----------
+    particles : List[Particle]
+        A list of particles that belong to this fraction.
+    """
+
+    paticles: List[Particle] = field(default_factory=list)
+
+    #TODO: discuss with the team.
+
+
+    
 class Physics:
     """
-    Class for storing physics converted values for Particles.
+    Class for storing physics converted values of a Particle.
 
     Attributes
     ----------
