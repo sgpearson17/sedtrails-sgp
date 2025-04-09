@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from abc import ABC
 from numpy import ndarray
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 @dataclass
@@ -17,18 +17,35 @@ class Time:
     Attributes
     ----------
     time_step : int
-        The current time step in a simulation.
+        The current time step in a simulation. A non-negative integer.
 
     Methods
     -------
     """
 
-    time_step: float
+    time_step: int = field(default=0)
 
     def __post_init__(self):
-        if not isinstance(self.time, float):
-            raise TypeError(f"Expected 'time' to be a float, got {type(self.time).__name__}")
+        if not isinstance(self.time_step, int):
+            raise TypeError(f"Expected 'time' to be a float, got {type(self.time_step).__name__}")
+        if self.time_step < 0:
+            raise ValueError(f"Expected 'time' to be a non-negative integer, got {self.time_step}")
     
+    
+    def _update(self, time_step: int):
+        """
+        Updates the time step of the simulation.
+        Parameters
+        ----------
+        time_step : int
+            The new time step to be set.
+        """
+        if not isinstance(time_step, int):
+            raise TypeError(f"Expected 'time' to be a float, got {type(time_step).__name__}")
+        if time_step < 0:
+            raise ValueError(f"Expected 'time' to be a non-negative integer, got {time_step}")
+        self.time_step = time_step
+
 
     def datetime(self, reference_date: datetime, step_size: float) -> datetime:
         """
@@ -44,9 +61,11 @@ class Time:
         datetime
             The datetime object representing the time step.
         """
-        return reference_date + datetime.timedelta(seconds=self.time_step * step_size)
         
-
+        return reference_date + timedelta(seconds=self.time_step * step_size)
+        
+        
+        
 
 @dataclass
 class Position:
@@ -241,7 +260,8 @@ class Physics:
 
 if __name__ == "__main__":
     p = Particle(name="Test Particle")
-    # s = Sand(name="Test Sand Particle", particle_velocity=0.5)
-    # print(s)
 
-    
+    t = Time(time_step=0)
+    t._update(5)
+    print(t.datetime(datetime(2023, 10, 1), 1.0))
+    print(t.datetime(datetime(2023, 10, 1), 30))
