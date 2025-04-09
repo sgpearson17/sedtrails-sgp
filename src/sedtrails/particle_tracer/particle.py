@@ -63,27 +63,6 @@ class Time:
         return reference_date + timedelta(seconds=self.time_step * step_size)
         
         
-
-
-@dataclass
-class ParticleTrace:
-    """"
-    Represents a collection of particle positions and values over time.
-    """
-
-    positions: List[Position] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not all(isinstance(pos, Position) for pos in self.positions if len(self.positions) > 0):
-            raise TypeError("All positions must be instances of the Position class.")
-
-    def current_position(self):
-        """
-        Returns the current position of the particle.
-        """
-        pass
-
-
 @dataclass
 class Particle(ABC):
     """
