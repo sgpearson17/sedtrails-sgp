@@ -5,7 +5,7 @@ Classes for representing internal data structures of the particle tracer.
 from dataclasses import dataclass, field
 from abc import ABC
 from numpy import ndarray
-from typing import List, Optional
+from typing import List
 from datetime import datetime, timedelta
 
 
@@ -51,7 +51,8 @@ class Time:
         Parameters
         ----------
         reference_date : datetime
-            The reference date from which the time step is calculated. This is the starting date time of the simulation.
+            The reference date from which the time step is calculated. 
+            This is the starting date time of the simulation.
         step_size : float
             The size of the time step in seconds.
         Returns
@@ -167,7 +168,6 @@ class Passive(Particle):
         pass
 
 
-
 @dataclass
 class InterpolatedValue:
     """
@@ -212,7 +212,6 @@ class InterpolatedValue:
     max_shear_stress: float
 
 
-
 @dataclass
 class Fraction:
     """
@@ -230,7 +229,7 @@ class Fraction:
     #TODO: discuss with the team.
 
 
-    
+@dataclass
 class Physics:
     """
     Class for storing physics converted values of a Particle.
