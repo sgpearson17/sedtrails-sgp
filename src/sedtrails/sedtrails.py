@@ -1,11 +1,9 @@
 import typer
 from pathlib import Path
 
+
 app = typer.Typer(help='Sedtrails: Configure, run, and analyze sediment particle tracking.')
 
-CONFIG_FILE = "sedtrails.yml"
-PARTICLE_TRACK_FILE = "sedtrails.nc"
-ANALYSIS_FILE = "analysis.nc"
 
 # Subcommand to load and validate a YAML configuration file.
 @app.command('load-config')
@@ -32,13 +30,6 @@ def load_config(
          A dictionary with the validated configuration settings.
 
     """
-    # Assign default value if argument is not provided
-    config_file = config_file or typer.Option(
-        CONFIG_FILE,
-        "--config",
-        "-c",
-        help="Path to the SedTRAILS configuration file.",
-    )
     try:
         typer.echo(f"Loading and validating configuration from '{config_file}'...")
         # Assume the existence of a ConfigValidator class in a separate module.
@@ -52,6 +43,7 @@ def load_config(
     except Exception as e:
         typer.echo(f'Error loading configuration: {e}')
         raise typer.Exit(code=1) from e
+
 
 # Subcommand to run a simulation; it also validates the configuration.
 @app.command('run-simulation')
@@ -67,7 +59,7 @@ def run_simulation(
         '--output',
         '-o',
         help='Path to the output SedTRAILS netCDF file.',
-    )
+    ),
 ):
     """
     Validate the configuration and run a simulation based on it.
@@ -85,25 +77,12 @@ def run_simulation(
       sedtrails run-simulation --config my_config.yml --output results.nc
 
     """
-    # Assign default values if arguments are not provided
-    config_file = config_file or typer.Option(
-        CONFIG_FILE,
-        "--config",
-        "-c",
-        help="Path to the SedTRAILS configuration file.",
-    )
-    output_file = output_file or typer.Option(
-        PARTICLE_TRACK_FILE,
-        "--output",
-        "-o",
-        help="Path to the output SedTRAILS netCDF file.",
-    )
     # First, load and validate the configuration.
     try:
         typer.echo(f"Validating configuration from '{config_file}'...")
         # from config_validator import ConfigValidator
         # config = ConfigValidator.validate(config_file)
-        typer.echo("Configuration validated successfully.")
+        typer.echo('Configuration validated successfully.')
     except Exception as e:
         typer.echo(f'Error validating configuration: {e}')
         raise typer.Exit(code=1) from e
@@ -145,19 +124,6 @@ def analyze(
       output_file : Path
          Path to the output SedTRAILS netCDF file containing statistical and connectivity results.
     """
-    # Assign default values if arguments are not provided
-    input_file = input_file or typer.Option(
-        PARTICLE_TRACK_FILE,
-        "--input",
-        "-i",
-        help="Input SedTRAILS netCDF file containing particle tracks.",
-    )
-    output_file = output_file or typer.Option(
-        ANALYSIS_FILE,
-        "--output",
-        "-o",
-        help="Output SedTRAILS netCDF file containing statistical and connectivity results.",
-    )
     try:
         typer.echo(f"Performing statistical analysis on '{input_file}'...")
         pass
@@ -183,9 +149,9 @@ def network_analysis(
         help='Path to the output SedTRAILS netCDF file containing statistical and connectivity results.',
     ),
 ):
-# [Aysun] The original script had the same file path (sedtrails.nc) for both the input
-# and the output, based on the help text I assume the output should be the analysis.nc
-# instead? Please check the function below to make sure it is correct 
+    # [Aysun] The original script had the same file path (sedtrails.nc) for both the input
+    # and the output, based on the help text I assume the output should be the analysis.nc
+    # instead? Please check the function below to make sure it is correct
     """
     Perform a network analysis on the simulation results.
     The network analysis results are written to a netCDF file.
