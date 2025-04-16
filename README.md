@@ -1,7 +1,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Deploy Sphinx Documentation](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml/badge.svg)](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml)
-[![Ruff](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml/badge.svg)](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml)
+[![Ruff](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml/badge.svg?branch=dev)](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml)
 
 # SedTRAILS
 Sediment TRAnsport vIsualization and Lagrangian Simulator
