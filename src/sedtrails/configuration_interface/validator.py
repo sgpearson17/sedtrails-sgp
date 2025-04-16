@@ -1,8 +1,8 @@
 import os
-from typing import Any, Dict, Optional
-
 import jsonschema
 import yaml
+from typing import Any, Dict, Optional
+from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 
 
 class YAMLConfigValidator:
@@ -42,17 +42,19 @@ class YAMLConfigValidator:
 
         Raises
         ------
-        ValueError
-            If the schema file cannot be read or if the loaded schema is not a valid dictionary.
+        YamlParsingError
+            If the schema file cannot be parsed by the yaml library.
+        TypeError
+            If the loaded schema is not a valid dictionary.
         """
         try:
-            with open(schema_file, "r") as f:
+            with open(schema_file, 'r') as f:
                 schema_data: Any = yaml.safe_load(f)
             if not isinstance(schema_data, dict):
-                raise ValueError("Loaded schema is not a valid dictionary.")
+                raise TypeError('Loaded schema is not a valid dictionary.')
             return schema_data
         except Exception as e:
-            raise ValueError(f"Error reading schema file: {e}")
+            raise YamlParsingError(f'Error reading schema file: {e}') from e
 
     def _resolve_json_pointer(self, pointer: str, data: Dict[str, Any]) -> Any:
         """
@@ -78,23 +80,19 @@ class YAMLConfigValidator:
         ValueError
             If the pointer cannot be fully resolved.
         """
-        if pointer.startswith("#/"):
+        if pointer.startswith('#/'):
             pointer = pointer[2:]
-        tokens = pointer.split("/")
-        tokens = [token for token in tokens if token != "properties"]
+        tokens = pointer.split('/')
+        tokens = [token for token in tokens if token != 'properties']
         value: Any = data
         for token in tokens:
             if isinstance(value, dict) and token in value:
                 value = value[token]
             else:
-                raise ValueError(
-                    f"Could not resolve pointer '{pointer}' in configuration data."
-                )
+                raise ValueError(f"Could not resolve pointer '{pointer}' in configuration data.")
         return value
 
-    def _resolve_default_directive(
-        self, directive: Dict[str, Any], root_data: Dict[str, Any]
-    ) -> str:
+    def _resolve_default_directive(self, directive: Dict[str, Any], root_data: Dict[str, Any]) -> str:
         """
         Resolves a default directive specified as a dictionary with a "$ref" and optional
         transformation instructions.
@@ -114,37 +112,33 @@ class YAMLConfigValidator:
         Raises
         ------
         ValueError
-            If the directive does not contain a '$ref' or if the referenced value is not a string.
+            If the directive does not contain a '$ref
+        TypeError:
+            If the referenced value is not a string.
         NotImplementedError
             If the specified transformation is not supported.
         """
-        if "$ref" not in directive:
+        if '$ref' not in directive:
             raise ValueError("Directive must contain a '$ref' key.")
-        ref_value: Any = self._resolve_json_pointer(directive["$ref"], root_data)
+        ref_value: Any = self._resolve_json_pointer(directive['$ref'], root_data)
         if not isinstance(ref_value, str):
-            raise ValueError(
-                "Referenced value must be a string for folder name transformations."
-            )
+            raise TypeError('Referenced value must be a string for folder name transformations.')
         result: str = ref_value
         # Apply transformation if specified.
-        if "transform" in directive:
-            match directive["transform"]:
-                case "dirname":
+        if 'transform' in directive:
+            match directive['transform']:
+                case 'dirname':
                     result = os.path.dirname(result)
                 case _:
-                    raise NotImplementedError(
-                        f"Transform '{directive['transform']}' is not supported."
-                    )
+                    raise NotImplementedError(f"Transform '{directive['transform']}' is not supported.")
         # Apply prefix if specified.
-        if "prefix" in directive:
-            result = directive["prefix"] + result
-        if "suffix" in directive:
-            result = os.path.normpath(result + directive["suffix"])
+        if 'prefix' in directive:
+            result = directive['prefix'] + result
+        if 'suffix' in directive:
+            result = os.path.normpath(result + directive['suffix'])
         return result
 
-    def _apply_defaults(
-        self, schema: Dict[str, Any], data: Dict[str, Any], root_data: Dict[str, Any]
-    ) -> None:
+    def _apply_defaults(self, schema: Dict[str, Any], data: Dict[str, Any], root_data: Dict[str, Any]) -> None:
         """
         Recursively applies default values from the schema to the data dictionary.
         If a default is specified as a dictionary with "$ref" and transformation keys,
@@ -158,22 +152,25 @@ class YAMLConfigValidator:
             The portion of configuration data to update.
         root_data : dict
             The full configuration data (for resolving references).
+
+        Raises
+        ------
+        ValueError
+            If the default value cannot be resolved.
         """
         if not isinstance(data, dict):
             return
-        for key, subschema in schema.get("properties", {}).items():
-            if key not in data and "default" in subschema:
-                default_val: Any = subschema["default"]
-                if isinstance(default_val, dict) and "$ref" in default_val:
+        for key, subschema in schema.get('properties', {}).items():
+            if key not in data and 'default' in subschema:
+                default_val: Any = subschema['default']
+                if isinstance(default_val, dict) and '$ref' in default_val:
                     try:
-                        data[key] = self._resolve_default_directive(
-                            default_val, root_data
-                        )
+                        data[key] = self._resolve_default_directive(default_val, root_data)
                     except Exception as e:
-                        raise ValueError(f"Error resolving default for '{key}': {e}")
+                        raise ValueError(f"Error resolving default for '{key}': {e}") from e
                 else:
                     data[key] = default_val
-            if key in data and subschema.get("type") == "object":
+            if key in data and subschema.get('type') == 'object':
                 self._apply_defaults(subschema, data[key], root_data)
 
     def validate_yaml(self, yml_filepath: str) -> Dict[str, Any]:
@@ -194,20 +191,22 @@ class YAMLConfigValidator:
 
         Raises
         ------
-        ValueError
-            If the YAML file cannot be read or if the configuration is invalid.
+        YamlParsingError
+            If the YAML file cannot be read
+        YamlValidationError
+            If the YAML configuration is invalid.
         """
         try:
-            with open(yml_filepath, "r") as f:
+            with open(yml_filepath, 'r') as f:
                 data: Dict[str, Any] = yaml.safe_load(f)
         except Exception as e:
-            raise ValueError(f"Error reading YAML file: {e}")
+            raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
         ValidatorClass = jsonschema.validators.validator_for(self.schema)
         validator = ValidatorClass(self.schema)
         errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
         if errors:
-            raise ValueError(f"YAML file validation error: {errors[0].message}")
+            raise YamlValidationError(f'YAML file validation error: {errors[0].message}')
 
         self._apply_defaults(self.schema, data, data)
         self.config = data
@@ -229,14 +228,14 @@ class YAMLConfigValidator:
 
         Raises
         ------
-        ValueError
-            If there is an error writing the schema to the file.
+        YamlOutputError
+            If there is an error while writing the schema to the file.
         """
         schema_yaml: str = yaml.dump(self.schema, sort_keys=False)
         if output_file:
             try:
-                with open(output_file, "w") as f:
+                with open(output_file, 'w') as f:
                     f.write(schema_yaml)
             except Exception as e:
-                raise ValueError(f"Error writing schema to file: {e}")
+                raise YamlOutputError(f'Error writing schema to file: {e}') from e
         return schema_yaml
