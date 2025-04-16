@@ -167,7 +167,7 @@ class YAMLConfigValidator:
                     try:
                         data[key] = self._resolve_default_directive(default_val, root_data)
                     except Exception as e:
-                        raise ValueError(f"Error resolving default for '{key}': {e}")
+                        raise ValueError(f"Error resolving default for '{key}': {e}") from e
                 else:
                     data[key] = default_val
             if key in data and subschema.get('type') == 'object':
