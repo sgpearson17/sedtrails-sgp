@@ -1,4 +1,4 @@
-name: Deploy Sphinx Documentation
+name: Sphinx Docs
 
 on:
     workflow_dispatch:
