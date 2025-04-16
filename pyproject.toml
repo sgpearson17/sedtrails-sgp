@@ -6,28 +6,28 @@ build-backend = "hatchling.build"
 name = "sedtrails"
 version = "0.0.1"
 dependencies = [
-   "jsonschema",
-   "numpy",
-   "pyyaml",
-   "pandas",
-   "matplotlib",
-   "xarray",
-   "typer",
-   "sphinx==8.2.0",
-   "myst-parser==4.0.1",
-   "sphinx-rtd-theme",
-   "pytest"  
+  "jsonschema",
+  "numpy",
+  "pyyaml",
+  "pandas",
+  "matplotlib",
+  "xarray",
+  "typer",
+  "sphinx==8.2.0",
+  "myst-parser==4.0.1",
+  "sphinx-rtd-theme",
+  "pytest",
 ]
 requires-python = ">=3.12"
 authors = [
-  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
-  {name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl"},
-  {name = "Johan Reyns", email = "johan.reyns@deltares.nl"},
+  { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
+  { name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl" },
+  { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
   # Add more authors as needed
 ]
 maintainers = [
-  {name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl"},
-  {name = "Johan Reyns", email = "johan.reyns@deltares.nl"},
+  { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
+  { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
 ]
 description = "Sediment TRAnsport vIsualization and Lagrangian Simulator"
 readme = "README.md"
@@ -36,21 +36,16 @@ license-files = ["LICEN[CS]E.*"]
 keywords = ["sediment", "analysis"]
 classifiers = [
   "Development Status :: 1 - Planning",
-  "Programming Language :: Python"
+  "Programming Language :: Python",
 ]
 
 [project.optional-dependencies]
-cli = [
-  "typer",
-]
-dev = [
-    "pytest",
-    "flake8",
-]
+cli = ["typer"]
+dev = ["pytest", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/sedtrails/sedtrails"
-Documentation = "https://readthedocs.org"
+Documentation = "https://sedtrails.github.io/sedtrails"
 Repository = "https://github.com/sedtrails/sedtrails.git"
 "Bug Tracker" = "https://github.com/sedtrails/sedtrails/issues"
 Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
@@ -59,7 +54,4 @@ Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 pythonpath = "src"
-addopts = [
-    "--import-mode=importlib",
-]
-
+addopts = ["--import-mode=importlib"]
