@@ -5,19 +5,16 @@
 title SedTRAILS System Context Diagram
 scale 2
 
-Person(modeler, "Modeler", "Tracks sand particles in a costal system")
-Person(analyst, "Analyst", "Postprocesses and visualizes simulation outputs")
+Person(modeler, "Modeler", "Tracks particles in a costal system")
+Person(analyst, "Analyst", "processes and visualizes simulation outputs")
 
-' PRINCIPLES OF DEVELOPING:
-' Modularity and extensibility in every component
-
-System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of sand particles (x,y,t) in a costal system", $type="Python application")
+System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of particles (x,y,t) in a costal system over time", $type="Python application")
 
 System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of water and wind", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(analyst, sedtrails, "Post-process simulation outputs in")
+Rel(analyst, sedtrails, "processes simulation outputs in")
 Rel(sedtrails, fileSystem, "reads/writes files to", "NETCDF, CSV, TXT")
 
 Rel(modeler, sedtrails, "Defines simulation parameters and outputs for", "Configuration file")
@@ -26,7 +23,7 @@ Rel(modeler, flowSystem, "Produces flow-field data using")
 ' Rel(connectivityNetworkSys, sedtrails, "Accesses simulation outputs from", "NETCDF")
 ' Rel(statisticsSys, sedtrails, "Accesses simulation outputs from", "NETCDF")
 
-Rel(flowSystem, sedtrails, "Provides flow-field data to ", "NETCDF")
+Rel(flowSystem, sedtrails, "Provides flow-field data to ", "NETCDF, Delft3D binaries")
 
 SHOW_LEGEND()
 @enduml
