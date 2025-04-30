@@ -24,7 +24,7 @@ This container abstracts the workflow needed to prepare simulation configuration
 
 #### Configuration Controller (component)
 - **Technology**: `Python`
-- **Purpose**: Central logic handler for configuration management.
+- **Purpose**: Central logic handler for configuration (i.e., model input parameters) management.
 - **Function**:
   - Reads and interprets YAML configuration files.
   - Applies default configuration values when needed.
@@ -63,8 +63,8 @@ These components receive configuration data from the Simulation Configuration In
 3. **Configuration Controller**:
    - Reads and interprets configuration files.
    - Sends content to **Validator** for schema validation.
-   - Distributes validated configurations to **Lagrangian Particle Tracer** and **Transport Converter**.
-4. **Lagrangian Particle Tracer** and **Transport Converter** execute tasks based on configurations.
+   - Distributes validated configurations (i.e., model parameter settings) to **Lagrangian Particle Tracer** and **Transport Converter**.
+4. **Lagrangian Particle Tracer** and **Transport Converter** execute tasks based on configurations (i.e., model parameter settings).
 
 ## Component Diagram for Transport Converter
 
