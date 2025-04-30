@@ -6,7 +6,7 @@ title SedTRAILS System Context Diagram
 scale 2
 
 Person(modeler, "Modeler", "Tracks particles in a costal system")
-Person(analyst, "Analyst", "processes and visualizes simulation outputs")
+Person(analyst, "Analyst", "Processes and visualizes simulation outputs")
 
 System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of particles (x,y,t) in a costal system over time", $type="Python application")
 
