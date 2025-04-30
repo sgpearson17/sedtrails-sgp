@@ -6,7 +6,7 @@ scale 1.5
 ' LAYOUT_LANDSCAPE()
 
 Person(modeler, "Modeler", "Tracks sand particles in a costal system")
-Person(analyst, "Analyst", "processes and visualizes simulation outputs")
+Person(analyst, "Analyst", "Processes and visualizes simulation outputs")
 
 System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){ 
     Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "A parallel processing application that computes the current and future position of sand particles (x,y,t) in a costal system")
@@ -37,7 +37,7 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(dataManager, fileSystem, "read/writes files to", "NETCDF")
-Rel(modeler, configInterface, "Defines simulation configurations and outputs for", "YAML, Configuration file, Terminal")
+Rel(modeler, configInterface, "defines simulation configurations and outputs for", "YAML, Configuration file, Terminal")
 
 Rel(analyst, pathwayVisualizer, "creates visualizations of sand pathways using", "Python")
 Rel(analyst, analystApp, "processes simulation outputs in", "Terminal")
