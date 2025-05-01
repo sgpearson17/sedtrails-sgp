@@ -28,6 +28,7 @@ documentation for details.
    :caption: DEVELOPER DOCUMENTATION
 
    developer/contribution
+   developer/architecture/software-diagrams.md
 
 .. toctree::
    :maxdepth: 2
