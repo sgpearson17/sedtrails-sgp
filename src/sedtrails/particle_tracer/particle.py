@@ -88,7 +88,7 @@ class Particle(ABC):
     _x: float  # initial position
     _y: float  # initial position
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
-    name: str = field(init=False)  # name of the particle
+    name: str = field(default='', init=False)  # name of the particle
 
     def __post_init__(self):
         if not isinstance(self.name, str):
@@ -153,7 +153,6 @@ class Mud(Particle):
         The velocity of the mud particles.
     """
 
-    particle_velocity: float
     # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
 
@@ -184,7 +183,6 @@ class Sand(Particle):
         The velocity of the sand particles.
     """
 
-    particle_velocity: float
     # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
 
@@ -215,7 +213,6 @@ class Passive(Particle):
         The velocity of the passive particles.
     """
 
-    particle_velocity: float
     # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
 
@@ -297,7 +294,9 @@ class Physics:
 
 
 if __name__ == '__main__':
-    p = Particle(name='Test Particle')
+    s = Sand(id=1, _x=0.0, _y=0.0)
+
+    print(s)
 
     t = Time(time_step=0)
     t.update(5)
