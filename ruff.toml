@@ -19,3 +19,7 @@ unfixable = ["B"]
 [format]
 # 5. Use single quotes in `ruff format`.
 quote-style = "single"
+
+[lint.flake8-bugbear]
+# Allow default arguments like, e.g., `data: List[str] = fastapi.Query(None)`.
+extend-immutable-calls = ["typer.Option"]
