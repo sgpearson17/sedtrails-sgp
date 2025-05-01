@@ -3,7 +3,7 @@ Classes for representing internal data structures of the particle tracer.
 """
 
 from dataclasses import dataclass, field
-from abc import ABC
+from abc import ABC, abstractmethod
 from numpy import ndarray
 from typing import List
 from datetime import datetime, timedelta
@@ -30,7 +30,7 @@ class Time:
             raise TypeError(f"Expected 'time' to be a float, got {type(self.time_step).__name__}")
         if self.time_step < 0:
             raise ValueError(f"Expected 'time' to be a non-negative integer, got {self.time_step}")
-    
+
     def update(self, time_step: int):
         """
         Updates the time step of the simulation.
@@ -51,7 +51,7 @@ class Time:
         Parameters
         ----------
         reference_date : datetime
-            The reference date from which the time step is calculated. 
+            The reference date from which the time step is calculated.
             This is the starting date time of the simulation.
         step_size : float
             The size of the time step in seconds.
@@ -60,10 +60,10 @@ class Time:
         datetime
             The datetime object representing the time step.
         """
-        
+
         return reference_date + timedelta(seconds=self.time_step * step_size)
-        
-        
+
+
 @dataclass
 class Particle(ABC):
     """
@@ -71,26 +71,33 @@ class Particle(ABC):
 
     Attributes
     ----------
-    name : str
-        The name of the particle.
+
+    id : int
+        The unique identifier of the particle.
     x : float
         The x-coordinate of the particle in meters.
     y : float
         The y-coordinate of the particle in meters.
+    is_mobile : bool
+        Whether the particle can move in the current simulation step or not. Default is True.
+    name : str
+        The name of the particle. Optional.
     """
 
-    name: str
+    id: int
     _x: float  # initial position
-    _y: float   # initial position
+    _y: float  # initial position
+    _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
+    name: str = field(init=False)  # name of the particle
 
     def __post_init__(self):
         if not isinstance(self.name, str):
             raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
-        
+
     @property
     def x(self) -> None:
         return self._x
-    
+
     @x.setter
     def x(self, value: int | float) -> None:
         if not isinstance(value, (int, float)):
@@ -100,12 +107,39 @@ class Particle(ABC):
     @property
     def y(self) -> None:
         return self._y
-    
+
     @y.setter
     def y(self, value: int | float) -> None:
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'y' to be an integer or float, got {type(value).__name__}")
         self._y = value
+
+    @property
+    def is_mobile(self) -> None:
+        return self._is_mobile
+
+    @is_mobile.setter
+    def is_mobile(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise TypeError(f"Expected 'is_mobile' to be a boolean, got {type(value).__name__}")
+        self._is_mobile = value
+
+    @is_mobile.getter
+    def is_mobile(self) -> bool:
+        return self._is_mobile
+
+    @abstractmethod
+    def particle_velocity(self) -> float:
+        """
+        A method to compute the particle's velocity.
+        This method should be implemented by each particle type.
+
+        Returns
+        -------
+        float
+            The velocity of the particle in meters per second.
+        """
+        pass
 
 
 @dataclass
@@ -120,9 +154,9 @@ class Mud(Particle):
     """
 
     particle_velocity: float
-    #TODO: define the physical properties of the passive particles
+    # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
-    
+
     def __post_init__(self):
         # TODO: validate data types once the physical properties are defined
         pass
@@ -140,11 +174,11 @@ class Sand(Particle):
     """
 
     particle_velocity: float
-    #TODO: define the physical properties of the passive particles
+    # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
 
     def __post_init__(self):
-    # TODO: validate data types once the physical properties are defined
+        # TODO: validate data types once the physical properties are defined
         pass
 
 
@@ -160,7 +194,7 @@ class Passive(Particle):
     """
 
     particle_velocity: float
-    #TODO: define the physical properties of the passive particles
+    # TODO: define the physical properties of the passive particles
     physical_properties: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -194,7 +228,7 @@ class InterpolatedValue:
     sed_concentration : float
         The suspended sediment concentration of the particle in kg/m^3.
     wave_velocity : ndarray
-        The non-linear wave velocity of the particle in m/s. 
+        The non-linear wave velocity of the particle in m/s.
     """
 
     x: float
@@ -226,7 +260,7 @@ class Fraction:
 
     paticles: List[Particle] = field(default_factory=list)
 
-    #TODO: discuss with the team.
+    # TODO: discuss with the team.
 
 
 @dataclass
@@ -237,6 +271,7 @@ class Physics:
     Attributes
     ----------
     """
+
     # TODO: define which attributes are needed for the Physics class
     pass
 
@@ -245,8 +280,8 @@ class Physics:
         pass
 
 
-if __name__ == "__main__":
-    p = Particle(name="Test Particle")
+if __name__ == '__main__':
+    p = Particle(name='Test Particle')
 
     t = Time(time_step=0)
     t.update(5)
