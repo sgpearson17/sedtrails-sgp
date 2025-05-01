@@ -161,6 +161,17 @@ class Mud(Particle):
         # TODO: validate data types once the physical properties are defined
         pass
 
+    def particle_velocity(self) -> float:
+        """
+        A method to compute the velocity of a mud particle.
+
+        Returns
+        -------
+        float
+            The velocity of the particle in meters per second.
+        """
+        pass  # TODO: implement the velocity calculation for mud particles
+
 
 @dataclass
 class Sand(Particle):
@@ -181,6 +192,17 @@ class Sand(Particle):
         # TODO: validate data types once the physical properties are defined
         pass
 
+    def particle_velocity(self) -> float:
+        """
+        A method to compute the velocity of a sand particle.
+
+        Returns
+        -------
+        float
+            The velocity of the particle in meters per second.
+        """
+        pass  # TODO: implement the velocity calculation for sand particles
+
 
 @dataclass
 class Passive(Particle):
@@ -200,6 +222,17 @@ class Passive(Particle):
     def __post_init__(self):
         # TODO: validate data types once the physical properties are defined
         pass
+
+        def particle_velocity(self) -> float:
+            """
+            A method to compute the velocity of a passive particle.
+
+            Returns
+            -------
+            float
+                The velocity of the particle in meters per second.
+            """
+            pass  # TODO: implement the velocity calculation for passive particles
 
 
 @dataclass
