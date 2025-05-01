@@ -3,7 +3,7 @@ Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
 """
 
 from typer.testing import CliRunner
-from sedtrails.sedtrails import app
+from sedtrails.configuration_interface.cli import app
 
 runner = CliRunner()
 
