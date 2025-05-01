@@ -1,9 +1,9 @@
 """
 Unit tests for data classes in the particle.py module of the sedtrails package.
 """
+
 import pytest
-from sedtrails.particle_tracer.particle import Mud,Sand, Passive, \
-      Particle
+from sedtrails.particle_tracer.particle import Mud, Sand, Passive, Particle
 
 
 class TestParticle:
@@ -15,24 +15,23 @@ class TestParticle:
         """
         Test the initialization of the Mud class.
         """
-        
-        mud = Mud(name="Mud Particle", _x=1, _y=2, particle_velocity=0.5)
+
+        mud = Mud(id=1, name='Mud Particle', _x=1, _y=2)
         assert isinstance(mud, Mud)
 
     def test_sand_initialization(self):
         """
         Test the initialization of the Sand class.
         """
-        sand = Sand(name="Sand Particle", _x=1, _y=2, particle_velocity=0.7)
+        sand = Sand(id=1, name='Sand Particle', _x=1, _y=2)
         assert isinstance(sand, Sand)
 
-    def test_passive_initialization(self):  
+    def test_passive_initialization(self):
         """
         Test the initialization of the Passive class.
         """
-        passive = Passive(name="Passive Particle", _x=1, _y=2, particle_velocity=0.9)
+        passive = Passive(id=1, name='Passive Particle', _x=1, _y=2)
         assert isinstance(passive, Passive)
-
 
     def test_particle_name_type_error(self):
         """
@@ -47,21 +46,37 @@ class TestParticle:
         Test the type error for invalid trace in Particle class.
         """
         with pytest.raises(TypeError):
-            Particle(name="Particle", trace=123)
+            Particle(name='Particle', trace=123)
+
+    def test_name_property_is_optional(self):
+        """
+        Test that the name property is optional in the Particle class, and
+        the default value is an empty string.
+        """
+        particle = Sand(id=1, _x=1, _y=2)
+        assert particle.name == ''
+
+        particle = Mud(id=1, _x=1, _y=2)
+        assert particle.name == ''
+
+        particle = Passive(id=1, _x=1, _y=2)
+        assert particle.name == ''
 
 
 class TestMud:
     """
     Test suite for the Mud class.
     """
-    #TODO: implement tests for Mud class
+
+    # TODO: implement tests for Mud class
+
 
 class TestSand:
     """
     Test suite for the Sand class.
     """
 
-    #TODO: implement tests for Mud class
+    # TODO: implement tests for Mud class
 
 
 class TestPassive:
@@ -69,13 +84,14 @@ class TestPassive:
     Test suite for the Passive class.
     """
 
-    #TODO: implement tests for Mud class
+    # TODO: implement tests for Mud class
 
 
 class TestInterpolatedValue:
     """
     Test suite for the InterpolatedValue class.
     """
+
 
 class TestPhysics:
     """
