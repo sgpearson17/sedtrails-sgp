@@ -5,7 +5,7 @@ Classes for representing internal data structures of the particle tracer.
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from numpy import ndarray
-from typing import List
+from typing import Optional
 from datetime import datetime, timedelta
 
 
@@ -81,14 +81,14 @@ class Particle(ABC):
     is_mobile : bool
         Whether the particle can move in the current simulation step or not. Default is True.
     name : str
-        The name of the particle. Optional.
+        A name for the particle. Optional.
     """
 
     id: int
     _x: float  # initial position
     _y: float  # initial position
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
-    name: str = field(default='', init=False)  # name of the particle
+    name: Optional[str] = field(default='')  # name of the particle
 
     def __post_init__(self):
         if not isinstance(self.name, str):
@@ -220,16 +220,16 @@ class Passive(Particle):
         # TODO: validate data types once the physical properties are defined
         pass
 
-        def particle_velocity(self) -> float:
-            """
-            A method to compute the velocity of a passive particle.
+    def particle_velocity(self) -> float:
+        """
+        A method to compute the velocity of a passive particle.
 
-            Returns
-            -------
-            float
-                The velocity of the particle in meters per second.
-            """
-            pass  # TODO: implement the velocity calculation for passive particles
+        Returns
+        -------
+        float
+            The velocity of the particle in meters per second.
+        """
+        pass  # TODO: implement the velocity calculation for passive particles
 
 
 @dataclass
@@ -294,11 +294,6 @@ class Physics:
 
 
 if __name__ == '__main__':
-    s = Sand(id=1, _x=0.0, _y=0.0)
+    s = Sand(id=1, _x=0.0, _y=0.0, name='Sand Particle')
 
     print(s)
-
-    t = Time(time_step=0)
-    t.update(5)
-    print(t.datetime(datetime(2023, 10, 1), 1.0))
-    print(t.datetime(datetime(2023, 10, 1), 30))
