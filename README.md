@@ -1,10 +1,10 @@
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Deploy Sphinx Documentation](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml/badge.svg)](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml)
 [![Ruff](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml/badge.svg?branch=dev)](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml)
-![Static Badge](https://img.shields.io/badge/tu_delft-support-black?style=flat&label=TU%20Delft%20DCC&labelColor=%2300A6D6%20&color=%23000000&link=https%3A%2F%2Fdcc.tudelft.nl%2F)
+![TUDelft DCC](https://img.shields.io/badge/tu_delft-DCC-black?style=flat&label=TU%20Delft&labelColor=%2300A6D6%20&color=%23000000&link=https%3A%2F%2Fdcc.tudelft.nl%2F)
+
 # SedTRAILS
-Sediment TRAnsport vIsualization and Lagrangian Simulator
+Sediment TRAnsport vIsualization and Lagrangian Simulator.
 
 ## Installation
 
