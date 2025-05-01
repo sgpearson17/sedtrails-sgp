@@ -280,23 +280,6 @@ class InterpolatedValue:
 
 
 @dataclass
-class Fraction:
-    """
-    Class for representing fractions of a Particle.
-    A fracction is a set of particles with identical properties in a simulation.
-
-    Attributes
-    ----------
-    particles : List[Particle]
-        A list of particles that belong to this fraction.
-    """
-
-    paticles: List[Particle] = field(default_factory=list)
-
-    # TODO: discuss with the team.
-
-
-@dataclass
 class Physics:
     """
     Class for storing physics converted values of a Particle.
