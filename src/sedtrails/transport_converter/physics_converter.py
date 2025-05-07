@@ -5,8 +5,12 @@ Computes the physics of particles in the simulation based on particle types.
 import importlib
 
 # type of physics plugin to use.
-## latet the value for this variable can be set based on the
+## the value  of PHYSICS_PLUGINGS can be set based on the
 ## modeler's choice in the configuration file.
+
+
+
+
 PHYSICS_PLUGINS = "plugins.physics.sand"
 
 # import converter dynamically
