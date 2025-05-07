@@ -6,7 +6,10 @@ Reads simulation configuration files, applies default configuration values,
 and provides configurations to other components.
 """
 
+import os
 from abc import ABC, abstractmethod
+
+from sedtrails.configuration_interface.validator import YAMLConfigValidator
 
 
 class Controller(ABC):
@@ -16,9 +19,8 @@ class Controller(ABC):
 
     # TODO: Something to keep in mind in this class is that
     # if we can and it is convenient to have separted methods to retrieve parts of the configuration
-    # that go to the particle tracer and the transport converter. For example, if it is convenient to 
+    # that go to the particle tracer and the transport converter. For example, if it is convenient to
     # have a method that returns the configuration values that are only relevant for the particle tracer.
-
 
     @abstractmethod
     def read_config(self, config_file):
@@ -34,10 +36,6 @@ class Controller(ABC):
         """
         pass
 
-    
-    
-
-
 
 class ConfigurationController(Controller):
     """
@@ -45,7 +43,7 @@ class ConfigurationController(Controller):
     """
 
     def __init__(self):
-        self.config = {}
+        self.config_data = {}
 
     def read_config(self, config_file: str) -> None:
         """
@@ -57,11 +55,16 @@ class ConfigurationController(Controller):
             The path to the configuration file to read.
         """
 
-        #TODO: Implement reading from a configuration file
-        # read the configuration file
-        # validate the configuration
+        valid_json = os.path.join(r'/config_schema.json')  # not happy with hardcoded path
 
-        self.config  = {}  # Placeholder for the actual configuration data
+        if not os.path.exists(valid_json):
+            raise FileNotFoundError(
+                f'SedTRAILS validation schema file not found: {valid_json}. \
+                Input cannot be parsed.'
+            )
+
+        validator = YAMLConfigValidator(valid_json)
+        self.config_data = validator.validate_yaml(config_file)
 
         return None
 
@@ -75,25 +78,4 @@ class ConfigurationController(Controller):
             The current configuration.
         """
 
-        return self.config
-    
-
-    def _validate_config(self) -> bool:
-        """
-        Validates the configuration.
-
-        Parameters
-        ----------
-        config : dict
-            The configuration to validate.
-
-        Returns
-        -------
-        bool
-            True if the configuration is valid, False otherwise.
-        """
-        # TODO: this shouold use the validator.py to validate the configuration
-        
-        pass
-    
-
+        return self.config_data
