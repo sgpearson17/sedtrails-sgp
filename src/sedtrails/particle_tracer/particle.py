@@ -276,24 +276,3 @@ class InterpolatedValue:
     max_shear_stress: float
 
 
-@dataclass
-class Physics:
-    """
-    Class for storing physics converted values of a Particle.
-
-    Attributes
-    ----------
-    """
-
-    # TODO: define which attributes are needed for the Physics class
-    pass
-
-    def __post_init__(self):
-        # TODO: validate data types once the physical properties are defined
-        pass
-
-
-if __name__ == '__main__':
-    s = Sand(id=1, _x=0.0, _y=0.0, name='Sand Particle')
-
-    print(s)
