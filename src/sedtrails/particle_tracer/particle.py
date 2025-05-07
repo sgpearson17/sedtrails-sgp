@@ -78,6 +78,9 @@ class Particle(ABC):
         The x-coordinate of the particle in meters.
     y : float
         The y-coordinate of the particle in meters.
+
+    release_time : int
+        The time step at which the particle is released. A non-negative integer.
     is_mobile : bool
         Whether the particle can move in the current simulation step or not. Default is True.
     name : str
@@ -87,6 +90,7 @@ class Particle(ABC):
     id: int
     _x: float  # initial position
     _y: float  # initial position
+    _release_time: int = field(default=1)  # release time of the particle
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
 
@@ -113,6 +117,22 @@ class Particle(ABC):
         if not isinstance(value, (int, float)):
             raise TypeError(f"Expected 'y' to be an integer or float, got {type(value).__name__}")
         self._y = value
+
+    @property
+    def release_time(self) -> None:
+        return self._release_time
+    
+    @release_time.setter
+    def release_time(self, value: int) -> None:
+        if not isinstance(value, int):
+            raise TypeError(f"Expected 'release_time' to be an integer, got {type(value).__name__}")
+        if value < 0:
+            raise ValueError(f"Expected 'release_time' to be a non-negative integer, got {value}")
+        self._release_time = value
+    
+    @release_time.getter
+    def release_time(self) -> int:
+        return self._release_time
 
     @property
     def is_mobile(self) -> None:
