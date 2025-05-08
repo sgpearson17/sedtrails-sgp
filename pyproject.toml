@@ -53,6 +53,7 @@ Repository = "https://github.com/sedtrails/sedtrails.git"
 Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
 
 [project.scripts]
+sedtrails = "sedtrails.configuration_interface.cli:app"
 
 [tool.pytest.ini_options]
 pythonpath = "src"

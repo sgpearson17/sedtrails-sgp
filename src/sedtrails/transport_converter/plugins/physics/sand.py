@@ -2,7 +2,8 @@
 Physics plugin for sand particles
 """
 
-from sedtrails.converters.plugins import BasePhysicsPlugin
+from sedtrails.transport_converter.plugins import BasePhysicsPlugin
+
 
 class PhysicsPlugin(BasePhysicsPlugin): # All plugins must inherit from the BasePhysicsPlugin class and be named as PhysicsPlugin
     """
@@ -16,6 +17,7 @@ class PhysicsPlugin(BasePhysicsPlugin): # All plugins must inherit from the Base
         """
         Computes the physics of sand particles in the simulation.
         """
+
         print ("Computing physics for sand particles")
 
         # logic for  converting sand particles
