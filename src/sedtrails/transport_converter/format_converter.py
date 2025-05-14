@@ -5,15 +5,14 @@ This module reads various input data formats (e.g., NetCDF files from different
 hydrodynamic models) and converts them into the SedtrailsData structure for 
 use in the SedTRAILS particle tracking system.
 """
-import os
 import numpy as np
 import xarray as xr
 import xugrid as xu
 from enum import Enum
-from typing import Union, Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
+from typing import Union, Dict, Tuple
+from dataclasses import dataclass
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 class InputType(Enum):

@@ -4,10 +4,9 @@ Flow Field Data Retriever
 Retrieves flow field data from the transport converter or the simulation caching and state tracker.
 Performs temporal interpolation to provide accurate flow field data at any time point for particle tracing.
 """
-from typing import Dict, Tuple, Optional, Callable
+from typing import Tuple
 import numpy as np
 import sys
-import os
 from pathlib import Path
 
 # Add parent directory to path to allow importing from other packages
