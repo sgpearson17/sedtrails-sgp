@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from numpy import ndarray
 from typing import Optional
-from datetime import datetime, timedelta
+import numpy as np
 
 
 @dataclass
@@ -16,52 +16,57 @@ class Time:
 
     Attributes
     ----------
-    time_step : int
-        The current time step in a simulation. A non-negative integer.
+    reference_date : numpy.datetime64
+        The reference date for calculating time.
+    offset_seconds : numpy.timedelta64
+        The offset in seconds from the reference date.
 
     Methods
     -------
+    get_current_time()
+        Returns the current time as a numpy.datetime64 object.
+    update(delta_seconds: numpy.timedelta64)
+        Updates the current time by adding a delta in seconds.
     """
 
-    time_step: int = field(default=1)  # time step index starts at one.
+    reference_date: np.datetime64 = field(default=np.datetime64('1970-01-01T00:00:00', 's'))
+    offset_seconds: np.timedelta64 = field(default=np.timedelta64(0, 's'))
 
     def __post_init__(self):
-        if not isinstance(self.time_step, int):
-            raise TypeError(f"Expected 'time' to be a float, got {type(self.time_step).__name__}")
-        if self.time_step < 0:
-            raise ValueError(f"Expected 'time' to be a non-negative integer, got {self.time_step}")
+        if not isinstance(self.reference_date, np.datetime64):
+            raise TypeError(f"Expected 'reference_date' to be a numpy.datetime64, got {type(self.reference_date).__name__}")
+        if self.reference_date.dtype != 'datetime64[s]':
+            raise ValueError("reference_date must have a resolution of seconds (datetime64[s]).")
+        if not isinstance(self.offset_seconds, np.timedelta64):
+            raise TypeError(f"Expected 'offset_seconds' to be a numpy.timedelta64, got {type(self.offset_seconds).__name__}")
+        if self.offset_seconds.dtype != 'timedelta64[s]':
+            raise ValueError("offset_seconds must have a resolution of seconds (timedelta64[s]).")
 
-    def update(self, time_step: int):
+    def get_current_time(self) -> np.datetime64:
         """
-        Updates the time step of the simulation.
-        Parameters
-        ----------
-        time_step : int
-            The new time step to be set.
-        """
-        if not isinstance(time_step, int):
-            raise TypeError(f"Expected 'time' to be a float, got {type(time_step).__name__}")
-        if time_step < 0:
-            raise ValueError(f"Expected 'time' to be a non-negative integer, got {time_step}")
-        self.time_step = time_step
+        Returns the current time as a numpy.datetime64 object.
 
-    def datetime(self, reference_date: datetime, step_size: float) -> datetime:
-        """
-        Returns the datetime object representing the current time step.
-        Parameters
-        ----------
-        reference_date : datetime
-            The reference date from which the time step is calculated.
-            This is the starting date time of the simulation.
-        step_size : float
-            The size of the time step in seconds.
         Returns
         -------
-        datetime
-            The datetime object representing the time step.
+        numpy.datetime64
+            The current time in the simulation.
         """
+        return self.reference_date + self.offset_seconds
 
-        return reference_date + timedelta(seconds=self.time_step * step_size)
+    def update(self, delta_seconds: np.timedelta64):
+        """
+        Updates the current time by adding a delta in seconds.
+
+        Parameters
+        ----------
+        delta_seconds : numpy.timedelta64
+            The time delta to add to the current time.
+        """
+        if not isinstance(delta_seconds, np.timedelta64):
+            raise TypeError(f"Expected 'delta_seconds' to be a numpy.timedelta64, got {type(delta_seconds).__name__}")
+        if delta_seconds.dtype != 'timedelta64[s]':
+            raise ValueError("delta_seconds must have a resolution of seconds (timedelta64[s]).")
+        self.offset_seconds += delta_seconds
 
 
 @dataclass
