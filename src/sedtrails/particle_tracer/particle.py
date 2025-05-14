@@ -121,7 +121,7 @@ class Particle(ABC):
     @property
     def release_time(self) -> None:
         return self._release_time
-    
+
     @release_time.setter
     def release_time(self, value: int) -> None:
         if not isinstance(value, int):
@@ -129,7 +129,7 @@ class Particle(ABC):
         if value < 0:
             raise ValueError(f"Expected 'release_time' to be a non-negative integer, got {value}")
         self._release_time = value
-    
+
     @release_time.getter
     def release_time(self) -> int:
         return self._release_time
@@ -294,5 +294,3 @@ class InterpolatedValue:
     wave_velocity: ndarray
     mean_shear_stress: float
     max_shear_stress: float
-
-
