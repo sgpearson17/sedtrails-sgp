@@ -231,14 +231,14 @@ This container handles particle release, position calculation, status updates, a
 
 #### Particle Status Checker
 - **Technology**: `Python`
-- **Purpose**: Updates particle status and applies rules to determine end-of-life.
+- **Purpose**: Updates particle status and applies rules to determine end-of-life or availability for transport.
 - **Function**:
   - Uses velocity or domain thresholds to identify particles that are inactive or buried.
   - Retrieves methods from the **Particle Status Library**.
 
 #### Particle Status Library
 - **Technology**: `Python`
-- **Purpose**: Houses logic for particle termination.
+- **Purpose**: Houses logic for particle termination or changes in availability for transport.
 - **Function**: Provides reusable methods to check depth, burial, and exit conditions.
 
 #### Particle Position Calculator
@@ -250,13 +250,13 @@ This container handles particle release, position calculation, status updates, a
 
 #### Particle Property Interpolator
 - **Technology**: `Python`
-- **Purpose**: Interpolates environmental properties (e.g., salinity, depth).
-- **Function**: Updates each particle with values based on position.
+- **Purpose**: Interpolates scalar environmental properties (e.g., salinity, depth, bed level).
+- **Function**: Updates each particle with values of scalar fields based on position.
 
 #### Diffusion Library
 - **Technology**: `Python`
 - **Purpose**: Implements diffusion behavior in particle tracking.
-- **Function**: Provides diffusion calculations based on stochastic or deterministic rules.
+- **Function**: Provides diffusion calculations based on stochastic or deterministic rules (e.g., random walk).
 
 #### Particle Pathway Interface
 - **Technology**: `Python`
@@ -270,11 +270,11 @@ This container handles particle release, position calculation, status updates, a
 #### Simulation Configuration Interface
 - **Technology**: `Python`
 - **Purpose**: Provides model parameter settings.
-- **Function**: Supplies seeding parameters, numerical methods, and time settings.
+- **Function**: Supplies physical parameters, seeding information, numerical methods, and time settings.
 
 #### Transport Converter
 - **Technology**: `Python`
-- **Purpose**: Supplies processed flow–field data.
+- **Purpose**: Supplies processed flow–field data (e.g., sediment particle velocities).
 - **Function**: Feeds converted transport field data into the **Flow Field Data Retriever**.
 
 #### Simulation Cache and Recovery
