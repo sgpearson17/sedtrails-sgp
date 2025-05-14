@@ -1,0 +1,198 @@
+General:
+  preprocess: 1
+  computePathways: 1
+  inputModelType: dfm 
+  nRuns: 1
+  displayInputMetadata: 0
+  numScheme:    rk4   
+Folder settings:
+  inputDir: ./input 
+  outputDir: ./output
+  sharedDir: ./share
+  dataDir: ./data
+Domain:
+  useFullModelExtents: 1
+  subset_x:  [] 
+  subset_y:  [] 
+  sedtrailsDomainPol:  [] 
+  subset_m: 0
+  subset_n: 0
+  subset_t: 49:124
+  subset_t_bed: 1
+  subset_k: 0
+  DFLOW-FM: 
+    fmOutputType: sedtrails_nc   
+  Delft3D4:
+    d3d_nested: 0
+    d3d_nested_polFile:  [] 
+    d3d_depAvgFlow: 1
+    d3d_verticalLayer: 1
+Time:
+  startAtModelStart: 1
+  starttime: -999.0
+  runtime: 12.5/24
+  accelerationfactor: 1.0
+  timestep: 30.0
+  freezeFirstTimestep: 0
+Physics:
+  Constants:
+    g: 9.81
+    vkarman: 0.4
+    visc_kin: 1.36e-06
+    rhoW: 1027.0
+    rhoS: 2650.0
+    frictionAngle: 30.0
+    diffusioncoefficient: 0.1
+  Additional bed shear stress:
+    waves_modifyBedShear: 0
+    waves_bedShearModFile:  [] 
+  Bed slope:
+    bedSlope_calculate: 0
+    bedSlope_dx: 100.0
+    bedslope_checkPlot: 0
+    bedSlope_caxisFactor: 100.0
+    bedSlope_alphaBS: 1.0
+    bedSlope_alphaBN: 1.5
+Processes:
+  flowvel: 1
+  sand: 1
+  mud: 0
+  bio: 0
+  lum: 0
+  General:
+    initialParticleFreedom: 1
+  Sand:
+    dTracer: 0.0002
+    supportedSandTransportFormulations:  [soulsby2011  ,  pannozzo  ,  vanwesten  ] 
+    sandVelFormulation:    soulsby2011   
+    sandVelDefinition:  all
+    Soulsby 2011:
+      soulsby2011_bedInteraction: 0
+      dBackground:  [] 
+      soulsby2011_F0: 1
+      soulsby2011_gamma_e: 0.1
+      soulsby2011_theta_s: 0.1
+      soulsby2011_b_e: 1.7e-07
+      soulsby2011_mu_d: 0.5
+      useNearBedVel: 1
+      nearBedVel_Lewis2017: 1
+      near_bed_Uc_z: 0.4
+      near_bed_Uc_alpha: 7.0
+      near_bed_Uc_beta: 0.32
+Barriers:
+  includeBarriers: 0
+  BarrierPolFile:     
+Sources:
+  General settings:
+    src_sourceFile:  [] 
+    src_class:    clusters   
+    src_type:    instantaneous   
+    src_lifespan: 9.0e+99
+    src_releaseinterval: 7200.0
+    release_start: -999.0
+    release_stop: -999.0
+    src_pps(1): 1.0
+    src_pps(2): 1.0
+    releaseStartDelay: 60/60/24
+    releaseStopDelay: 2*60/60/24
+  Cluster source:
+    src_cluster_PolFile:  [] 
+    src_cluster_zCutoff: 1.0
+    src_cluster_xWeight: 1.0
+    src_cluster_yWeight: 1.0
+    src_cluster_zWeight: 10.0
+    src_cluster_k: 100.0
+    src_cluster_iter: 40.0
+    src_cluster_showCheckPlots: 0
+    src_cluster_saveCheckPlots: 0
+  Point source:
+    src_pointSource_PolFile:  [] 
+    src_pointSource_points:  [] 
+    src_pointSource_showCheckPlots: 0
+    src_pointSource_saveCheckPlots: 0
+  Line source:
+    src_lineSource_PolFile:  [] 
+    src_lineSource_endPoints:  [] 
+    src_lineSource_k: 100.0
+    src_lineSource_showCheckPlots: 0
+    src_lineSource_saveCheckPlots: 0
+  Grid source:
+    src_regularGrid_PolFile:  [] 
+    src_regularGrid_zCutoff: 1.0
+    src_regularGrid_dx: 100.0
+    src_regularGrid_dy:  [] 
+    src_regularGrid_addJitter: 0
+    src_regularGrid_jitterPct: 0.1
+    src_regularGrid_showCheckPlots: 0
+    src_regularGrid_saveCheckPlots: 0
+Connectivity:
+  Connectivity Parameters:
+    connectivity_autoDefine: 0
+    connectivity_analyze: 0
+    connectivity_timeVarying: 0
+    connectivity_calculate_moduleBorders: 0
+  Plotting:
+    connectivity_plot: 0
+    connectivity_plot_network: 0
+    connectivity_plot_topFractionLinks:  [] 
+    connectivity_plot_adjMat: 0
+    connectivity_plot_netgross: 0
+    connectivity_plot_nodeMetrics: 0
+    connectivity_plot_modules: 0
+    connectivity_plot_moduleBorders: 0
+    connectivity_adjmat:  [] 
+  Connectivity auto-define:
+    connSetup_useAlphaShape: 0
+    connSetup_holeThreshold: 0.0
+    connSetup_bufferDist: 0.0
+    connSetup_cluster_k: 5.0
+    connSetup_cluster_iter: 40.0
+    connSetup_showCheckPlots: 0
+    connSetup_saveCheckPlots: 0
+    connSetup_perimeterPolFile:  [] 
+    connSetup_islandsPolFile:  [] 
+    connectivity_PolFile:  [] 
+    plot_mgmtPolygons_PolFile:  [] 
+    connectivity_mergePolygonMode: 1
+    connectivity_polygonMerging_distThreshold: 1.0
+    connectivity_polygonCreator_showCheckPlots: 0
+Pathways:
+  queryPathways: 1
+  query_polygon:  [] 
+  analyzePathways: 0
+Output:
+  outputtimestep: 600.0
+  storetracks: 1
+  storeendpositions: 0
+Plot Settings:
+  General:
+    plot_animation: 0
+    plot_overview_age: 1
+    plot_overview_origin: 1
+    plot_overview_origin_rotationtheta: -90.0
+    plot_staticMaskOn: 0
+    plot_randomMaskOn: 0
+    plot_randomThreshold: 0.0
+    plot_elevMaskOn: 1
+    plot_elevThreshold: 2.0
+    plot_pointSize: 8.0
+    plot_printScaling: 1.0
+    plot_printDimensions:  [29.7, 21.0] 
+    plot_dx: 100.0
+    plot_MLW: -1.0
+    plot_MHW: 1.0
+    plot_depthContours:  [2.5, 5, 10, 15, 20, 25] 
+    plot_land_PolFile:  [] 
+    plot_xlim:  [] 
+    plot_ylim:  [] 
+    plot_monitoringPoint:  [] 
+    plot_monitoringPoint_velComponent:    E   
+    plot_monitoringPoint_signalType:    velocity   
+    plot_timeseriesYlim:  [] 
+    plotPathways: 0
+  Validation:
+    plotTracerValidation: 0
+    plot_tracerValidationDataPath:  [] 
+    plotDrifterValidation: 0
+    plot_drifterValidationDataPath:  [] 
+    plot_drifterTrackComparison: 0
