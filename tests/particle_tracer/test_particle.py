@@ -3,7 +3,8 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 
 import pytest
-from sedtrails.particle_tracer.particle import Mud, Sand, Passive, Particle
+import numpy as np
+from sedtrails.particle_tracer.particle import Mud, Sand, Passive, Particle, Time
 
 
 class TestParticle:
@@ -97,3 +98,52 @@ class TestPhysics:
     """
     Test suite for the Physics class.
     """
+
+class TestTime:
+    """
+    Test suite for the Time class.
+    """
+
+    def test_initial_current_time(self):
+        """
+        Test that the initial current time matches the reference date.
+        """
+        reference_date = np.datetime64('2023-01-01T00:00:00', 's')
+        offset_seconds = np.timedelta64(0, 's')
+        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+
+        assert time_instance.get_current_time() == reference_date, \
+            "Initial current time should match the reference date."
+
+    def test_update_add_seconds(self):
+        """
+        Test updating the current time by adding seconds.
+        """
+        reference_date = np.datetime64('2023-01-01T00:00:00', 's')
+        offset_seconds = np.timedelta64(0, 's')
+        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+
+        delta_seconds = np.timedelta64(120, 's')
+        time_instance.update(delta_seconds)
+
+        expected_time = reference_date + delta_seconds
+        assert time_instance.get_current_time() == expected_time, \
+            f"Updated current time should be {expected_time}, but got {time_instance.get_current_time()}."
+
+    def test_update_subtract_seconds(self):
+        """
+        Test updating the current time by subtracting seconds.
+        """
+        reference_date = np.datetime64('2023-01-01T00:00:00', 's')
+        offset_seconds = np.timedelta64(0, 's')
+        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+
+        delta_seconds = np.timedelta64(120, 's')
+        time_instance.update(delta_seconds)
+
+        delta_seconds = np.timedelta64(-60, 's')
+        time_instance.update(delta_seconds)
+
+        expected_time = reference_date + np.timedelta64(120, 's') + np.timedelta64(-60, 's')
+        assert time_instance.get_current_time() == expected_time, \
+            f"Updated current time after subtraction should be {expected_time}, but got {time_instance.get_current_time()}."
