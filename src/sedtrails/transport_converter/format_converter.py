@@ -2,7 +2,6 @@
 Format Converter: manage the conversion of input data formats and into a internal format.
 """
 from dataclasses import dataclass, field
-from typing import List
 
 @dataclass
 class SedtrailsData:
