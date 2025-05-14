@@ -234,7 +234,7 @@ class FormatConverter:
             try:
                 self.input_type = InputType(input_type.lower())
             except ValueError:
-                raise ValueError(f"Invalid input type: {input_type}. Must be one of {[t.value for t in InputType]}")
+                raise ValueError(f"Invalid input type: {input_type}. Must be one of {[t.value for t in InputType]}") from ValueError
         else:
             self.input_type = input_type
         
@@ -259,7 +259,7 @@ class FormatConverter:
             self._read_netcdf_dfm()
         elif self.input_type == InputType.TRIM_D3D4:
             # Placeholder for future implementation
-            raise NotImplementedError(f"TRIM_D3D4 format not implemented yet")
+            raise NotImplementedError("TRIM_D3D4 format not implemented yet")
         else:
             raise NotImplementedError(f"Input type not implemented: {self.input_type}")
     
@@ -276,7 +276,7 @@ class FormatConverter:
             try:
                 self.input_data = xr.open_dataset(self.input_file)
             except Exception as e:
-                raise IOError(f"Failed to open NetCDF file: {e}")
+                raise IOError(f"Failed to open NetCDF file: {e}") from e
                 
         print(f"Successfully loaded {self.input_file}")
         print(f"Variables in dataset: {list(self.input_data.data_vars)}")
@@ -521,7 +521,7 @@ if __name__ == "__main__":
     
     # Print time information
     time_info = converter.get_time_info()
-    print(f"Time information:")
+    print("Time information:")
     print(f"  Reference date: {time_info['reference_date']}")
     print(f"  Start time: {time_info['time_start']}")
     print(f"  End time: {time_info['time_end']}")
