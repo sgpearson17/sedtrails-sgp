@@ -1,9 +1,9 @@
 """
-Format Converter: manage the conversion of input data formats into an internal format.
+Format Converter: converts input data formats into SedtrailsData format.
 
-This module provides functionality to read various input data formats (e.g., NetCDF files
-from different hydrodynamic models) and convert them into the SedtrailsData structure
-for use in the SedTRAILS particle tracking system.
+This module reads various input data formats (e.g., NetCDF files from different 
+hydrodynamic models) and converts them into the SedtrailsData structure for 
+use in the SedTRAILS particle tracking system.
 """
 import os
 import numpy as np
@@ -13,12 +13,13 @@ from enum import Enum
 from typing import Union, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
+from datetime import datetime, timezone
 
 
 class InputType(Enum):
     """Enumeration of supported input data types."""
-    NETCDF_DFM = "netcdf_dfm"  # Delft3D Flexible Mesh NetCDF
-    NETCDF_GENERIC = "netcdf_generic"  # Generic NetCDF
+    NETCDF_DFM = "netcdf_dfm"    # Delft3D Flexible Mesh NetCDF
+    TRIM_D3D4 = "trim_d3d4"      # Delft3D4 TRIM format (placeholder, not implemented yet)
     # Add more input types as needed
 
 
@@ -32,44 +33,44 @@ class SedtrailsData:
 
     Attributes:
     -----------
-        times: np.ndarray
-            Array of time values in seconds since epoch
-        x: np.ndarray
-            X-coordinates of the grid cells
-        y: np.ndarray
-            Y-coordinates of the grid cells
-        time_step: int
-            Time step in seconds
-        bed_level: np.ndarray
-            Bed level in meters (typically time-independent)
-        depth_avg_flow_velocity: Dict[str, np.ndarray]
-            Depth-averaged flow velocity components in m/s 
-            (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-        fractions: int
-            Number of sediment fractions
-        bed_load_sediment: Dict[str, np.ndarray]
-            Bed load sediment transport in kg/m/s 
-            (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-        suspended_sediment: Dict[str, np.ndarray]
-            Suspended sediment transport in kg/m/s 
-            (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-        water_depth: np.ndarray
-            Water depth in meters (with time as first dimension)
-        mean_bed_shear_stress: np.ndarray
-            Mean bed shear stress in pascal (with time as first dimension)
-        max_bed_shear_stress: np.ndarray
-            Max bed shear stress in pascal (with time as first dimension)
-        sediment_concentration: np.ndarray
-            Suspended sediment concentration in kg/m^3 (with time as first dimension)
-        nonlinear_wave_velocity: Dict[str, np.ndarray]
-            Nonlinear wave velocity in m/s 
-            (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    times: np.ndarray
+        Array of time values in seconds since reference_date
+    reference_date: np.datetime64
+        Reference date for the time values
+    x: np.ndarray
+        X-coordinates of the grid cells
+    y: np.ndarray
+        Y-coordinates of the grid cells
+    bed_level: np.ndarray
+        Bed level in meters (typically time-independent)
+    depth_avg_flow_velocity: Dict[str, np.ndarray]
+        Depth-averaged flow velocity components in m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    fractions: int
+        Number of sediment fractions
+    bed_load_sediment: Dict[str, np.ndarray]
+        Bed load sediment transport in kg/m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    suspended_sediment: Dict[str, np.ndarray]
+        Suspended sediment transport in kg/m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    water_depth: np.ndarray
+        Water depth in meters (with time as first dimension)
+    mean_bed_shear_stress: np.ndarray
+        Mean bed shear stress in pascal (with time as first dimension)
+    max_bed_shear_stress: np.ndarray
+        Max bed shear stress in pascal (with time as first dimension)
+    sediment_concentration: np.ndarray
+        Suspended sediment concentration in kg/m^3 (with time as first dimension)
+    nonlinear_wave_velocity: Dict[str, np.ndarray]
+        Nonlinear wave velocity in m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
     """
     
     times: np.ndarray
+    reference_date: np.datetime64
     x: np.ndarray
     y: np.ndarray
-    time_step: int
     bed_level: np.ndarray
     depth_avg_flow_velocity: Dict[str, np.ndarray]
     fractions: int
@@ -101,9 +102,9 @@ class SedtrailsData:
         # Create a dictionary with time-specific data
         time_data = {
             'time': self.times[time_idx],
+            'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'time_step': self.time_step,
             'bed_level': self.bed_level,  # Bed level is typically time-independent
             'fractions': self.fractions,
             
@@ -149,29 +150,58 @@ class SedtrailsData:
         """
         return len(self.times)
     
-    def get_time_index(self, target_time) -> int:
+    def get_time_index(self, target_time: float) -> int:
         """
         Find the index of the closest time to the target time.
         
         Parameters:
         -----------
-        target_time : np.datetime64 or similar
-            Target time to find
+        target_time : float
+            Target time in seconds since reference_date
             
         Returns:
         --------
         int
             Index of the closest time
         """
-        # Convert target_time to seconds since epoch if it's datetime64
-        if isinstance(target_time, np.datetime64):
-            target_seconds = target_time.astype('datetime64[s]').astype(int)
-        else:
-            target_seconds = target_time
-            
         # Find the closest time
-        time_diffs = np.abs(self.times - target_seconds)
+        time_diffs = np.abs(self.times - target_time)
         return np.argmin(time_diffs)
+    
+    def get_interpolation_indices(self, target_time: float) -> Tuple[int, int, float]:
+        """
+        Get indices for interpolation between two time steps.
+        
+        Parameters:
+        -----------
+        target_time : float
+            Target time in seconds since reference_date
+            
+        Returns:
+        --------
+        Tuple[int, int, float]
+            (lower_index, upper_index, weight) where weight is the interpolation factor [0-1]
+        """
+        if target_time <= self.times[0]:
+            return 0, 0, 0.0
+        
+        if target_time >= self.times[-1]:
+            return len(self.times) - 1, len(self.times) - 1, 1.0
+        
+        # Find the index of the last time that is less than or equal to the target time
+        lower_idx = np.searchsorted(self.times, target_time, side='right') - 1
+        upper_idx = lower_idx + 1
+        
+        # Calculate the interpolation weight
+        time_range = self.times[upper_idx] - self.times[lower_idx]
+        
+        # Avoid division by zero
+        if time_range == 0:
+            weight = 0.0
+        else:
+            weight = (target_time - self.times[lower_idx]) / time_range
+            
+        return lower_idx, upper_idx, weight
 
 
 class FormatConverter:
@@ -183,7 +213,9 @@ class FormatConverter:
     tracking system.
     """
     
-    def __init__(self, input_file: Union[str, Path], input_type: Union[str, InputType] = InputType.NETCDF_DFM):
+    def __init__(self, input_file: Union[str, Path], 
+                 input_type: Union[str, InputType] = InputType.NETCDF_DFM,
+                 reference_date: Union[str, np.datetime64, datetime] = "1970-01-01"):
         """
         Initialize the FormatConverter.
         
@@ -193,9 +225,12 @@ class FormatConverter:
             Path to the input file
         input_type : str or InputType, optional
             Type of input data, by default InputType.NETCDF_DFM
+        reference_date : str, np.datetime64, or datetime, optional
+            Reference date for time values, by default "1970-01-01" (Unix epoch)
         """
         self.input_file = Path(input_file)
         
+        # Set input type
         if isinstance(input_type, str):
             try:
                 self.input_type = InputType(input_type.lower())
@@ -203,6 +238,14 @@ class FormatConverter:
                 raise ValueError(f"Invalid input type: {input_type}. Must be one of {[t.value for t in InputType]}")
         else:
             self.input_type = input_type
+        
+        # Set reference date
+        if isinstance(reference_date, str):
+            self.reference_date = np.datetime64(reference_date)
+        elif isinstance(reference_date, datetime):
+            self.reference_date = np.datetime64(reference_date)
+        else:
+            self.reference_date = reference_date
             
         self.input_data = None
         
@@ -215,8 +258,9 @@ class FormatConverter:
         
         if self.input_type == InputType.NETCDF_DFM:
             self._read_netcdf_dfm()
-        elif self.input_type == InputType.NETCDF_GENERIC:
-            self._read_netcdf_generic()
+        elif self.input_type == InputType.TRIM_D3D4:
+            # Placeholder for future implementation
+            raise NotImplementedError(f"TRIM_D3D4 format not implemented yet")
         else:
             raise NotImplementedError(f"Input type not implemented: {self.input_type}")
     
@@ -238,15 +282,6 @@ class FormatConverter:
         print(f"Successfully loaded {self.input_file}")
         print(f"Variables in dataset: {list(self.input_data.data_vars)}")
     
-    def _read_netcdf_generic(self) -> None:
-        """
-        Read a generic NetCDF file using xarray.
-        """
-        try:
-            self.input_data = xr.open_dataset(self.input_file)
-        except Exception as e:
-            raise IOError(f"Failed to open NetCDF file: {e}")
-    
     def get_time_info(self) -> Dict:
         """
         Get time information from the dataset.
@@ -254,26 +289,36 @@ class FormatConverter:
         Returns:
         --------
         Dict
-            Dictionary containing time values, start time, end time, and time step
+            Dictionary containing time values, start time, end time, 
+            and time in seconds since reference date
         """
         if self.input_data is None:
             raise ValueError("Dataset not loaded. Call read_data() first.")
         
-        time_values = self.input_data['time'].values
+        # Get the time variable
+        time_var = self.input_data['time']
+        time_values = time_var.values
         time_start = time_values[0]
         time_end = time_values[-1]
         
-        # Calculate time step if more than one time value
-        if len(time_values) > 1:
-            time_step = time_values[1] - time_values[0]
-        else:
-            time_step = np.timedelta64(0, 'ns')
+        # Get original time units and calendar from the attributes
+        orig_units = getattr(time_var, 'units', None)
+        orig_calendar = getattr(time_var, 'calendar', 'standard')
+            
+        # Convert time values to seconds since reference_date
+        seconds_since_ref = np.array([
+            float((t - self.reference_date) / np.timedelta64(1, 's'))
+            for t in time_values
+        ])
         
         return {
             'time_values': time_values,
             'time_start': time_start,
             'time_end': time_end,
-            'time_step': time_step,
+            'original_units': orig_units,
+            'original_calendar': orig_calendar,
+            'seconds_since_reference': seconds_since_ref,
+            'reference_date': self.reference_date,
             'num_times': len(time_values)
         }
     
@@ -338,6 +383,7 @@ class FormatConverter:
         else:
             # Default to zeros if not found
             data['bed_level'] = np.zeros(grid_shape)
+            print(f"Warning: Variable '{var_name}' not found, using zeros")
             
         # Extract time-dependent variables
         time_dependent_vars = [
@@ -379,21 +425,14 @@ class FormatConverter:
         --------
         SedtrailsData
             Data in SedtrailsData format with time as the first dimension for
-            time-dependent variables
+            time-dependent variables, with time in seconds since reference_date
         """
         if self.input_data is None:
             raise ValueError("Dataset not loaded. Call read_data() first.")
         
         # Get time information
         time_info = self.get_time_info()
-        time_values = time_info['time_values']
-        time_step = time_info['time_step']
-        
-        # Convert time step to seconds
-        time_step_seconds = int(time_step / np.timedelta64(1, 's'))
-        
-        # Convert time values to seconds since epoch for consistency
-        times_seconds = np.array([t.astype('datetime64[s]').astype(int) for t in time_values])
+        seconds_since_ref = time_info['seconds_since_reference']
         
         # Get mapped variables based on input type
         if self.input_type == InputType.NETCDF_DFM:
@@ -446,10 +485,10 @@ class FormatConverter:
         
         # Create SedtrailsData object
         sedtrails_data = SedtrailsData(
-            times=times_seconds,
+            times=seconds_since_ref,
+            reference_date=self.reference_date,
             x=data['x'],
             y=data['y'],
-            time_step=time_step_seconds,
             bed_level=data['bed_level'],
             depth_avg_flow_velocity=depth_avg_flow_velocity,
             fractions=1,  # Default to 1 fraction
@@ -477,15 +516,16 @@ if __name__ == "__main__":
         file_path = sys.argv[1]
     
     # Create converter and read data
+    # Using default reference date (1970-01-01, Unix epoch)
     converter = FormatConverter(file_path, input_type=InputType.NETCDF_DFM)
     converter.read_data()
     
     # Print time information
     time_info = converter.get_time_info()
     print(f"Time information:")
+    print(f"  Reference date: {time_info['reference_date']}")
     print(f"  Start time: {time_info['time_start']}")
     print(f"  End time: {time_info['time_end']}")
-    print(f"  Time step: {time_info['time_step']}")
     print(f"  Number of time steps: {time_info['num_times']}")
     
     # Convert all time steps to SedtrailsData
@@ -494,6 +534,8 @@ if __name__ == "__main__":
     # Print some information about the converted data
     print("\nConverted data:")
     print(f"  Number of time steps: {len(sedtrails_data)}")
+    print(f"  Reference date: {sedtrails_data.reference_date}")
+    print(f"  Time values range: {sedtrails_data.times[0]} to {sedtrails_data.times[-1]} seconds since reference")
     print(f"  X shape: {sedtrails_data.x.shape}")
     print(f"  Y shape: {sedtrails_data.y.shape}")
     print(f"  Bed level shape: {sedtrails_data.bed_level.shape}")
@@ -501,9 +543,3 @@ if __name__ == "__main__":
     # Time-dependent data shapes
     print(f"  Water depth shape: {sedtrails_data.water_depth.shape}")
     print(f"  Flow velocity magnitude shape: {sedtrails_data.depth_avg_flow_velocity['magnitude'].shape}")
-    
-    # Demonstrate accessing a time slice
-    time_slice = sedtrails_data[0]  # Get first time step
-    print("\nFirst time slice:")
-    print(f"  Time: {time_slice['time']}")
-    print(f"  Flow velocity magnitude shape: {time_slice['depth_avg_flow_velocity']['magnitude'].shape}")
