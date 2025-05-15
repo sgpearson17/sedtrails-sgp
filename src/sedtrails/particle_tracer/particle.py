@@ -16,8 +16,8 @@ class Time:
 
     Attributes
     ----------
-    reference_date : numpy.datetime64
-        The reference date for calculating time.
+    reference_date : str
+        The reference date as string in format 'YYYY-MM-DD'
     offset_seconds : numpy.timedelta64
         The offset in seconds from the reference date.
 
@@ -29,14 +29,21 @@ class Time:
         Updates the current time by adding a delta in seconds.
     """
 
-    reference_date: np.datetime64 = field(default=np.datetime64('1970-01-01T00:00:00', 's'))
+    # refence_date should be a str, the class will do the transformation into a numpy.datetime64 object
+    reference_date: str = field(default='1970-01-01')
     offset_seconds: np.timedelta64 = field(default=np.timedelta64(0, 's'))
+    _reference_date_np: np.datetime64 = field(init=False)
 
+    def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
+        """Convert reference_date in str format to numpy.datetime64"""
+        return np.datetime64(f"{date_str}T00:00:00", 's')
+    
     def __post_init__(self):
-        if not isinstance(self.reference_date, np.datetime64):
-            raise TypeError(f"Expected 'reference_date' to be a numpy.datetime64, got {type(self.reference_date).__name__}")
-        if self.reference_date.dtype != 'datetime64[s]':
-            raise ValueError("reference_date must have a resolution of seconds (datetime64[s]).")
+        # Accept reference_date in str format TODO: should we allow for non str formats?
+        try:
+            self._reference_date_np = self._convert_to_datetime64(self.reference_date)
+        except ValueError:
+            raise ValueError("reference_date must be in format 'YYYY-MM-DD'")
         if not isinstance(self.offset_seconds, np.timedelta64):
             raise TypeError(f"Expected 'offset_seconds' to be a numpy.timedelta64, got {type(self.offset_seconds).__name__}")
         if self.offset_seconds.dtype != 'timedelta64[s]':
@@ -51,8 +58,15 @@ class Time:
         numpy.datetime64
             The current time in the simulation.
         """
-        return self.reference_date + self.offset_seconds
+        return self._reference_date_np + self.offset_seconds
 
+    def get_seconds_since_reference(self) -> int:
+        """
+        Returns the number of seconds since the reference date/time.
+        """
+        # Will complete once I can clarify the different between reference_date and simulation start
+        pass   
+    
     def update(self, delta_seconds: np.timedelta64):
         """
         Updates the current time by adding a delta in seconds.
