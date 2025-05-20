@@ -19,8 +19,8 @@ Container_Boundary(configInterface, "Simulation Configuration Interface", "Pytho
 }
 
 Rel(modeler, simulCli, "Provides simulation configurations via", "Terminal, YAML file")
-Rel(configController, particleTracer, "provides cofigurations to", "Python object")
-Rel(configController, transportConverter, "provides cofigurations to", "Python object")
+Rel(configController, particleTracer, "provides configurations to", "Python object")
+Rel(configController, transportConverter, "provides configurations to", "Python object")
 
 SHOW_LEGEND()
 @enduml
