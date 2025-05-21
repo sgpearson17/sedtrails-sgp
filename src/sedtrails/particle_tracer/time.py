@@ -4,7 +4,8 @@ Time class used internally to represent simulation time.
 
 from dataclasses import dataclass, field
 import numpy as np
-
+import re
+from sedtrails.exceptions.exceptions import ReferenceDateFormatError
 
 @dataclass
 class Time:
@@ -35,15 +36,22 @@ class Time:
     _reference_date_np: np.datetime64 = field(init=False)
 
     def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
-        """Convert reference_date in str format to numpy.datetime64"""
-        return np.datetime64(f"{date_str} 00:00:00", 's')
+        """
+        Convert reference_date in str format to numpy.datetime64
+        enforcing 'YYYY-MM-DD hh:mm:ss'.
+        """
+        if not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", date_str):
+            raise ReferenceDateFormatError(
+                f"reference_date '{date_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'"
+            )
+        return np.datetime64(date_str, 's')
     
     def __post_init__(self):
-        # Accept reference_date in str format TODO: should we allow for non str formats?
+        # Accept reference_date in str format, enforcing YYYY-MM-DD hh:mm:ss format
         try:
             self._reference_date_np = self._convert_to_datetime64(self.reference_date)
-        except ValueError as e:
-            raise ValueError("reference_date must be in format 'YYYY-MM-DD'") from e
+        except ReferenceDateFormatError as e:
+            raise ReferenceDateFormatError(str(e)) from e
         if not isinstance(self.start_time, int):
                 raise TypeError(f"Expected 'start_time' to be an int, got {type(self.start_time).__name__}")
 
