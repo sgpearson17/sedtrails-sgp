@@ -36,7 +36,7 @@ class Time:
 
     def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
         """Convert reference_date in str format to numpy.datetime64"""
-        return np.datetime64(f"{date_str}T00:00:00", 's')
+        return np.datetime64(f"{date_str} 00:00:00", 's')
     
     def __post_init__(self):
         # Accept reference_date in str format TODO: should we allow for non str formats?
@@ -47,23 +47,30 @@ class Time:
         if not isinstance(self.start_time, int):
                 raise TypeError(f"Expected 'start_time' to be an int, got {type(self.start_time).__name__}")
 
-    def get_current_time(self) -> np.datetime64:
+    def get_current_time(self, delta_seconds: int = 0) -> np.datetime64:
         """
-        Returns the current time as a numpy.datetime64 object.
+        Returns the current time in simulation as a numpy.datetime64 object,
+        optionally including an additional delta in seconds.
+
+        Parameters
+        ----------
+        delta_seconds : int, optional
+            Additional seconds to add to the current simulation time (default is 0).
 
         Returns
         -------
         numpy.datetime64
             The current time in the simulation.
         """
-        return self._reference_date_np + self.time_as_timedelta64()
+        total_seconds = self.start_time + delta_seconds
+        return self._reference_date_np + np.timedelta64(total_seconds, 's')
 
-    def get_seconds_since_reference(self) -> int:
+    def get_seconds_since_reference(self) -> str:
         """
-        Returns the number of seconds since the reference date/time.
+        Returns the number of seconds since the reference date/time in a 
+        human readable format
         """
-        # Will complete once I can clarify the different between reference_date and simulation start
-        pass   
+        return str(self.get_current_time())   
 
     def time_as_timedelta64(self) -> np.timedelta64:
         """
