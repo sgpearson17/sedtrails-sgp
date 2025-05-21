@@ -1,4 +1,3 @@
-import numpy as np
 
 class DStar:
     def __init__(self, g, rhoS, rhoW, visc_kin, d):

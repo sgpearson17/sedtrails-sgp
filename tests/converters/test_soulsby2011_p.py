@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-import xarray as xr
 from sedtrails.converters.soulsby2011_p import Dstar, ShieldsNumber, GrainProperties, soulsby2011, shields_parameters
 
 # Test Dstar class

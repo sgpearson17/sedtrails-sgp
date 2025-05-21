@@ -5,6 +5,7 @@ This module reads various input data formats (e.g., NetCDF files from different
 hydrodynamic models) and converts them into the SedtrailsData structure for 
 use in the SedTRAILS particle tracking system.
 """
+
 import numpy as np
 import xarray as xr
 import xugrid as xu
@@ -65,7 +66,7 @@ class SedtrailsData:
         Nonlinear wave velocity in m/s 
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
     """
-    
+
     times: np.ndarray
     reference_date: np.datetime64
     x: np.ndarray
@@ -82,6 +83,7 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
     
     def __getitem__(self, time_index: int) -> Dict:
+
         """
         Get data for a specific time index.
         
