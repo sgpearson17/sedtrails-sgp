@@ -16,7 +16,7 @@ Container_Boundary(analystApp, "Simulation Analysis Application", "Python", "An 
     Component(fileWriter, "Results Writer", "Python", "Writes analysis results to files")
     Component(statistics, "Statistics Module", "Python", "Tools for statistical analysis")
     Component(connectivity, "Connectivity Network Module", "Python", "Tools for connectivity network analysis")
-    Component(cli, "CLI", "Python, Typer", "Exposes analys tools  via command line interface")
+    Component(cli, "CLI", "Python, Typer", "Exposes analysis tools  via command line interface")
 
     Rel(fileReader, statistics, "provides simulation data to", "Python object")
     Rel(fileReader, connectivity, "provides simulation data to", "Python object")   
@@ -24,7 +24,6 @@ Container_Boundary(analystApp, "Simulation Analysis Application", "Python", "An 
     Rel(statistics, fileWriter, "provides results to", "Python object")
 }
 
-' Can we asume that  the connectivity and statistics modules can use the same data format/type
 
 Rel(fileReader, fileSystem, "Reads simulation output files from", "NETCDF")
 Rel(fileWriter, fileSystem , "Write analysis results to", "NETCDF")
