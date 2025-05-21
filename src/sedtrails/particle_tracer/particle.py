@@ -18,8 +18,10 @@ class Time:
     ----------
     reference_date : str
         The reference date as string in format 'YYYY-MM-DD'
-    offset_seconds : int
-        The offset in seconds from the reference date.
+    start_time : int
+        The simulation start time in seconds (from the reference date).
+    end_time : int
+        The simulation end time in seconds (from the reference date).
 
     Methods
     -------
@@ -31,7 +33,8 @@ class Time:
 
     # reference_date should be a str, the class will do the transformation into a numpy.datetime64 object
     reference_date: str = field(default='1970-01-01')
-    offset_seconds: int = 0
+    start_time: int = 0
+    end_time: int = 0
     _reference_date_np: np.datetime64 = field(init=False)
 
     def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
@@ -42,10 +45,10 @@ class Time:
         # Accept reference_date in str format TODO: should we allow for non str formats?
         try:
             self._reference_date_np = self._convert_to_datetime64(self.reference_date)
-        except ValueError:
-            raise ValueError("reference_date must be in format 'YYYY-MM-DD'")
-        if not isinstance(self.offset_seconds, int):
-                raise TypeError(f"Expected 'offset_seconds' to be an int, got {type(self.offset_seconds).__name__}")
+        except ValueError as e:
+            raise ValueError("reference_date must be in format 'YYYY-MM-DD'") from e
+        if not isinstance(self.start_time, int):
+                raise TypeError(f"Expected 'start_time' to be an int, got {type(self.start_time).__name__}")
 
     def get_current_time(self) -> np.datetime64:
         """
@@ -56,7 +59,7 @@ class Time:
         numpy.datetime64
             The current time in the simulation.
         """
-        return self._reference_date_np + self.offset_as_timedelta64()
+        return self._reference_date_np + self.time_as_timedelta64()
 
     def get_seconds_since_reference(self) -> int:
         """
@@ -65,18 +68,18 @@ class Time:
         # Will complete once I can clarify the different between reference_date and simulation start
         pass   
 
-    def offset_as_timedelta64(self) -> np.timedelta64:
+    def time_as_timedelta64(self) -> np.timedelta64:
         """
-        Returns the offset_seconds as a numpy.timedelta64 object.
+        Returns the start_time as a numpy.timedelta64 object.
         """
-        return np.timedelta64(self.offset_seconds, 's')
+        return np.timedelta64(self.start_time, 's')
 
     def update(self, delta_seconds: np.timedelta64):
         """
         Advances the simulation time by a given number of seconds.
 
         The reference_date defines simulation time zero (Ts=0). The simulation
-        can start at any time after that, with offset_seconds representing the
+        can start at any time after that, with start_time representing the
         number of seconds since reference_date. This method increments the
         simulation time by delta_seconds.
 
@@ -87,7 +90,7 @@ class Time:
         """
         if not isinstance(delta_seconds, int):
             raise TypeError(f"Expected 'delta_seconds' to be an int, got {type(delta_seconds).__name__}")
-        self.offset_seconds += delta_seconds
+        self.start_time += delta_seconds
 
 
 @dataclass
