@@ -2,7 +2,6 @@
 Unit tests for the Time class in the time.py module of the sedtrails package.
 """
 
-import pytest
 import numpy as np
 from sedtrails.particle_tracer.time import Time
 
