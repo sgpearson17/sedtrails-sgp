@@ -3,6 +3,7 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 
 import pytest
+import numpy as np
 from sedtrails.particle_tracer.particle import Mud, Sand, Passive, Particle
 
 

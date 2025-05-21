@@ -6,63 +6,6 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from numpy import ndarray
 from typing import Optional
-from datetime import datetime, timedelta
-
-
-@dataclass
-class Time:
-    """
-    Class representing a time step in the simulation.
-
-    Attributes
-    ----------
-    time_step : int
-        The current time step in a simulation. A non-negative integer.
-
-    Methods
-    -------
-    """
-
-    time_step: int = field(default=1)  # time step index starts at one.
-
-    def __post_init__(self):
-        if not isinstance(self.time_step, int):
-            raise TypeError(f"Expected 'time' to be a float, got {type(self.time_step).__name__}")
-        if self.time_step < 0:
-            raise ValueError(f"Expected 'time' to be a non-negative integer, got {self.time_step}")
-
-    def update(self, time_step: int):
-        """
-        Updates the time step of the simulation.
-        Parameters
-        ----------
-        time_step : int
-            The new time step to be set.
-        """
-        if not isinstance(time_step, int):
-            raise TypeError(f"Expected 'time' to be a float, got {type(time_step).__name__}")
-        if time_step < 0:
-            raise ValueError(f"Expected 'time' to be a non-negative integer, got {time_step}")
-        self.time_step = time_step
-
-    def datetime(self, reference_date: datetime, step_size: float) -> datetime:
-        """
-        Returns the datetime object representing the current time step.
-        Parameters
-        ----------
-        reference_date : datetime
-            The reference date from which the time step is calculated.
-            This is the starting date time of the simulation.
-        step_size : float
-            The size of the time step in seconds.
-        Returns
-        -------
-        datetime
-            The datetime object representing the time step.
-        """
-
-        return reference_date + timedelta(seconds=self.time_step * step_size)
-
 
 @dataclass
 class Particle(ABC):
