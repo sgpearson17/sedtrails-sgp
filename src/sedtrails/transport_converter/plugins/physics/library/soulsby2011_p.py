@@ -55,8 +55,9 @@ class GrainProperties:
 
     def calculate(self):
         # Calculate Dstar and ShieldsNumber for tracer sediment
-        Dstar_t = Dstar(self.S['g'], self.S['rhoS'], self.S['rhoW'], self.S['visc_kin'], self.S['dTracer']).calculate()
-        shields_t = ShieldsNumber(Dstar_t, self.S['g'], self.S['rhoS'], self.S['rhoW'], self.S['dTracer'])
+        dstar = DStar(self.S['g'], self.S['rhoS'], self.S['rhoW'], self.S['visc_kin'], self.S['dTracer'])
+        Dstar_t = dstar.calculate()
+        # shields_t = ShieldsNumber(Dstar_t, self.S['g'], self.S['rhoS'], self.S['rhoW'], self.S['dTracer'])
         shields_cr_t = CriticalShields(Dstar_t)
 
         # Calculate w_s for tracer sediment
@@ -100,6 +101,7 @@ def shields_parameters(tau_max, S):
     shields_max_t = ShieldsNumber(None, S['g'], S['rhoS'], S['rhoW'], S['dTracer'])
   
     # Calculate shields_A
+    tau = '' #TODO: Replace with actual calculation of tau based on the model
     shields_max_A = shields_max_t.calculate_shields(tau)
     
     return shields_max_A
