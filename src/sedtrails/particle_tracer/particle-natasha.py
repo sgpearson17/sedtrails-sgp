@@ -5,7 +5,7 @@ We will revist this when we work on the Sand Simulation Milestone.
 """
 
 from dataclasses import dataclass
-from abc import ABC
+from abc import ABC, abstractmethod
 import numpy as np
 
 # TODO: consolidate this code with existing code in particle.py
@@ -54,6 +54,13 @@ class Particle(ABC):
         Calculates the ratio of tracer sediment particle diameter to background sediment particle diameter [-].
         """
         return S.dTracer / S.dBackground
+
+    @abstractmethod
+    def do_nothing(self, S) -> float:
+        """
+        Placeholder for a method that does nothing.
+        """
+        pass
 
 
 @dataclass
