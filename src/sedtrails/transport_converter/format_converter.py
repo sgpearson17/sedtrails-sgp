@@ -11,7 +11,7 @@ import xarray as xr
 import xugrid as xu
 from enum import Enum
 from typing import Union, Dict #, Tuple, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 
