@@ -4,13 +4,9 @@ Flow Field Data Retriever
 Retrieves flow field data from the transport converter or the simulation caching and state tracker.
 Performs temporal interpolation to provide accurate flow field data at any time point for particle tracing.
 """
-from typing import Tuple
+from typing import Tuple, Dict
 import numpy as np
-import sys
-from pathlib import Path
 
-# Add parent directory to path to allow importing from other packages
-sys.path.append(str(Path(__file__).parent.parent.parent))
 from sedtrails.transport_converter.format_converter import SedtrailsData
 
 
@@ -22,6 +18,10 @@ class FlowFieldDataRetriever:
     performing temporal interpolation as needed. Currently supports depth-averaged
     flow velocity.
     """
+    
+    # Constants for interpolation weights
+    MIN_WEIGHT = 0.0
+    MAX_WEIGHT = 1.0
     
     def __init__(self, sedtrails_data: SedtrailsData):
         """
@@ -55,30 +55,51 @@ class FlowFieldDataRetriever:
         
         # Handle edge cases
         if target_time <= times[0]:
-            return 0, 0, 0.0
+            return 0, 0, self.MIN_WEIGHT
         
         if target_time >= times[-1]:
-            last_idx = len(times) - 1
-            return last_idx, last_idx, 1.0
+            last_index = len(times) - 1
+            return last_index, last_index, self.MAX_WEIGHT
         
         # Find the index of the last time that is less than or equal to the target time
-        lower_idx = np.searchsorted(times, target_time, side='right') - 1
-        upper_idx = lower_idx + 1
+        lower_index = np.searchsorted(times, target_time, side='right') - 1
+        upper_index = lower_index + 1
         
         # Calculate the interpolation weight
-        time_range = times[upper_idx] - times[lower_idx]
+        time_range = times[upper_index] - times[lower_index]
         
         # Avoid division by zero
         if time_range == 0:
-            weight = 0.0
+            weight = self.MIN_WEIGHT
         else:
-            weight = (target_time - times[lower_idx]) / time_range
+            weight = (target_time - times[lower_index]) / time_range
             
-        return lower_idx, upper_idx, weight
+        return lower_index, upper_index, weight
     
-    def get_flow_field(self, time: float) -> Tuple[np.ndarray, np.ndarray]:
+    def _interpolate_linearly(self, lower_value: np.ndarray, upper_value: np.ndarray, weight: float) -> np.ndarray:
         """
-        Get the flow field at the specified time.
+        Perform linear interpolation between two values.
+        
+        Parameters:
+        -----------
+        lower_value : np.ndarray
+            Value at the lower time index
+        upper_value : np.ndarray
+            Value at the upper time index
+        weight : float
+            Interpolation weight (between MIN_WEIGHT and MAX_WEIGHT)
+            
+        Returns:
+        --------
+        np.ndarray
+            Interpolated value
+        """
+        # Linear interpolation: result = (1-w)*lower + w*upper
+        return (1 - weight) * lower_value + weight * upper_value
+    
+    def get_flow_field(self, time: float) -> Dict[str, np.ndarray]:
+        """
+        Get the flow field and coordinates at the specified time.
         
         This method performs temporal interpolation between the two closest time steps
         in the SedtrailsData object to obtain the flow field at the requested time.
@@ -90,75 +111,51 @@ class FlowFieldDataRetriever:
             
         Returns:
         --------
-        Tuple[np.ndarray, np.ndarray]
-            Tuple containing (flow_x, flow_y) arrays
+        Dict[str, np.ndarray]
+            Dictionary containing coordinates and flow components:
+            - 'x': X-coordinates of the grid cells
+            - 'y': Y-coordinates of the grid cells
+            - 'u': X-component of the flow velocity
+            - 'v': Y-component of the flow velocity
+            - 'magnitude': Magnitude of the flow velocity
         """
         # Get indices for interpolation
-        lower_idx, upper_idx, weight = self.get_interpolation_indices(time)
+        lower_index, upper_index, weight = self.get_interpolation_indices(time)
         
         # If time is exactly at a time step or outside the range, no interpolation needed
-        if lower_idx == upper_idx:
-            time_slice = self.sedtrails_data[lower_idx]
+        if lower_index == upper_index:
+            time_slice = self.sedtrails_data[lower_index]
             flow_field = time_slice[self.flow_field_name]
-            return flow_field['x'], flow_field['y']
-        
-        # Otherwise, perform linear interpolation between the two time steps
-        lower_slice = self.sedtrails_data[lower_idx]
-        upper_slice = self.sedtrails_data[upper_idx]
-        
-        lower_flow = lower_slice[self.flow_field_name]
-        upper_flow = upper_slice[self.flow_field_name]
-        
-        # Linear interpolation: result = (1-w)*lower + w*upper
-        flow_x = (1 - weight) * lower_flow['x'] + weight * upper_flow['x']
-        flow_y = (1 - weight) * lower_flow['y'] + weight * upper_flow['y']
-        
-        return flow_x, flow_y
+            
+            return {
+                'x': self.sedtrails_data.x,
+                'y': self.sedtrails_data.y,
+                'u': flow_field['x'],
+                'v': flow_field['y'],
+                'magnitude': flow_field['magnitude']
+            }
+        else:
+            # Otherwise, perform linear interpolation between the two time steps
+            lower_slice = self.sedtrails_data[lower_index]
+            upper_slice = self.sedtrails_data[upper_index]
+            
+            lower_flow = lower_slice[self.flow_field_name]
+            upper_flow = upper_slice[self.flow_field_name]
+            
+            # Use the interpolation function for velocity components
+            flow_x = self._interpolate_linearly(lower_flow['x'], upper_flow['x'], weight)
+            flow_y = self._interpolate_linearly(lower_flow['y'], upper_flow['y'], weight)
+            flow_mag = self._interpolate_linearly(lower_flow['magnitude'], upper_flow['magnitude'], weight)
+            
+            return {
+                'x': self.sedtrails_data.x,
+                'y': self.sedtrails_data.y,
+                'u': flow_x,
+                'v': flow_y,
+                'magnitude': flow_mag
+            }
 
 
+# Note: The example code has been moved to examples/data_retriever_example.py
 if __name__ == "__main__":
-    # Example usage - this requires SedtrailsData from format_converter.py
-    try:
-        # Import from the correct location
-        from sedtrails.transport_converter.format_converter import FormatConverter, InputType
-        
-        # Default file path (can be overridden by command line argument)
-        file_path = r"c:\Users\weste_bt\GitHub\sedtrails_data\inlet_sedtrails.nc"
-        
-        # Allow command line override of file path
-        if len(sys.argv) > 1:
-            file_path = sys.argv[1]
-        
-        # Create converter and read data
-        converter = FormatConverter(file_path, input_type=InputType.NETCDF_DFM)
-        converter.read_data()
-        
-        # Convert to SedtrailsData
-        sedtrails_data = converter.convert_to_sedtrails_data()
-        
-        # Create flow field data retriever
-        retriever = FlowFieldDataRetriever(sedtrails_data)
-        
-        # Choose a time for interpolation (30% between first and last time step)
-        test_time = sedtrails_data.times[0] + (sedtrails_data.times[-1] - sedtrails_data.times[0]) * 0.3
-        
-        # Get flow field at the test time
-        flow_x, flow_y = retriever.get_flow_field(test_time)
-        
-        # Print some information
-        print(f"Time: {test_time} seconds since {sedtrails_data.reference_date}")
-        print(f"Flow field shape - X: {flow_x.shape}, Y: {flow_y.shape}")
-        
-        # Calculate mean and max flow for verification
-        mean_fx = np.nanmean(flow_x)
-        max_fx = np.nanmax(np.abs(flow_x))
-        mean_fy = np.nanmean(flow_y)
-        max_fy = np.nanmax(np.abs(flow_y))
-        
-        print(f"Mean flow: ({mean_fx:.5f}, {mean_fy:.5f}) m/s")
-        print(f"Max flow magnitude: ({max_fx:.5f}, {max_fy:.5f}) m/s")
-        
-    except ImportError as e:
-        print(f"Import error: {e}")
-        print("Make sure the format_converter.py module is in the correct location:")
-        print("src/sedtrails/transport_converter/format_converter.py")
+    print("Please see the examples directory for usage examples.")

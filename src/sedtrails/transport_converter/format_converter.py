@@ -9,7 +9,7 @@ import numpy as np
 import xarray as xr
 import xugrid as xu
 from enum import Enum
-from typing import Union, Dict, Tuple
+from typing import Union, Dict #, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
@@ -81,13 +81,13 @@ class SedtrailsData:
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
     
-    def __getitem__(self, time_idx: int) -> Dict:
+    def __getitem__(self, time_index: int) -> Dict:
         """
         Get data for a specific time index.
         
         Parameters:
         -----------
-        time_idx : int
+        time_index : int
             Time index to extract
             
         Returns:
@@ -95,12 +95,12 @@ class SedtrailsData:
         Dict
             Dictionary containing all data for the specified time index
         """
-        if time_idx < 0 or time_idx >= len(self.times):
-            raise IndexError(f"Time index {time_idx} out of bounds (0-{len(self.times)-1})")
+        if time_index < 0 or time_index >= len(self.times):
+            raise IndexError(f"Time index {time_index} out of bounds (0-{len(self.times)-1})")
         
         # Create a dictionary with time-specific data
-        time_data = {
-            'time': self.times[time_idx],
+        data = {
+            'time': self.times[time_index],
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
@@ -108,99 +108,35 @@ class SedtrailsData:
             'fractions': self.fractions,
             
             # Extract time slice from time-dependent variables
-            'water_depth': self.water_depth[time_idx],
-            'mean_bed_shear_stress': self.mean_bed_shear_stress[time_idx],
-            'max_bed_shear_stress': self.max_bed_shear_stress[time_idx],
-            'sediment_concentration': self.sediment_concentration[time_idx],
+            'water_depth': self.water_depth[time_index],
+            'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
+            'max_bed_shear_stress': self.max_bed_shear_stress[time_index],
+            'sediment_concentration': self.sediment_concentration[time_index],
             
             # Extract time slice from vector quantities
             'depth_avg_flow_velocity': {
-                'x': self.depth_avg_flow_velocity['x'][time_idx],
-                'y': self.depth_avg_flow_velocity['y'][time_idx],
-                'magnitude': self.depth_avg_flow_velocity['magnitude'][time_idx]
+                'x': self.depth_avg_flow_velocity['x'][time_index],
+                'y': self.depth_avg_flow_velocity['y'][time_index],
+                'magnitude': self.depth_avg_flow_velocity['magnitude'][time_index]
             },
             'bed_load_sediment': {
-                'x': self.bed_load_sediment['x'][time_idx],
-                'y': self.bed_load_sediment['y'][time_idx],
-                'magnitude': self.bed_load_sediment['magnitude'][time_idx]
+                'x': self.bed_load_sediment['x'][time_index],
+                'y': self.bed_load_sediment['y'][time_index],
+                'magnitude': self.bed_load_sediment['magnitude'][time_index]
             },
             'suspended_sediment': {
-                'x': self.suspended_sediment['x'][time_idx],
-                'y': self.suspended_sediment['y'][time_idx],
-                'magnitude': self.suspended_sediment['magnitude'][time_idx]
+                'x': self.suspended_sediment['x'][time_index],
+                'y': self.suspended_sediment['y'][time_index],
+                'magnitude': self.suspended_sediment['magnitude'][time_index]
             },
             'nonlinear_wave_velocity': {
-                'x': self.nonlinear_wave_velocity['x'][time_idx],
-                'y': self.nonlinear_wave_velocity['y'][time_idx],
-                'magnitude': self.nonlinear_wave_velocity['magnitude'][time_idx]
+                'x': self.nonlinear_wave_velocity['x'][time_index],
+                'y': self.nonlinear_wave_velocity['y'][time_index],
+                'magnitude': self.nonlinear_wave_velocity['magnitude'][time_index]
             }
         }
         
-        return time_data
-    
-    def __len__(self) -> int:
-        """
-        Get the number of time steps.
-        
-        Returns:
-        --------
-        int
-            Number of time steps
-        """
-        return len(self.times)
-    
-    def get_time_index(self, target_time: float) -> int:
-        """
-        Find the index of the closest time to the target time.
-        
-        Parameters:
-        -----------
-        target_time : float
-            Target time in seconds since reference_date
-            
-        Returns:
-        --------
-        int
-            Index of the closest time
-        """
-        # Find the closest time
-        time_diffs = np.abs(self.times - target_time)
-        return np.argmin(time_diffs)
-    
-    def get_interpolation_indices(self, target_time: float) -> Tuple[int, int, float]:
-        """
-        Get indices for interpolation between two time steps.
-        
-        Parameters:
-        -----------
-        target_time : float
-            Target time in seconds since reference_date
-            
-        Returns:
-        --------
-        Tuple[int, int, float]
-            (lower_index, upper_index, weight) where weight is the interpolation factor [0-1]
-        """
-        if target_time <= self.times[0]:
-            return 0, 0, 0.0
-        
-        if target_time >= self.times[-1]:
-            return len(self.times) - 1, len(self.times) - 1, 1.0
-        
-        # Find the index of the last time that is less than or equal to the target time
-        lower_idx = np.searchsorted(self.times, target_time, side='right') - 1
-        upper_idx = lower_idx + 1
-        
-        # Calculate the interpolation weight
-        time_range = self.times[upper_idx] - self.times[lower_idx]
-        
-        # Avoid division by zero
-        if time_range == 0:
-            weight = 0.0
-        else:
-            weight = (target_time - self.times[lower_idx]) / time_range
-            
-        return lower_idx, upper_idx, weight
+        return data
 
 
 class FormatConverter:
@@ -269,12 +205,12 @@ class FormatConverter:
         """
         try:
             # First try using xugrid's open_dataset which handles UGRID conventions
-            self.input_data = xu.open_dataset(self.input_file)
+            self.input_data = xu.open_dataset(self.input_file, decode_timedelta=True)
         except Exception as e:
             print(f"Could not open file with xugrid: {e}")
             # Fallback to regular xarray
             try:
-                self.input_data = xr.open_dataset(self.input_file)
+                self.input_data = xr.open_dataset(self.input_file, decode_timedelta=True)
             except Exception as e:
                 raise IOError(f"Failed to open NetCDF file: {e}") from e
                 
@@ -503,42 +439,6 @@ class FormatConverter:
         return sedtrails_data
 
 
+# Note: The example code has been moved to examples/format_converter_example.py
 if __name__ == "__main__":
-    # Example usage
-    import sys
-    
-    # Default file path (can be overridden by command line argument)
-    file_path = r"c:\Users\weste_bt\GitHub\sedtrails_data\inlet_sedtrails.nc"
-    
-    # Allow command line override of file path
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
-    
-    # Create converter and read data
-    # Using default reference date (1970-01-01, Unix epoch)
-    converter = FormatConverter(file_path, input_type=InputType.NETCDF_DFM)
-    converter.read_data()
-    
-    # Print time information
-    time_info = converter.get_time_info()
-    print("Time information:")
-    print(f"  Reference date: {time_info['reference_date']}")
-    print(f"  Start time: {time_info['time_start']}")
-    print(f"  End time: {time_info['time_end']}")
-    print(f"  Number of time steps: {time_info['num_times']}")
-    
-    # Convert all time steps to SedtrailsData
-    sedtrails_data = converter.convert_to_sedtrails_data()
-    
-    # Print some information about the converted data
-    print("\nConverted data:")
-    print(f"  Number of time steps: {len(sedtrails_data)}")
-    print(f"  Reference date: {sedtrails_data.reference_date}")
-    print(f"  Time values range: {sedtrails_data.times[0]} to {sedtrails_data.times[-1]} seconds since reference")
-    print(f"  X shape: {sedtrails_data.x.shape}")
-    print(f"  Y shape: {sedtrails_data.y.shape}")
-    print(f"  Bed level shape: {sedtrails_data.bed_level.shape}")
-    
-    # Time-dependent data shapes
-    print(f"  Water depth shape: {sedtrails_data.water_depth.shape}")
-    print(f"  Flow velocity magnitude shape: {sedtrails_data.depth_avg_flow_velocity['magnitude'].shape}")
+    print("Please see the examples directory for usage examples.")
