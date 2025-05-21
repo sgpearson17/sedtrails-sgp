@@ -70,6 +70,10 @@ class SeedingStrategy(ABC):
         ValueError
             If the number of initial positions does not match the count.
         """
+
+        # TODO: we should add a validation check to ensure that the initial positions all lie within the model domain 
+        # (i.e. to make sure we are placing particles somewhere where they will actually move)
+
         validity = True
         if not isinstance(initial_positions, (list, tuple)):
             validity = False
