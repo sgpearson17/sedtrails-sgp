@@ -109,8 +109,8 @@ class TestTime:
         Test that the initial current time matches the reference date.
         """
         reference_date = "2025-05-20"
-        offset_seconds = 0
-        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+        start_time = 0
+        time_instance = Time(reference_date=reference_date, start_time=start_time)
         expected = np.datetime64("2025-05-20T00:00:00", 's')
         actual = time_instance.get_current_time()
         assert actual == expected, f"Initial current time: expected={expected}, actual={actual}"
@@ -120,8 +120,8 @@ class TestTime:
         Test updating the current time by adding seconds.
         """
         reference_date = "2025-05-20"
-        offset_seconds = 0
-        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+        start_time = 0
+        time_instance = Time(reference_date=reference_date, start_time=start_time)
         delta_seconds = 120
         time_instance.update(delta_seconds)
         expected = np.datetime64("2025-05-20T00:02:00", 's')
@@ -133,8 +133,8 @@ class TestTime:
         Test updating the current time by subtracting seconds.
         """
         reference_date = "2025-05-20"
-        offset_seconds = 120
-        time_instance = Time(reference_date=reference_date, offset_seconds=offset_seconds)
+        start_time = 120
+        time_instance = Time(reference_date=reference_date, start_time=start_time)
         delta_seconds = -60
         time_instance.update(delta_seconds)
         expected = np.datetime64("2025-05-20T00:01:00", 's')
