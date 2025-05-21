@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import numpy as np
 
-# TODO: consolidate this code with existing code in particle.py
-
 
 # Abstract class
 class Particle(ABC):
