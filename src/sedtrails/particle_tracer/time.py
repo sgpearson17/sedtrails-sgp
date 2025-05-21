@@ -65,12 +65,22 @@ class Time:
         total_seconds = self.start_time + delta_seconds
         return self._reference_date_np + np.timedelta64(total_seconds, 's')
 
-    def get_seconds_since_reference(self) -> str:
+    def get_seconds_since_reference(self, delta_seconds: int = 0) -> int:
         """
-        Returns the number of seconds since the reference date/time in a 
-        human readable format
+        Returns the current time in simulation as integer in units of seconds.
+
+        Parameters
+        ----------
+        delta_seconds : int, optional
+            Additional seconds to add to the current simulation time (default is 0).
+
+        Returns
+        -------
+        total_seconds : int
+            The total seconds in the simulation since the reference date.
         """
-        return str(self.get_current_time())   
+        total_seconds = self.start_time + delta_seconds
+        return total_seconds
 
     def time_as_timedelta64(self) -> np.timedelta64:
         """
