@@ -1,9 +1,11 @@
 """
-Classes representing particle physical properties used by the transport converter.
+This contains a version of the particle class that
+won't be used. But we can keep it for reference for now. 
+We will revist this when we work on the Sand Simulation Milestone.
 """
 
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
+from abc import ABC
 import numpy as np
 
 # TODO: consolidate this code with existing code in particle.py
