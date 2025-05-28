@@ -1,5 +1,6 @@
 import os
 import jsonschema
+import jsonschema.validators
 import yaml
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
@@ -202,11 +203,11 @@ class YAMLConfigValidator:
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
-        ValidatorClass = jsonschema.validators.validator_for(self.schema)
-        validator = ValidatorClass(self.schema)
+        validator = jsonschema.validators.Draft201909Validator(self.schema)
+
         errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
         if errors:
-            raise YamlValidationError(f'YAML file validation error: {errors[0].message}')
+            raise YamlValidationError(f'YAML file validation error: {errors[0].message} at {errors[0].path}')
 
         self._apply_defaults(self.schema, data, data)
         self.config = data
