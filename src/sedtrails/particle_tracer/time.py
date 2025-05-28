@@ -5,7 +5,7 @@ Time class used internally to represent simulation time.
 from dataclasses import dataclass, field
 import numpy as np
 import re
-from sedtrails.exceptions.exceptions import ReferenceDateFormatError
+from sedtrails.exceptions.exceptions import DateFormatError
 
 @dataclass
 class Time:
@@ -16,8 +16,8 @@ class Time:
     ----------
     reference_date : str
         The reference date as string in format 'YYYY-MM-DD hh:mm:ss'
-    start_time : int
-        The simulation start time in seconds (from the reference date).
+    start_time : str
+        The simulation start time as string in format 'YYYY-MM-DD hh:mm:ss'.
     duration : int
         The simulation duration in seconds.
     time_step : int or float
@@ -31,9 +31,10 @@ class Time:
         Updates the current time by adding a delta in seconds.
     """
 
-    # reference_date should be a str, the class will do the transformation into a numpy.datetime64 object
+    # reference_date and start_time should be a str, 
+    # the class will do the transformation into a numpy.datetime64 object
     reference_date: str = field(default='1970-01-01 00:00:00')
-    start_time: int = 0
+    start_time: str = field(default='1970-01-01 00:00:00')
     duration: int = 0
     time_step: float = 1.0
     _reference_date_np: np.datetime64 = field(init=False)
@@ -47,26 +48,23 @@ class Time:
 
     def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
         """
-        Convert reference_date in str format to numpy.datetime64
-        enforcing 'YYYY-MM-DD hh:mm:ss'.
+        Convert date in str format to numpy.datetime64 enforcing 'YYYY-MM-DD hh:mm:ss'.
         """
         if not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", date_str):
             raise ReferenceDateFormatError(
-                f"reference_date '{date_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'"
+                f"date string '{date_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'"
             )
         return np.datetime64(date_str, 's')
     
     def __post_init__(self):
-        # Accept reference_date in str format, enforcing YYYY-MM-DD hh:mm:ss format
+        # Accept reference_date and start_time in str format, enforcing YYYY-MM-DD hh:mm:ss format
         try:
             self._reference_date_np = self._convert_to_datetime64(self.reference_date)
-        except ReferenceDateFormatError as e:
-            raise ReferenceDateFormatError(str(e)) from e
-        if not isinstance(self.start_time, int):
-            raise TypeError(f"Expected 'start_time' to be an int, got {type(self.start_time).__name__}")
+            self._start_time_np = self._convert_to_datetime64(self.start_time)
+        except DateFormatError as e:
+            raise DateFormatError(str(e)) from e
         if not isinstance(self.time_step, (int, float)):
             raise TypeError(f"Expected 'time_step' to be int or float, got {type(self.time_step).__name__}")
-
 
     def get_current_time(self, step: int = 0) -> np.datetime64:
         """
@@ -102,12 +100,6 @@ class Time:
         """
         total_seconds = self.start_time + delta_seconds
         return total_seconds
-
-    def time_as_timedelta64(self) -> np.timedelta64:
-        """
-        Returns the start_time as a numpy.timedelta64 object.
-        """
-        return np.timedelta64(self.start_time, 's')
 
     def update(self, delta_seconds: np.timedelta64):
         """
