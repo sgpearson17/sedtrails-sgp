@@ -2,6 +2,15 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Configuration Schema",
   "definitions": {
+    "Delft3D4VerticalLayerType": {
+      "type": "string",
+      "enum": [
+        "lowest",
+        "max"
+      ],
+      "default": "lowest",
+      "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
+    },
     "numericalSchemeType": {
       "type": "string",
       "enum": [
@@ -122,7 +131,7 @@
           "default": "49:124",
           "description": "1:49;"
         },
-        "DFlowData": {
+        "FlowFieldData": {
           "type": "object",
           "properties": {
             "fmFormat": {
@@ -133,25 +142,25 @@
             "Delft3D4": {
               "type": "object",
               "properties": {
-                "d3d_nested": {
-                  "type": "integer",
-                  "default": 0,
-                  "description": "is Delft3D model nested? (Y=1, N=0)"
+                "nested": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "is Delft3D model nested? (Y=true, N=false)"
                 },
-                "d3d_nested_polFile": {
+                "nested_polFile": {
                   "type": "string",
-                  "default": "[]",
-                  "description": "define polygon inside which to include fine nested model and exclude coarser main model"
+                  "default": "",
+                  "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
                 },
-                "d3d_depAvgFlow": {
-                  "type": "integer",
-                  "default": 1,
-                  "description": "use depth-averaged flow from Delft3D?"
+                "depthAvgFlow": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
                 },
-                "d3d_verticalLayer": {
-                  "type": "integer",
-                  "default": 1,
-                  "description": "vertical sigma or z-layer of model (1 = lowest layer, max = surface)"
+                "verticalLayer": {
+                  "$ref": "#/definitions/Delft3D4VerticalLayerType",
+                  "default": "lowest",
+                  "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
                 }
               }
             }
@@ -208,37 +217,25 @@
     "Time": {
       "type": "object",
       "properties": {
-        "startAtModelStart": {
-          "type": "integer",
-          "default": 1,
-          "description": "1= start sedtrails at the starting timestep of the input model; 0=specify start time elsewhere"
+        "startTime": {
+          "type": "string",
+          "default": null,
+          "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
         },
-        "starttime": {
-          "type": "number",
-          "default": -999.0,
-          "description": "[datenum] initial starttime for sedtrails is obviously wrong and needs to be specified elsewhere (or by selecting S.startAtModelStart = 1)"
-        },
-        "runtime": {
-          "type": "number",
-          "default": "12.5/24",
-          "description": "days"
-        },
-        "accelerationfactor": {
-          "type": "number",
-          "default": 1.0,
-          "description": "scaling factor for old sedtrails formulation"
+        "duration": {
+          "type": "string",
+          "default": "0D12H25M0S",
+          "description": "total duration for the simulation, e.g., '0D12H25M0S' for 12 hours and 25 minutes. If omitted, then simulation runs until the end of the Flow-field time series."
         },
         "timestep": {
-          "type": "number",
-          "default": 30.0,
-          "description": "[s] 60 is default for sediment transport"
-        },
-        "freezeFirstTimestep": {
-          "type": "integer",
-          "default": 0,
-          "description": "troubleshooting weird thing where particles don't move in firsttimestep..."
+          "type": "string",
+          "default": "30S",
+          "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
         }
-      }
+      },
+      "required": [
+        "timestep"
+      ]
     },
     "Physics": {
       "type": "object",
