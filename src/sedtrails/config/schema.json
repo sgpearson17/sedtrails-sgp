@@ -113,16 +113,6 @@
           "default": "49:124",
           "description": "1:49;"
         },
-        "subset_t_bed": {
-          "type": "integer",
-          "default": 1,
-          "description": "choose first time step for bed level (i.e. initial bed level)"
-        },
-        "subset_k": {
-          "type": "integer",
-          "default": 0,
-          "description": "grain size fractions (0=all) (NOT YET IMPLEMENTED HERE FOR FM)"
-        },
         "DFLOW-FM": {
           "type": "object",
           "properties": {
