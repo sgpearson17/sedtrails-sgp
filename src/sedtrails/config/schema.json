@@ -20,6 +20,15 @@
       ],
       "default": "dfm",
       "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+    },
+    "fmFormatType": {
+      "type": "string",
+      "enum": [
+        "sedtrails_nc",
+        "merged_nc"
+      ],
+      "default": "sedtrails_nc",
+      "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
     }
   },
   "type": "object",
@@ -113,42 +122,57 @@
           "default": "49:124",
           "description": "1:49;"
         },
-        "DFLOW-FM": {
+        "DFlowData": {
           "type": "object",
           "properties": {
-            "supportedSandTransportFormulations": {
-              "type": "string",
-              "default": "{'sedtrails_nc','merged_nc'}"
+            "fmFormat": {
+              "$ref": "#/definitions/fmFormatType",
+              "default": "'sedtrails_nc'",
+              "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
             },
-            "fmOutputType": {
-              "type": "string",
-              "default": "'sedtrails_nc'"
+            "Delft3D4": {
+              "type": "object",
+              "properties": {
+                "d3d_nested": {
+                  "type": "integer",
+                  "default": 0,
+                  "description": "is Delft3D model nested? (Y=1, N=0)"
+                },
+                "d3d_nested_polFile": {
+                  "type": "string",
+                  "default": "[]",
+                  "description": "define polygon inside which to include fine nested model and exclude coarser main model"
+                },
+                "d3d_depAvgFlow": {
+                  "type": "integer",
+                  "default": 1,
+                  "description": "use depth-averaged flow from Delft3D?"
+                },
+                "d3d_verticalLayer": {
+                  "type": "integer",
+                  "default": 1,
+                  "description": "vertical sigma or z-layer of model (1 = lowest layer, max = surface)"
+                }
+              }
             }
-          }
-        },
-        "Delft3D4": {
-          "type": "object",
-          "properties": {
-            "d3d_nested": {
-              "type": "integer",
-              "default": 0,
-              "description": "is Delft3D model nested? (Y=1, N=0)"
+          },
+          "anyOf": [
+            {
+              "required": [
+                "fmFormat"
+              ]
             },
-            "d3d_nested_polFile": {
-              "type": "string",
-              "default": "[]",
-              "description": "define polygon inside which to include fine nested model and exclude coarser main model"
-            },
-            "d3d_depAvgFlow": {
-              "type": "integer",
-              "default": 1,
-              "description": "use depth-averaged flow from Delft3D?"
-            },
-            "d3d_verticalLayer": {
-              "type": "integer",
-              "default": 1,
-              "description": "vertical sigma or z-layer of model (1 = lowest layer, max = surface)"
+            {
+              "required": [
+                "Delft3D4"
+              ]
             }
+          ],
+          "not": {
+            "required": [
+              "fmFormat",
+              "Delft3D4"
+            ]
           }
         }
       },
