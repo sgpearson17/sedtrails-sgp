@@ -83,11 +83,6 @@
     "Domain": {
       "type": "object",
       "properties": {
-        "useFullModelExtents": {
-          "type": "integer",
-          "default": 1,
-          "description": "use full model domain (1) or only a subset (0)?"
-        },
         "subset_x": {
           "type": "string",
           "default": "",
@@ -101,7 +96,7 @@
         "sedtrailsDomainPol": {
           "type": "string",
           "default": "",
-          "description": "path to Detares '.pol' file contatining geometries"
+          "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
         },
         "subset_m": {
           "type": "integer",
@@ -166,6 +161,34 @@
             }
           }
         }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "sedtrailsDomainPol"
+          ]
+        },
+        {
+          "required": [
+            "subset_x",
+            "subset_y"
+          ]
+        },
+        {
+          "required": [
+            "subset_m",
+            "subset_n"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "sedtrailsDomainPol",
+          "subset_x",
+          "subset_y",
+          "subset_m",
+          "subset_n"
+        ]
       }
     },
     "Time": {
