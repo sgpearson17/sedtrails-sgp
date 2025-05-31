@@ -535,11 +535,6 @@
         "General settings": {
           "type": "object",
           "properties": {
-            "src_sourceFile": {
-              "type": "string",
-              "default": "[]",
-              "description": "option to specify source file, for repeatability"
-            },
             "src_class": {
               "type": "string",
               "default": "'clusters'",
