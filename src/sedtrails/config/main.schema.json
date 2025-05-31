@@ -2,7 +2,87 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Configuration Schema",
   "definitions": {
-    "Delft3D4VerticalLayerType": {
+    "soulsby_bed_interaction_type": {
+      "type": "string",
+      "enum": [
+        "concrete bed",
+        "bed interaction"
+      ]
+    },
+    "near_bed_velocity_type": {
+      "type": "string",
+      "enum": [
+        "soulsby",
+        "lewis",
+        "depth_averaged"
+      ],
+      "description": "'soulsby' = Soulsby 2011 formulation, 'lewis' = Lewis 2017 formulation, 'depth_averaged' = depth-averaged velocity"
+    },
+    "formulation_type": {
+      "type": "object",
+      "properties": {
+        "soulsby": {
+          "type": "object",
+          "properties": {
+            "bed_interaction": {
+              "$ref": "#/definitions/soulsby_bed_interaction_type",
+              "description": "bed interaction module"
+            },
+            "background_grain_size": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "d_background": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "freedom_factor": {
+              "type": "integer",
+              "default": 1,
+              "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
+            },
+            "gamma_e": {
+              "type": "number",
+              "default": 0.1,
+              "description": "long-term equilibrium proportion of free particles"
+            },
+            "theta_s": {
+              "type": "number",
+              "default": 0.1,
+              "description": "transition scale value"
+            },
+            "b_e": {
+              "type": "number",
+              "default": 1.7e-07,
+              "description": "maximum free-to-trapped transition probability per second [1/s]"
+            },
+            "mu_d": {
+              "type": "number",
+              "default": 0.5,
+              "description": "dynamic friction coefficient (0.5-1.0)"
+            }
+          }
+        },
+        "pannozzo": {
+          "type": "object",
+          "properties": {}
+        },
+        "vanwesten": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    "particle_state_type": {
+      "type": "string",
+      "enum": [
+        "trapped",
+        "free"
+      ],
+      "default": "free",
+      "description": "'trapped' = particle is trapped, 'free' = particle is free"
+    },
+    "delft3d4_vertical_layer_type": {
       "type": "string",
       "enum": [
         "lowest",
@@ -11,7 +91,7 @@
       "default": "lowest",
       "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
     },
-    "numericalSchemeType": {
+    "numerical_scheme_type": {
       "type": "string",
       "enum": [
         "rk4"
@@ -19,7 +99,7 @@
       "default": "rk4",
       "description": "'rk4' = Runge Kutta 4, 'euler' = Euler method"
     },
-    "inputModelType": {
+    "input_model_type": {
       "type": "string",
       "enum": [
         "dfm",
@@ -30,7 +110,7 @@
       "default": "dfm",
       "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
     },
-    "fmFormatType": {
+    "fm_format_type": {
       "type": "string",
       "enum": [
         "sedtrails_nc",
@@ -50,41 +130,41 @@
           "default": 1,
           "description": "1 = pre-process, 0 = use existing files with default names"
         },
-        "computePathways": {
+        "compute_pathways": {
           "type": "integer",
           "default": 1,
           "description": "(re)run everything = 1, load existing pathways = 0;"
         },
-        "inputModelType": {
-          "$ref": "#/definitions/inputModelType",
+        "input_model": {
+          "$ref": "#/definitions/input_model_type",
           "default": "dfm",
           "description": "input model type (dfm, d3d4, xbeach, aeolis)"
         },
-        "nRuns": {
+        "n_runs": {
           "type": "integer",
           "default": 1
         },
-        "displayInputMetadata": {
+        "display_input_metadata": {
           "type": "integer",
           "default": 0,
           "description": "display all metadata"
         },
-        "numericalScheme": {
-          "$ref": "#/definitions/numericalSchemeType",
+        "numerical_scheme": {
+          "$ref": "#/definitions/numerical_scheme_type",
           "default": "'rk4'",
           "description": "numerical scheme ('rk4' = Runge Kutta 4)"
         }
       }
     },
-    "Folder settings": {
+    "folder_settings": {
       "type": "object",
       "properties": {
-        "inputData": {
+        "input_data": {
           "type": "string",
           "default": "",
           "description": "path to D-Flow dataset or directory containing D-Flow files."
         },
-        "outputDir": {
+        "output_dir": {
           "type": "string",
           "default": {
             "$ref": "#/properties/input_output_directories/properties/inputDir",
@@ -98,7 +178,7 @@
         "inputDir"
       ]
     },
-    "Domain": {
+    "domain": {
       "type": "object",
       "properties": {
         "subset_x": {
@@ -131,15 +211,15 @@
           "default": "49:124",
           "description": "1:49;"
         },
-        "FlowFieldData": {
+        "flow_field_data": {
           "type": "object",
           "properties": {
             "fmFormat": {
-              "$ref": "#/definitions/fmFormatType",
+              "$ref": "#/definitions/fm_format_type",
               "default": "'sedtrails_nc'",
               "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
             },
-            "Delft3D4": {
+            "delft3d4": {
               "type": "object",
               "properties": {
                 "nested": {
@@ -147,18 +227,18 @@
                   "default": false,
                   "description": "is Delft3D model nested? (Y=true, N=false)"
                 },
-                "nested_polFile": {
+                "nested_pol_file": {
                   "type": "string",
                   "default": "",
                   "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
                 },
-                "depthAvgFlow": {
+                "depth_average_flow": {
                   "type": "boolean",
                   "default": true,
                   "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
                 },
-                "verticalLayer": {
-                  "$ref": "#/definitions/Delft3D4VerticalLayerType",
+                "vertical_layer": {
+                  "$ref": "#/definitions/delft3d4d_vertical_layer_type",
                   "default": "lowest",
                   "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
                 }
@@ -214,7 +294,7 @@
         ]
       }
     },
-    "Time": {
+    "time": {
       "type": "object",
       "properties": {
         "startTime": {
@@ -237,10 +317,10 @@
         "timestep"
       ]
     },
-    "Physics": {
+    "physics": {
       "type": "object",
       "properties": {
-        "Constants": {
+        "constants": {
           "type": "object",
           "properties": {
             "g": {
@@ -248,82 +328,77 @@
               "default": 9.81,
               "description": "gravity [m/s^2]"
             },
-            "vkarman": {
+            "von_karman": {
               "type": "number",
               "default": 0.4,
-              "description": "von Karman's constant [-]"
+              "description": "von Karman's constant"
             },
-            "visc_kin": {
+            "kinetic_viscosity": {
               "type": "number",
               "default": 1.36e-06,
               "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
             },
-            "rhoW": {
+            "rho_w": {
               "type": "number",
               "default": 1027.0,
               "description": "water density [kg/m3] (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
             },
-            "rhoS": {
+            "rho_s": {
               "type": "number",
               "default": 2650.0,
               "description": "particle density [kg/m3] (quartz)"
             },
-            "frictionAngle": {
+            "friction_angel": {
               "type": "number",
               "default": 30.0,
               "description": "friction angle of sediment (30 deg default)"
             },
-            "diffusioncoefficient": {
+            "diffusion_coefficient": {
               "type": "number",
               "default": 0.1,
               "description": "random walk diffusion coefficient"
             }
           }
         },
-        "Additional bed shear stress": {
+        "bed_shear_stress": {
           "type": "object",
           "properties": {
-            "waves_modifyBedShear": {
-              "type": "integer",
-              "default": 0,
-              "description": "0 = do not modify bed shear stress, 1 = add spatially constant, temporally varying bed shear stress to approximate waves"
-            },
-            "waves_bedShearModFile": {
+            "mod_file": {
               "type": "string",
-              "default": "[]",
-              "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner)"
+              "default": "",
+              "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner). If empty, then no bed shear stress is added."
             }
           }
         },
-        "Bed slope": {
+        "bed_slope": {
           "type": "object",
           "properties": {
-            "bedSlope_calculate": {
-              "type": "integer",
-              "default": 0,
-              "description": "calculate local bedslope in x and y directions"
+            "calculate": {
+              "type": "boolean",
+              "default": false,
+              "description": "Controls if local bedslope in x and y directions should be calculated"
             },
-            "bedSlope_dx": {
+            "resolution": {
               "type": "number",
               "default": 100.0,
               "description": "resolution to which bedslope should be reinterpolated"
             },
-            "bedslope_checkPlot": {
-              "type": "integer",
-              "default": 0,
-              "description": "create a check plot to make sure bedslopes are in the right direction"
+            "bedslope_check_plot": {
+              "type": "object",
+              "default": false,
+              "description": "if true, it creates a check plot to make sure bedslopes are in the right direction"
             },
-            "bedSlope_caxisFactor": {
+            "bedslope_caxis_factor": {
               "type": "number",
               "default": 100.0,
               "description": "factor for tuning colour axis in check plot (i.e., 1/caxisFactor =1/100 => shows slopes of 1/100)"
             },
-            "bedSlope_alphaBS": {
+            "bedslope_alpha_bs": {
               "type": "number",
               "default": 1.0,
               "description": "longitudinal bedslope transport effect tuning factor"
             },
-            "bedSlope_alphaBN": {
+            "bedslope_alpha_bn": {
               "type": "number",
               "default": 1.5,
               "description": "transverse bedslope transport effect tuning factor"
@@ -332,145 +407,125 @@
         }
       }
     },
-    "Processes": {
+    "particles": {
       "type": "object",
       "properties": {
-        "flowvel": {
-          "type": "integer",
-          "default": 1,
-          "description": "flow velocities"
-        },
-        "sand": {
-          "type": "integer",
-          "default": 1,
-          "description": "sand transport velocity"
-        },
-        "mud": {
-          "type": "integer",
-          "default": 0,
-          "description": "mud transport velocity"
-        },
-        "bio": {
-          "type": "integer",
-          "default": 0,
-          "description": "biological particle vectors (e.g., larvae, mangrove propagules)"
-        },
-        "lum": {
-          "type": "integer",
-          "default": 0,
-          "description": "fields for luminescence analysis"
-        },
-        "General": {
+        "passive": {
           "type": "object",
+          "description": "simulate passive particle, use only flow velocities",
           "properties": {
-            "initialParticleFreedom": {
-              "type": "integer",
-              "default": 1,
-              "description": "initial state of particle (0 = trapped, 1 = free) [-]"
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
             }
           }
         },
-        "Sand": {
+        "sand": {
           "type": "object",
+          "description": "simulate sand particles",
           "properties": {
-            "dTracer": {
+            "grain_size": {
               "type": "number",
               "default": 0.0002,
-              "description": "grain size of tracer sediment [m]"
+              "description": "grain size of sand particles [m]"
             },
-            "supportedSandTransportFormulations": {
-              "type": "string",
-              "default": "{'soulsby2011','pannozzo','vanwesten'}"
-            },
-            "sandVelFormulation": {
-              "type": "string",
-              "default": "'soulsby2011'",
-              "description": "sand velocity transport formulation (default = soulsby2011)"
-            },
-            "sandVelDefinition": {
-              "type": "string",
-              "default": "{'all','non-linear wave only'}"
-            },
-            "Soulsby 2011": {
+            "velocity": {
               "type": "object",
+              "description": "velocity transport",
               "properties": {
-                "soulsby2011_bedInteraction": {
-                  "type": "integer",
-                  "default": 0,
-                  "description": "bed interaction module (0 = concrete bed, 1 = bed interaction)"
+                "formulation": {
+                  "$ref": "#/definitioins/formulation_type",
+                  "default": "soulsby",
+                  "description": "sand velocity transport formulation"
                 },
-                "dBackground": {
-                  "type": "number",
-                  "default": "[]",
-                  "description": "grain size of background sediment [m]"
-                },
-                "soulsby2011_F0": {
-                  "type": "integer",
-                  "default": 1,
-                  "description": "initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
-                },
-                "soulsby2011_gamma_e": {
-                  "type": "number",
-                  "default": 0.1,
-                  "description": "long-term equilibrium proportion of free particles [-]"
-                },
-                "soulsby2011_theta_s": {
-                  "type": "number",
-                  "default": 0.1,
-                  "description": "transition scale value [-]"
-                },
-                "soulsby2011_b_e": {
-                  "type": "number",
-                  "default": 1.7e-07,
-                  "description": "maximum free-to-trapped transition probability per second [1/s]"
-                },
-                "soulsby2011_mu_d": {
-                  "type": "number",
-                  "default": 0.5,
-                  "description": "dynamic friction coefficient (0.5-1.0) [-]"
-                },
-                "useNearBedVel": {
-                  "type": "integer",
-                  "default": 1,
-                  "description": "(=1) use near-bed velocity as per Soulsby et al (2011) or use depth-averaged velocity instead (=0) % Bart: near-bed current velocity based on eq 1 from https://doi.org/10.1016/j.renene.2017.03.096"
-                },
-                "nearBedVel_Lewis2017": {
-                  "type": "integer",
-                  "default": 1,
-                  "description": "Use Lewis 2017 formulation for computing near-bed velocity"
-                },
-                "near_bed_Uc_z": {
-                  "type": "number",
-                  "default": 0.4,
-                  "description": "Should be improved! Integral of lowest 1m should be taken, now approximated with z = 0.4m"
-                },
-                "near_bed_Uc_alpha": {
-                  "type": "number",
-                  "default": 7.0,
-                  "description": "power law coefficient for near-bed current velocity"
-                },
-                "near_bed_Uc_beta": {
-                  "type": "number",
-                  "default": 0.32,
-                  "description": "bed roughness coefficient for near-bed current velocity"
+                "definition": {
+                  "type": "string",
+                  "default": "all",
+                  "description": "definition of velocity transport (e.g., 'all' or 'non-linear wave only')"
                 }
-              }
+              },
+              "oneOf": [
+                {
+                  "fobrmulation": {
+                    "required": [
+                      "soulsby",
+                      "pannozzo",
+                      "vanwesten"
+                    ]
+                  }
+                }
+              ]
+            },
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            },
+            "near_bed_velocity": {
+              "$ref": "#/near_bed_velocity_type",
+              "default": "soulsby",
+              "description": "the formulation to use for computing the near-bed velocity"
+            },
+            "near_bed_Uc_z": {
+              "type": "number",
+              "default": 0.4,
+              "description": "Integral of lowest 1m should be taken, now approximated with z = 0.4m"
+            },
+            "near_bed_Uc_alpha": {
+              "type": "number",
+              "default": 7.0,
+              "description": "power law coefficient for near-bed current velocity"
+            },
+            "near_bed_Uc_beta": {
+              "type": "number",
+              "default": 0.32,
+              "description": "bed roughness coefficient for near-bed current velocity"
+            }
+          }
+        },
+        "mud": {
+          "type": "object",
+          "description": "simulate mud particles",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        },
+        "bio": {
+          "type": "object",
+          "description": "simulate biological particle vectors (e.g., larvae, mangrove propagules)",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        },
+        "lum": {
+          "type": "object",
+          "description": "simualte fields for luminescence analysis",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
             }
           }
         }
       }
     },
-    "Barriers": {
+    "barriers": {
       "type": "object",
       "properties": {
-        "includeBarriers": {
-          "type": "integer",
-          "default": 0,
-          "description": "include thin dams/permeable structures"
-        },
-        "BarrierPolFile": {
+        "po_file": {
           "type": "string",
-          "default": "'"
+          "default": "",
+          "description": "path to Deltares '.pol' file containing thin dams/permeable strucures"
         }
       }
     },
