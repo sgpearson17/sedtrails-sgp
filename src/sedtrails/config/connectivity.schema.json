@@ -2,6 +2,48 @@
   "type": "object",
   "title": "Connectivity Configuration",
   "properties": {
+    "Plotting": {
+      "type": "object",
+      "properties": {
+        "connectivity_plot": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_network": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_topFractionLinks": {
+          "type": "string",
+          "default": "[]",
+          "description": "plot top fraction of links (e.g., 0.1)"
+        },
+        "connectivity_plot_adjMat": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_netgross": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_nodeMetrics": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_modules": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_plot_moduleBorders": {
+          "type": "integer",
+          "default": 0
+        },
+        "connectivity_adjmat": {
+          "type": "string",
+          "default": "[]"
+        }
+      }
+    },
     "Connectivity auto-define": {
       "type": "object",
       "properties": {
