@@ -529,7 +529,7 @@
         }
       }
     },
-    "Sources": {
+    "particle_seeding": {
       "type": "object",
       "properties": {
         "General settings": {
