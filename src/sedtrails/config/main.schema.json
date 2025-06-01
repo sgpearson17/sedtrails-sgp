@@ -587,56 +587,6 @@
             }
           }
         },
-        "Cluster source": {
-          "type": "object",
-          "properties": {
-            "src_cluster_PolFile": {
-              "type": "string",
-              "default": "[]",
-              "description": ".pol file with bounding polygon for cluster analysis"
-            },
-            "src_cluster_zCutoff": {
-              "type": "number",
-              "default": 1.0,
-              "description": "[m] cutoff elevation threshold for cluster analysis"
-            },
-            "src_cluster_xWeight": {
-              "type": "number",
-              "default": 1.0,
-              "description": "relative weight to apply to x-coordinate in cluster analysis"
-            },
-            "src_cluster_yWeight": {
-              "type": "number",
-              "default": 1.0,
-              "description": "relative weight to apply to y-coordinate in cluster analysis"
-            },
-            "src_cluster_zWeight": {
-              "type": "number",
-              "default": 10.0,
-              "description": "relative weight to apply to z-coordinate in cluster analysis (extra weight on z emphasizes similar bathymetric features)"
-            },
-            "src_cluster_k": {
-              "type": "number",
-              "default": 100.0,
-              "description": "number of clusters to create"
-            },
-            "src_cluster_iter": {
-              "type": "number",
-              "default": 40.0,
-              "description": "number of iterations to complete in cluster analysis"
-            },
-            "src_cluster_showCheckPlots": {
-              "type": "integer",
-              "default": 0,
-              "description": "0 = do not show cluster check plots, 1 = show them"
-            },
-            "src_cluster_saveCheckPlots": {
-              "type": "integer",
-              "default": 0,
-              "description": "0 = do not save cluster check plots, 1 = save them"
-            }
-          }
-        },
         "Point source": {
           "type": "object",
           "properties": {
