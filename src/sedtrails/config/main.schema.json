@@ -94,7 +94,8 @@
     "numerical_scheme_type": {
       "type": "string",
       "enum": [
-        "rk4"
+        "rk4",
+        "euler"
       ],
       "default": "rk4",
       "description": "'rk4' = Runge Kutta 4, 'euler' = Euler method"
@@ -151,7 +152,7 @@
         },
         "numerical_scheme": {
           "$ref": "#/definitions/numerical_scheme_type",
-          "default": "'rk4'",
+          "default": "rk4",
           "description": "numerical scheme ('rk4' = Runge Kutta 4)"
         }
       }
@@ -166,16 +167,12 @@
         },
         "output_dir": {
           "type": "string",
-          "default": {
-            "$ref": "#/properties/input_output_directories/properties/inputDir",
-            "transform": "dirname",
-            "suffix": "/../output"
-          },
+          "default": "/../output",
           "description": "path to directory for storing the results of the simulation"
         }
       },
       "required": [
-        "inputDir"
+        "input_data"
       ]
     },
     "domain": {
@@ -191,7 +188,7 @@
           "default": "",
           "description": "Y coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 12000:150000"
         },
-        "sedtrailsDomainPol": {
+        "pol_file": {
           "type": "string",
           "default": "",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
@@ -207,16 +204,15 @@
           "description": "limits of d3d4 model domain in n-direction (0=all)"
         },
         "subset_t": {
-          "type": "integer",
-          "default": "49:124",
-          "description": "1:49;"
+          "type": "string",
+          "description": "limits of d3d4 model domain in t-direction (time). Given as minimum:maximum, e.g. 49:124"
         },
         "flow_field_data": {
           "type": "object",
           "properties": {
-            "fmFormat": {
+            "fm": {
               "$ref": "#/definitions/fm_format_type",
-              "default": "'sedtrails_nc'",
+              "default": "sedtrails_nc",
               "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
             },
             "delft3d4": {
@@ -238,7 +234,7 @@
                   "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
                 },
                 "vertical_layer": {
-                  "$ref": "#/definitions/delft3d4d_vertical_layer_type",
+                  "$ref": "#/definitions/delft3d4_vertical_layer_type",
                   "default": "lowest",
                   "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
                 }
@@ -248,19 +244,19 @@
           "anyOf": [
             {
               "required": [
-                "fmFormat"
+                "fm"
               ]
             },
             {
               "required": [
-                "Delft3D4"
+                "delft3d4"
               ]
             }
           ],
           "not": {
             "required": [
-              "fmFormat",
-              "Delft3D4"
+              "fm",
+              "delft3d4"
             ]
           }
         }
@@ -268,7 +264,7 @@
       "anyOf": [
         {
           "required": [
-            "sedtrailsDomainPol"
+            "pol_file"
           ]
         },
         {
@@ -286,7 +282,7 @@
       ],
       "not": {
         "required": [
-          "sedtrailsDomainPol",
+          "pol_file",
           "subset_x",
           "subset_y",
           "subset_m",
