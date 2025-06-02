@@ -37,8 +37,14 @@ class YamlOutputError(SedtrailsException):
     pass
 
 
-class ReferenceDateFormatError(ValueError):
+class DateFormatError(ValueError):
     """
-    Exception raised when the reference_date string does not match the required 
+    Exception raised when the date string does not match the required 
     format 'YYYY-MM-DD 00:00:00'.
     """
+
+class DurationFormatError(ValueError):
+    """
+    Exception raised when the duration string does not match the required format '3D 2H1M3S'.
+    """
+    pass    
