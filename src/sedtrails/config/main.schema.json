@@ -1,6 +1,6 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Configuration Schema",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Schema for Sedtrails Configuration",
   "definitions": {
     "soulsby_bed_interaction_type": {
       "type": "string",
@@ -293,7 +293,7 @@
     "time": {
       "type": "object",
       "properties": {
-        "startTime": {
+        "start_time": {
           "type": "string",
           "default": null,
           "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
@@ -513,7 +513,34 @@
             }
           }
         }
-      }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "passive"
+          ]
+        },
+        {
+          "required": [
+            "sand"
+          ]
+        },
+        {
+          "required": [
+            "mud"
+          ]
+        },
+        {
+          "required": [
+            "bio"
+          ]
+        },
+        {
+          "required": [
+            "lum"
+          ]
+        }
+      ]
     },
     "barriers": {
       "type": "object",
@@ -533,7 +560,7 @@
           "default": "'clusters'",
           "description": "specify class of source to be used (choose from 'clusters','pointSource','lineSource','regularGrid','densePatch')"
         },
-        "type": {
+        "release_type": {
           "type": "string",
           "default": "'instantaneous'",
           "description": "type of release: 'instantaneous' or 'continuous'"
@@ -785,7 +812,7 @@
       ]
     },
     "visualization": {
-      "$ref": "visualization.schema.json"
+      "$ref": "visualization.schema.json#/properties"
     }
   }
 }
