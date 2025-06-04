@@ -1,7 +1,11 @@
 name: Sphinx Docs
 
 on:
-    workflow_dispatch:
+    pull_request:
+      branches:
+        - main
+      paths:
+        - 'docs/**'
 
 permissions:
   contents: write
