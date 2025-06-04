@@ -203,7 +203,7 @@ class YAMLConfigValidator:
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
-        validator = jsonschema.validators.Draft201909Validator(self.schema)
+        validator = jsonschema.validators.Draft7Validator(self.schema)
 
         errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
         if errors:
