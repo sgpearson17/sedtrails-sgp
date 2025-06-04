@@ -1,0 +1,27 @@
+@startuml SedtrailComponentsConfigurationInterface
+!include ./c4/C4_Component.puml
+
+' LAYOUT_LANDSCAPE()
+
+title SedTRAILS: Component Diagram for Simulation Configuration Interface
+scale 1.5
+
+Person(modeler, "Modeler", "wants to track sand particles in a costal system")
+Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a costal system")
+Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+
+Container_Boundary(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files"){
+    Component(simulCli, "Simulation CLI", "Python, Typer", "Exposes commands to configure simulations via command line interface")
+    Component(configController, "Configuration Controller", "Python", "Reads simulation configuration files, applies default configuration values, and provides configurations to other components")
+    Component(configValidator, "Validator", "YAML", "Validates simulation configuration files against SedTRAILS configuration schema")
+    Rel(configController, configValidator, "provides file content to", "Python object")
+    Rel(simulCli, configController, "provides configurations and instructions to", "Python object")
+}
+
+Rel(modeler, simulCli, "Provides simulation configurations via", "Terminal, YAML file")
+Rel(configController, particleTracer, "provides configurations to", "Python object")
+Rel(configController, transportConverter, "provides configurations to", "Python object")
+
+SHOW_LEGEND()
+@enduml
+
