@@ -1,0 +1,23 @@
+general:
+  input_model: "dfm"
+folder_settings:
+  input_data: "../sample-data/inlet_sedtrails.nc"
+  output_dir: "../output"
+time:
+  timestep: '30S'
+  duration: '6H18M18S'
+particles:
+  sand:
+    grain_size: 0.0005
+particle_seeding:
+  release_start: ''
+  partciles_per_timestep: 1
+  strategy: 
+    point:
+      points: 
+        - "400000,170000"
+output:
+  store_tracks: true
+visualization:
+  plotting:
+    point_size: 7.0

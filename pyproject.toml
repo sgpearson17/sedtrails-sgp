@@ -45,6 +45,14 @@ dev = [
   "sphinx-rtd-theme",
 ]
 
+[tool.hatch.build]
+include = [
+  "src/sedtrails/config/schema.json",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sedtrails"]
+
 [project.urls]
 Homepage = "https://github.com/sedtrails/sedtrails"
 Documentation = "https://sedtrails.github.io/sedtrails"

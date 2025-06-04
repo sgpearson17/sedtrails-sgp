@@ -25,7 +25,7 @@ from visualization_utils import plot_particle_trajectory
 
 # ===== CONFIGURATION =====
 # Specific parameters
-FILE_PATH = Path("../sedtrails_data/inlet_sedtrails.nc")
+FILE_PATH = Path("/Users/mgarciaalvarez/devel/sedtrails/sample-data/inlet_sedtrails.nc")
 START_X = 40000.0
 START_Y = 17000.0
 TIMESTEP = 30.0  # seconds
