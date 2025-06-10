@@ -104,6 +104,29 @@ class Particle(ABC):
         """
         pass
 
+@dataclass
+class PhysicalProperties:
+    """
+    Base class for particle physical properties.
+    
+    Attributes
+    ----------
+    density : float
+        Material density in kg/m³
+    diameter : float
+        Particle diameter in meters
+    """
+    density: float
+    diameter: float
+
+
+    def __post_init__(self):
+        """Validate physical property values."""
+        if not isinstance(self.density, (int, float)) or self.density <= 0:
+            raise ValueError(f"Density must be positive, got {self.density}")
+        if not isinstance(self.diameter, (int, float)) or self.diameter <= 0:
+            raise ValueError(f"Diameter must be positive, got {self.diameter}")
+
 
 @dataclass
 class Mud(Particle):
@@ -116,12 +139,15 @@ class Mud(Particle):
         The velocity of the mud particles.
     """
 
-    # TODO: define the physical properties of the passive particles
-    physical_properties: dict = field(default_factory=dict)
+    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
+        density=2650.0,  # kg/m³, typical mud density
+        diameter=2e-6,   # m, typical mud diameter (2 microns)
+    ))    
 
     def __post_init__(self):
-        # TODO: validate data types once the physical properties are defined
-        pass
+        super().__post_init__()
+        if not isinstance(self.physical_properties, PhysicalProperties):
+            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
 
     def particle_velocity(self) -> float:
         """
@@ -146,12 +172,15 @@ class Sand(Particle):
         The velocity of the sand particles.
     """
 
-    # TODO: define the physical properties of the passive particles
-    physical_properties: dict = field(default_factory=dict)
+    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
+        density=2650.0,  # kg/m³, typical sand density
+        diameter=2e-4,   # m, typical sand diameter (0.2 mm)
+    ))
 
     def __post_init__(self):
-        # TODO: validate data types once the physical properties are defined
-        pass
+        super().__post_init__()
+        if not isinstance(self.physical_properties, PhysicalProperties):
+            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
 
     def particle_velocity(self) -> float:
         """
@@ -176,12 +205,15 @@ class Passive(Particle):
         The velocity of the passive particles.
     """
 
-    # TODO: define the physical properties of the passive particles
-    physical_properties: dict = field(default_factory=dict)
+    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
+        density=1000.0,  # kg/m³, water density
+        diameter=1e-6,   # m, typical tracer size (1 micron)
+    ))
 
     def __post_init__(self):
-        # TODO: validate data types once the physical properties are defined
-        pass
+        super().__post_init__()
+        if not isinstance(self.physical_properties, PhysicalProperties):
+            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
 
     def particle_velocity(self) -> float:
         """
