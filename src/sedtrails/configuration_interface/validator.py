@@ -1,6 +1,7 @@
 import jsonschema
 import yaml
 import json
+import copy
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError
 from pathlib import Path
@@ -67,42 +68,48 @@ class YAMLConfigValidator:
         else:
             return schema_data
 
-    def _apply_defaults(self, schema: Dict[str, Any], data: Dict[str, Any], root_data: Dict[str, Any]) -> None:
+    def _apply_defaults(self, schema_content: Dict[str, Any], config_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        #TODO: MODIFY THIS FUNCTION TO APPLY DEFAULTS ON THE SCHEMA
+
         Recursively applies default values from the schema to the data dictionary.
         If a default is specified as a dictionary with "$ref" and transformation keys,
         it is computed accordingly.
 
         Parameters
         ----------
-        schema : dict
+        schema_content : dict
             The JSON schema (or subschema).
-        data : dict
-            The portion of configuration data to update.
-        root_data : dict
-            The full configuration data (for resolving references).
+        config_data : dict
+            The configuration data to which defaults should be applied.
+
+        Returns
+        -------
+        dict
+            The configuration data with defaults applied.
 
         Raises
         ------
         ValueError
             If the default value cannot be resolved.
         """
-        if not isinstance(data, dict):
-            return
-        for key, subschema in schema.get('properties', {}).items():
-            if key not in data and 'default' in subschema:
-                default_val: Any = subschema['default']
-                if isinstance(default_val, dict) and '$ref' in default_val:
-                    try:
-                        pass
-                        # data[key] = self._resolve_default_directive(default_val, root_data)
-                    except Exception as e:
-                        raise ValueError(f"Error resolving default for '{key}': {e}") from e
+
+        schema_type = schema_content.get('type')
+
+        if schema_type == 'object' and isinstance(config_data, dict):
+            properties = schema_content.get('properties', {})
+            for key, prop_schema in properties.items():
+                if key not in config_data:
+                    if 'default' in prop_schema:
+                        config_data[key] = prop_schema['default']
                 else:
-                    data[key] = default_val
-            if key in data and subschema.get('type') == 'object':
-                self._apply_defaults(subschema, data[key], root_data)
+                    config_data[key] = self._apply_defaults(prop_schema, config_data[key])
+
+        elif schema_type == 'array' and isinstance(config_data, list):
+            item_schema = schema_content.get('items', {})
+            for i, item in enumerate(config_data):
+                config_data[i] = self._apply_defaults(item_schema, item)
+
+        return config_data
 
     def validate_yaml(self, yml_filepath: str) -> Dict[str, Any]:
         """
@@ -126,6 +133,8 @@ class YAMLConfigValidator:
             If the YAML file cannot be read
         YamlValidationError
             If the YAML configuration is invalid.
+        ValueError
+            If there is an error applying default values from the schema.
         """
 
         # loading the YAML file
@@ -144,9 +153,14 @@ class YAMLConfigValidator:
         except jsonschema.ValidationError as e:
             print(f'Validation error: {e.message}')
 
-        # self._apply_defaults(self.schema, data, data)
-        self.config = yaml_data
-        return self.config
+        # apply default values from the schema
+        try:
+            config_with_defaults = self._apply_defaults(self.schema_content, config_data=yaml_data)
+        except Exception as e:
+            raise ValueError(f'Error applying defaults: {e}') from e
+        else:
+            self.config = config_with_defaults
+            return self.config
 
     def export_schema_to_yaml(self, output_file: Optional[str] = None) -> str | None:
         """
@@ -177,3 +191,15 @@ class YAMLConfigValidator:
                 raise YamlOutputError(f'Error writing schema to file: {e}') from e
         else:
             return schema_yaml
+
+
+if __name__ == '__main__':
+    # Example usage
+
+    validator = YAMLConfigValidator('./src/sedtrails/config/main.schema.json')
+
+    # print('validator.schema_content:', validator.schema_content)
+
+    r = validator.validate_yaml('./examples/config.example.yaml')
+
+    print('Validated configuration:', r)
