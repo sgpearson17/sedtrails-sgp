@@ -69,53 +69,6 @@ class YAMLConfigValidator:
         else:
             return schema_data
 
-    def _resolve_default_directive(self, directive: Dict[str, Any], root_data: Dict[str, Any]) -> str:
-        """
-        #TODO: DEPRICATE THIS FUNCTION
-        Resolves a default directive specified as a dictionary with a "$ref" and optional
-        transformation instructions.
-
-        Parameters
-        ----------
-        directive : dict
-            The default directive dictionary.
-        root_data : dict
-            The full configuration data (used to resolve the $ref).
-
-        Returns
-        -------
-        str
-            The computed default value as a string.
-
-        Raises
-        ------
-        ValueError
-            If the directive does not contain a '$ref
-        TypeError:
-            If the referenced value is not a string.
-        NotImplementedError
-            If the specified transformation is not supported.
-        """
-        if '$ref' not in directive:
-            raise ValueError("Directive must contain a '$ref' key.")
-        ref_value: Any = self._resolve_json_pointer(directive['$ref'], root_data)
-        if not isinstance(ref_value, str):
-            raise TypeError('Referenced value must be a string for folder name transformations.')
-        result: str = ref_value
-        # Apply transformation if specified.
-        if 'transform' in directive:
-            match directive['transform']:
-                case 'dirname':
-                    result = os.path.dirname(result)
-                case _:
-                    raise NotImplementedError(f"Transform '{directive['transform']}' is not supported.")
-        # Apply prefix if specified.
-        if 'prefix' in directive:
-            result = directive['prefix'] + result
-        if 'suffix' in directive:
-            result = os.path.normpath(result + directive['suffix'])
-        return result
-
     def _apply_defaults(self, schema: Dict[str, Any], data: Dict[str, Any], root_data: Dict[str, Any]) -> None:
         """
         #TODO: MODIFY THIS FUNCTION TO APPLY DEFAULTS ON THE SCHEMA
