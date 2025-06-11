@@ -463,17 +463,17 @@
               "default": "soulsby",
               "description": "the formulation to use for computing the near-bed velocity"
             },
-            "near_bed_Uc_z": {
+            "near_bed_uc_z": {
               "type": "number",
               "default": 0.4,
               "description": "Integral of lowest 1m should be taken, now approximated with z = 0.4m"
             },
-            "near_bed_Uc_alpha": {
+            "near_bed_uc_alpha": {
               "type": "number",
               "default": 7.0,
               "description": "power law coefficient for near-bed current velocity"
             },
-            "near_bed_Uc_beta": {
+            "near_bed_uc_beta": {
               "type": "number",
               "default": 0.32,
               "description": "bed roughness coefficient for near-bed current velocity"
