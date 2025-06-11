@@ -1,10 +1,8 @@
-import os
 import jsonschema
-import jsonschema.validators
 import yaml
 import json
 from typing import Any, Dict, Optional
-from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
+from sedtrails.exceptions import YamlParsingError, YamlOutputError
 from pathlib import Path
 
 
@@ -97,7 +95,8 @@ class YAMLConfigValidator:
                 default_val: Any = subschema['default']
                 if isinstance(default_val, dict) and '$ref' in default_val:
                     try:
-                        data[key] = self._resolve_default_directive(default_val, root_data)
+                        pass
+                        # data[key] = self._resolve_default_directive(default_val, root_data)
                     except Exception as e:
                         raise ValueError(f"Error resolving default for '{key}': {e}") from e
                 else:
