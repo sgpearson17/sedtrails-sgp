@@ -36,7 +36,7 @@ class YAMLConfigValidator:
         schema_filepath : str
             The path to the JSON schema file (YAML or JSON format).
         """
-        
+
         self.schema_content: Dict[str, Any] = self.load_schema_from_file(schema_filepath)
         self.schema_path = Path(schema_filepath).resolve()
         self.config: Dict[str, Any] = {}
@@ -66,9 +66,8 @@ class YAMLConfigValidator:
                 schema_data: Any = json.load(f)
         except json.JSONDecodeError as err:
             raise err
-        else: 
+        else:
             return schema_data
- 
 
     def _resolve_json_pointer(self, pointer: str, data: Dict[str, Any]) -> Any:
         """
@@ -217,25 +216,24 @@ class YAMLConfigValidator:
         # loading the YAML file
         try:
             with open(yml_filepath, 'r') as f:
-                data: Dict[str, Any] = yaml.safe_load(f)
+                yaml_data: Dict[str, Any] = yaml.safe_load(f)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
+        # Resolver to handle references in different files
+        resolver = jsonschema.RefResolver(base_uri=f'file://{self.schema_path.parent}/', referrer=self.schema_content)
 
-        # Resoulver to handle references in different files
-         resolver = jsonschema.RefResolver(base_uri=f'file://{schema_path.parent}/', referrer=schema_content)
+        # Validate the YAML data against the schema
+        try:
+            jsonschema.validate(instance=yaml_data, schema=self.schema_content, resolver=resolver)
+        except jsonschema.ValidationError as e:
+            print(f'Validation error: {e.message}')
 
-        validator = jsonschema.validators.Draft7Validator(self.schema)
-
-        errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
-        if errors:
-            raise YamlValidationError(f'YAML file validation error: {errors[0].message} at {errors[0].path}')
-
-        self._apply_defaults(self.schema, data, data)
-        self.config = data
+        # self._apply_defaults(self.schema, data, data)
+        self.config = yaml_data
         return self.config
 
-    def export_schema_to_yaml(self, output_file: Optional[str] = None) -> str:
+    def export_schema_to_yaml(self, output_file: Optional[str] = None) -> str | None:
         """
         Exports the JSON schema as a valid YAML string.
 
@@ -247,18 +245,20 @@ class YAMLConfigValidator:
         Returns
         -------
         str
-            The schema as a YAML formatted string.
+            The schema as a YAML formatted string, if no output file is specified.
+        If an output file is specified, the schema is written to that file.
 
         Raises
         ------
         YamlOutputError
             If there is an error while writing the schema to the file.
         """
-        schema_yaml: str = yaml.dump(self.schema, sort_keys=False)
+        schema_yaml: str = yaml.dump(self.schema_content, sort_keys=False)
         if output_file:
             try:
                 with open(output_file, 'w') as f:
                     f.write(schema_yaml)
             except Exception as e:
                 raise YamlOutputError(f'Error writing schema to file: {e}') from e
-        return schema_yaml
+        else:
+            return schema_yaml
