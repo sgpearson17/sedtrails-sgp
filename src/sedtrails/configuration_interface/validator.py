@@ -1,7 +1,6 @@
 import jsonschema
 import yaml
 import json
-import copy
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError
 from pathlib import Path
