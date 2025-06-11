@@ -127,40 +127,6 @@ class PhysicalProperties:
         if not isinstance(self.diameter, (int, float)) or self.diameter <= 0:
             raise ValueError(f"Diameter must be positive, got {self.diameter}")
 
-
-@dataclass
-class Mud(Particle):
-    """
-    Class representing mud particles.
-
-    Attributes
-    ----------
-    particle_velocity : float
-        The velocity of the mud particles.
-    """
-
-    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
-        density=2650.0,  # kg/m³, typical mud density
-        diameter=2e-6,   # m, typical mud diameter (2 microns)
-    ))    
-
-    def __post_init__(self):
-        super().__post_init__()
-        if not isinstance(self.physical_properties, PhysicalProperties):
-            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
-
-    def particle_velocity(self) -> float:
-        """
-        A method to compute the velocity of a mud particle.
-
-        Returns
-        -------
-        float
-            The velocity of the particle in meters per second.
-        """
-        pass  # TODO: implement the velocity calculation for mud particles
-
-
 @dataclass
 class Sand(Particle):
     """
@@ -193,6 +159,37 @@ class Sand(Particle):
         """
         pass  # TODO: implement the velocity calculation for sand particles
 
+@dataclass
+class Mud(Particle):
+    """
+    Class representing mud particles.
+
+    Attributes
+    ----------
+    particle_velocity : float
+        The velocity of the mud particles.
+    """
+
+    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
+        density=2650.0,  # kg/m³, typical mud density
+        diameter=2e-6,   # m, typical mud diameter (2 microns)
+    ))    
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not isinstance(self.physical_properties, PhysicalProperties):
+            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
+
+    def particle_velocity(self) -> float:
+        """
+        A method to compute the velocity of a mud particle.
+
+        Returns
+        -------
+        float
+            The velocity of the particle in meters per second.
+        """
+        pass  # TODO: implement the velocity calculation for mud particles
 
 @dataclass
 class Passive(Particle):
@@ -236,36 +233,30 @@ class InterpolatedValue:
     ----------
     bed_level : float
         The bed level of the particle in meters.
-    averaged_velocity : float
-        The averaged flow velocity of the particle in m/s.
-    no_fractions : int
-        The number of fractions of the particle.
-    bed_load : ndarray
+    bed_load_transport : ndarray
         The bed load sediment transport of the particle in kg/m/s.
-    suspended_sed_transport : float
+    suspended_load_transport : float
         The suspended sediment transport of the particle in kg/m/s.
-    depth : float
-        The water depth of the particle in meters.
-    mean_shear_stress : float
-        The mean bed shear stress of the particle in Pa.
-    max_shear_stress : float
-        The maximum bed shear stress of the particle in Pa.
     sed_concentration : float
-        The suspended sediment concentration of the particle in kg/m^3.
+        The suspended sediment concentration of the particle in kg/m^3.        
+    depth : float
+        The water depth of the particle in meters. (fluid)
+    mean_shear_stress : float
+        The mean bed shear stress of the particle in Pa. (fluid)
+    max_shear_stress : float
+        The maximum bed shear stress of the particle in Pa. (fluid)
     wave_velocity : ndarray
-        The non-linear wave velocity of the particle in m/s.
+        The non-linear wave velocity of the particle in m/s. (fluid)
+    depavg_flow_velocity : float
+        The flow velocity of the particle averaged over depth in m/s. (fluid)        
     """
 
-    x: float
-    y: float
     bed_level: float
-    bed_load: ndarray
-    flow_velocity: float
+    bed_load_transport: ndarray
+    suspended_load_transport: float
     sed_concentration: float
-    water_level: float
     water_depth: float
-    averaged_flow_velocity: float
-    suspended_sed_transport: float
-    wave_velocity: ndarray
     mean_shear_stress: float
     max_shear_stress: float
+    wave_velocity: ndarray
+    depavg_flow_velocity: float
