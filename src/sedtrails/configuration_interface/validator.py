@@ -2,8 +2,10 @@ import os
 import jsonschema
 import jsonschema.validators
 import yaml
+import json
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
+from pathlib import Path
 
 
 class YAMLConfigValidator:
@@ -14,6 +16,15 @@ class YAMLConfigValidator:
     Later, you can use the `validate_yaml` method to check if a YAML configuration adheres
     to the loaded schema. Default directives for folder names (using "$ref", "transform", etc.)
     are supported.
+
+    Attributes
+    ----------
+    schema_content : Dict[str, Any]
+        The loaded JSON schema content as a dictionary.
+    schema_path : Path
+        The resolved path to the JSON schema file.
+    config : Dict[str, Any]
+        The validated configuration data as a nested dictionary.
     """
 
     def __init__(self, schema_filepath: str) -> None:
@@ -25,7 +36,9 @@ class YAMLConfigValidator:
         schema_filepath : str
             The path to the JSON schema file (YAML or JSON format).
         """
-        self.schema: Dict[str, Any] = self.load_schema_from_file(schema_filepath)
+        
+        self.schema_content: Dict[str, Any] = self.load_schema_from_file(schema_filepath)
+        self.schema_path = Path(schema_filepath).resolve()
         self.config: Dict[str, Any] = {}
 
     def load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
@@ -35,30 +48,31 @@ class YAMLConfigValidator:
         Parameters
         ----------
         schema_file : str
-            The path to the external YAML or JSON schema file.
+            The path to JSON schema file.
 
         Returns
         -------
-        None
+        Dict[str, Any]
+            The loaded schema as a dictionary.
 
         Raises
         ------
-        YamlParsingError
-            If the schema file cannot be parsed by the yaml library.
-        TypeError
-            If the loaded schema is not a valid dictionary.
+        json.JSONDecodeError
+            If the schema file is not a valid JSON file.
         """
+
         try:
             with open(schema_file, 'r') as f:
-                schema_data: Any = yaml.safe_load(f)
-            if not isinstance(schema_data, dict):
-                raise TypeError('Loaded schema is not a valid dictionary.')
+                schema_data: Any = json.load(f)
+        except json.JSONDecodeError as err:
+            raise err
+        else: 
             return schema_data
-        except Exception as e:
-            raise YamlParsingError(f'Error reading schema file: {e}') from e
+ 
 
     def _resolve_json_pointer(self, pointer: str, data: Dict[str, Any]) -> Any:
         """
+        TODO: DEPRICATE THIS FUNCTION
         Resolves a JSON pointer to a value in the provided data dictionary.
         This function also removes any "properties" segments so that a pointer like
         "#/properties/input_output_directories/properties/inputDir" maps to the
@@ -95,6 +109,7 @@ class YAMLConfigValidator:
 
     def _resolve_default_directive(self, directive: Dict[str, Any], root_data: Dict[str, Any]) -> str:
         """
+        #TODO: DEPRICATE THIS FUNCTION
         Resolves a default directive specified as a dictionary with a "$ref" and optional
         transformation instructions.
 
@@ -141,6 +156,7 @@ class YAMLConfigValidator:
 
     def _apply_defaults(self, schema: Dict[str, Any], data: Dict[str, Any], root_data: Dict[str, Any]) -> None:
         """
+        #TODO: MODIFY THIS FUNCTION TO APPLY DEFAULTS ON THE SCHEMA
         Recursively applies default values from the schema to the data dictionary.
         If a default is specified as a dictionary with "$ref" and transformation keys,
         it is computed accordingly.
@@ -176,7 +192,7 @@ class YAMLConfigValidator:
 
     def validate_yaml(self, yml_filepath: str) -> Dict[str, Any]:
         """
-        Loads the YAML file, validates it against the loaded JSON schema,
+        Loads the YAML file, validates it against the SedTRAILS JSON schema,
         applies default values (including processing default folder directives), and
         returns the resulting configuration as a nested dictionary.
 
@@ -197,11 +213,17 @@ class YAMLConfigValidator:
         YamlValidationError
             If the YAML configuration is invalid.
         """
+
+        # loading the YAML file
         try:
             with open(yml_filepath, 'r') as f:
                 data: Dict[str, Any] = yaml.safe_load(f)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
+
+
+        # Resoulver to handle references in different files
+         resolver = jsonschema.RefResolver(base_uri=f'file://{schema_path.parent}/', referrer=schema_content)
 
         validator = jsonschema.validators.Draft7Validator(self.schema)
 
