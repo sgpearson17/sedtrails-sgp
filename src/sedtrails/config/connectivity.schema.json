@@ -6,46 +6,48 @@
       "type": "object",
       "properties": {
         "connectivity_plot": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_plot_network": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_plot_top_fraction_links": {
-          "type": "string",
-          "description": "plot top fraction of links (e.g., 0.1)"
+          "type": "boolean",
+          "default": false,
+          "description": "Do you want to plot the links in the network?"
         },
         "connectivity_plot_adj_mat": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_plot_netgross": {
-          "type": "integer",
-          "default": 0,
-          "description": "TODO"
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to plot the net gross connectivity?"
         },
         "connectivity_plot_node_metrics": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_plot_modules": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_plot_module_borders": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         },
         "connectivity_adjmat": {
-          "type": "string",
+          "type": "boolean",
+          "default": false,
           "description": "TODO"
         }
       }
@@ -112,12 +114,12 @@
         "polygon_merging_dist_threshold": {
           "type": "number",
           "default": 1.0,
-          "description": "Threshold for grouping polygons [plot units]"
+          "description": "Threshold for grouping polygons [plot units]. MatLab specific, cosider removing it"
         },
         "polygon_creator_show_check_plots": {
-          "type": "integer",
-          "default": 0,
-          "description": "TODO"
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to show check plots?"
         }
       }
     }

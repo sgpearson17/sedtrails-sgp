@@ -466,17 +466,17 @@
             "near_bed_uc_z": {
               "type": "number",
               "default": 0.4,
-              "description": "Integral of lowest 1m should be taken, now approximated with z = 0.4m"
+              "description": "Integral of lowest 1m should be taken, now approximated with z = 0.4m as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
             },
             "near_bed_uc_alpha": {
               "type": "number",
               "default": 7.0,
-              "description": "power law coefficient for near-bed current velocity"
+              "description": "power law coefficient for near-bed current velocity, as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
             },
             "near_bed_uc_beta": {
               "type": "number",
               "default": 0.32,
-              "description": "bed roughness coefficient for near-bed current velocity"
+              "description": "bed roughness coefficient for near-bed current velocity, as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
             }
           }
         },
