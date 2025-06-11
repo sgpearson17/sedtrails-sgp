@@ -69,43 +69,6 @@ class YAMLConfigValidator:
         else:
             return schema_data
 
-    def _resolve_json_pointer(self, pointer: str, data: Dict[str, Any]) -> Any:
-        """
-        TODO: DEPRICATE THIS FUNCTION
-        Resolves a JSON pointer to a value in the provided data dictionary.
-        This function also removes any "properties" segments so that a pointer like
-        "#/properties/input_output_directories/properties/inputDir" maps to the
-        data key path "input_output_directories/inputDir".
-
-        Parameters
-        ----------
-        pointer : str
-            The JSON pointer string.
-        data : dict
-            The root data dictionary.
-
-        Returns
-        -------
-        Any
-            The value pointed to in the data.
-
-        Raises
-        ------
-        ValueError
-            If the pointer cannot be fully resolved.
-        """
-        if pointer.startswith('#/'):
-            pointer = pointer[2:]
-        tokens = pointer.split('/')
-        tokens = [token for token in tokens if token != 'properties']
-        value: Any = data
-        for token in tokens:
-            if isinstance(value, dict) and token in value:
-                value = value[token]
-            else:
-                raise ValueError(f"Could not resolve pointer '{pointer}' in configuration data.")
-        return value
-
     def _resolve_default_directive(self, directive: Dict[str, Any], root_data: Dict[str, Any]) -> str:
         """
         #TODO: DEPRICATE THIS FUNCTION
