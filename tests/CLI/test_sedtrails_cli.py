@@ -16,7 +16,7 @@ class TestSedtrailsCLI:
 
     def test_load_config_default(self):
         """
-        Use default config file name with isolated filesystem
+        Tests the command 'load-config' loads a 'sedtrails.yaml' by default
         """
         with runner.isolated_filesystem():
             # Create mock sedtrails.yml in isolated filesystem
@@ -37,21 +37,23 @@ class TestSedtrailsCLI:
 
     def test_load_config_custom(self):
         """
-        Pass a custom configuration file name
+        Test the command 'load-config --confg' loads a custom configuration file name
         """
-        config_data = {
-            'general': {'input_model': 'dfm', 'n_runs': 1},
-            'folder_settings': {'input_data': '/path/to/data'},
-            'time': {'timestep': '30S'},
-        }
+        with runner.isolated_filesystem():
+            # Create mock custom.yml in isolated filesystem
+            config_data = {
+                'general': {'input_model': 'dfm', 'n_runs': 1},
+                'folder_settings': {'input_data': '/path/to/data'},
+                'time': {'timestep': '30S'},
+            }
 
-        with open('custom_config.yml', 'w') as f:
-            yaml.dump(config_data, f)
+            with open('custom_config.yml', 'w') as f:
+                yaml.dump(config_data, f)
 
-        result = runner.invoke(app, ['load-config', '--config', 'custom_config.yml'])
-        assert result.exit_code == 0
-        assert "Loading and validating configuration from 'custom_config.yml'" in result.stdout
-        assert 'Configuration validated successfully' in result.stdout
+            result = runner.invoke(app, ['load-config', '--config', 'custom_config.yml'])
+            assert result.exit_code == 0
+            assert "Loading and validating configuration from 'custom_config.yml'" in result.stdout
+            assert 'Configuration validated successfully' in result.stdout
 
     def test_run_simulation_default(self):
         """
