@@ -2,6 +2,7 @@
 Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
 """
 
+import yaml
 from typer.testing import CliRunner
 from sedtrails.configuration_interface.cli import app
 
@@ -15,23 +16,41 @@ class TestSedtrailsCLI:
 
     def test_load_config_default(self):
         """
-        Use default config file name ("sedtrails.yml")
+        Use default config file name with isolated filesystem
         """
-        result = runner.invoke(app, ['load-config'])
-        assert result.exit_code == 0
-        assert "Loading and validating configuration from 'sedtrails.yml'" in result.stdout
-        assert 'Configuration validated successfully' in result.stdout
-        # Check dummy configuration is printed
-        assert 'setting1' in result.stdout
+        with runner.isolated_filesystem():
+            # Create mock sedtrails.yml in isolated filesystem
+            config_data = {
+                'general': {'input_model': 'dfm', 'n_runs': 1},
+                'folder_settings': {'input_data': '/path/to/data'},
+                'time': {'timestep': '30S'},
+            }
+
+            with open('sedtrails.yml', 'w') as f:
+                yaml.dump(config_data, f)
+
+            result = runner.invoke(app, ['load-config'])
+            assert result.exit_code == 0
+            assert "Loading and validating configuration from 'sedtrails.yml'" in result.stdout
+            assert 'Configuration validated successfully' in result.stdout
+            assert 'timestep' in result.stdout
 
     def test_load_config_custom(self):
         """
         Pass a custom configuration file name
         """
-        custom_config = 'dummy_config.yml'
-        result = runner.invoke(app, ['load-config', '--config', custom_config])
+        config_data = {
+            'general': {'input_model': 'dfm', 'n_runs': 1},
+            'folder_settings': {'input_data': '/path/to/data'},
+            'time': {'timestep': '30S'},
+        }
+
+        with open('custom_config.yml', 'w') as f:
+            yaml.dump(config_data, f)
+
+        result = runner.invoke(app, ['load-config', '--config', 'custom_config.yml'])
         assert result.exit_code == 0
-        assert f"Loading and validating configuration from '{custom_config}'" in result.stdout
+        assert "Loading and validating configuration from 'custom_config.yml'" in result.stdout
         assert 'Configuration validated successfully' in result.stdout
 
     def test_run_simulation_default(self):
