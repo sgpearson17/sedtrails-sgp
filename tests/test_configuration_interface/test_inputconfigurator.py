@@ -11,6 +11,16 @@ from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from sedtrails.exceptions import YamlValidationError
 
 
+@pytest.fixture
+def validator():
+    # You can use any valid schema file path, but for testing _apply_defaults, schema_content is enough
+    class DummyValidator(YAMLConfigValidator):
+        def __init__(self):
+            self.schema_content = {}
+
+    return DummyValidator()
+
+
 class TestYAMLConfigValidator:
     """
     Test suite for validating YAML configuration files using YAMLConfigValidator.
@@ -33,115 +43,47 @@ class TestYAMLConfigValidator:
         os.remove(self.dummy_schema_file.name)
 
     # -----------------------------
-    # Tests for _resolve_json_pointer
-    # -----------------------------
-    def test_resolve_json_pointer_success(self):
-        """
-        Test successful resolution of a JSON pointer
-        """
-        data = {'a': {'b': 'value'}}
-        pointer = '#/a/b'
-        result = self.validator._resolve_json_pointer(pointer, data)
-        assert result == 'value'
-
-    def test_resolve_json_pointer_with_properties(self):
-        """
-        Test successful resolution of a JSON pointer with properties
-        """
-        data = {'a': {'b': 'value'}}
-        # Pointer includes "properties" tokens that should be removed.
-        pointer = '#/properties/a/properties/b'
-        result = self.validator._resolve_json_pointer(pointer, data)
-        assert result == 'value'
-
-    def test_resolve_json_pointer_failure(self):
-        """
-        Test that resolving an invalid JSON pointer raises a ValueError
-        """
-        data = {'a': {'b': 'value'}}
-        pointer = '#/a/c'
-        with pytest.raises(ValueError):
-            self.validator._resolve_json_pointer(pointer, data)
-
-    # -----------------------------
-    # Tests for _resolve_default_directive
-    # -----------------------------
-    def test_resolve_default_directive(self):
-        """
-        Test that default directive is resolved
-        """
-        # Setup root data with a key "path" holding a file path.
-        root_data = {'path': '/a/b/c.txt'}
-        directive = {
-            '$ref': '#/path',
-            'transform': 'dirname',
-            'prefix': 'pre_',
-            'suffix': '_suf',
-        }
-        result = self.validator._resolve_default_directive(directive, root_data)
-        expected = os.path.normpath('pre_' + os.path.dirname('/a/b/c.txt') + '_suf')
-        assert result == expected
-
-    def test_resolve_default_directive_missing_ref(self):
-        """
-        Test that default directive with missing ref raises a ValueError
-        """
-        root_data = {'path': '/a/b/c.txt'}
-        directive = {'transform': 'dirname'}
-        with pytest.raises(ValueError):
-            self.validator._resolve_default_directive(directive, root_data)
-
-    def test_resolve_default_directive_non_string_ref(self):
-        """
-        Test that default directive with a nonstring ref raises a TypeError
-        """
-        root_data = {'path': 123}
-        directive = {'$ref': '#/path', 'transform': 'dirname'}
-        with pytest.raises(TypeError):
-            self.validator._resolve_default_directive(directive, root_data)
-
-    def test_resolve_default_directive_unsupported_transform(self):
-        """
-        Test that default directive with unsupported transform raises a NotImplementedError
-        """
-        root_data = {'path': '/a/b/c.txt'}
-        directive = {'$ref': '#/path', 'transform': 'unsupported'}
-        with pytest.raises(NotImplementedError):
-            self.validator._resolve_default_directive(directive, root_data)
-
-    # -----------------------------
     # Tests for _apply_defaults
     # -----------------------------
-    def test_apply_defaults(self):
-        """
-        Test schema with default fields and values are created
-        """
-        # Define a schema with defaults (including a directive for "folder")
+
+    def test_apply_defaults_object(self, validator):
         schema = {
+            'type': 'object',
             'properties': {
-                'folder': {
-                    'type': 'string',
-                    'default': {
-                        '$ref': '#/path',
-                        'transform': 'dirname',
-                        'prefix': 'pre_',
-                        'suffix': '_suf',
-                    },
-                },
-                'name': {'type': 'string', 'default': 'default_name'},
-                'nested': {
-                    'type': 'object',
-                    'properties': {'value': {'type': 'string', 'default': 'nested_default'}},
-                },
-            }
+                'a': {'type': 'string', 'default': 'foo'},
+                'b': {'type': 'number', 'default': 42},
+            },
         }
-        # Data missing "folder", "name", and nested.value.
-        data = {'path': '/a/b/c.txt', 'nested': {}}
-        self.validator._apply_defaults(schema, data, data)
-        expected_folder = os.path.normpath('pre_' + os.path.dirname('/a/b/c.txt') + '_suf')
-        assert data['folder'] == expected_folder
-        assert data['name'] == 'default_name'
-        assert data['nested']['value'] == 'nested_default'
+        config = {}
+        result = validator._apply_defaults(schema, config)
+        assert result == {'a': 'foo', 'b': 42}
+
+    def test_apply_defaults_partial_object(self, validator):
+        schema = {
+            'type': 'object',
+            'properties': {
+                'a': {'type': 'string', 'default': 'foo'},
+                'b': {'type': 'number', 'default': 42},
+            },
+        }
+        config = {'a': 'bar'}
+        result = validator._apply_defaults(schema, config)
+        assert result == {'a': 'bar', 'b': 42}
+
+    def test_apply_defaults_nested_object(self, validator):
+        schema = {
+            'type': 'object',
+            'properties': {'outer': {'type': 'object', 'properties': {'inner': {'type': 'string', 'default': 'baz'}}}},
+        }
+        config = {'outer': {}}
+        result = validator._apply_defaults(schema, config)
+        assert result == {'outer': {'inner': 'baz'}}
+
+    def test_apply_defaults_array(self, validator):
+        schema = {'type': 'array', 'items': {'type': 'object', 'properties': {'x': {'type': 'integer', 'default': 1}}}}
+        config = [{'x': 2}, {}]
+        result = validator._apply_defaults(schema, config)
+        assert result == [{'x': 2}, {'x': 1}]
 
     # -----------------------------
     # Tests for validate_yaml
@@ -238,7 +180,7 @@ class TestYAMLConfigValidator:
         """
         # Define the data to be written to the YAML file
         schema = {'test': 'value'}
-        self.validator.schema = schema
+        self.validator.schema_content = schema
 
         # Define the path for the temporary YAML file
         output_file = tmp_path / 'schema_output.yml'

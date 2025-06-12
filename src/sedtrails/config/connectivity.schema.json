@@ -2,119 +2,124 @@
   "type": "object",
   "title": "Connectivity Configuration",
   "properties": {
-    "Plotting": {
+    "plotting": {
       "type": "object",
       "properties": {
         "connectivity_plot": {
-          "type": "integer",
-          "default": 0
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
         "connectivity_plot_network": {
-          "type": "integer",
-          "default": 0
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
-        "connectivity_plot_topFractionLinks": {
-          "type": "string",
-          "default": "[]",
-          "description": "plot top fraction of links (e.g., 0.1)"
+        "connectivity_plot_top_fraction_links": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do you want to plot the links in the network?"
         },
-        "connectivity_plot_adjMat": {
-          "type": "integer",
-          "default": 0
+        "connectivity_plot_adj_mat": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
         "connectivity_plot_netgross": {
-          "type": "integer",
-          "default": 0
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to plot the net gross connectivity?"
         },
-        "connectivity_plot_nodeMetrics": {
-          "type": "integer",
-          "default": 0
+        "connectivity_plot_node_metrics": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
         "connectivity_plot_modules": {
-          "type": "integer",
-          "default": 0
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
-        "connectivity_plot_moduleBorders": {
-          "type": "integer",
-          "default": 0
+        "connectivity_plot_module_borders": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         },
         "connectivity_adjmat": {
-          "type": "string",
-          "default": "[]"
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
         }
       }
     },
-    "Connectivity auto-define": {
+    "connectivity_auto_define": {
       "type": "object",
       "properties": {
-        "connSetup_useAlphaShape": {
+        "setup_use_alpha_shape": {
           "type": "integer",
           "default": 0,
           "description": "by default, use convex hull to compute outer polygon (0 or []), otherwise use AlphaShape (1)"
         },
-        "connSetup_holeThreshold": {
+        "setup_hole_threshold": {
           "type": "number",
           "default": 0.0,
           "description": "Maximum area or volume of interior holes or voids to fill in, specified as a finite, nonnegative scalar."
         },
-        "connSetup_bufferDist": {
+        "setup_buffer_dist": {
           "type": "number",
           "default": 0.0,
           "description": "buffer distance [m] by which to offset boundaries of polyshape for auto-defining connectivity"
         },
-        "connSetup_cluster_k": {
+        "setup_cluster_k": {
           "type": "number",
           "default": 5.0,
           "description": "number of clusters to create"
         },
-        "connSetup_cluster_iter": {
+        "setup_cluster_iter": {
           "type": "number",
           "default": 40.0,
           "description": "number of iterations to complete in cluster analysis"
         },
-        "connSetup_showCheckPlots": {
+        "setup_show_check_plots": {
           "type": "integer",
           "default": 0,
           "description": "0 = do not show cluster check plots, 1 = show them"
         },
-        "connSetup_saveCheckPlots": {
+        "setup_save_check_plots": {
           "type": "integer",
           "default": 0,
           "description": "0 = do not save cluster check plots, 1 = save them"
         },
-        "connSetup_perimeterPolFile": {
+        "setup_perimeter_pol_file": {
           "type": "string",
-          "default": "[]",
           "description": ".pol file containing perimeter polygon to manually limit extents"
         },
-        "connSetup_islandsPolFile": {
+        "setup_islands_pol_file": {
           "type": "string",
-          "default": "[]",
           "description": ".pol file containing island polygons"
         },
-        "connectivity_PolFile": {
+        "connectivity_pol_file": {
           "type": "string",
-          "default": "[]",
           "description": ".pol file containing polygons for connectivity analysis"
         },
-        "plot_mgmtPolygons_PolFile": {
+        "plot_mgmtPolygons_pol_file": {
           "type": "string",
-          "default": "[]",
           "description": "polygons for comparing management cells to connectivity modules"
         },
-        "connectivity_mergePolygonMode": {
+        "merge_polygon_mode": {
           "type": "integer",
           "default": 1,
           "description": "merge polygons via: 1 = default mode (counting pixels) or 2 = merging nearby polygons"
         },
-        "connectivity_polygonMerging_distThreshold": {
+        "polygon_merging_dist_threshold": {
           "type": "number",
           "default": 1.0,
-          "description": "Threshold for grouping polygons [plot units]"
+          "description": "Threshold for grouping polygons [plot units]. MatLab specific, cosider removing it"
         },
-        "connectivity_polygonCreator_showCheckPlots": {
-          "type": "integer",
-          "default": 0
+        "polygon_creator_show_check_plots": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to show check plots?"
         }
       }
     }

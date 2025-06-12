@@ -120,17 +120,14 @@
                         },
                         "land_pol_file": {
                             "type": "string",
-                            "default": "",
                             "description": "path to Deltares '.pol' file with land and island polygons"
                         },
                         "xlim": {
                             "type": "string",
-                            "default": "",
                             "description": "x limits of plot as '[left right]'"
                         },
                         "ylim": {
                             "type": "string",
-                            "default": "",
                             "description": "y limits of plot as '[bottom top]'"
                         },
                         "monitoring_point": {
@@ -140,17 +137,16 @@
                         },
                         "monitoring_point_vel_component": {
                             "$ref": "#/visualization_definitions/velocity_component_types",
-                            "default": "'E'",
+                            "default": "E",
                             "description": "'E' for X-component, 'N' for Y-component"
                         },
                         "monitoring_point_signal": {
                             "$ref": "#/visualization_definitions/monitorin_point_signal_types",
-                            "default": "'velocity'",
+                            "default": "velocity",
                             "description": "'velocity' or 'waterlevel' but water level not yet enabled"
                         },
                         "timeseries_ylim": {
                             "type": "string",
-                            "default": "",
                             "description": "y-limit for plotting timeseries as '[bottom top]'"
                         },
                         "pathways": {
@@ -165,12 +161,10 @@
                     "properties": {
                         "tracer_validation_data": {
                             "type": "string",
-                            "default": "",
                             "description": "filepath to tracer validation data. If omitted, no tracer validation will be plotted"
                         },
                         "drifter_validation_data_path": {
                             "type": "string",
-                            "default": "",
                             "description": "filepath to drifter validation data. If omitted, no drifter validation will be plotted"
                         },
                         "drifter_track_comparison": {
