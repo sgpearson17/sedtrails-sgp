@@ -29,6 +29,85 @@ class SedtrailsData:
     A data class for internally structuring SedTrails data.
     
     This class holds data for multiple time steps with time as the first dimension
+    for time-dependent variables. Physics fields can be added dynamically.
+    """
+    
+    times: np.ndarray
+    reference_date: np.datetime64
+    x: np.ndarray
+    y: np.ndarray
+    bed_level: np.ndarray
+    depth_avg_flow_velocity: Dict[str, np.ndarray]
+    fractions: int
+    bed_load_transport: Dict[str, np.ndarray]
+    suspended_transport: Dict[str, np.ndarray]
+    water_depth: np.ndarray
+    mean_bed_shear_stress: np.ndarray
+    max_bed_shear_stress: np.ndarray
+    sediment_concentration: np.ndarray
+    nonlinear_wave_velocity: Dict[str, np.ndarray]
+    
+    def __post_init__(self):
+        """Initialize container for dynamic physics fields."""
+        # Create a container for physics data that can be added later
+        self._physics_fields = {}
+    
+    def add_physics_field(self, name: str, data):
+        """
+        Add a physics field to the data structure.
+        
+        Parameters:
+        -----------
+        name : str
+            Name of the physics field
+        data : np.ndarray or dict
+            Physics data (scalar array or dict with 'x', 'y', 'magnitude' for vectors)
+        """
+        self._physics_fields[name] = data
+        # Also set as attribute for direct access
+        setattr(self, name, data)
+    
+    def has_physics_field(self, name: str) -> bool:
+        """
+        Check if a specific physics field exists.
+        
+        Parameters:
+        -----------
+        name : str
+            Name of the physics field to check
+            
+        Returns:
+        --------
+        bool
+            True if the field exists
+        """
+        return name in self._physics_fields
+    
+    def get_physics_fields(self) -> list:
+        """
+        Get list of available physics field names.
+        
+        Returns:
+        --------
+        list
+            List of physics field names
+        """
+        return list(self._physics_fields.keys())
+    
+    def has_physics_data(self) -> bool:
+        """
+        Check if any physics fields have been added.
+        
+        Returns:
+        --------
+        bool
+            True if any physics fields exist
+        """
+        return len(self._physics_fields) > 0
+    """
+    A data class for internally structuring SedTrails data.
+    
+    This class holds data for multiple time steps with time as the first dimension
     for time-dependent variables.
 
     Attributes:
@@ -48,12 +127,14 @@ class SedtrailsData:
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
     fractions: int
         Number of sediment fractions
-    bed_load_sediment: Dict[str, np.ndarray]
+    bed_load_transport: Dict[str, np.ndarray]
         Bed load sediment transport in kg/m/s 
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-    suspended_sediment: Dict[str, np.ndarray]
+        Shape: (time, fractions, spatial) or (time, spatial)
+    suspended_transport: Dict[str, np.ndarray]
         Suspended sediment transport in kg/m/s 
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+        Shape: (time, fractions, spatial) or (time, spatial)
     water_depth: np.ndarray
         Water depth in meters (with time as first dimension)
     mean_bed_shear_stress: np.ndarray
@@ -62,11 +143,30 @@ class SedtrailsData:
         Max bed shear stress in pascal (with time as first dimension)
     sediment_concentration: np.ndarray
         Suspended sediment concentration in kg/m^3 (with time as first dimension)
+        Shape: (time, fractions, spatial) or (time, spatial)
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s 
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    
+    # === PHYSICS FIELDS (added by PhysicsConverter) ===
+    # Note: All physics fields match the structure of transport data
+    # Shape: (time, fractions, spatial) if fractions exist, else (time, spatial)
+    shields_number: np.ndarray = None
+        Shields parameter (dimensionless bed shear stress) [-]
+    bed_load_layer_thickness: np.ndarray = None
+        Representative thickness of bed load transport layer [m]
+    suspended_layer_thickness: np.ndarray = None
+        Representative thickness of suspended transport layer [m]
+    mixing_layer_thickness: np.ndarray = None
+        Mixing layer thickness [m]
+    bed_load_velocity: Dict[str, np.ndarray] = None
+        Bed load velocity components in m/s
+        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
+    suspended_velocity: Dict[str, np.ndarray] = None
+        Suspended sediment velocity components in m/s
+        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
     """
-
+    
     times: np.ndarray
     reference_date: np.datetime64
     x: np.ndarray
@@ -74,8 +174,8 @@ class SedtrailsData:
     bed_level: np.ndarray
     depth_avg_flow_velocity: Dict[str, np.ndarray]
     fractions: int
-    bed_load_sediment: Dict[str, np.ndarray]
-    suspended_sediment: Dict[str, np.ndarray]
+    bed_load_transport: Dict[str, np.ndarray]
+    suspended_transport: Dict[str, np.ndarray]
     water_depth: np.ndarray
     mean_bed_shear_stress: np.ndarray
     max_bed_shear_stress: np.ndarray
@@ -83,7 +183,6 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
     
     def __getitem__(self, time_index: int) -> Dict:
-
         """
         Get data for a specific time index.
         
@@ -121,15 +220,15 @@ class SedtrailsData:
                 'y': self.depth_avg_flow_velocity['y'][time_index],
                 'magnitude': self.depth_avg_flow_velocity['magnitude'][time_index]
             },
-            'bed_load_sediment': {
-                'x': self.bed_load_sediment['x'][time_index],
-                'y': self.bed_load_sediment['y'][time_index],
-                'magnitude': self.bed_load_sediment['magnitude'][time_index]
+            'bed_load_transport': {
+                'x': self.bed_load_transport['x'][time_index],
+                'y': self.bed_load_transport['y'][time_index],
+                'magnitude': self.bed_load_transport['magnitude'][time_index]
             },
-            'suspended_sediment': {
-                'x': self.suspended_sediment['x'][time_index],
-                'y': self.suspended_sediment['y'][time_index],
-                'magnitude': self.suspended_sediment['magnitude'][time_index]
+            'suspended_transport': {
+                'x': self.suspended_transport['x'][time_index],
+                'y': self.suspended_transport['y'][time_index],
+                'magnitude': self.suspended_transport['magnitude'][time_index]
             },
             'nonlinear_wave_velocity': {
                 'x': self.nonlinear_wave_velocity['x'][time_index],
@@ -137,6 +236,29 @@ class SedtrailsData:
                 'magnitude': self.nonlinear_wave_velocity['magnitude'][time_index]
             }
         }
+        
+        # DYNAMIC PHYSICS FIELDS: Add any physics fields that have been dynamically added
+        physics_scalar_fields = ['shields_number', 'bed_load_layer_thickness', 
+                                'suspended_layer_thickness', 'mixing_layer_thickness']
+        physics_vector_fields = ['bed_load_velocity', 'suspended_velocity']
+        
+        # Add scalar physics fields if they exist
+        for field_name in physics_scalar_fields:
+            if hasattr(self, field_name):
+                field_value = getattr(self, field_name)
+                if field_value is not None:
+                    data[field_name] = field_value[time_index]
+        
+        # Add vector physics fields if they exist
+        for field_name in physics_vector_fields:
+            if hasattr(self, field_name):
+                field_value = getattr(self, field_name)
+                if field_value is not None:
+                    data[field_name] = {
+                        'x': field_value['x'][time_index],
+                        'y': field_value['y'][time_index],
+                        'magnitude': field_value['magnitude'][time_index]
+                    }
         
         return data
 
@@ -287,10 +409,10 @@ class FormatConverter:
             'flow_velocity_y': 'sea_water_y_velocity',  # Y-component of flow velocity
             'mean_bed_shear_stress': 'mean_bss_magnitude',  # Mean bed shear stress
             'max_bed_shear_stress': 'max_bss_magnitude',  # Max bed shear stress
-            'bed_load_sediment_x': 'bedload_x_comp',  # X-component of bed load sediment transport
-            'bed_load_sediment_y': 'bedload_y_comp',  # Y-component of bed load sediment transport
-            'suspended_sediment_x': 'susload_x_comp',  # X-component of suspended sediment transport
-            'suspended_sediment_y': 'susload_y_comp',  # Y-component of suspended sediment transport
+            'bed_load_transport_x': 'bedload_x_comp',  # X-component of bed load sediment transport
+            'bed_load_transport_y': 'bedload_y_comp',  # Y-component of bed load sediment transport
+            'suspended_transport_x': 'susload_x_comp',  # X-component of suspended sediment transport
+            'suspended_transport_y': 'susload_y_comp',  # Y-component of suspended sediment transport
             'sediment_concentration': 'suspended_sed_conc',  # Suspended sediment concentration
         }
         
@@ -326,8 +448,8 @@ class FormatConverter:
         time_dependent_vars = [
             'water_depth', 'mean_bed_shear_stress', 'max_bed_shear_stress',
             'sediment_concentration', 'flow_velocity_x', 'flow_velocity_y',
-            'bed_load_sediment_x', 'bed_load_sediment_y',
-            'suspended_sediment_x', 'suspended_sediment_y'
+            'bed_load_transport_x', 'bed_load_transport_y',
+            'suspended_transport_x', 'suspended_transport_y'
         ]
         
         for key in time_dependent_vars:
@@ -385,12 +507,12 @@ class FormatConverter:
         
         # Bed load magnitude
         bed_load_magnitude = np.sqrt(
-            data['bed_load_sediment_x']**2 + data['bed_load_sediment_y']**2
+            data['bed_load_transport_x']**2 + data['bed_load_transport_y']**2
         )
         
         # Suspended sediment magnitude
-        suspended_sediment_magnitude = np.sqrt(
-            data['suspended_sediment_x']**2 + data['suspended_sediment_y']**2
+        suspended_transport_magnitude = np.sqrt(
+            data['suspended_transport_x']**2 + data['suspended_transport_y']**2
         )
         
         # Create dictionaries for vector quantities
@@ -400,16 +522,16 @@ class FormatConverter:
             'magnitude': depth_avg_velocity_magnitude
         }
         
-        bed_load_sediment = {
-            'x': data['bed_load_sediment_x'],
-            'y': data['bed_load_sediment_y'],
+        bed_load_transport = {
+            'x': data['bed_load_transport_x'],
+            'y': data['bed_load_transport_y'],
             'magnitude': bed_load_magnitude
         }
         
-        suspended_sediment = {
-            'x': data['suspended_sediment_x'],
-            'y': data['suspended_sediment_y'],
-            'magnitude': suspended_sediment_magnitude
+        suspended_transport = {
+            'x': data['suspended_transport_x'],
+            'y': data['suspended_transport_y'],
+            'magnitude': suspended_transport_magnitude
         }
         
         # Create nonlinear wave velocity dictionary with zeros
@@ -429,8 +551,8 @@ class FormatConverter:
             bed_level=data['bed_level'],
             depth_avg_flow_velocity=depth_avg_flow_velocity,
             fractions=1,  # Default to 1 fraction
-            bed_load_sediment=bed_load_sediment,
-            suspended_sediment=suspended_sediment,
+            bed_load_transport=bed_load_transport,
+            suspended_transport=suspended_transport,
             water_depth=data['water_depth'],
             mean_bed_shear_stress=data['mean_bed_shear_stress'],
             max_bed_shear_stress=data['max_bed_shear_stress'],

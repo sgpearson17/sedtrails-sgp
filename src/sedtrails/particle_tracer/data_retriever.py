@@ -122,10 +122,33 @@ class FlowFieldDataRetriever:
         # Get indices for interpolation
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
         
+        # Helper function to handle fraction dimension
+        def extract_fraction(flow_data):
+            # Check the shape of the x component to determine fraction handling
+            x_data = flow_data['x']
+            if len(x_data.shape) == 1:
+                # Shape: (N) - no fraction dimension
+                return flow_data
+            elif x_data.shape[0] == 1:
+                # Shape: (1, N) - single fraction, squeeze out the fraction dimension
+                return {
+                    'x': flow_data['x'][0],
+                    'y': flow_data['y'][0], 
+                    'magnitude': flow_data['magnitude'][0]
+                }
+            else:
+                # Shape: (>1, N) - multiple fractions, select the specified fraction
+                return {
+                    'x': flow_data['x'][self.fraction_index],
+                    'y': flow_data['y'][self.fraction_index],
+                    'magnitude': flow_data['magnitude'][self.fraction_index]
+                }
+            
         # If time is exactly at a time step or outside the range, no interpolation needed
         if lower_index == upper_index:
             time_slice = self.sedtrails_data[lower_index]
             flow_field = time_slice[self.flow_field_name]
+            flow_field = extract_fraction(flow_field)
             
             return {
                 'x': self.sedtrails_data.x,
@@ -141,6 +164,8 @@ class FlowFieldDataRetriever:
             
             lower_flow = lower_slice[self.flow_field_name]
             upper_flow = upper_slice[self.flow_field_name]
+            lower_flow = extract_fraction(lower_flow)
+            upper_flow = extract_fraction(upper_flow)
             
             # Use the interpolation function for velocity components
             flow_x = self._interpolate_linearly(lower_flow['x'], upper_flow['x'], weight)
