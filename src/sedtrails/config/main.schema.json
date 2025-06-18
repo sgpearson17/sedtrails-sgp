@@ -164,12 +164,17 @@
         "input_data": {
           "type": "string",
           "default": "",
-          "description": "path to D-Flow dataset or directory containing D-Flow files."
+          "description": "path to D-Flow dataset containing D-Flow files."
         },
         "output_dir": {
           "type": "string",
-          "default": "/../output",
+          "default": "./output",
           "description": "path to directory for storing the results of the simulation"
+        },
+        "comp_dir": {
+          "type": "string",
+          "default": "",
+          "description": "path to directory where complementary validation data is stored"
         }
       },
       "required": [
