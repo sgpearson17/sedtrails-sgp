@@ -29,7 +29,63 @@ class SedtrailsData:
     A data class for internally structuring SedTrails data.
     
     This class holds data for multiple time steps with time as the first dimension
-    for time-dependent variables. Physics fields can be added dynamically.
+    for time-dependent variables.
+
+    Attributes:
+    -----------
+    times: np.ndarray
+        Array of time values in seconds since reference_date
+    reference_date: np.datetime64
+        Reference date for the time values
+    x: np.ndarray
+        X-coordinates of the grid cells
+    y: np.ndarray
+        Y-coordinates of the grid cells
+    bed_level: np.ndarray
+        Bed level in meters (typically time-independent)
+    depth_avg_flow_velocity: Dict[str, np.ndarray]
+        Depth-averaged flow velocity components in m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    fractions: int
+        Number of sediment fractions
+    bed_load_transport: Dict[str, np.ndarray]
+        Bed load sediment transport in kg/m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+        Shape: (time, fractions, spatial) or (time, spatial)
+    suspended_transport: Dict[str, np.ndarray]
+        Suspended sediment transport in kg/m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+        Shape: (time, fractions, spatial) or (time, spatial)
+    water_depth: np.ndarray
+        Water depth in meters (with time as first dimension)
+    mean_bed_shear_stress: np.ndarray
+        Mean bed shear stress in pascal (with time as first dimension)
+    max_bed_shear_stress: np.ndarray
+        Max bed shear stress in pascal (with time as first dimension)
+    sediment_concentration: np.ndarray
+        Suspended sediment concentration in kg/m^3 (with time as first dimension)
+        Shape: (time, fractions, spatial) or (time, spatial)
+    nonlinear_wave_velocity: Dict[str, np.ndarray]
+        Nonlinear wave velocity in m/s 
+        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    
+    # === PHYSICS FIELDS (added by PhysicsConverter) ===
+    # Note: All physics fields match the structure of transport data
+    # Shape: (time, fractions, spatial) if fractions exist, else (time, spatial)
+    shields_number: np.ndarray = None
+        Shields parameter (dimensionless bed shear stress) [-]
+    bed_load_layer_thickness: np.ndarray = None
+        Representative thickness of bed load transport layer [m]
+    suspended_layer_thickness: np.ndarray = None
+        Representative thickness of suspended transport layer [m]
+    mixing_layer_thickness: np.ndarray = None
+        Mixing layer thickness [m]
+    bed_load_velocity: Dict[str, np.ndarray] = None
+        Bed load velocity components in m/s
+        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
+    suspended_velocity: Dict[str, np.ndarray] = None
+        Suspended sediment velocity components in m/s
+        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
     """
     
     times: np.ndarray
@@ -104,83 +160,7 @@ class SedtrailsData:
             True if any physics fields exist
         """
         return len(self._physics_fields) > 0
-    """
-    A data class for internally structuring SedTrails data.
-    
-    This class holds data for multiple time steps with time as the first dimension
-    for time-dependent variables.
 
-    Attributes:
-    -----------
-    times: np.ndarray
-        Array of time values in seconds since reference_date
-    reference_date: np.datetime64
-        Reference date for the time values
-    x: np.ndarray
-        X-coordinates of the grid cells
-    y: np.ndarray
-        Y-coordinates of the grid cells
-    bed_level: np.ndarray
-        Bed level in meters (typically time-independent)
-    depth_avg_flow_velocity: Dict[str, np.ndarray]
-        Depth-averaged flow velocity components in m/s 
-        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-    fractions: int
-        Number of sediment fractions
-    bed_load_transport: Dict[str, np.ndarray]
-        Bed load sediment transport in kg/m/s 
-        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-        Shape: (time, fractions, spatial) or (time, spatial)
-    suspended_transport: Dict[str, np.ndarray]
-        Suspended sediment transport in kg/m/s 
-        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-        Shape: (time, fractions, spatial) or (time, spatial)
-    water_depth: np.ndarray
-        Water depth in meters (with time as first dimension)
-    mean_bed_shear_stress: np.ndarray
-        Mean bed shear stress in pascal (with time as first dimension)
-    max_bed_shear_stress: np.ndarray
-        Max bed shear stress in pascal (with time as first dimension)
-    sediment_concentration: np.ndarray
-        Suspended sediment concentration in kg/m^3 (with time as first dimension)
-        Shape: (time, fractions, spatial) or (time, spatial)
-    nonlinear_wave_velocity: Dict[str, np.ndarray]
-        Nonlinear wave velocity in m/s 
-        (keys: 'x', 'y', 'magnitude', each with time as first dimension)
-    
-    # === PHYSICS FIELDS (added by PhysicsConverter) ===
-    # Note: All physics fields match the structure of transport data
-    # Shape: (time, fractions, spatial) if fractions exist, else (time, spatial)
-    shields_number: np.ndarray = None
-        Shields parameter (dimensionless bed shear stress) [-]
-    bed_load_layer_thickness: np.ndarray = None
-        Representative thickness of bed load transport layer [m]
-    suspended_layer_thickness: np.ndarray = None
-        Representative thickness of suspended transport layer [m]
-    mixing_layer_thickness: np.ndarray = None
-        Mixing layer thickness [m]
-    bed_load_velocity: Dict[str, np.ndarray] = None
-        Bed load velocity components in m/s
-        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
-    suspended_velocity: Dict[str, np.ndarray] = None
-        Suspended sediment velocity components in m/s
-        (keys: 'x', 'y', 'magnitude', each matching transport data structure)
-    """
-    
-    times: np.ndarray
-    reference_date: np.datetime64
-    x: np.ndarray
-    y: np.ndarray
-    bed_level: np.ndarray
-    depth_avg_flow_velocity: Dict[str, np.ndarray]
-    fractions: int
-    bed_load_transport: Dict[str, np.ndarray]
-    suspended_transport: Dict[str, np.ndarray]
-    water_depth: np.ndarray
-    mean_bed_shear_stress: np.ndarray
-    max_bed_shear_stress: np.ndarray
-    sediment_concentration: np.ndarray
-    nonlinear_wave_velocity: Dict[str, np.ndarray]
     
     def __getitem__(self, time_index: int) -> Dict:
         """
