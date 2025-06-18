@@ -12,7 +12,7 @@ SedTRAILS requires Python 3.12 and above, but it is likely to work with Python 3
 
 1. Clone the repository:
 ```bash
-git clone 
+git clone <your repository SSH key>
 ```
 
 2. Change the directory:
