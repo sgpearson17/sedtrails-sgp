@@ -2,7 +2,7 @@ import jsonschema
 import yaml
 import json
 from typing import Any, Dict, Optional
-from sedtrails.exceptions import YamlParsingError, YamlOutputError
+from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 from pathlib import Path
 
 
@@ -149,8 +149,9 @@ class YAMLConfigValidator:
         # Validate the YAML data against the schema
         try:
             jsonschema.validate(instance=yaml_data, schema=self.schema_content, resolver=resolver)
+
         except jsonschema.ValidationError as e:
-            print(f'Validation error: {e.message}')
+            raise YamlValidationError(f'YAML config validation error: {e.message}') from e
 
         # apply default values from the schema
         try:
