@@ -164,7 +164,7 @@
         "input_data": {
           "type": "string",
           "default": "",
-          "description": "path to D-Flow dataset containing D-Flow files."
+          "description": "path to D-Flow data file"
         },
         "output_dir": {
           "type": "string",
