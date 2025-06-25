@@ -5,6 +5,7 @@ Plugins must inherit from this class and implement the convert method.
 
 from abc import ABC, abstractmethod
 
+
 class BasePhysicsPlugin(ABC):
     """
     Abstract base class for physics plugins.
@@ -14,7 +15,7 @@ class BasePhysicsPlugin(ABC):
         return None
 
     @abstractmethod
-    def convert(self, *args, **kwargs):
+    def add_physics(self, *args, **kwargs):
         """
         Computes the physics of particles in the simulation based on particle types.
         """
