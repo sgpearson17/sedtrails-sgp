@@ -27,7 +27,7 @@ class SeedingStrategy(ABC):
         self.config = config
 
     @abstractmethod
-    def seed(self, count: int = 1) -> list[Particle]:
+    def seed(self, initial_positions: List[tuple] | tuple, release_times: List | str, count: int = 1) -> list[Particle]:
         """
         Seed particles at the specified location.
 
@@ -56,7 +56,10 @@ class SeedingStrategy(ABC):
             List of tuples containing the (x,y) coordinates of the particles.
             If a single tuple is provided, it will be used for all particles.
         count : int
-            Number of particles to seed.
+            Number of particles to seed. Default is 1.
+        release_times : list | int
+            List of release times for each particle. Times must refer to simulation time.
+            If a single integer is provided, it will be used for all particles.
 
         Returns
         -------
@@ -71,7 +74,7 @@ class SeedingStrategy(ABC):
             If the number of initial positions does not match the count.
         """
 
-        # TODO: we should add a validation check to ensure that the initial positions all lie within the model domain 
+        # TODO: we should add a validation check to ensure that the initial positions all lie within the model domain
         # (i.e. to make sure we are placing particles somewhere where they will actually move)
 
         validity = True
@@ -90,7 +93,7 @@ class SeedingStrategy(ABC):
             raise ValueError(f'Number of initial positions ({initial_positions}) does not match the count ({count}).')
         return validity
 
-    def _validate_release_times(self, release_times: list | int, count: int):
+    def _validate_release_times(self, release_times: List | int, count: int):
         """
         Validate the release times and count of particles.
 
