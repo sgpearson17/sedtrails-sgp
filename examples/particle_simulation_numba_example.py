@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 # Import SedTRAILS modules
 from sedtrails.transport_converter.format_converter import FormatConverter, InputType
-from sedtrails.transport_converter.physics_converter import PhysicsConverter, PhysicsMethod
+from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
@@ -27,9 +27,9 @@ from visualization_utils import plot_flow_field, plot_particle_trajectory
 
 # ===== CONFIGURATION =====
 # Adjust these parameters as needed
-FILE_PATH = Path('../sedtrails_data/inlet_sedtrails.nc')
+FILE_PATH = Path('../sample-data/inlet_sedtrails.nc')
 TIMESTEP = 30.0  # seconds
-OUTPUT_DIR = Path('../sedtrails_data')
+OUTPUT_DIR = Path('../sample-data/output')
 
 # Custom starting position
 START_X = 40000.0
@@ -62,14 +62,16 @@ print(f'Data conversion completed in {time.time() - start_time:.2f} seconds')
 
 # Add physics calculations to the SedtrailsData
 physics_converter = PhysicsConverter()
-physics_converter.add_physics_to_sedtrails_data(sedtrails_data, method=PhysicsMethod.VAN_WESTEN_2025)
+physics_converter.add_physics_to_sedtrails_data(sedtrails_data)
 
 # ===== STEP 2: Initialize Particle and Position Calculator =====
 print('\n=== STEP 2: Initializing Particle and Flow Field ===')
 
 # Create flow field data retriever
 retriever = FlowFieldDataRetriever(sedtrails_data)
-retriever.flow_field_name = "suspended_velocity" # Options: "depth_avg_flow_velocity", "bed_load_velocity", "suspended_velocity"
+retriever.flow_field_name = (
+    'suspended_velocity'  # Options: "depth_avg_flow_velocity", "bed_load_velocity", "suspended_velocity"
+)
 
 # Get the initial flow field at specified timestep
 initial_time = sedtrails_data.times[TIMESTEP_INDEX]
@@ -95,7 +97,6 @@ simulation_start = time.time()
 current_time = initial_time
 
 for step in range(1, NUM_STEPS + 1):
-
     # Update current time
     current_time = initial_time + step * TIMESTEP
 
