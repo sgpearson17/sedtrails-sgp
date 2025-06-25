@@ -1,0 +1,824 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Schema for Sedtrails Configuration",
+  "additionalProperties": false,
+  "definitions": {
+    "soulsby_bed_interaction_type": {
+      "type": "string",
+      "enum": [
+        "concrete bed",
+        "bed interaction"
+      ]
+    },
+    "near_bed_velocity_type": {
+      "type": "string",
+      "enum": [
+        "soulsby",
+        "lewis",
+        "depth_averaged"
+      ],
+      "description": "'soulsby' = Soulsby 2011 formulation, 'lewis' = Lewis 2017 formulation, 'depth_averaged' = depth-averaged velocity"
+    },
+    "formulation_type": {
+      "type": "object",
+      "properties": {
+        "soulsby": {
+          "type": "object",
+          "properties": {
+            "bed_interaction": {
+              "$ref": "#/definitions/soulsby_bed_interaction_type",
+              "description": "bed interaction module"
+            },
+            "background_grain_size": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "d_background": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "freedom_factor": {
+              "type": "integer",
+              "default": 1,
+              "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
+            },
+            "gamma_e": {
+              "type": "number",
+              "default": 0.1,
+              "description": "long-term equilibrium proportion of free particles"
+            },
+            "theta_s": {
+              "type": "number",
+              "default": 0.1,
+              "description": "transition scale value"
+            },
+            "b_e": {
+              "type": "number",
+              "default": 1.7e-07,
+              "description": "maximum free-to-trapped transition probability per second [1/s]"
+            },
+            "mu_d": {
+              "type": "number",
+              "default": 0.5,
+              "description": "dynamic friction coefficient (0.5-1.0)"
+            }
+          }
+        },
+        "pannozzo": {
+          "type": "object",
+          "properties": {}
+        },
+        "vanwesten": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    "particle_state_type": {
+      "type": "string",
+      "enum": [
+        "trapped",
+        "free"
+      ],
+      "default": "free",
+      "description": "'trapped' = particle is trapped, 'free' = particle is free"
+    },
+    "delft3d4_vertical_layer_type": {
+      "type": "string",
+      "enum": [
+        "lowest",
+        "max"
+      ],
+      "default": "lowest",
+      "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
+    },
+    "numerical_scheme_type": {
+      "type": "string",
+      "enum": [
+        "rk4",
+        "euler"
+      ],
+      "default": "rk4",
+      "description": "'rk4' = Runge Kutta 4, 'euler' = Euler method"
+    },
+    "input_model_type": {
+      "type": "string",
+      "enum": [
+        "dfm",
+        "d3d4",
+        "xbeach",
+        "aeolis"
+      ],
+      "default": "dfm",
+      "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+    },
+    "fm_format_type": {
+      "type": "string",
+      "enum": [
+        "sedtrails_nc",
+        "merged_nc"
+      ],
+      "default": "sedtrails_nc",
+      "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+    }
+  },
+  "type": "object",
+  "properties": {
+    "general": {
+      "type": "object",
+      "properties": {
+        "preprocess": {
+          "type": "integer",
+          "default": 1,
+          "description": "1 = pre-process, 0 = use existing files with default names"
+        },
+        "compute_pathways": {
+          "type": "integer",
+          "default": 1,
+          "description": "(re)run everything = 1, load existing pathways = 0;"
+        },
+        "input_model": {
+          "$ref": "#/definitions/input_model_type",
+          "default": "dfm",
+          "description": "input model type (dfm, d3d4, xbeach, aeolis)"
+        },
+        "n_runs": {
+          "type": "integer",
+          "default": 1
+        },
+        "display_input_metadata": {
+          "type": "integer",
+          "default": 0,
+          "description": "display all metadata"
+        },
+        "numerical_scheme": {
+          "$ref": "#/definitions/numerical_scheme_type",
+          "default": "rk4",
+          "description": "numerical scheme ('rk4' = Runge Kutta 4)"
+        }
+      }
+    },
+    "folder_settings": {
+      "type": "object",
+      "properties": {
+        "input_data": {
+          "type": "string",
+          "default": "",
+          "description": "path to D-Flow data file"
+        },
+        "output_dir": {
+          "type": "string",
+          "default": "./output",
+          "description": "path to directory for storing the results of the simulation"
+        },
+        "comp_dir": {
+          "type": "string",
+          "default": "",
+          "description": "path to directory where complementary validation data is stored"
+        }
+      },
+      "required": [
+        "input_data"
+      ]
+    },
+    "domain": {
+      "type": "object",
+      "properties": {
+        "subset_x": {
+          "type": "string",
+          "default": "",
+          "description": "X coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 35000:52000"
+        },
+        "subset_y": {
+          "type": "string",
+          "default": "",
+          "description": "Y coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 12000:150000"
+        },
+        "pol_file": {
+          "type": "string",
+          "default": "",
+          "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
+        },
+        "subset_m": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in m-direction (0=all)"
+        },
+        "subset_n": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in n-direction (0=all)"
+        },
+        "subset_t": {
+          "type": "string",
+          "description": "limits of d3d4 model domain in t-direction (time). Given as minimum:maximum, e.g. 49:124"
+        },
+        "flow_field_data": {
+          "type": "object",
+          "properties": {
+            "fm": {
+              "$ref": "#/definitions/fm_format_type",
+              "default": "sedtrails_nc",
+              "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+            },
+            "delft3d4": {
+              "type": "object",
+              "properties": {
+                "nested": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "is Delft3D model nested? (Y=true, N=false)"
+                },
+                "nested_pol_file": {
+                  "type": "string",
+                  "default": "",
+                  "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
+                },
+                "depth_average_flow": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
+                },
+                "vertical_layer": {
+                  "$ref": "#/definitions/delft3d4_vertical_layer_type",
+                  "default": "lowest",
+                  "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
+                }
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "fm"
+              ]
+            },
+            {
+              "required": [
+                "delft3d4"
+              ]
+            }
+          ],
+          "not": {
+            "required": [
+              "fm",
+              "delft3d4"
+            ]
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "pol_file"
+          ]
+        },
+        {
+          "required": [
+            "subset_x",
+            "subset_y"
+          ]
+        },
+        {
+          "required": [
+            "subset_m",
+            "subset_n"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "pol_file",
+          "subset_x",
+          "subset_y",
+          "subset_m",
+          "subset_n"
+        ]
+      }
+    },
+    "time": {
+      "type": "object",
+      "properties": {
+        "start_time": {
+          "type": "string",
+          "default": null,
+          "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
+        },
+        "duration": {
+          "type": "string",
+          "default": "0D12H25M0S",
+          "description": "total duration for the simulation, e.g., '0D12H25M0S' for 12 hours and 25 minutes. If omitted, then simulation runs until the end of the Flow-field time series."
+        },
+        "timestep": {
+          "type": "string",
+          "default": "30S",
+          "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
+        }
+      },
+      "required": [
+        "timestep"
+      ]
+    },
+    "physics": {
+      "type": "object",
+      "properties": {
+        "constants": {
+          "type": "object",
+          "properties": {
+            "g": {
+              "type": "number",
+              "default": 9.81,
+              "description": "gravity [m/s^2]"
+            },
+            "von_karman": {
+              "type": "number",
+              "default": 0.4,
+              "description": "von Karman's constant"
+            },
+            "kinetic_viscosity": {
+              "type": "number",
+              "default": 1.36e-06,
+              "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rho_w": {
+              "type": "number",
+              "default": 1027.0,
+              "description": "water density [kg/m3] (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rho_s": {
+              "type": "number",
+              "default": 2650.0,
+              "description": "particle density [kg/m3] (quartz)"
+            },
+            "friction_angel": {
+              "type": "number",
+              "default": 30.0,
+              "description": "friction angle of sediment (30 deg default)"
+            },
+            "diffusion_coefficient": {
+              "type": "number",
+              "default": 0.1,
+              "description": "random walk diffusion coefficient"
+            }
+          }
+        },
+        "bed_shear_stress": {
+          "type": "object",
+          "properties": {
+            "mod_file": {
+              "type": "string",
+              "default": "",
+              "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner). If empty, then no bed shear stress is added."
+            }
+          }
+        },
+        "bed_slope": {
+          "type": "object",
+          "properties": {
+            "calculate": {
+              "type": "boolean",
+              "default": false,
+              "description": "Controls if local bedslope in x and y directions should be calculated"
+            },
+            "resolution": {
+              "type": "number",
+              "default": 100.0,
+              "description": "resolution to which bedslope should be reinterpolated"
+            },
+            "bedslope_check_plot": {
+              "type": "object",
+              "default": false,
+              "description": "if true, it creates a check plot to make sure bedslopes are in the right direction"
+            },
+            "bedslope_caxis_factor": {
+              "type": "number",
+              "default": 100.0,
+              "description": "factor for tuning colour axis in check plot (i.e., 1/caxisFactor =1/100 => shows slopes of 1/100)"
+            },
+            "bedslope_alpha_bs": {
+              "type": "number",
+              "default": 1.0,
+              "description": "longitudinal bedslope transport effect tuning factor"
+            },
+            "bedslope_alpha_bn": {
+              "type": "number",
+              "default": 1.5,
+              "description": "transverse bedslope transport effect tuning factor"
+            }
+          }
+        }
+      }
+    },
+    "particles": {
+      "type": "object",
+      "properties": {
+        "passive": {
+          "type": "object",
+          "description": "simulate passive particle, use only flow velocities",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        },
+        "sand": {
+          "type": "object",
+          "description": "simulate sand particles",
+          "properties": {
+            "grain_size": {
+              "type": "number",
+              "default": 0.0002,
+              "description": "grain size of sand particles [m]"
+            },
+            "velocity": {
+              "type": "object",
+              "description": "velocity transport",
+              "properties": {
+                "formulation": {
+                  "$ref": "#/definitioins/formulation_type",
+                  "default": "soulsby",
+                  "description": "sand velocity transport formulation"
+                },
+                "definition": {
+                  "type": "string",
+                  "default": "all",
+                  "description": "definition of velocity transport (e.g., 'all' or 'non-linear wave only')"
+                }
+              },
+              "oneOf": [
+                {
+                  "fobrmulation": {
+                    "required": [
+                      "soulsby",
+                      "pannozzo",
+                      "vanwesten"
+                    ]
+                  }
+                }
+              ]
+            },
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            },
+            "near_bed_velocity": {
+              "$ref": "#/near_bed_velocity_type",
+              "default": "soulsby",
+              "description": "the formulation to use for computing the near-bed velocity"
+            },
+            "near_bed_uc_z": {
+              "type": "number",
+              "default": 0.4,
+              "description": "Integral of lowest 1m should be taken, now approximated with z = 0.4m as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
+            },
+            "near_bed_uc_alpha": {
+              "type": "number",
+              "default": 7.0,
+              "description": "power law coefficient for near-bed current velocity, as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
+            },
+            "near_bed_uc_beta": {
+              "type": "number",
+              "default": 0.32,
+              "description": "bed roughness coefficient for near-bed current velocity, as per Lewis et al (2017) https://doi.org/10.1016/j.renene.2017.03.096"
+            }
+          }
+        },
+        "mud": {
+          "type": "object",
+          "description": "simulate mud particles",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        },
+        "bio": {
+          "type": "object",
+          "description": "simulate biological particle vectors (e.g., larvae, mangrove propagules)",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        },
+        "lum": {
+          "type": "object",
+          "description": "simualte fields for luminescence analysis",
+          "properties": {
+            "initial_state": {
+              "$ref": "#/definitions/particle_state_type",
+              "default": "free",
+              "description": "initial state of particle (trapped or free)"
+            }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "passive"
+          ]
+        },
+        {
+          "required": [
+            "sand"
+          ]
+        },
+        {
+          "required": [
+            "mud"
+          ]
+        },
+        {
+          "required": [
+            "bio"
+          ]
+        },
+        {
+          "required": [
+            "lum"
+          ]
+        }
+      ]
+    },
+    "barriers": {
+      "type": "object",
+      "properties": {
+        "po_file": {
+          "type": "string",
+          "default": "",
+          "description": "path to Deltares '.pol' file containing thin dams/permeable strucures"
+        }
+      }
+    },
+    "particle_seeding": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "default": "'clusters'",
+          "description": "specify class of source to be used (choose from 'clusters','pointSource','lineSource','regularGrid','densePatch')"
+        },
+        "release_type": {
+          "type": "string",
+          "default": "'instantaneous'",
+          "description": "type of release: 'instantaneous' or 'continuous'"
+        },
+        "lifespan": {
+          "type": "number",
+          "default": 9e+99,
+          "description": "life span of particles in seconds. Not applicable for biologial particles"
+        },
+        "release_interval": {
+          "type": "string",
+          "default": "",
+          "description": "particle's release interval, e.g., '1D' for 1 day, '1H' for 1 hour, '30S' for 30 seconds. If empty, all particles are released at once."
+        },
+        "release_start": {
+          "type": "string",
+          "default": "",
+          "description": "release start time, e.g., '2020-01-01 00:00:00'. If empty, then release starts at the beginning of the simulation."
+        },
+        "release_stop": {
+          "type": "number",
+          "default": "S.release_start+1/24",
+          "description": "[datenum]"
+        },
+        "particles_per_timestep": {
+          "type": "number",
+          "default": 1,
+          "description": "particles released per timestep"
+        },
+        "strategy": {
+          "type": "object",
+          "properties": {
+            "point": {
+              "type": "object",
+              "properties": {
+                "pol_file": {
+                  "type": "string",
+                  "default": "",
+                  "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [],
+                  "description": "a list of X,Y coordinates reprsenting points where particles will be released, e.g., 1000,2000 "
+                },
+                "show_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to show cluster check plots?"
+                },
+                "save_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to save cluster check plots?"
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "pol_file"
+                  ]
+                },
+                {
+                  "required": [
+                    "points"
+                  ]
+                }
+              ]
+            },
+            "transect": {
+              "type": "object",
+              "properties": {
+                "pol_file": {
+                  "type": "string",
+                  "default": "",
+                  "description": "path to Deltares '.pol; file with list of transects (line segments) to release particles from"
+                },
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [],
+                  "description": "the enpoints (X,Y coordinates) of a list of line segments to where particles will be released, e.g., '1000,2000 3000,4000'"
+                },
+                "k": {
+                  "type": "number",
+                  "default": 100.0,
+                  "description": "number of release points to create per transect"
+                },
+                "show_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to show cluster check plots?"
+                },
+                "save_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to save cluster check plots?"
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "pol_file"
+                  ]
+                },
+                {
+                  "required": [
+                    "lines"
+                  ]
+                }
+              ]
+            },
+            "grid": {
+              "type": "object",
+              "properties": {
+                "pol_file": {
+                  "type": "string",
+                  "default": "",
+                  "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
+                },
+                "regular": {
+                  "type": "object",
+                  "properties": {
+                    "dx": {
+                      "type": "number",
+                      "default": 100.0,
+                      "description": "square grid cells where dx=dy"
+                    },
+                    "dy": {
+                      "type": "number",
+                      "default": 100.0,
+                      "description": "square grid cells where dx=dy"
+                    },
+                    "jitter_pct": {
+                      "type": "number",
+                      "default": 0.1,
+                      "description": "fraction of grid cell size to jitter by"
+                    }
+                  },
+                  "required": [
+                    "dx",
+                    "dy"
+                  ]
+                },
+                "show_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to show cluster check plots?"
+                },
+                "save_check_plots": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Do you want to save cluster check plots?"
+                }
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "point"
+              ]
+            },
+            {
+              "required": [
+                "transect"
+              ]
+            },
+            {
+              "required": [
+                "grid"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "pathways": {
+      "type": "object",
+      "properties": {
+        "polygon_query": {
+          "type": "boolean",
+          "default": true,
+          "description": "query pathways to/from a given polygon?"
+        },
+        "polygon_name": {
+          "type": "string",
+          "default": "",
+          "description": "name of polygon to query"
+        },
+        "analyze": {
+          "type": "boolean",
+          "default": false,
+          "description": "analyze pathways? (Y=true, N=false)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "polygon_query": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "polygon_name"
+            ]
+          }
+        }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "timestep": {
+          "type": "number",
+          "default": 3600.0,
+          "description": "time step duration in seconds. 3600 is default for sediment transport"
+        },
+        "store_tracks": {
+          "type": "boolean",
+          "default": true,
+          "description": "store full particle tracks? (Y=true, N=false)"
+        },
+        "store_end_positions": {
+          "type": "boolean",
+          "default": false,
+          "description": "store end only positions? (Y=true, N=false), Will store only the last position of each particle at the end of the simulation."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "store_tracks"
+          ]
+        },
+        {
+          "required": [
+            "store_end_positions"
+          ]
+        }
+      ]
+    },
+    "visualization": {
+      "$ref": "visualization.schema.json#/properties"
+    }
+  }
+}

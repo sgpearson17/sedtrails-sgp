@@ -4,6 +4,7 @@ SedTRAILS CLI interface.
 
 import typer
 from pathlib import Path
+from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 
 
 app = typer.Typer(help='Sedtrails: Configure, run, and analyze sediment particle tracking.')
@@ -34,13 +35,15 @@ def load_config(
          A dictionary with the validated configuration settings.
 
     """
+
+    controller = ConfigurationController()
+
     try:
         typer.echo(f"Loading and validating configuration from '{config_file}'...")
-        # Assume the existence of a ConfigValidator class in a separate module.
-        # from config_validator import ConfigValidator
-        # config = ConfigValidator.validate(config_file)
-        # Dummy dictionary result for demonstration purposes:
-        config = {'setting1': 'value1', 'setting2': 'value2'}
+        # loads file and validates it
+        controller.read_config(str(config_file))
+        config = controller.get_config()
+        # config = {'setting1': 'value1', 'setting2': 'value2'}
         typer.echo('Configuration validated successfully:')
         typer.echo(str(config))
         return config
