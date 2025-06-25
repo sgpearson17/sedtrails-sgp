@@ -74,14 +74,22 @@ class PhysicsConverter:
         )
 
     @property
-    def physics_plugin(self):
-        """Get the physics plugin instance based on the configured method."""
+    def physics_plugin(self, tracer_method: Optional[str] = None):
+        """Get the physics plugin instance based on the configured method.
+
+        Parameters:
+        -----------
+        tracer_method : str, optional
+            The tracer method to use for physics calculations. If None, uses the configured method.
+        """
 
         import importlib  # lazy import for performance
 
         if self._physics_plugin is None:
+            if tracer_method is None:
+                tracer_method = self.config.tracer_method
             # Dynamically import the physics plugin based on the configured method
-            plugin_module_name = f'sedtrails.transport_converter.plugins.physics.{self.config.tracer_method}'
+            plugin_module_name = f'sedtrails.transport_converter.plugins.physics.{tracer_method}'
             try:
                 plugin_module = importlib.import_module(plugin_module_name)
             except ImportError as e:
@@ -104,9 +112,10 @@ class PhysicsConverter:
         """
 
         if self._physics_plugin is None:
-            raise RuntimeError(
-                'Physics plugin is not initialized. '
-                'Please use "PhysicsConverter.physics_plugin" to initialize the plugin first.'
-            )
+            plugin = self.physics_plugin
+        else:
+            plugin = self._physics_plugin
 
-        self._physics_plugin.add_physics(sedtrails_data, self.grain_properties)
+        print(f'Using {plugin.__class__.__name__} to compute transport velocities and add to SedTRAILS data...')
+
+        plugin.add_physics(sedtrails_data, self.grain_properties)
