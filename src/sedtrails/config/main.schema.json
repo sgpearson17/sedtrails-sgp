@@ -449,7 +449,7 @@
               },
               "oneOf": [
                 {
-                  "fobrmulation": {
+                  "formulation": {
                     "required": [
                       "soulsby",
                       "pannozzo",
