@@ -296,7 +296,6 @@
       "properties": {
         "start_time": {
           "type": "string",
-          "default": null,
           "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
         },
         "duration": {
