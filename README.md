@@ -12,7 +12,8 @@ SedTRAILS requires Python 3.12 and above, but it is likely to work with Python 3
 
 1. Clone the repository:
 ```bash
-git clone <your repository SSH key>
+
+git clone https://github.com/sedtrails/sedtrails.git
 ```
 
 2. Change the directory:
