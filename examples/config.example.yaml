@@ -10,7 +10,7 @@ particles:
   sand:
     grain_size: 0.0005
 particle_seeding:
-  release_start: ''
+  release_start: '2025-06-18 13:00:00'
   partciles_per_timestep: 1
   strategy: 
     point:
