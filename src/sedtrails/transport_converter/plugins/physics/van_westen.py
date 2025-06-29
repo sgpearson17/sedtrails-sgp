@@ -3,6 +3,7 @@
 import numpy as np
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
+from sedtrails.transport_converter import SedtrailsData
 
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
@@ -15,9 +16,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         super().__init__()
         self.config = config
 
-    def add_physics(self, sedtrails_data, grain_properties: dict[str, float]) -> None:
+    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float]) -> None:
         """
-        Add physics using van Westen et al. (2025) approach.
+        Add physics to SedtrailsData object using van Westen et al. (2025) approach.
 
         This method follows the workflow from van Westen et al. (2025):
         1. Compute shear velocities and Shields number
