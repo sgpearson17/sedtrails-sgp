@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Import SedTRAILS modules
-from sedtrails.transport_converter.format_converter import FormatConverter, InputType
+from sedtrails.transport_converter.format_converter import FormatConverter
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
@@ -49,15 +49,15 @@ NUM_STEPS = int(DURATION_SECONDS / TIMESTEP)
 print('\n=== STEP 1: Loading and Converting Flow Field Data ===')
 start_time = time.time()
 
-# Load and convert the data
-converter = FormatConverter(FILE_PATH, input_type=InputType.NETCDF_DFM)
-converter.read_data()
-time_info = converter.get_time_info()
-print(f'Time range: {time_info["time_start"]} to {time_info["time_end"]}')
-print(f'Total timestamps: {time_info["num_times"]}')
-
 # Convert to SedtrailsData format
-sedtrails_data = converter.convert_to_sedtrails_data()
+format_config = {  # this should come from a config file or similar
+    'input_file': FILE_PATH,
+    'input_format': 'fm_netcdf',  # Specify the input format
+    'reference_date': '1970-01-01',  # Default reference date
+}
+
+format_converter = FormatConverter(format_config)
+sedtrails_data = format_converter.convert_to_sedtrails_data()
 print(f'Data conversion completed in {time.time() - start_time:.2f} seconds')
 
 # Add physics calculations to the SedtrailsData
