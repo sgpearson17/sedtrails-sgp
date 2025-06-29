@@ -13,6 +13,7 @@ dependencies = [
   "matplotlib",
   "xarray",
   "typer",
+  "xugrid"
 ]
 requires-python = ">=3.12"
 authors = [

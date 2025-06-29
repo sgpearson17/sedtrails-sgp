@@ -17,4 +17,5 @@ dependencies:
   - sphinx-rtd-theme
   - pyyaml
   - jsonschema
+  - xugrid
   
