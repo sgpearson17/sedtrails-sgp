@@ -1,7 +1,6 @@
 import pytest
 import xugrid as xu
 import numpy as np
-from pathlib import Path
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
 @pytest.fixture
