@@ -9,22 +9,8 @@ use in the SedTRAILS particle tracking system.
 import numpy as np
 import xarray as xr
 import xugrid as xu
-from enum import Enum
 from typing import Union, Dict
-from pathlib import Path
-from datetime import datetime
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
-
-
-# TODO: continue refactoring this file, implement a plugin system for different input formats
-
-
-class InputType(Enum):
-    """Enumeration of supported input data types."""
-
-    NETCDF_DFM = 'netcdf_dfm'  # Delft3D Flexible Mesh NetCDF
-    TRIM_D3D4 = 'trim_d3d4'  # Delft3D4 TRIM format (placeholder, not implemented yet)
-    # Add more input types as needed
 
 
 class FormatConverter:
@@ -36,46 +22,81 @@ class FormatConverter:
     tracking system.
     """
 
-    def __init__(
-        self,
-        input_file: Union[str, Path],
-        input_type: Union[str, InputType] = InputType.NETCDF_DFM,
-        reference_date: Union[str, np.datetime64, datetime] = '1970-01-01',
-    ):
+    def __init__(self, config: Dict):
         """
         Initialize the FormatConverter.
 
         Parameters:
         -----------
-        input_file : str or Path
-            Path to the input file
-        input_type : str or InputType, optional
-            Type of input data, by default InputType.NETCDF_DFM
-        reference_date : str, np.datetime64, or datetime, optional
-            Reference date for time values, by default "1970-01-01" (Unix epoch)
+        config : dict
+            Configuration dictionary containing settings for the converter.
+            Must include 'input_file', 'input_format', optionally 'reference_date' (default
+            "1970-01-01" (Unix epoch))
         """
-        self.input_file = Path(input_file)
-
-        # Set input type
-        if isinstance(input_type, str):
-            try:
-                self.input_type = InputType(input_type.lower())
-            except ValueError:
-                raise ValueError(
-                    f'Invalid input type: {input_type}. Must be one of {[t.value for t in InputType]}'
-                ) from ValueError
-        else:
-            self.input_type = input_type
-
-        # Set reference date
-        if isinstance(reference_date, str):
-            self.reference_date = np.datetime64(reference_date)
-        elif isinstance(reference_date, datetime):
-            self.reference_date = np.datetime64(reference_date)
-        else:
-            self.reference_date = reference_date
-
+        self.config = config
+        self._reference_date: Union[str, None] = None
         self.input_data = None
+        self._format_plugin = None
+        self._input_format: Union[str, None] = None
+        self._input_file: Union[str, None] = None
+
+    def __post_init__(self):
+        """
+        Config validation and initialization.
+        """
+
+        if not isinstance(self.config, dict):
+            raise TypeError(f'Config must be a dictionary, got {type(self.config)}')
+
+    @property
+    def input_file(self):
+        """Get the input file path."""
+        if self._input_file is None:
+            self._input_file = self.config.get('input_file')
+            if not self._input_file:
+                raise ValueError('Input file path must be provided in the configuration')
+        return self._input_file
+
+    @property
+    def input_format(self) -> str | None:
+        """Get the format to convert to."""
+        if self._input_format is None:
+            self._input_format = self.config.get('input_format')
+            if not self._input_format:
+                raise ValueError('Input format must be specified in the configuration')
+        return self._input_format
+
+    @property
+    def reference_date(self) -> str:
+        """Get the reference date as a numpy datetime64 object."""
+
+        if self._reference_date is None:
+            self._reference_date = self.config.get('reference_date', '1970-01-01')
+        return self.reference_date  # Default to Unix epoch
+
+    @property
+    def format_plugin(self):
+        """
+        Get the format plugin instance based on the specified format.
+        """
+
+        import importlib  # lazy import for performance
+
+        if self._format_plugin is None:
+            # Dynamically import the format plugin based on the input type
+            plugin_module_name = f'sedtrails.transport_converter.plugins.format.{self.input_format}'
+            try:
+                plugin_module = importlib.import_module(plugin_module_name)
+            except ImportError as e:
+                raise ImportError(
+                    f'Failed to import format plugin module: {plugin_module_name} '
+                    f'Ensure the module exists and is correctly named.'
+                ) from e
+            else:
+                # Initialize the format plugin with the input file and type
+                self._format_plugin = plugin_module.FormatPlugin(self.input_file)
+
+        return self._format_plugin
 
     def read_data(self) -> None:
         """
@@ -250,7 +271,7 @@ class FormatConverter:
 
     def convert_to_sedtrails_data(self) -> SedtrailsData:
         """
-        Convert the loaded dataset to SedtrailsData format for all time steps.
+        Converts dataset to SedtrailsData format for all time steps.
 
         Returns:
         --------
@@ -258,77 +279,27 @@ class FormatConverter:
             Data in SedtrailsData format with time as the first dimension for
             time-dependent variables, with time in seconds since reference_date
         """
-        if self.input_data is None:
-            raise ValueError('Dataset not loaded. Call read_data() first.')
 
-        # Get time information
-        time_info = self.get_time_info()
-        seconds_since_ref = time_info['seconds_since_reference']
-
-        # Get mapped variables based on input type
-        if self.input_type == InputType.NETCDF_DFM:
-            data = self._map_dfm_variables()
+        if self._format_plugin is None:
+            plugin = self.format_plugin
         else:
-            raise NotImplementedError(f'Conversion not implemented for input type: {self.input_type}')
+            plugin = self._format_plugin
 
-        # Calculate magnitudes for vector quantities
-        # Flow velocity magnitude
-        depth_avg_velocity_magnitude = np.sqrt(data['flow_velocity_x'] ** 2 + data['flow_velocity_y'] ** 2)
+        print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
 
-        # Bed load magnitude
-        bed_load_magnitude = np.sqrt(data['bed_load_transport_x'] ** 2 + data['bed_load_transport_y'] ** 2)
-
-        # Suspended sediment magnitude
-        suspended_transport_magnitude = np.sqrt(data['suspended_transport_x'] ** 2 + data['suspended_transport_y'] ** 2)
-
-        # Create dictionaries for vector quantities
-        depth_avg_flow_velocity = {
-            'x': data['flow_velocity_x'],
-            'y': data['flow_velocity_y'],
-            'magnitude': depth_avg_velocity_magnitude,
-        }
-
-        bed_load_transport = {
-            'x': data['bed_load_transport_x'],
-            'y': data['bed_load_transport_y'],
-            'magnitude': bed_load_magnitude,
-        }
-
-        suspended_transport = {
-            'x': data['suspended_transport_x'],
-            'y': data['suspended_transport_y'],
-            'magnitude': suspended_transport_magnitude,
-        }
-
-        # Create nonlinear wave velocity dictionary with zeros
-        # Using the same shape as other vector quantities
-        nonlinear_wave_velocity = {
-            'x': np.zeros_like(data['flow_velocity_x']),
-            'y': np.zeros_like(data['flow_velocity_y']),
-            'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
-        }
-
-        # Create SedtrailsData object
-        sedtrails_data = SedtrailsData(
-            times=seconds_since_ref,
-            reference_date=self.reference_date,
-            x=data['x'],
-            y=data['y'],
-            bed_level=data['bed_level'],
-            depth_avg_flow_velocity=depth_avg_flow_velocity,
-            fractions=1,  # Default to 1 fraction
-            bed_load_transport=bed_load_transport,
-            suspended_transport=suspended_transport,
-            water_depth=data['water_depth'],
-            mean_bed_shear_stress=data['mean_bed_shear_stress'],
-            max_bed_shear_stress=data['max_bed_shear_stress'],
-            sediment_concentration=data['sediment_concentration'],
-            nonlinear_wave_velocity=nonlinear_wave_velocity,
-        )
-
+        sedtrails_data = plugin.convert()
+        print('Successfully converted data to SedtrailsData format.')
         return sedtrails_data
 
 
-# Note: The example code has been moved to examples/format_converter_example.py
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')
+
+    conf = {
+        'input_file': 'sedtrails/sample-data/inlet_sedtrails.nc',
+        'input_format': 'fm_netcdf',
+        'reference_date': '1970-01-01',
+    }
+
+    converter = FormatConverter(conf)
+    converter.convert_to_sedtrails_data()
