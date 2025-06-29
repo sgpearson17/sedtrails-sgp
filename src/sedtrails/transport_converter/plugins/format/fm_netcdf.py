@@ -315,7 +315,7 @@ class FormatPlugin(BaseFormatPlugin):
 
 if __name__ == '__main__':
     # Example usage
-    input_file = '/Users/mgarciaalvarez/devel/sedtrails/sample-data/inlet_sedtrails.nc'
+    input_file = '/sedtrails/sample-data/inlet_sedtrails.nc'
     plugin = FormatPlugin(input_file)
 
     plugin.load()
