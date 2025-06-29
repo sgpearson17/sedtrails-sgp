@@ -16,6 +16,9 @@ from datetime import datetime
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 
+# TODO: continue refactoring this file, implement a plugin system for different input formats
+
+
 class InputType(Enum):
     """Enumeration of supported input data types."""
 
