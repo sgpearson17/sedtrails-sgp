@@ -6,9 +6,6 @@ hydrodynamic models) and converts them into the SedtrailsData structure for
 use in the SedTRAILS particle tracking system.
 """
 
-import numpy as np
-import xarray as xr
-import xugrid as xu
 from typing import Union, Dict
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
