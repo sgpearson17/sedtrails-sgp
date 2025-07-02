@@ -33,6 +33,10 @@ def test_buffer_size_bytes_counts_numpy_and_lists(tmp_path):
 def test_enforce_limit_writes_file_and_clears(tmp_path):
     """
     Test that enforce_limit writes a NetCDF file and clears the buffer when over the memory limit.
+    
+    The NetCDFWriter may create a timestamped subdirectory, so to make this test more robust to
+    changes in output directory structure we check the MemoryManager's writer.output_dir.
+    This also keeps or code modular and allows us to test the MemoryManager independently of the NetCDFWriter 
     """
     node_x, node_y, face_node_connectivity, fill_value = create_test_mesh()
     mm = MemoryManager(tmp_path, max_bytes=1_000)  # Set a very low limit for test
@@ -42,9 +46,7 @@ def test_enforce_limit_writes_file_and_clears(tmp_path):
         sim_buffer.add(i, float(i), float(i), float(i))
     print("Buffer size (bytes):", mm.buffer_size_bytes(sim_buffer.buffer))
     mm.enforce_limit(sim_buffer, node_x, node_y, face_node_connectivity, fill_value)
-    # The NetCDFWriter may create a timestamped subdirectory, so check mm.writer.output_dir
-    # This makes the test more robust to changes in output directory structure and
-    # keeps our code modular
+    # Find the output_dir directly from the NetCDFWriter object
     expected_file = mm.writer.output_dir / "sim_buffer_0.nc"
     assert expected_file.exists()
     # Buffer should be cleared
