@@ -15,8 +15,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Import SedTRAILS modules
-from sedtrails.transport_converter.format_converter import FormatConverter, InputType
-from sedtrails.transport_converter.physics_converter import PhysicsConverter, PhysicsMethod
+from sedtrails.transport_converter.format_converter import FormatConverter
+from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
@@ -25,6 +25,12 @@ from sedtrails.configuration_interface.configuration_controller import Configura
 
 # Import visualization utilities for plotting
 from visualization_utils import plot_flow_field, plot_particle_trajectory
+
+# ===== CONFIGURATION =====
+# Adjust these parameters as needed
+FILE_PATH = Path('../sample-data/inlet_sedtrails.nc')
+TIMESTEP = 30.0  # seconds
+OUTPUT_DIR = Path('../sample-data/output')
 
 
 class Simulation:
@@ -143,20 +149,20 @@ if 'point' in CONFIG['particle_seeding']['strategy']:
 print('\n=== STEP 1: Loading and Converting Flow Field Data ===')
 
 
-# Load and convert the data
-converter = FormatConverter(FILE_PATH, input_type=InputType.NETCDF_DFM)
-converter.read_data()
-time_info = converter.get_time_info()
-print(f'Time range: {time_info["time_start"]} to {time_info["time_end"]}')
-print(f'Total timestamps: {time_info["num_times"]}')
-
 # Convert to SedtrailsData format
-sedtrails_data = converter.convert_to_sedtrails_data()
+format_config = {  # this should come from a config file or similar
+    'input_file': FILE_PATH,
+    'input_format': 'fm_netcdf',  # Specify the input format
+    'reference_date': '1970-01-01',  # Default reference date
+}
+
+format_converter = FormatConverter(format_config)
+sedtrails_data = format_converter.convert_to_sedtrails_data()
 print(f'Data conversion completed in {time.time() - start_time:.2f} seconds')
 
 # Add physics calculations to the SedtrailsData
 physics_converter = PhysicsConverter()
-physics_converter.add_physics_to_sedtrails_data(sedtrails_data, method=PhysicsMethod.VAN_WESTEN_2025)
+physics_converter.add_physics_to_sedtrails_data(sedtrails_data)
 
 # ===== STEP 2: Initialize Particle and Position Calculator =====
 print('\n=== STEP 2: Initializing Particle and Flow Field ===')
