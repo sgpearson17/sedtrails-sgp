@@ -349,7 +349,7 @@
               "default": 2650.0,
               "description": "particle density [kg/m3] (quartz)"
             },
-            "friction_angel": {
+            "friction_angle": {
               "type": "number",
               "default": 30.0,
               "description": "friction angle of sediment (30 deg default)"
