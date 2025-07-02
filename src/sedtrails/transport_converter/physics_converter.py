@@ -101,9 +101,9 @@ class PhysicsConverter:
                 self._physics_plugin = plugin_module.PhysicsPlugin(self.config)
         return self._physics_plugin
 
-    def add_physics_to_sedtrails_data(self, sedtrails_data) -> None:
+    def convert_physics(self, sedtrails_data) -> None:
         """
-        Add physics calculations to existing SedtrailsData object using the tracer method.
+        Converts and adds physics calculations to existing SedtrailsData object using the tracer method.
 
         Parameters:
         -----------
