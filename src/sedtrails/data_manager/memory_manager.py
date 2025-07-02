@@ -5,6 +5,7 @@ Manages memory allocation and deallocation for the simulation data buffer.
 """
 
 import sys
+import xugrid as xu
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
 class MemoryManager:
@@ -103,4 +104,4 @@ class MemoryManager:
         if not files:
             raise FileNotFoundError("No sim_buffer_*.nc files found to merge.")
         ds = xu.open_mfdataset(files, combine="by_coords")
-        ds.to_netcdf(self.writer.output_dir / merged_filename)            
+        ds.ugrid.to_netcdf(self.writer.output_dir / merged_filename)            

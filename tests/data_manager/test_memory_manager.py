@@ -69,3 +69,28 @@ def test_enforce_limit_does_not_write_if_under_limit(tmp_path):
     # Buffer should not be cleared
     data = sim_buffer.get_data()
     assert all(arr.size == 10 for arr in data.values())
+
+def test_merge_output_files(tmp_path):
+    """
+    Test that merge_output_files correctly merges multiple NetCDF chunk files into one.
+    """
+    node_x, node_y, face_node_connectivity, fill_value = create_test_mesh()
+    mm = MemoryManager(tmp_path, max_bytes=1000)  # Low limit to force chunking
+    sim_buffer = SimulationDataBuffer()
+    # Write two chunks with different time values
+    for i in range(10):
+        sim_buffer.add(i, i, float(i), float(i))
+    mm.enforce_limit(sim_buffer, node_x, node_y, face_node_connectivity, fill_value)
+    for i in range(10, 20):
+        sim_buffer.add(i, i, float(i), float(i))
+    mm.enforce_limit(sim_buffer, node_x, node_y, face_node_connectivity, fill_value)
+    # Merge the files
+    mm.merge_output_files("merged_test.nc")
+    merged_file = mm.writer.output_dir / "merged_test.nc"
+    assert merged_file.exists()
+    # Open merged file and check data
+    ds = xu.open_dataset(merged_file)
+    assert "x" in ds
+    assert "y" in ds
+    # Should have 20 unique time values
+    assert len(np.unique(ds["time"].values)) == 20
