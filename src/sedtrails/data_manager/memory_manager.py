@@ -84,3 +84,23 @@ class MemoryManager:
             self.writer.write(ugrid_ds, filename)
             sim_buffer.clear()
             self.file_counter += 1
+
+    def merge_output_files(self, merged_filename="merged_output.nc"):
+        """
+        Merge all sim_buffer_*.nc files in the output directory into a single NetCDF file.
+
+        Merging is based on the assumption that all files have the same structure and can be 
+        combined by coordinates, e.g., time, observation index, etc. This way, the merged 
+        file "merged_output.nc" will contain the entire simulation duration and all particles.
+        Each file chunk should have non-overlapping coordinate values.
+
+        Parameters
+        ----------
+        merged_filename : str
+            Name of the merged output file.
+        """
+        files = sorted(self.writer.output_dir.glob("sim_buffer_*.nc"))
+        if not files:
+            raise FileNotFoundError("No sim_buffer_*.nc files found to merge.")
+        ds = xu.open_mfdataset(files, combine="by_coords")
+        ds.to_netcdf(self.writer.output_dir / merged_filename)            
