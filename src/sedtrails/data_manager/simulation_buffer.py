@@ -89,8 +89,9 @@ class SimulationDataBuffer:
         )
         ds = mesh.to_dataset()
         data = self.get_data()
-        ds["particle_id"] = (("obs",), data["particle_id"])
-        ds["time"] = (("obs",), data["time"])
-        ds["x"] = (("obs",), data["x"])
-        ds["y"] = (("obs",), data["y"])
+        # Use 'time' as the coordinate and dimension
+        ds = ds.assign_coords(time=("time", data["time"]))
+        ds["particle_id"] = ("time", data["particle_id"])
+        ds["x"] = ("time", data["x"])
+        ds["y"] = ("time", data["y"])
         return xu.UgridDataset(ds)
