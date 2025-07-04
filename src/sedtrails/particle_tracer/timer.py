@@ -96,7 +96,7 @@ class Time:
         return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
     @property
-    def end_time(self) -> int:
+    def end_time(self) -> np.datetime64:
         """
         Returns the simulation end time as a numpy.datetime64 object.
         """
@@ -104,7 +104,7 @@ class Time:
 
     def get_current_time(self, step: int = 0) -> np.datetime64:
         """
-        Returns the current time in simulation as a numpy.datetime64 object,
+        Returns the current time in the simulation as a numpy.datetime64 object,
         given a simulation step.
 
         Parameters
