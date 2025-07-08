@@ -104,13 +104,13 @@
     "input_model_type": {
       "type": "string",
       "enum": [
-        "dfm",
+        "fm_netcdf",
         "d3d4",
         "xbeach",
         "aeolis"
       ],
-      "default": "dfm",
-      "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+      "default": "fm_netcdf",
+      "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
     },
     "fm_format_type": {
       "type": "string",
@@ -139,8 +139,8 @@
         },
         "input_model": {
           "$ref": "#/definitions/input_model_type",
-          "default": "dfm",
-          "description": "input model type (dfm, d3d4, xbeach, aeolis)"
+          "default": "fm_netcdf",
+          "description": "input model type (fm_netcdf, d3d4, xbeach, aeolis)"
         },
         "n_runs": {
           "type": "integer",
@@ -436,7 +436,7 @@
               "description": "velocity transport",
               "properties": {
                 "formulation": {
-                  "$ref": "#/definitioins/formulation_type",
+                  "$ref": "#/definitions/formulation_type",
                   "default": "soulsby",
                   "description": "sand velocity transport formulation"
                 },
