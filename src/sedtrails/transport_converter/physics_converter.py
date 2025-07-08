@@ -88,7 +88,7 @@ class PhysicsConverter:
         if self._physics_plugin is None:
             if tracer_method is None:
                 tracer_method = self.config.tracer_method
-            # Dynamically import the physics plugin based on the configured method
+                # Dynamically import the physics plugin based on the configured method
             plugin_module_name = f'sedtrails.transport_converter.plugins.physics.{tracer_method}'
             try:
                 plugin_module = importlib.import_module(plugin_module_name)
