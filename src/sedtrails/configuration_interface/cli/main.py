@@ -41,7 +41,7 @@ def load_config(
     try:
         typer.echo(f"Loading and validating configuration from '{config_file}'...")
         # loads file and validates it
-        controller.read_config(str(config_file))
+        controller.load_config(str(config_file))
         config = controller.get_config()
         # config = {'setting1': 'value1', 'setting2': 'value2'}
         typer.echo('Configuration validated successfully:')
