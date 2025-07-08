@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from numpy import ndarray
 from typing import Optional
 
+
 @dataclass
 class Particle(ABC):
     """
@@ -42,7 +43,7 @@ class Particle(ABC):
             raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
 
     @property
-    def x(self) -> None:
+    def x(self) -> float:
         return self._x
 
     @x.setter
@@ -52,7 +53,7 @@ class Particle(ABC):
         self._x = value
 
     @property
-    def y(self) -> None:
+    def y(self) -> float:
         return self._y
 
     @y.setter
@@ -104,11 +105,12 @@ class Particle(ABC):
         """
         pass
 
+
 @dataclass
 class PhysicalProperties:
     """
     Base class for particle physical properties.
-    
+
     Attributes
     ----------
     density : float
@@ -116,16 +118,17 @@ class PhysicalProperties:
     diameter : float
         Particle diameter in meters
     """
+
     density: float
     diameter: float
-
 
     def __post_init__(self):
         """Validate physical property values."""
         if not isinstance(self.density, (int, float)) or self.density <= 0:
-            raise ValueError(f"Density must be positive, got {self.density}")
+            raise ValueError(f'Density must be positive, got {self.density}')
         if not isinstance(self.diameter, (int, float)) or self.diameter <= 0:
-            raise ValueError(f"Diameter must be positive, got {self.diameter}")
+            raise ValueError(f'Diameter must be positive, got {self.diameter}')
+
 
 @dataclass
 class Sand(Particle):
@@ -138,15 +141,17 @@ class Sand(Particle):
         The velocity of the sand particles.
     """
 
-    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
-        density=2650.0,  # kg/m³, typical sand density
-        diameter=2e-4,   # m, typical sand diameter (0.2 mm)
-    ))
+    physical_properties: PhysicalProperties = field(
+        default_factory=lambda: PhysicalProperties(
+            density=2650.0,  # kg/m³, typical sand density
+            diameter=2e-4,  # m, typical sand diameter (0.2 mm)
+        )
+    )
 
     def __post_init__(self):
         super().__post_init__()
         if not isinstance(self.physical_properties, PhysicalProperties):
-            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
+            raise TypeError(f'Expected PhysicalProperties, got {type(self.physical_properties).__name__}')
 
     def particle_velocity(self) -> float:
         """
@@ -159,6 +164,7 @@ class Sand(Particle):
         """
         pass  # TODO: implement the velocity calculation for sand particles
 
+
 @dataclass
 class Mud(Particle):
     """
@@ -170,15 +176,17 @@ class Mud(Particle):
         The velocity of the mud particles.
     """
 
-    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
-        density=2650.0,  # kg/m³, typical mud density
-        diameter=2e-6,   # m, typical mud diameter (2 microns)
-    ))    
+    physical_properties: PhysicalProperties = field(
+        default_factory=lambda: PhysicalProperties(
+            density=2650.0,  # kg/m³, typical mud density
+            diameter=2e-6,  # m, typical mud diameter (2 microns)
+        )
+    )
 
     def __post_init__(self):
         super().__post_init__()
         if not isinstance(self.physical_properties, PhysicalProperties):
-            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
+            raise TypeError(f'Expected PhysicalProperties, got {type(self.physical_properties).__name__}')
 
     def particle_velocity(self) -> float:
         """
@@ -191,6 +199,7 @@ class Mud(Particle):
         """
         pass  # TODO: implement the velocity calculation for mud particles
 
+
 @dataclass
 class Passive(Particle):
     """
@@ -202,15 +211,17 @@ class Passive(Particle):
         The velocity of the passive particles.
     """
 
-    physical_properties: PhysicalProperties = field(default_factory=lambda: PhysicalProperties(
-        density=1000.0,  # kg/m³, water density
-        diameter=1e-6,   # m, typical tracer size (1 micron)
-    ))
+    physical_properties: PhysicalProperties = field(
+        default_factory=lambda: PhysicalProperties(
+            density=1000.0,  # kg/m³, water density
+            diameter=1e-6,  # m, typical tracer size (1 micron)
+        )
+    )
 
     def __post_init__(self):
         super().__post_init__()
         if not isinstance(self.physical_properties, PhysicalProperties):
-            raise TypeError(f"Expected PhysicalProperties, got {type(self.physical_properties).__name__}")
+            raise TypeError(f'Expected PhysicalProperties, got {type(self.physical_properties).__name__}')
 
     def particle_velocity(self) -> float:
         """
@@ -238,7 +249,7 @@ class InterpolatedValue:
     suspended_sediment : float
         The suspended sediment transport of the particle in kg/m/s.
     sediment_concentration : float
-        The suspended sediment concentration of the particle in kg/m^3.        
+        The suspended sediment concentration of the particle in kg/m^3.
     depth : float
         The water depth of the particle in meters. (fluid)
     mean_bed_shear_stress : float
@@ -248,7 +259,7 @@ class InterpolatedValue:
     wave_velocity : ndarray
         The non-linear wave velocity of the particle in m/s. (fluid)
     depth_avg_flow_velocity : float
-        The flow velocity of the particle averaged over depth in m/s. (fluid)        
+        The flow velocity of the particle averaged over depth in m/s. (fluid)
     """
 
     bed_level: float
