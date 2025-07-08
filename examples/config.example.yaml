@@ -1,8 +1,8 @@
 general:
-  input_model: "dfm"
+  input_model: "fm_netcdf"
 folder_settings:
-  input_data: "../sample-data/inlet_sedtrails.nc"
-  output_dir: "../output"
+  input_data: "./sample-data/inlet_sedtrails.nc"
+  output_dir: "./output"
 time:
   timestep: '30S'
   duration: '6H18M18S'
