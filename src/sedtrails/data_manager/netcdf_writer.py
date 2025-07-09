@@ -37,6 +37,7 @@ class NetCDFWriter:
     def write(self, ugrid_dataset, filename):
         """
         Write a xu.UgridDataset to a NetCDF file in the output directory.
+        We use the "ugrid.to_netcdf()" method to ensure UGRID compliance.        
 
         Parameters
         ----------
@@ -49,5 +50,5 @@ class NetCDFWriter:
         output_path = self.output_dir / filename
         if not isinstance(ugrid_dataset, xu.UgridDataset):
             raise TypeError("Input must be a xu.UgridDataset.")
-        ugrid_dataset.to_netcdf(output_path)
+        ugrid_dataset.ugrid.to_netcdf(output_path)
         print(f"NetCDF file written to {output_path}")
