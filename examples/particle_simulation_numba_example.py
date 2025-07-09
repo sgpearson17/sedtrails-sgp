@@ -21,7 +21,6 @@ from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
-from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 
 # Import visualization utilities for plotting
 from visualization_utils import plot_flow_field, plot_particle_trajectory
@@ -32,97 +31,9 @@ FILE_PATH = Path('../sample-data/inlet_sedtrails.nc')
 TIMESTEP = 30.0  # seconds
 OUTPUT_DIR = Path('../sample-data/output')
 
-
-class Simulation:
-    """Class to encapsulate the particle simulation process."""
-
-    def __init__(self, config: str):
-        """
-        Initialize the simulation with the given configuration.
-
-        Parameters
-        ----------
-        config : str
-            Path to the configuration file.
-        """
-        self.config = ConfigurationController()
-        self.config.read_config(config)
-        self.CONFIG = self.config.get_config()
-
-        # Set up file paths and time parameters
-        self.file_path = Path(self.CONFIG['folder_settings']['input_data'])
-        self._start_time = None
-        self.timestep = self.CONFIG['time']['timestep']
-        self.output_dir = Path(self.CONFIG['folder_settings']['output_dir'])
-
-        self._flow_field_data = None
-
-    @property
-    def start_time(self):
-        """
-        Get the start time for the simulation.
-        """
-        if 'start_time' in CONFIG['time']:
-            self._start_time = CONFIG['time']['start_time']
-        elif self._start_time is None:
-            self._start_time = '2025-06-18 13:00:00'
-        return self._start_time
-
-    @property
-    def flow_field(self):
-        """
-        Convert the input file format to SedtrailsData format.
-        """
-
-        if self._flow_field_data is None:
-            converter = FormatConverter(self.file_path, input_type=InputType.NETCDF_DFM)
-            converter.read_data()
-            self._flow_field_data = converter.convert_to_sedtrails_data()
-        return self._flow_field_data
-
-    def run(self):
-        """
-        Run the particle simulation using both original and Numba-optimized implementations.
-        """
-
-        # Add physics calculations
-        physics_converter = PhysicsConverter()
-        physics_converter.add_physics_to_sedtrails_data(sedtrails_data, method=PhysicsMethod.VAN_WESTEN_2025)
-
-        # Initialize flow field data retriever
-        retriever = FlowFieldDataRetriever(sedtrails_data)
-        retriever.flow_field_name = 'suspended_velocity'
-
-        # Create initial particle
-        particle = Sand(id=1, _x=0.0, _y=0.0, name='Test Particle')
-
-
-# todo: CONTINUE HERE
-
-t = time.time()  # current time in seconds since epoch
-
-
-# ===== CONFIGURATION =====
-config = ConfigurationController()  # Object containig configuration settings.
-config.read_config('examples/config.example.yaml')
-
-CONFIG = config.get_config()
-
-# FILE_PATH = CONFIG['folder_settings']['input_data']
-
-# using our time class to handle time-related operations
-from sedtrails.time import Time
-
-
-# retrieve start time from configuration or use default
-if 'start_time' in CONFIG['time']:
-    START_TIME = CONFIG['time']['start_time']
-else:
-    START_TIME = '2025-06-18 13:00:00'
-
-TIMESTEP = CONFIG['time']['timestep']
-OUTPUT_DIR = CONFIG['folder_settings']['output_dir']
-
+# Custom starting position
+START_X = 40000.0
+START_Y = 17000.0
 
 # Start at the 3rd timestep (index 2)
 TIMESTEP_INDEX = 2
@@ -134,20 +45,9 @@ DURATION_SECONDS = DURATION_HOURS * 3600
 # Calculate number of steps
 NUM_STEPS = int(DURATION_SECONDS / TIMESTEP)
 
-# Particle seeding parameters
-# TODO: this should be handle by the seeding tool.
-particle_positions = {}
-if 'point' in CONFIG['particle_seeding']['strategy']:
-    id = 1
-    for point in CONFIG['particle_seeding']['strategy']['point']['points']:
-        _point = point.split(',')
-        particle_positions[id] = (_point[0], _point[1])
-        id += 1
-
-
 # ===== STEP 1: Load and Convert Flow Field Data =====
 print('\n=== STEP 1: Loading and Converting Flow Field Data ===')
-
+start_time = time.time()
 
 # Convert to SedtrailsData format
 format_config = {  # this should come from a config file or similar
@@ -157,12 +57,12 @@ format_config = {  # this should come from a config file or similar
 }
 
 format_converter = FormatConverter(format_config)
-sedtrails_data = format_converter.convert_to_sedtrails_data()
+sedtrails_data = format_converter.convert_to_sedtrails()
 print(f'Data conversion completed in {time.time() - start_time:.2f} seconds')
 
 # Add physics calculations to the SedtrailsData
 physics_converter = PhysicsConverter()
-physics_converter.add_physics_to_sedtrails_data(sedtrails_data)
+physics_converter.convert_physics(sedtrails_data)
 
 # ===== STEP 2: Initialize Particle and Position Calculator =====
 print('\n=== STEP 2: Initializing Particle and Flow Field ===')
@@ -390,8 +290,3 @@ plt.close(fig)
 print(f'Comparison plot saved to {comparison_plot_path}')
 
 print('\nPerformance comparison and visualization completed!')
-
-if __name__ == '__main__':
-    # Run the simulation
-    sim = Simulation('examples/config.example.yaml')
-    sim.run()
