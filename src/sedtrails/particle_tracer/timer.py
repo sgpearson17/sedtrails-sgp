@@ -6,6 +6,66 @@ from dataclasses import dataclass, field
 import numpy as np
 import re
 from sedtrails.exceptions.exceptions import DateFormatError, DurationFormatError
+from typing import Union
+
+
+class Duration:
+    """
+    Class representing a duration in the simulation.
+
+    Attributes
+    ----------
+    duration : str
+        The duration as a string in format '3D 2H1M3S'.
+
+    Methods
+    -------
+    to_seconds()
+        Converts the duration string to total seconds.
+    """
+
+    def __init__(self, duration: str):
+        self._duration = duration
+
+    @property
+    def duration(self) -> str:
+        """
+        Returns the duration string.
+        """
+        return self._duration
+
+    def to_seconds(self) -> int:
+        """
+        Parse a duration string ('3D 2H1M3S') into the total number of seconds.
+
+        The duration string may include days (D), hours (H), minutes (M), and seconds (S)
+        in any combination and order, separated by optional spaces. Missing units are treated as zero.
+
+        Parameters
+        ----------
+        duration_str : str
+            Duration string to parse ('3D 2H1M3S', '45S', '1H 30M').
+
+        Returns
+        -------
+        int
+            Total duration in seconds.
+
+        Raises
+        ------
+        DurationFormatError
+            If the input string does not match the expected format.
+        """
+        pattern = r'(?:(\d+)D)?\s*(?:(\d+)H)?\s*(?:(\d+)M)?\s*(?:(\d+)S)?'
+        try:
+            match = re.fullmatch(pattern, self._duration.strip())
+            if not match:
+                raise DurationFormatError(f"Invalid duration format: '{self.duration}' (expected e.g. '3D 2H1M3S')")
+        except Exception as e:
+            raise DurationFormatError(f"Invalid duration format: '{self._duration}' (expected e.g. '3D 2H1M3S')") from e
+
+        days, hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
+        return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 @dataclass
