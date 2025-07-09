@@ -4,7 +4,7 @@ SedTRAILS CLI interface.
 
 import typer
 from pathlib import Path
-from sedtrails.configuration_interface.configuration_controller import ConfigurationController
+from sedtrails.configuration_interface.configuration_controller import ConfigurationController, YAMLConfigValidator
 from sedtrails.particle_tracer.simulation import Simulation
 
 
@@ -50,6 +50,35 @@ def load_config(
         return config
     except Exception as e:
         typer.echo(f'Error loading configuration: {e}')
+        raise typer.Exit(code=1) from e
+
+
+@app.command('create-config')
+def create_config_template(
+    output_file: str = typer.Option(
+        './sedtrails-template.yml',
+        '--output',
+        '-o',
+        help='Path to the output configuration template file.',
+    ),
+):
+    """
+    Create a configuration template file for SedTRAILS.
+
+    Parameters
+    ----------
+      output_file : Path
+         Path to the output configuration template file.
+    """
+    try:
+        # Use importlib.resources to get the schema file from the installed package
+        from importlib import resources
+
+        with resources.as_file(resources.files('sedtrails.config').joinpath('main.schema.json')) as schema_path:
+            validator = YAMLConfigValidator(str(schema_path))
+            validator.create_config_template(output_file)
+    except Exception as e:
+        typer.echo(f'Error creating configuration template: {e}')
         raise typer.Exit(code=1) from e
 
 
