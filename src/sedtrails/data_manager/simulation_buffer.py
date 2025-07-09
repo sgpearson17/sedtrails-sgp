@@ -93,3 +93,26 @@ class SimulationDataBuffer:
         ds['x'] = ('time', data['x'])
         ds['y'] = ('time', data['y'])
         return xu.UgridDataset(ds)
+
+    def write_to_disk(self, node_x, node_y, face_node_connectivity, fill_value, writer, filename):
+        """
+        Write the current buffer to disk as a UGRID NetCDF file and clear the buffer.
+
+        Parameters
+        ----------
+        node_x : np.ndarray
+            Mesh node x-coordinates.
+        node_y : np.ndarray
+            Mesh node y-coordinates.
+        face_node_connectivity : np.ndarray
+            Mesh face connectivity.
+        fill_value : int
+            Fill value for unused nodes.
+        writer : NetCDFWriter
+            Writer instance to handle NetCDF output.
+        filename : str
+            Name of the output NetCDF file.
+        """
+        ugrid_ds = self.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
+        writer.write(ugrid_ds, filename)
+        self.clear()
