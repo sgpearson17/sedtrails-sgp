@@ -292,10 +292,3 @@ class Simulation:
             save_path=OUTPUT_DIR,
         )
         print(f'Trajectory plot saved to {OUTPUT_DIR}')
-
-
-if __name__ == '__main__':
-    config_file = '/Users/mgarciaalvarez/devel/sedtrails/examples/config.example.yaml'
-
-    simulation = Simulation(config_file)
-    simulation.run()
