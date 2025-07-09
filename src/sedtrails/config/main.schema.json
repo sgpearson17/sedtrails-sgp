@@ -104,13 +104,13 @@
     "input_model_type": {
       "type": "string",
       "enum": [
-        "dfm",
+        "fm_netcdf",
         "d3d4",
         "xbeach",
         "aeolis"
       ],
-      "default": "dfm",
-      "description": "'dfm' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+      "default": "fm_netcdf",
+      "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
     },
     "fm_format_type": {
       "type": "string",
@@ -139,8 +139,8 @@
         },
         "input_model": {
           "$ref": "#/definitions/input_model_type",
-          "default": "dfm",
-          "description": "input model type (dfm, d3d4, xbeach, aeolis)"
+          "default": "fm_netcdf",
+          "description": "input model type (fm_netcdf, d3d4, xbeach, aeolis)"
         },
         "n_runs": {
           "type": "integer",
@@ -301,7 +301,6 @@
       "properties": {
         "start_time": {
           "type": "string",
-          "default": null,
           "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
         },
         "duration": {
@@ -350,7 +349,7 @@
               "default": 2650.0,
               "description": "particle density [kg/m3] (quartz)"
             },
-            "friction_angel": {
+            "friction_angle": {
               "type": "number",
               "default": 30.0,
               "description": "friction angle of sediment (30 deg default)"
@@ -437,7 +436,7 @@
               "description": "velocity transport",
               "properties": {
                 "formulation": {
-                  "$ref": "#/definitioins/formulation_type",
+                  "$ref": "#/definitions/formulation_type",
                   "default": "soulsby",
                   "description": "sand velocity transport formulation"
                 },

@@ -5,6 +5,7 @@ SedTRAILS CLI interface.
 import typer
 from pathlib import Path
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
+from sedtrails.particle_tracer.simulation import Simulation
 
 
 app = typer.Typer(help='Sedtrails: Configure, run, and analyze sediment particle tracking.')
@@ -13,7 +14,7 @@ app = typer.Typer(help='Sedtrails: Configure, run, and analyze sediment particle
 # Subcommand to load and validate a YAML configuration file.
 @app.command('load-config')
 def load_config(
-    config_file: Path = typer.Option(
+    config_file: str = typer.Option(
         'sedtrails.yml',
         '--config',
         '-c',
@@ -36,12 +37,12 @@ def load_config(
 
     """
 
-    controller = ConfigurationController()
+    controller = ConfigurationController(config_file)
 
     try:
         typer.echo(f"Loading and validating configuration from '{config_file}'...")
         # loads file and validates it
-        controller.read_config(str(config_file))
+        controller.load_config(str(config_file))
         config = controller.get_config()
         # config = {'setting1': 'value1', 'setting2': 'value2'}
         typer.echo('Configuration validated successfully:')
@@ -55,13 +56,13 @@ def load_config(
 # Subcommand to run a simulation; it also validates the configuration.
 @app.command('run-simulation')
 def run_simulation(
-    config_file: Path = typer.Option(
+    config_file: str = typer.Option(
         'sedtrails.yml',
         '--config',
         '-c',
         help='Path to the SedTRAILS configuration file.',
     ),
-    output_file: Path = typer.Option(
+    output_file: str = typer.Option(
         'sedtrails.nc',
         '--output',
         '-o',
@@ -84,11 +85,15 @@ def run_simulation(
       sedtrails run-simulation --config my_config.yml --output results.nc
 
     """
+
+    # lazy initialization of the Simulation class
+    simulation = Simulation(config_file)
+
     # First, load and validate the configuration.
     try:
         typer.echo(f"Validating configuration from '{config_file}'...")
         # from config_validator import ConfigValidator
-        # config = ConfigValidator.validate(config_file)
+        simulation.config  # This will trigger the validation
         typer.echo('Configuration validated successfully.')
     except Exception as e:
         typer.echo(f'Error validating configuration: {e}')
@@ -97,7 +102,7 @@ def run_simulation(
     # Run the simulation with the validated configuration.
     try:
         typer.echo('Running simulation...')
-        pass
+        simulation.run()
         typer.echo(f"Simulation complete. Output saved to '{output_file}'.")
     except Exception as e:
         typer.echo(f'Error running simulation: {e}')

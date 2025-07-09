@@ -8,6 +8,7 @@ import sys
 import xugrid as xu
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
+
 class MemoryManager:
     """
     Manages memory usage for the simulation data buffer. If the buffer exceeds the memory limit,
@@ -69,7 +70,7 @@ class MemoryManager:
         Enforce the memory limit: if over, write buffer to NetCDF and clear it.
 
         Currently the output files are split into chunks of 512 MB: sim_buffer_0.nc,
-        sim_buffer_1.nc, etc. This will prevent any data loss due to memory overflow. 
+        sim_buffer_1.nc, etc. This will prevent any data loss due to memory overflow.
         In the future we need to check if this creates issues in managing many files.
 
         Parameters
@@ -80,18 +81,18 @@ class MemoryManager:
             Mesh info for NetCDF writing.
         """
         if self.buffer_size_bytes(sim_buffer.buffer) > self.max_bytes:
-            filename = f"sim_buffer_{self.file_counter}.nc"
+            filename = f'sim_buffer_{self.file_counter}.nc'
             ugrid_ds = sim_buffer.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
             self.writer.write(ugrid_ds, filename)
             sim_buffer.clear()
             self.file_counter += 1
 
-    def merge_output_files(self, merged_filename="merged_output.nc"):
+    def merge_output_files(self, merged_filename='merged_output.nc'):
         """
         Merge all sim_buffer_*.nc files in the output directory into a single NetCDF file.
 
-        Merging is based on the assumption that all files have the same structure and can be 
-        combined by coordinates, e.g., time, observation index, etc. This way, the merged 
+        Merging is based on the assumption that all files have the same structure and can be
+        combined by coordinates, e.g., time, observation index, etc. This way, the merged
         file "merged_output.nc" will contain the entire simulation duration and all particles.
         Each file chunk should have non-overlapping coordinate values.
 
@@ -100,8 +101,8 @@ class MemoryManager:
         merged_filename : str
             Name of the merged output file.
         """
-        files = sorted(self.writer.output_dir.glob("sim_buffer_*.nc"))
+        files = sorted(self.writer.output_dir.glob('sim_buffer_*.nc'))
         if not files:
-            raise FileNotFoundError("No sim_buffer_*.nc files found to merge.")
-        ds = xu.open_mfdataset(files, combine="by_coords")
-        ds.ugrid.to_netcdf(self.writer.output_dir / merged_filename)            
+            raise FileNotFoundError('No sim_buffer_*.nc files found to merge.')
+        ds = xu.open_mfdataset(files, combine='by_coords')
+        ds.ugrid.to_netcdf(self.writer.output_dir / merged_filename)

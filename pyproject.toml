@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sedtrails"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
   "jsonschema",
   "numpy",
@@ -13,7 +13,7 @@ dependencies = [
   "matplotlib",
   "xarray",
   "typer",
-  "xugrid"
+  "xugrid",
 ]
 requires-python = ">=3.12"
 authors = [
@@ -47,9 +47,7 @@ dev = [
 ]
 
 [tool.hatch.build]
-include = [
-  "src/sedtrails/config/schema.json",
-]
+include = ["src/sedtrails/config/schema.json"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sedtrails"]

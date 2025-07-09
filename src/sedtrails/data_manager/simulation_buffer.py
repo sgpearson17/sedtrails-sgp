@@ -1,6 +1,7 @@
 import xugrid as xu
 import numpy as np
 
+
 class SimulationDataBuffer:
     """
     Temporarily stores chunks of simulation data in memory, while they wait to be written to a simulation file.
@@ -16,10 +17,10 @@ class SimulationDataBuffer:
         Initialize an empty simulation data buffer.
         """
         self.buffer = {
-            "particle_id": [],
-            "time": [],
-            "x": [],
-            "y": [],
+            'particle_id': [],
+            'time': [],
+            'x': [],
+            'y': [],
             # Add other fields as needed (e.g., velocity, status, etc.)
         }
 
@@ -38,10 +39,10 @@ class SimulationDataBuffer:
         y : float
             Y-coordinate of the particle.
         """
-        self.buffer["particle_id"].append(particle_id)
-        self.buffer["time"].append(time)
-        self.buffer["x"].append(x)
-        self.buffer["y"].append(y)
+        self.buffer['particle_id'].append(particle_id)
+        self.buffer['time'].append(time)
+        self.buffer['x'].append(x)
+        self.buffer['y'].append(y)
 
     def clear(self):
         """
@@ -82,16 +83,13 @@ class SimulationDataBuffer:
             UGRID-compliant dataset containing the buffered simulation data.
         """
         mesh = xu.Ugrid2d(
-            node_x=node_x,
-            node_y=node_y,
-            face_node_connectivity=face_node_connectivity,
-            fill_value=fill_value
+            node_x=node_x, node_y=node_y, face_node_connectivity=face_node_connectivity, fill_value=fill_value
         )
         ds = mesh.to_dataset()
         data = self.get_data()
         # Use 'time' as the coordinate and dimension
-        ds = ds.assign_coords(time=("time", data["time"]))
-        ds["particle_id"] = ("time", data["particle_id"])
-        ds["x"] = ("time", data["x"])
-        ds["y"] = ("time", data["y"])
+        ds = ds.assign_coords(time=('time', data['time']))
+        ds['particle_id'] = ('time', data['particle_id'])
+        ds['x'] = ('time', data['x'])
+        ds['y'] = ('time', data['y'])
         return xu.UgridDataset(ds)

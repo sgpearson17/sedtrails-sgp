@@ -57,12 +57,12 @@ format_config = {  # this should come from a config file or similar
 }
 
 format_converter = FormatConverter(format_config)
-sedtrails_data = format_converter.convert_to_sedtrails_data()
+sedtrails_data = format_converter.convert_to_sedtrails()
 print(f'Data conversion completed in {time.time() - start_time:.2f} seconds')
 
 # Add physics calculations to the SedtrailsData
 physics_converter = PhysicsConverter()
-physics_converter.add_physics_to_sedtrails_data(sedtrails_data)
+physics_converter.convert_physics(sedtrails_data)
 
 # ===== STEP 2: Initialize Particle and Position Calculator =====
 print('\n=== STEP 2: Initializing Particle and Flow Field ===')

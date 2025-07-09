@@ -95,13 +95,13 @@ class FormatConverter:
 
         return self._format_plugin
 
-    def convert_to_sedtrails_data(self) -> SedtrailsData:
+    def convert_to_sedtrails(self) -> SedtrailsData:
         """
         Converts dataset to SedtrailsData format for all time steps.
 
         Returns:
         --------
-        SedtrailsData
+        SedtrailsData:
             Data in SedtrailsData format with time as the first dimension for
             time-dependent variables, with time in seconds since reference_date
         """
@@ -128,4 +128,4 @@ if __name__ == '__main__':
     }
 
     converter = FormatConverter(conf)
-    converter.convert_to_sedtrails_data()
+    converter.convert_to_sedtrails()

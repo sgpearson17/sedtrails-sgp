@@ -1,8 +1,8 @@
 general:
-  input_model: "dfm"
+  input_model: "fm_netcdf"
 folder_settings:
-  input_data: "../sample-data/inlet_sedtrails.nc"
-  output_dir: "../output"
+  input_data: "./sample-data/inlet_sedtrails.nc"
+  output_dir: "./output"
 time:
   timestep: '30S'
   duration: '6H18M18S'
@@ -10,12 +10,13 @@ particles:
   sand:
     grain_size: 0.0005
 particle_seeding:
-  release_start: ''
-  partciles_per_timestep: 1
+  release_start: '2025-06-18 13:00:00'
+  partciles_per_timestep: 1. # TODO: fix type in schema
+  # TODO: provide a config template with all defaults
   strategy: 
     point:
       points: 
-        - "400000,170000"
+        - "40000,17000"
 output:
   store_tracks: true
 visualization:
