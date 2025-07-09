@@ -102,24 +102,34 @@
       "description": "'rk4' = Runge Kutta 4, 'euler' = Euler method"
     },
     "input_model_type": {
-      "type": "string",
-      "enum": [
-        "fm_netcdf",
-        "d3d4",
-        "xbeach",
-        "aeolis"
-      ],
-      "default": "fm_netcdf",
-      "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
-    },
-    "fm_format_type": {
-      "type": "string",
-      "enum": [
-        "sedtrails_nc",
-        "merged_nc"
-      ],
-      "default": "sedtrails_nc",
-      "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "fm_netcdf",
+            "d3d4",
+            "xbeach",
+            "aeolis"
+          ],
+          "default": "fm_netcdf",
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+        },
+        "reference_date": {
+          "type": "string",
+          "default": "1970-01-01",
+          "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
+        }
+      },
+      "fm_format_type": {
+        "type": "string",
+        "enum": [
+          "sedtrails_nc",
+          "merged_nc"
+        ],
+        "default": "sedtrails_nc",
+        "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+      }
     }
   },
   "type": "object",
@@ -128,27 +138,26 @@
       "type": "object",
       "properties": {
         "preprocess": {
-          "type": "integer",
-          "default": 1,
-          "description": "1 = pre-process, 0 = use existing files with default names"
+          "type": "boolean",
+          "default": true,
+          "description": "true: pre-process; false: use existing files with default names"
         },
         "compute_pathways": {
-          "type": "integer",
-          "default": 1,
-          "description": "(re)run everything = 1, load existing pathways = 0;"
+          "type": "boolean",
+          "default": true,
+          "description": "true: (re)run everything; false: load existing pathways"
         },
         "input_model": {
           "$ref": "#/definitions/input_model_type",
-          "default": "fm_netcdf",
-          "description": "input model type (fm_netcdf, d3d4, xbeach, aeolis)"
+          "description": "input model for the simulations (e.g., fm_netcdf, d3d4, xbeach, aeolis)"
         },
         "n_runs": {
           "type": "integer",
           "default": 1
         },
         "display_input_metadata": {
-          "type": "integer",
-          "default": 0,
+          "type": "boolean",
+          "default": false,
           "description": "display all metadata"
         },
         "numerical_scheme": {
