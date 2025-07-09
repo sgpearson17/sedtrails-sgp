@@ -24,11 +24,12 @@ class Simulation:
             Path to the configuration file.
         """
         self._config_file = config_file
-        self._controller = ConfigurationController(self._config_file)
+
         self._start_time = None
         self._config_is_read = False
 
-        # Lazy initialization of converters
+        # Lazy initialization of controllers and converters
+        self._controller = ConfigurationController(self._config_file)
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = ''
