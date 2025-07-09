@@ -11,7 +11,8 @@ particles:
     grain_size: 0.0005
 particle_seeding:
   release_start: '2025-06-18 13:00:00'
-  partciles_per_timestep: 1
+  partciles_per_timestep: 1. # TODO: fix type in schema
+  # TODO: provide a config template with all defaults
   strategy: 
     point:
       points: 
