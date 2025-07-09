@@ -65,44 +65,18 @@ class MemoryManager:
                     size += sum(sys.getsizeof(item) for item in v)
         return size
 
-    def enforce_limit(self, sim_buffer, node_x, node_y, face_node_connectivity, fill_value=-1):
+    def is_limit_exceeded(self, buffer):
         """
-        Enforce the memory limit: if over, write buffer to NetCDF and clear it.
-
-        Currently the output files are split into chunks of 512 MB: sim_buffer_0.nc,
-        sim_buffer_1.nc, etc. This will prevent any data loss due to memory overflow.
-        In the future we need to check if this creates issues in managing many files.
+        Check if the buffer exceeds the memory limit.
 
         Parameters
         ----------
-        sim_buffer : SimulationDataBuffer
-            The simulation data buffer instance from simulation_buffer.py.
-        node_x, node_y, face_node_connectivity, fill_value : arrays/values
-            Mesh info for NetCDF writing.
-        """
-        if self.buffer_size_bytes(sim_buffer.buffer) > self.max_bytes:
-            filename = f'sim_buffer_{self.file_counter}.nc'
-            ugrid_ds = sim_buffer.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
-            self.writer.write(ugrid_ds, filename)
-            sim_buffer.clear()
-            self.file_counter += 1
+        buffer : dict
+            The simulation data buffer (dict of lists or numpy arrays).
 
-    def merge_output_files(self, merged_filename='merged_output.nc'):
-        """
-        Merge all sim_buffer_*.nc files in the output directory into a single NetCDF file.
-
-        Merging is based on the assumption that all files have the same structure and can be
-        combined by coordinates, e.g., time, observation index, etc. This way, the merged
-        file "merged_output.nc" will contain the entire simulation duration and all particles.
-        Each file chunk should have non-overlapping coordinate values.
-
-        Parameters
-        ----------
-        merged_filename : str
-            Name of the merged output file.
-        """
-        files = sorted(self.writer.output_dir.glob('sim_buffer_*.nc'))
-        if not files:
-            raise FileNotFoundError('No sim_buffer_*.nc files found to merge.')
-        ds = xu.open_mfdataset(files, combine='by_coords')
-        ds.ugrid.to_netcdf(self.writer.output_dir / merged_filename)
+        Returns
+        -------
+        bool
+            True if buffer size exceeds max_bytes, False otherwise.
+        """       
+        return self.buffer_size_bytes(buffer) > self.max_bytes
