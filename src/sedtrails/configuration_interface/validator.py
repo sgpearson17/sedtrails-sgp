@@ -270,19 +270,3 @@ class YAMLConfigValidator:
 
         except Exception as e:
             raise YamlOutputError(f'Error writing config template to file: {e}') from e
-
-
-if __name__ == '__main__':
-    # Example usage
-
-    validator = YAMLConfigValidator('./src/sedtrails/config/main.schema.json')
-
-    # print('validator.schema_content:', validator.schema_content)
-
-    # r = validator.validate_yaml('./examples/config.example.yaml')
-
-    # print('Validated configuration:', r)
-    validated_config = validator.validate_yaml('./examples/config.example.yaml')
-
-    # validator.export_schema_to_yaml('./examples/schema-test.yaml')
-    validator.create_config_template('./examples/config_template.yaml')
