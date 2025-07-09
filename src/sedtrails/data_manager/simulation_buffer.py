@@ -1,6 +1,6 @@
 import xugrid as xu
 import numpy as np
-
+from pathlib import Path
 
 class SimulationDataBuffer:
     """
@@ -116,3 +116,27 @@ class SimulationDataBuffer:
         ugrid_ds = self.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
         writer.write(ugrid_ds, filename)
         self.clear()
+
+    @staticmethod
+    def merge_output_files(output_dir, merged_filename='merged_output.nc'):
+        """
+        Merge all .sim_buffer_*.nc files in the output directory into a single NetCDF file.
+
+        Merging is based on the assumption that all files have the same structure and can be
+        combined by coordinates, e.g., time, observation index, etc. This way, the merged
+        file will contain the entire simulation duration and all particles.
+        Each file chunk should have non-overlapping coordinate values.
+
+        Parameters
+        ----------
+        output_dir : Path or str
+            Directory containing the intermediate NetCDF files.
+        merged_filename : str
+            Name of the merged output file.
+        """
+        output_dir = Path(output_dir)
+        files = sorted(output_dir.glob('.sim_buffer_*.nc'))
+        if not files:
+            raise FileNotFoundError('No .sim_buffer_*.nc files found to merge.')
+        ds = xu.open_mfdataset(files, combine='by_coords')
+        ds.ugrid.to_netcdf(output_dir / merged_filename)        
