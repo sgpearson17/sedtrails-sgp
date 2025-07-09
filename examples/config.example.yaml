@@ -15,7 +15,7 @@ particle_seeding:
   strategy: 
     point:
       points: 
-        - "400000,170000"
+        - "40000,17000"
 output:
   store_tracks: true
 visualization:
