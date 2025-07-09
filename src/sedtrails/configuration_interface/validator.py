@@ -69,7 +69,6 @@ class YAMLConfigValidator:
 
     def _apply_defaults(self, schema_content: Dict[str, Any], config_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-
         Recursively applies default values from the schema to the data dictionary.
         If a default is specified as a dictionary with "$ref" and transformation keys,
         it is computed accordingly.
@@ -98,9 +97,15 @@ class YAMLConfigValidator:
             properties = schema_content.get('properties', {})
             for key, prop_schema in properties.items():
                 if key not in config_data:
+                    # Create missing property with default value
                     if 'default' in prop_schema:
                         config_data[key] = prop_schema['default']
+                    elif prop_schema.get('type') == 'object':
+                        # Create empty object and apply defaults recursively
+                        config_data[key] = {}
+                        config_data[key] = self._apply_defaults(prop_schema, config_data[key])
                 else:
+                    # Property exists, apply defaults recursively
                     config_data[key] = self._apply_defaults(prop_schema, config_data[key])
 
         elif schema_type == 'array' and isinstance(config_data, list):
@@ -192,6 +197,80 @@ class YAMLConfigValidator:
         else:
             return schema_yaml
 
+    def export_config_to_yaml(self, output_file: str = './example.sedtrails.yaml') -> None:
+        """
+        Exports the validated configuration as a valid YAML string.
+
+        Parameters
+        ----------
+        output_file : str
+            path to file where the YAML configuration is written.
+
+        Returns
+        -------
+        The configuration is written to that file.
+
+        Raises
+        ------
+        YamlOutputError
+            If there is an error while writing the configuration to the file.
+        """
+
+        self._apply_defaults(self.schema_content, self.config)
+        print(f'Applied defaults to config: {self.config}')
+
+        config_yaml: str = yaml.dump(self.config, sort_keys=False)
+
+        print(f'config yaml: {config_yaml}')
+        if output_file:
+            try:
+                with open(output_file, 'w') as f:
+                    f.write(config_yaml)
+            except Exception as e:
+                raise YamlOutputError(f'Error writing config to file: {e}') from e
+
+    def create_config_template(self, output_file: str = './sedtrails.template.yaml') -> None:
+        """
+        Creates a configuration template with all schema defaults applied.
+
+        Parameters
+        ----------
+        output_file : str
+            Path to file where the YAML configuration template is written.
+
+        Raises
+        ------
+        YamlOutputError
+            If there is an error while writing the configuration to the file.
+        """
+
+        try:
+            # Create empty config and apply all schema defaults
+            empty_config = {}
+            config_with_all_defaults = self._apply_defaults(self.schema_content, empty_config)
+
+            # Create output directory if needed
+            from pathlib import Path
+
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Convert to YAML
+            config_yaml = yaml.dump(
+                config_with_all_defaults, default_flow_style=False, sort_keys=False, indent=2, allow_unicode=True
+            )
+
+            # Write to file with header
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('# SedTRAILS Configuration Template\n')
+                f.write('# Generated using defaults for configuration properties\n\n')
+                f.write(config_yaml)
+
+            print(f'Configuration template exported to: {output_path.absolute()}')
+
+        except Exception as e:
+            raise YamlOutputError(f'Error writing config template to file: {e}') from e
+
 
 if __name__ == '__main__':
     # Example usage
@@ -200,6 +279,10 @@ if __name__ == '__main__':
 
     # print('validator.schema_content:', validator.schema_content)
 
-    r = validator.validate_yaml('./examples/config.example.yaml')
+    # r = validator.validate_yaml('./examples/config.example.yaml')
 
-    print('Validated configuration:', r)
+    # print('Validated configuration:', r)
+    validated_config = validator.validate_yaml('./examples/config.example.yaml')
+
+    # validator.export_schema_to_yaml('./examples/schema-test.yaml')
+    validator.create_config_template('./examples/config_template.yaml')
