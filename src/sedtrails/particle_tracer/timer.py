@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import re
 from sedtrails.exceptions.exceptions import DateFormatError, DurationFormatError
-from typing import Union
 
 
 class Duration:

@@ -5,7 +5,6 @@ from sedtrails.transport_converter.format_converter import FormatConverter, Sedt
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
-from sedtrails.particle_tracer.position_calculator import ParticlePositionCalculator
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from typing import Any
@@ -147,7 +146,7 @@ class Simulation:
         retriever.flow_field_name = 'suspended_velocity'  # TODO: shouldn't this be read from config?
 
         initial_time = sedtrails_data.times[2]  #  returns seconds since reference date as floats
-        initial_flow = retriever.get_flow_field(initial_time)  # expects secondes since reference date
+        # initial_flow = retriever.get_flow_field(initial_time)  # expects secondes since reference date
 
         # # retrieve start time from configuration or use default
         # START_TIME = self._controller.get('time.start_time')
