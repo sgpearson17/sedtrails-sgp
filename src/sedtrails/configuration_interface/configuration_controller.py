@@ -24,7 +24,7 @@ class Controller(ABC):
     # have a method that returns the configuration values that are only relevant for the particle tracer.
 
     @abstractmethod
-    def read_config(self, config_file: str) -> None:
+    def load_config(self, config_file: str) -> None:
         """
         Reads the configuration file and applies default values.
         """
@@ -50,15 +50,29 @@ class Controller(ABC):
 class ConfigurationController(Controller):
     """
     A controller for managing the configuration of the simulation.
+
+    Attributes
+    ----------
+    config : str
+        The path to the configuration file.
+    config_data : dict
+        The configuration data loaded from the file.
     """
 
-    def __init__(self):
-        self.config_data = {}
-        self._config_file: str | None = None
-
-    def read_config(self, config_file: str) -> None:
+    def __init__(self, config_file: str) -> None:
         """
-        Reads the configuration file, validated its contents and set it.
+        Initializes the ConfigurationController with a configuration file.
+        Parameters
+        ----------
+        config_file : str
+            The path to the configuration file to read.
+        """
+        self.config: str = config_file
+        self.config_data = {}
+
+    def load_config(self, config_file: str) -> None:
+        """
+        Updates the configuraton based on a configuration file, validated its contents and set it.
 
         Parameters
         ----------
@@ -66,8 +80,10 @@ class ConfigurationController(Controller):
             The path to the configuration file to read.
         """
 
-        if self._config_file is None:
-            self._config_file = config_file
+        if self.config is None and config_file is None:
+            raise ValueError('Configuration file path must be provided to the ConfigurationController.')
+        else:
+            self.config = config_file
 
         with pkg_resources.as_file(
             pkg_resources.files('sedtrails.config').joinpath('main.schema.json')
@@ -92,9 +108,8 @@ class ConfigurationController(Controller):
         dict
             The current configuration.
         """
-
         if not self.config_data:
-            self.read_config(self._config_file)
+            self.load_config(self.config)
 
         return self.config_data
 
@@ -138,7 +153,7 @@ if __name__ == '__main__':
     # Example usage
     controller = ConfigurationController()
     try:
-        controller.read_config('/Users/mgarciaalvarez/devel/sedtrails/examples/config.example.yaml')
+        controller.load_config('/Users/mgarciaalvarez/devel/sedtrails/examples/config.example.yaml')
         config = controller.get_config()
         # print(config)
     except Exception as e:
