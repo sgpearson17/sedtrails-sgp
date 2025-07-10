@@ -35,7 +35,7 @@ class DataManager:
 
         self.output_dir = output_dir
         self.data_buffer = SimulationDataBuffer()
-        self.memory_manager = MemoryManager(max_bytes=max_bytes)
+        self.memory_manager = MemoryManager(output_dir=output_dir, max_bytes=max_bytes)
         self.writer = NetCDFWriter(output_dir)
         self._mesh_info = None
         self.file_counter = 0
@@ -101,4 +101,4 @@ class DataManager:
         merged_filename : str
             Name of the merged output file.
         """
-        SimulationDataBuffer.merge_output_files(self.output_dir, merged_filename)
+        SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
