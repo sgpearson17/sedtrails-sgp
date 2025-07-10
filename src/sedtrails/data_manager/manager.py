@@ -8,7 +8,7 @@ class DataManager:
     and memory checks.
     """
 
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, max_bytes=512 * 1024 * 1024):
         """
         Initialize the DataManager with a output data directory.
         All other resources are initialized lazily.
@@ -101,4 +101,4 @@ class DataManager:
         merged_filename : str
             Name of the merged output file.
         """
-        self.memory_manager.merge_output_files(merged_filename)        
+        SimulationDataBuffer.merge_output_files(self.output_dir, merged_filename)
