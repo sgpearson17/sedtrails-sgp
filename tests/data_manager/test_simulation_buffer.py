@@ -118,7 +118,7 @@ def test_merge_output_files(tmp_path):
         buffer2.add(i, float(i), float(i), float(i))
     buffer2.write_to_disk(node_x, node_y, face_node_connectivity, fill_value, writer, ".sim_buffer_1.nc")
     
-    # Debug: Print directory contents
+    # Make sure we get the correct output directory
     output_dir = writer.output_dir
     # Merge the files
     SimulationDataBuffer.merge_output_files(output_dir, "merged_test.nc")    
