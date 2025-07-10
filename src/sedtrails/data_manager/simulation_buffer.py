@@ -1,3 +1,4 @@
+import os
 import xugrid as xu
 import numpy as np
 from pathlib import Path
@@ -135,12 +136,12 @@ class SimulationDataBuffer:
             Name of the merged output file.
         """
         output_dir = Path(output_dir)
-        
-        # Use more permissive pattern or the absolute path with explicit dot
-        files = sorted(output_dir.glob('.sim_buffer*.nc'))  # Removed underscore
-        
+        print("Output dir:", output_dir)
+        files = sorted(
+            output_dir / f for f in os.listdir(output_dir)
+            if f.startswith('.sim_buffer_') and f.endswith('.nc')
+        )
         if not files:
             raise FileNotFoundError('No .sim_buffer_*.nc files found to merge.')
-        
         ds = xu.open_mfdataset(files, combine='by_coords')
         ds.ugrid.to_netcdf(output_dir / merged_filename)
