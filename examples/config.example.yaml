@@ -1,5 +1,7 @@
 general:
-  input_model: "fm_netcdf"
+  input_model: 
+    format: "fm_netcdf"
+    reference_date: "1970-01-01"  # Default reference date for the input model
 folder_settings:
   input_data: "./sample-data/inlet_sedtrails.nc"
   output_dir: "./output"
@@ -11,7 +13,7 @@ particles:
     grain_size: 0.0005
 particle_seeding:
   release_start: '2025-06-18 13:00:00'
-  partciles_per_timestep: 1. # TODO: fix type in schema
+  particles_per_timestep: 1.
   # TODO: provide a config template with all defaults
   strategy: 
     point:

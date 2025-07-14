@@ -147,17 +147,3 @@ class ConfigurationController(Controller):
             if not isinstance(config_data, dict):
                 return config_data
         return config_data
-
-
-if __name__ == '__main__':
-    # Example usage
-    controller = ConfigurationController()
-    try:
-        controller.load_config('/Users/mgarciaalvarez/devel/sedtrails/examples/config.example.yaml')
-        config = controller.get_config()
-        # print(config)
-    except Exception as e:
-        print(f'Error: {e}')
-
-    timestep = controller.get('time.timestep')
-    print(f'Timestep: {timestep}')

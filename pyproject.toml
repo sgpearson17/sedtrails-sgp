@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sedtrails"
-version = "0.0.2"
+dynamic = ["version"]
+description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
 dependencies = [
   "jsonschema",
   "numpy",
@@ -36,6 +37,8 @@ classifiers = [
   "Programming Language :: Python",
 ]
 
+]
+
 [project.optional-dependencies]
 cli = ["typer"]
 dev = [
@@ -46,6 +49,9 @@ dev = [
   "sphinx-rtd-theme",
 ]
 
+
+[tool.hatch.version]
+path = "src/sedtrails/__version__.py"
 [tool.hatch.build]
 include = ["src/sedtrails/config/schema.json"]
 

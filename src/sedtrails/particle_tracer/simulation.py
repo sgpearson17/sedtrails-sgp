@@ -40,9 +40,9 @@ class Simulation:
 
         format_config = {
             'input_file': self._controller.get('folder_settings.input_data'),
-            'input_format': self._controller.get('general.input_model'),  # Specify the input format
+            'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get(
-                'reference_date', '1970-01-01'
+                'general.input_model.reference_date'
             ),  # TODO: shall this be added to the json schema??
         }
 
@@ -291,3 +291,8 @@ class Simulation:
             save_path=OUTPUT_DIR,
         )
         print(f'Trajectory plot saved to {OUTPUT_DIR}')
+
+
+if __name__ == '__main__':
+    sim = Simulation(config_file='examples/config.example.yaml')
+    sim.run()
