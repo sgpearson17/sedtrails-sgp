@@ -4,7 +4,7 @@
 [![TUDelft DCC](https://img.shields.io/badge/tu_delft-DCC-black?style=flat&label=TU%20Delft&labelColor=%23000000%20&color=%2300A6D6)](https://dcc.tudelft.nl)
 
 # SedTRAILS
-Sediment TRAnsport vIsualization and Lagrangian Simulator.
+**Sed**iment **TRA**nsport v**I**sualization and **L**agrangian **S**imulator.
 
 ## Installation
 
