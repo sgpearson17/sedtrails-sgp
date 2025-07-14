@@ -40,6 +40,34 @@ class DataManager:
         self._mesh_info = None
         self.file_counter = 0
 
+    def _cleanup_chunk_files(self):
+        """
+        Remove all intermediate chunk files (.sim_buffer_*.nc) from the output directory.
+        
+        This is called automatically by finalize() when cleanup_chunks=True.
+        """
+        import os
+        from pathlib import Path
+        
+        output_dir = Path(self.writer.output_dir)
+        
+        # Find all chunk files
+        chunk_files = [
+            output_dir / f for f in os.listdir(output_dir)
+            if f.startswith('.sim_buffer_') and f.endswith('.nc')
+        ]
+        
+        # Remove each chunk file
+        for chunk_file in chunk_files:
+            try:
+                chunk_file.unlink()  # Delete the file
+            except FileNotFoundError:
+                # File already deleted, ignore
+                pass
+            except Exception as e:
+                # Log warning but don't fail the operation
+                print(f"Warning: Could not delete chunk file {chunk_file}: {e}")
+
     def set_mesh(self, node_x, node_y, face_node_connectivity, fill_value=-1):
         """
         Set or update the mesh information for output.
@@ -102,3 +130,65 @@ class DataManager:
             Name of the merged output file.
         """
         SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
+
+    def dump(self, merge=True, merged_filename="final_output.nc", cleanup_chunks=True):
+        """
+        Finalize all data operations: write current buffer if it contains data and optionally merge all files.
+        
+        This is the main function to call at the end of a simulation to handle all
+        file I/O operations. It abstracts away the details of writing buffers and
+        merging multiple chunk files.
+
+        Parameters
+        ----------
+        merge : bool, default=True
+            Whether to merge all chunk files into a single output file.
+        merged_filename : str, default="final_output.nc"
+            Name of the final merged output file.
+        cleanup_chunks : bool, default=True
+            Whether to delete intermediate chunk files after merging.
+            Only applies when merge=True.            
+
+        Returns
+        -------
+        str
+            Path to the final output file (merged file if merge=True, otherwise the last chunk file).
+
+        Examples
+        --------
+        >>> dm = DataManager("output/")
+        >>> dm.set_mesh(node_x, node_y, face_connectivity)
+        >>> # ... add simulation data ...
+        >>> final_file = dm.dump()  # Automatically writes buffer if needed and merges
+        >>> 
+        >>> # Keep chunk files after merging
+        >>> final_file = dm.dump(cleanup_chunks=False)
+        >>>      
+        >>> # Or just write without merging
+        >>> final_file = dm.dump(merge=False)
+        """
+        if self._mesh_info is None:
+            raise ValueError("Mesh information must be set before finalizing data.")
+        
+        final_output_path = None
+        
+        # Check if buffer contains data and write it if so
+        buffer_data = self.data_buffer.get_data()
+        if buffer_data['particle_id'].size > 0:
+            self.write()
+        
+        # Merge all chunk files into a single file
+        if merge:
+            SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
+            final_output_path = self.writer.output_dir / merged_filename
+
+            # Clean up intermediate chunk files after successful merge
+            if cleanup_chunks:
+                self._cleanup_chunk_files()            
+        else:
+            # Return the path to the last written file
+            if self.file_counter > 0:
+                last_file = f".sim_buffer_{self.file_counter - 1}.nc"
+                final_output_path = self.writer.output_dir / last_file
+        
+        return str(final_output_path) if final_output_path else None
