@@ -1,7 +1,7 @@
-import pytest
 import numpy as np
 import xugrid as xu
 from sedtrails.data_manager.manager import DataManager
+
 
 def create_test_mesh():
     """
@@ -12,6 +12,7 @@ def create_test_mesh():
     face_node_connectivity = np.array([[0, 1, 2, 3]])
     fill_value = -1
     return node_x, node_y, face_node_connectivity, fill_value
+
 
 def test_add_data_and_write(tmp_path):
     """
@@ -24,15 +25,16 @@ def test_add_data_and_write(tmp_path):
     dm.add_data(1, 0.0, 10.0, 20.0)
     dm.add_data(2, 1.0, 11.0, 21.0)
     # Write to disk
-    dm.write("test_manager_output.nc")
+    dm.write('test_manager_output.nc')
     output_dir = dm.writer.output_dir
-    output_file = output_dir / "test_manager_output.nc"
+    output_file = output_dir / 'test_manager_output.nc'
     assert output_file.exists()
     ds = xu.open_dataset(output_file)
-    assert "particle_id" in ds
-    assert "x" in ds
-    assert "y" in ds
+    assert 'particle_id' in ds
+    assert 'x' in ds
+    assert 'y' in ds
     assert len(ds.time) == 2
+
 
 def test_buffer_limit_triggers_write(tmp_path):
     """
@@ -47,8 +49,9 @@ def test_buffer_limit_triggers_write(tmp_path):
         dm.add_data(i, float(i), float(i), float(i))
     # The first file should have been written
     output_dir = dm.writer.output_dir
-    expected_file = output_dir / ".sim_buffer_0.nc"
+    expected_file = output_dir / '.sim_buffer_0.nc'
     assert expected_file.exists()
+
 
 def test_merge(tmp_path):
     """
@@ -67,8 +70,8 @@ def test_merge(tmp_path):
     # Get the output directory from the writer
     output_dir = dm.writer.output_dir
     # Merge
-    dm.merge("merged_manager.nc")
-    merged_file = output_dir / "merged_manager.nc"  
+    dm.merge('merged_manager.nc')
+    merged_file = output_dir / 'merged_manager.nc'
     assert merged_file.exists()
     ds = xu.open_dataset(merged_file)
     assert len(ds.time) == 10
