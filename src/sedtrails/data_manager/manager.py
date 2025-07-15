@@ -66,7 +66,7 @@ class DataManager:
                 pass
             except Exception as e:
                 # Log warning but don't fail the operation
-                print(f"Warning: Could not delete chunk file {chunk_file}: {e}")
+                logging.warning(f"Could not delete chunk file {chunk_file}: {e}")
 
     def set_mesh(self, node_x, node_y, face_node_connectivity, fill_value=-1):
         """
