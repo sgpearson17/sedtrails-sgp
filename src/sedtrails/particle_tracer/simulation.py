@@ -95,6 +95,23 @@ class Simulation:
 
         return self.format_converter.convert_to_sedtrails()
 
+    def validate_config(self) -> bool:
+        """
+        Validates the configuration file.
+
+        """
+        if not self._config_is_read:  # assure config is read only once
+            try:
+                self._controller.load_config(self._config_file)
+            except Exception as e:
+                print(f'Error validating configuration file: {e}')
+                return False  # validation fails
+            else:
+                return True  # validation succeeds
+        else:
+            # if config is already read, the file is already validated
+            return True
+
     def get_parameter(self, key: str) -> Any:
         """
         Returns the value of a specific parameter in the configuration file.
