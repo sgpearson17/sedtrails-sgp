@@ -1,6 +1,8 @@
 from sedtrails.data_manager.simulation_buffer import SimulationDataBuffer
 from sedtrails.data_manager.memory_manager import MemoryManager
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
+import logging
+
 
 class DataManager:
     """
@@ -43,20 +45,19 @@ class DataManager:
     def _cleanup_chunk_files(self):
         """
         Remove all intermediate chunk files (.sim_buffer_*.nc) from the output directory.
-        
+
         This is called automatically by finalize() when cleanup_chunks=True.
         """
         import os
         from pathlib import Path
-        
+
         output_dir = Path(self.writer.output_dir)
-        
+
         # Find all chunk files
         chunk_files = [
-            output_dir / f for f in os.listdir(output_dir)
-            if f.startswith('.sim_buffer_') and f.endswith('.nc')
+            output_dir / f for f in os.listdir(output_dir) if f.startswith('.sim_buffer_') and f.endswith('.nc')
         ]
-        
+
         # Remove each chunk file
         for chunk_file in chunk_files:
             try:
@@ -66,14 +67,13 @@ class DataManager:
                 pass
             except Exception as e:
                 # Log warning but don't fail the operation
-                logging.warning(f"Could not delete chunk file {chunk_file}: {e}")
+                logging.warning(f'Could not delete chunk file {chunk_file}: {e}')
 
     def set_mesh(self, node_x, node_y, face_node_connectivity, fill_value=-1):
         """
         Set or update the mesh information for output.
         """
         self._mesh_info = (node_x, node_y, face_node_connectivity, fill_value)
-
 
     def add_data(self, particle_id, time, x, y):
         """
@@ -95,7 +95,7 @@ class DataManager:
         if self._mesh_info is not None:
             node_x, node_y, face_node_connectivity, fill_value = self._mesh_info
             if self.memory_manager.is_limit_exceeded(self.data_buffer.get_data()):
-                filename = f".sim_buffer_{self.file_counter}.nc"
+                filename = f'.sim_buffer_{self.file_counter}.nc'
                 self.data_buffer.write_to_disk(
                     node_x, node_y, face_node_connectivity, fill_value, self.writer, filename
                 )
@@ -111,16 +111,14 @@ class DataManager:
             Name of the output NetCDF file. If None, uses a default naming scheme.
         """
         if self._mesh_info is None:
-            raise ValueError("Mesh information must be set before writing data.")
+            raise ValueError('Mesh information must be set before writing data.')
         node_x, node_y, face_node_connectivity, fill_value = self._mesh_info
         if filename is None:
-            filename = f".sim_buffer_{self.file_counter}.nc"
-        self.data_buffer.write_to_disk(
-            node_x, node_y, face_node_connectivity, fill_value, self.writer, filename
-        )
+            filename = f'.sim_buffer_{self.file_counter}.nc'
+        self.data_buffer.write_to_disk(node_x, node_y, face_node_connectivity, fill_value, self.writer, filename)
         self.file_counter += 1
 
-    def merge(self, merged_filename="merged_output.nc"):
+    def merge(self, merged_filename='merged_output.nc'):
         """
         Merge all chunked NetCDF files into a single file.
 
@@ -131,10 +129,10 @@ class DataManager:
         """
         SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
 
-    def dump(self, merge=True, merged_filename="final_output.nc", cleanup_chunks=True):
+    def dump(self, merge=True, merged_filename='final_output.nc', cleanup_chunks=True):
         """
         Finalize all data operations: write current buffer if it contains data and optionally merge all files.
-        
+
         This is the main function to call at the end of a simulation to handle all
         file I/O operations. It abstracts away the details of writing buffers and
         merging multiple chunk files.
@@ -147,7 +145,7 @@ class DataManager:
             Name of the final merged output file.
         cleanup_chunks : bool, default=True
             Whether to delete intermediate chunk files after merging.
-            Only applies when merge=True.            
+            Only applies when merge=True.
 
         Returns
         -------
@@ -160,23 +158,23 @@ class DataManager:
         >>> dm.set_mesh(node_x, node_y, face_connectivity)
         >>> # ... add simulation data ...
         >>> final_file = dm.dump()  # Automatically writes buffer if needed and merges
-        >>> 
+        >>>
         >>> # Keep chunk files after merging
         >>> final_file = dm.dump(cleanup_chunks=False)
-        >>>      
+        >>>
         >>> # Or just write without merging
         >>> final_file = dm.dump(merge=False)
         """
         if self._mesh_info is None:
-            raise ValueError("Mesh information must be set before finalizing data.")
-        
+            raise ValueError('Mesh information must be set before finalizing data.')
+
         final_output_path = None
-        
+
         # Check if buffer contains data and write it if so
         buffer_data = self.data_buffer.get_data()
         if buffer_data['particle_id'].size > 0:
             self.write()
-        
+
         # Merge all chunk files into a single file
         if merge:
             SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
@@ -184,11 +182,11 @@ class DataManager:
 
             # Clean up intermediate chunk files after successful merge
             if cleanup_chunks:
-                self._cleanup_chunk_files()            
+                self._cleanup_chunk_files()
         else:
             # Return the path to the last written file
             if self.file_counter > 0:
-                last_file = f".sim_buffer_{self.file_counter - 1}.nc"
+                last_file = f'.sim_buffer_{self.file_counter - 1}.nc'
                 final_output_path = self.writer.output_dir / last_file
-        
+
         return str(final_output_path) if final_output_path else None

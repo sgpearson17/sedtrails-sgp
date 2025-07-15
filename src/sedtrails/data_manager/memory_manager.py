@@ -5,7 +5,6 @@ Manages memory allocation and deallocation for the simulation data buffer.
 """
 
 import sys
-import xugrid as xu
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
 
@@ -78,5 +77,5 @@ class MemoryManager:
         -------
         bool
             True if buffer size exceeds max_bytes, False otherwise.
-        """       
+        """
         return self.buffer_size_bytes(buffer) > self.max_bytes

@@ -72,7 +72,7 @@ class ConfigurationController(Controller):
 
     def load_config(self, config_file: str) -> None:
         """
-        Updates the configuraton based on a configuration file, validated its contents and set it.
+        Updates the configuraton based on a configuration file, validates its contents and sets it.
 
         Parameters
         ----------

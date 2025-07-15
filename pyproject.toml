@@ -27,7 +27,6 @@ maintainers = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
   { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
 ]
-description = "Sediment TRAnsport vIsualization and Lagrangian Simulator"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICEN[CS]E.*"]
@@ -35,8 +34,6 @@ keywords = ["sediment", "analysis"]
 classifiers = [
   "Development Status :: 1 - Planning",
   "Programming Language :: Python",
-]
-
 ]
 
 [project.optional-dependencies]
@@ -48,7 +45,6 @@ dev = [
   "myst-parser==4.0.1",
   "sphinx-rtd-theme",
 ]
-
 
 [tool.hatch.version]
 path = "src/sedtrails/__version__.py"
