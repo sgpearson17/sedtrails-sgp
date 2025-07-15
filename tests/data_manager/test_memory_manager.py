@@ -18,21 +18,21 @@ def create_test_mesh():
     return node_x, node_y, face_node_connectivity, fill_value
 
 
-def test_buffer_size_bytes_counts_numpy_and_lists(tmp_path):
+def test_buffer_size_bytes_counts_numpy_and_lists():
     """
     Test that buffer_size_bytes correctly counts memory for numpy arrays and lists.
     """
-    mm = MemoryManager(tmp_path)
+    mm = MemoryManager()
     buffer = {'a': np.zeros(100, dtype=np.float64), 'b': [1] * 100}
     size = mm.buffer_size_bytes(buffer)
     assert size > 0
 
 
-def test_is_limit_exceeded(tmp_path):
+def test_is_limit_exceeded():
     """
     Test that is_limit_exceeded correctly identifies when a buffer exceeds the memory limit.
     """
-    mm = MemoryManager(tmp_path, max_bytes=100)
+    mm = MemoryManager(max_bytes=100)
     small_buffer = {'data': np.zeros(10)}
     large_buffer = {'data': np.zeros(1000)}
 
