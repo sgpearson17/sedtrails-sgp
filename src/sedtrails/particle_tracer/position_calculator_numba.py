@@ -493,38 +493,3 @@ def update_particles_rk4_parallel(x0, y0, grid_u, grid_v, grid_x, grid_y, triang
         y_new[i] = yi + dt / 6.0 * (vp1 + 2.0 * vp2 + 2.0 * vp3 + vp4)
 
     return x_new, y_new
-
-
-# Example usage:
-if __name__ == '__main__':
-    # This will only run when the file is executed directly
-    import time
-
-    # Create a simple grid for testing
-    n_nodes = 100
-    grid_x = np.random.rand(n_nodes)
-    grid_y = np.random.rand(n_nodes)
-
-    # Create a uniform velocity field
-    grid_u = np.ones(n_nodes)
-    grid_v = np.zeros(n_nodes)
-
-    # Create particles
-    n_particles = 100
-    particle_x = np.random.rand(n_particles) * 0.8 + 0.1
-    particle_y = np.random.rand(n_particles) * 0.8 + 0.1
-
-    # Create calculator
-    start_time = time.time()
-    calc = create_numba_particle_calculator(grid_x, grid_y)
-    print(f'Numba calculator created in {time.time() - start_time:.4f} s')
-
-    # Run test
-    dt = 0.1
-    start_time = time.time()
-    new_x, new_y = calc['update_particles'](particle_x, particle_y, grid_u, grid_v, dt)
-    print(f'Sequential update: {time.time() - start_time:.4f} s')
-
-    start_time = time.time()
-    new_x_p, new_y_p = calc['update_particles_parallel'](particle_x, particle_y, grid_u, grid_v, dt)
-    print(f'Parallel update: {time.time() - start_time:.4f} s')
