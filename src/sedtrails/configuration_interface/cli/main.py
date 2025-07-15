@@ -122,7 +122,7 @@ def run_simulation(
     try:
         typer.echo(f"Validating configuration from '{config_file}'...")
         # from config_validator import ConfigValidator
-        simulation.config  # This will trigger the validation
+        simulation.validate_config()  # This will trigger the validation
         typer.echo('Configuration validated successfully.')
     except Exception as e:
         typer.echo(f'Error validating configuration: {e}')
