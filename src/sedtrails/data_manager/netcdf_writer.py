@@ -51,4 +51,3 @@ class NetCDFWriter:
         if not isinstance(ugrid_dataset, xu.UgridDataset):
             raise TypeError("Input must be a xu.UgridDataset.")
         ugrid_dataset.ugrid.to_netcdf(output_path)
-        print(f"NetCDF file written to {output_path}")
