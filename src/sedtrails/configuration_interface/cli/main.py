@@ -5,7 +5,7 @@ SedTRAILS CLI interface.
 import typer
 from pathlib import Path
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController, YAMLConfigValidator
-from sedtrails.particle_tracer.simulation import Simulation
+from sedtrails.simulation import Simulation
 
 
 def version_callback(value: bool):
