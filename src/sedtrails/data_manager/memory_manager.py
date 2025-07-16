@@ -5,7 +5,6 @@ Manages memory allocation and deallocation for the simulation data buffer.
 """
 
 import sys
-from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
 
 class MemoryManager:
@@ -25,19 +24,16 @@ class MemoryManager:
         Counter for naming output files uniquely.
     """
 
-    def __init__(self, output_dir, max_bytes=512 * 1024 * 1024):
+    def __init__(self, max_bytes=512 * 1024 * 1024):
         """
         Initialize the memory manager.
 
         Parameters
         ----------
-        output_dir : str or Path
-            Directory to write NetCDF files.
         max_bytes : int
             Maximum allowed memory usage in bytes (default: 512 MB).
         """
         self.max_bytes = max_bytes
-        self.writer = NetCDFWriter(output_dir)
         self.file_counter = 0
 
     def buffer_size_bytes(self, buffer):
