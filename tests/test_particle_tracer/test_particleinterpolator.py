@@ -1,13 +1,16 @@
 """
-Unit tests for the ParticlePositionCalculator class, covering field interpolation, 
-particle updates with and without diffusion, parallel vs serial consistency, 
+Unit tests for the ParticlePositionCalculator class, covering field interpolation,
+particle updates with and without diffusion, parallel vs serial consistency,
 geographic adjustments, and mixed network interpolation.
 """
+
 import numpy as np
 import pytest
+
 from sedtrails.particle_tracer.position_calculator import (
     ParticlePositionCalculator,
 )
+
 
 # -----------------------------------------------------------------------------
 # Fixtures
@@ -27,6 +30,7 @@ def simple_interpolator():
 
     return ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=0)
 
+
 @pytest.fixture
 def mixed_network_interpolator():
     """
@@ -35,10 +39,10 @@ def mixed_network_interpolator():
     # Define grid nodes.
     grid_x = np.array([0, 5, 2, 0, 5, 2, 0, 5, 2, 0, 5, 2], dtype=np.float64)
     grid_y = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3], dtype=np.float64)
-       
+
     # Define constant velocity fields on grid nodes.
-    grid_u = np.full_like(grid_x, 1.0, dtype=np.float64)   # constant u = 1.0
-    grid_v = np.full_like(grid_y, 0.5, dtype=np.float64)     # constant v = 0.5
+    grid_u = np.full_like(grid_x, 1.0, dtype=np.float64)  # constant u = 1.0
+    grid_v = np.full_like(grid_y, 0.5, dtype=np.float64)  # constant v = 0.5
 
     return ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=0)
 
@@ -46,6 +50,7 @@ def mixed_network_interpolator():
 # -----------------------------------------------------------------------------
 # Tests for field interpolation
 # -----------------------------------------------------------------------------
+
 
 def test_interpolate_field_constant(simple_interpolator):
     """
@@ -63,6 +68,7 @@ def test_interpolate_field_constant(simple_interpolator):
 # Tests for particle update without diffusion
 # -----------------------------------------------------------------------------
 
+
 def test_update_particles_no_velocity(simple_interpolator):
     """
     If grid velocities are zero, the particle positions should remain unchanged.
@@ -72,15 +78,15 @@ def test_update_particles_no_velocity(simple_interpolator):
     part_x = np.array([0.2, 0.4, 0.1])
     part_y = np.array([0.2, 0.1, 0.4])
     dt = 0.1
-    x_new, y_new = simple_interpolator.update_particles(
-        part_x, part_y, dt, parallel=False
-    )
+    x_new, y_new = simple_interpolator.update_particles(part_x, part_y, dt, parallel=False)
     np.testing.assert_allclose(x_new, part_x)
     np.testing.assert_allclose(y_new, part_y)
+
 
 # -----------------------------------------------------------------------------
 # Tests for consistency between parallel and serial execution
 # -----------------------------------------------------------------------------
+
 
 def test_parallel_vs_serial(simple_interpolator):
     """
@@ -90,12 +96,8 @@ def test_parallel_vs_serial(simple_interpolator):
     part_x = np.linspace(0.1, 0.9, 50)
     part_y = np.linspace(0.1, 0.9, 50)
     dt = 0.1
-    x_serial, y_serial = simple_interpolator.update_particles(
-        part_x, part_y, dt, parallel=False
-    )
-    x_parallel, y_parallel = simple_interpolator.update_particles(
-        part_x, part_y, dt, parallel=True, num_workers=2
-    )
+    x_serial, y_serial = simple_interpolator.update_particles(part_x, part_y, dt, parallel=False)
+    x_parallel, y_parallel = simple_interpolator.update_particles(part_x, part_y, dt, parallel=True, num_workers=2)
     np.testing.assert_allclose(x_serial, x_parallel)
     np.testing.assert_allclose(y_serial, y_parallel)
 
@@ -104,6 +106,7 @@ def test_parallel_vs_serial(simple_interpolator):
 # Test for geographic adjustment (igeo==1)
 # -----------------------------------------------------------------------------
 
+
 def test_geographic_adjustment():
     """
     For geographic coordinates (igeo==1), grid_u values should be scaled by
@@ -111,15 +114,15 @@ def test_geographic_adjustment():
     the RK4 update should yield x_new = x0 + dt * adjusted_u.
     """
     # Define a nondegenerate triangle with constant latitude.
-    grid_x = np.array([0.0, 1.0, 0.0],dtype=np.float64)
-    grid_y = np.array([45.0, 45.0, 46.0],dtype=np.float64)
-    grid_u = np.array([1.0, 1.0, 1.0],dtype=np.float64)
-    grid_v = np.array([0.0, 0.0, 0.0],dtype=np.float64)
-    
+    grid_x = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    grid_y = np.array([45.0, 45.0, 46.0], dtype=np.float64)
+    grid_u = np.array([1.0, 1.0, 1.0], dtype=np.float64)
+    grid_v = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+
     interpolator = ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=1)
     dt = 1.0
-    part_x = np.array([0.2],dtype=np.float64)
-    part_y = np.array([0.2],dtype=np.float64)
+    part_x = np.array([0.2], dtype=np.float64)
+    part_y = np.array([0.2], dtype=np.float64)
     expected_u = 1.0 / (np.cos(np.deg2rad(45.0)) * interpolator.geofac)
     expected_x_new = part_x + dt * expected_u
     x_new, y_new = interpolator.update_particles(part_x, part_y, dt, parallel=False)
@@ -139,20 +142,17 @@ def test_mixed_network_linear_interpolation(mixed_network_interpolator):
     def linear_func(x, y):
         return 2 * x + 3 * y
 
-    field = linear_func(
-        mixed_network_interpolator.grid_x, mixed_network_interpolator.grid_y
-    )
-    
+    field = linear_func(mixed_network_interpolator.grid_x, mixed_network_interpolator.grid_y)
+
     # Generate particle positions strictly within the convex hull.
     np.random.seed(42)
     part_x = np.random.uniform(0.0, 1.0, 20)
     part_y = np.random.uniform(0.0, 3.0, 20)
-    
-    interp_vals = mixed_network_interpolator.interpolate_field(
-        field, part_x, part_y, parallel=False
-    )
+
+    interp_vals = mixed_network_interpolator.interpolate_field(field, part_x, part_y, parallel=False)
     expected_vals = linear_func(part_x, part_y)
     np.testing.assert_allclose(interp_vals, expected_vals, rtol=1e-5)
+
 
 def test_mixed_network_update_particles(mixed_network_interpolator):
     """
@@ -169,9 +169,7 @@ def test_mixed_network_update_particles(mixed_network_interpolator):
     expected_x = part_x + dt * 1.0
     expected_y = part_y + dt * 0.5
 
-    x_new, y_new = mixed_network_interpolator.update_particles(
-        part_x, part_y, dt, parallel=False
-    )
+    x_new, y_new = mixed_network_interpolator.update_particles(part_x, part_y, dt, parallel=False)
 
     np.testing.assert_allclose(x_new, expected_x, rtol=1e-5)
     np.testing.assert_allclose(y_new, expected_y, rtol=1e-5)
@@ -186,19 +184,13 @@ def test_mixed_network_parallel_interpolation(mixed_network_interpolator):
     def linear_func(x, y):
         return 2 * x + 3 * y
 
-    field = linear_func(
-        mixed_network_interpolator.grid_x, mixed_network_interpolator.grid_y
-    )
-    
+    field = linear_func(mixed_network_interpolator.grid_x, mixed_network_interpolator.grid_y)
+
     np.random.seed(42)
     part_x = np.random.uniform(0.1, 1.9, 25)
     part_y = np.random.uniform(0.1, 2.9, 25)
-    
-    interp_serial = mixed_network_interpolator.interpolate_field(
-        field, part_x, part_y, parallel=False
-    )
-    interp_parallel = mixed_network_interpolator.interpolate_field(
-        field, part_x, part_y, parallel=True, num_workers=2
-    )
-    
+
+    interp_serial = mixed_network_interpolator.interpolate_field(field, part_x, part_y, parallel=False)
+    interp_parallel = mixed_network_interpolator.interpolate_field(field, part_x, part_y, parallel=True, num_workers=2)
+
     np.testing.assert_allclose(interp_serial, interp_parallel, rtol=1e-5)
