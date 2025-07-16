@@ -4,11 +4,10 @@ Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
 
 import pytest
 import yaml
-import tempfile
 import os
 from pathlib import Path
 from typer.testing import CliRunner
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from sedtrails.configuration_interface.cli import app
 
 
