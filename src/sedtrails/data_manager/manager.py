@@ -4,8 +4,8 @@ from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 import logging
 import numpy as np
 
-## Mesh Defaults
-# TODO: Consuls if meshes are necessary for simulation results.
+
+# Mesh setup. # TODO: Can this be a default? I don't see the need to
 NODE_X = np.array([0, 1, 1, 0])
 NODE_Y = np.array([0, 0, 1, 1])
 FACE_NODE_CONNECTIVITY = np.array([[0, 1, 2, 3]])

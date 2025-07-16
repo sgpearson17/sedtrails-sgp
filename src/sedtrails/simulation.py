@@ -11,13 +11,6 @@ from sedtrails.data_manager import DataManager
 from typing import Any
 
 
-# Mesh setup. # TODO: Can this be a default? I don't see the need to
-NODE_X = np.array([0, 1, 1, 0])
-NODE_Y = np.array([0, 0, 1, 1])
-FACE_NODE_CONNECTIVITY = np.array([[0, 1, 2, 3]])
-FILL_VALUE = -1
-
-
 class Simulation:
     """Class to encapsulate the particle simulation process."""
 
@@ -42,7 +35,7 @@ class Simulation:
         self.data_manager = DataManager(self._get_output_dir())
 
         # set mesh
-        self.data_manager.set_mesh(NODE_X, NODE_Y, FACE_NODE_CONNECTIVITY, FILL_VALUE)
+        self.data_manager.set_mesh()
 
     def _get_format_config(self):
         """
