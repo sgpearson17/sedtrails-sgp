@@ -2,11 +2,13 @@
 Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
 """
 
+import pytest
 import yaml
+import os
+from pathlib import Path
 from typer.testing import CliRunner
+from unittest.mock import Mock, patch
 from sedtrails.configuration_interface.cli import app
-
-runner = CliRunner()
 
 
 class TestSedtrailsCLI:
@@ -14,120 +16,230 @@ class TestSedtrailsCLI:
     Test suite for the Sedtrails CLI commands.
     """
 
-    def test_load_config_default(self):
-        """
-        Tests the command 'load-config' loads a 'sedtrails.yaml' by default
-        """
-        with runner.isolated_filesystem():
-            # Create mock sedtrails.yml in isolated filesystem
-            config_data = {
-                'general': {'input_model': 'dfm', 'n_runs': 1},
-                'folder_settings': {'input_data': '/path/to/data'},
-                'time': {'timestep': '30S'},
-            }
+    @pytest.fixture
+    def runner(self):
+        """Create a CLI test runner."""
+        return CliRunner()
 
+    @pytest.fixture
+    def sample_config_data(self):
+        """Sample configuration data for testing."""
+        return {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '1970-01-01'}},
+            'folder_settings': {'input_data': 'input_data.nc', 'output_dir': 'output'},
+            'time': {'timestep': '30S', 'duration': '1D'},
+            'particles': {'count': 100, 'release_locations': [[0.0, 0.0]]},
+        }
+
+    @pytest.fixture
+    def mock_simulation(self):
+        """Mock Simulation class."""
+        with patch('sedtrails.configuration_interface.cli.main.Simulation') as mock:
+            mock_instance = Mock()
+            mock.return_value = mock_instance
+            yield mock_instance
+
+    def test_run_simulation_default_success(self, runner, sample_config_data, mock_simulation):
+        """Test successful run with default config and output file names."""
+        with runner.isolated_filesystem():
+            # Create default config file
             with open('sedtrails.yml', 'w') as f:
-                yaml.dump(config_data, f)
+                yaml.dump(sample_config_data, f)
 
-            result = runner.invoke(app, ['load-config'])
+            # Create necessary directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            result = runner.invoke(app, ['run'])
+
             assert result.exit_code == 0
-            assert "Loading and validating configuration from 'sedtrails.yml'" in result.stdout
-            assert 'Configuration validated successfully' in result.stdout
-            assert 'timestep' in result.stdout
+            assert "Validating configuration from 'sedtrails.yml'" in result.stdout
+            assert 'Configuration validated successfully.' in result.stdout
+            assert 'Running simulation...' in result.stdout
+            assert "Simulation complete. Output saved to 'sedtrails.nc'." in result.stdout
 
-    def test_load_config_custom(self):
-        """
-        Test the command 'load-config --confg' loads a custom configuration file name
-        """
+            # Verify Simulation was called correctly
+            mock_simulation.validate_config.assert_called_once()
+            mock_simulation.run.assert_called_once()
+
+    def test_run_simulation_custom_config(self, runner, sample_config_data, mock_simulation):
+        """Test run with custom config file."""
         with runner.isolated_filesystem():
-            # Create mock custom.yml in isolated filesystem
-            config_data = {
-                'general': {'input_model': 'dfm', 'n_runs': 1},
-                'folder_settings': {'input_data': '/path/to/data'},
-                'time': {'timestep': '30S'},
-            }
+            custom_config = 'my_config.yml'
 
-            with open('custom_config.yml', 'w') as f:
-                yaml.dump(config_data, f)
+            # Create custom config file
+            with open(custom_config, 'w') as f:
+                yaml.dump(sample_config_data, f)
 
-            result = runner.invoke(app, ['load-config', '--config', 'custom_config.yml'])
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            result = runner.invoke(app, ['run', '--config', custom_config])
+
             assert result.exit_code == 0
-            assert "Loading and validating configuration from 'custom_config.yml'" in result.stdout
-            assert 'Configuration validated successfully' in result.stdout
+            assert f"Validating configuration from '{custom_config}'" in result.stdout
+            assert 'Configuration validated successfully.' in result.stdout
+            assert 'Running simulation...' in result.stdout
+            assert "Simulation complete. Output saved to 'sedtrails.nc'." in result.stdout
 
-    def test_run_simulation_default(self):
-        """
-        Test run-simulation with default config and output file names.
-        """
-        result = runner.invoke(app, ['run-simulation'])
-        assert result.exit_code == 0
-        # Ensure it validates configuration and then simulates.
-        assert "Validating configuration from 'sedtrails.yml'" in result.stdout
-        assert 'Configuration validated successfully' in result.stdout
-        assert 'Running simulation...' in result.stdout
-        assert "Simulation complete. Output saved to 'sedtrails.nc'" in result.stdout
+    def test_run_simulation_custom_output(self, runner, sample_config_data, mock_simulation):
+        """Test run with custom output file."""
+        with runner.isolated_filesystem():
+            custom_output = 'my_results.nc'
 
-    def test_run_simulation_custom(self):
-        """
-        Test run-simulation with custom config and output file.
-        """
-        custom_config = 'custom_config.yml'
-        custom_output = 'custom_output.nc'
-        result = runner.invoke(
-            app,
-            ['run-simulation', '--config', custom_config, '--output', custom_output],
-        )
-        assert result.exit_code == 0
-        assert f"Validating configuration from '{custom_config}'" in result.stdout
-        assert 'Configuration validated successfully' in result.stdout
-        assert 'Running simulation...' in result.stdout
-        assert f"Simulation complete. Output saved to '{custom_output}'" in result.stdout
+            # Create config file
+            with open('sedtrails.yml', 'w') as f:
+                yaml.dump(sample_config_data, f)
 
-    def test_analyze_default(self):
-        """
-        Test the analyze subcommand with default file names.
-        """
-        result = runner.invoke(app, ['analyze'])
-        assert result.exit_code == 0
-        assert "Performing statistical analysis on 'sedtrails.nc'" in result.stdout
-        assert "Analysis complete. Results saved to 'analysis.nc'" in result.stdout
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
 
-    def test_analyze_custom(self):
-        """
-        Test the analyze subcommand with custom input and output file names.
-        """
-        custom_input = 'custom_simulation.nc'
-        custom_output = 'custom_analysis.nc'
-        result = runner.invoke(app, ['analyze', '--input', custom_input, '--output', custom_output])
-        assert result.exit_code == 0
-        assert f"Performing statistical analysis on '{custom_input}'" in result.stdout
-        assert f"Analysis complete. Results saved to '{custom_output}'" in result.stdout
+            result = runner.invoke(app, ['run', '--output', custom_output])
 
-    def test_network_analysis_default(self):
-        """
-        Test the network-analysis subcommand with default file names.
-        """
-        result = runner.invoke(app, ['network-analysis'])
-        assert result.exit_code == 0
-        assert "Performing network analysis on 'sedtrails.nc'" in result.stdout
-        assert "Network analysis complete. Results saved to 'analysis.nc'" in result.stdout
+            assert result.exit_code == 0
+            assert "Validating configuration from 'sedtrails.yml'" in result.stdout
+            assert f"Simulation complete. Output saved to '{custom_output}'." in result.stdout
 
-    def test_network_analysis_custom(self):
-        """
-        Test the network-analysis subcommand with custom file names.
-        """
-        custom_input = 'custom_simulation.nc'
-        custom_output = 'custom_network.nc'
-        result = runner.invoke(
-            app,
-            [
-                'network-analysis',
-                '--input',
-                custom_input,
-                '--output',
-                custom_output,
-            ],
-        )
+    def test_run_simulation_custom_config_and_output(self, runner, sample_config_data, mock_simulation):
+        """Test run with both custom config and output files."""
+        with runner.isolated_filesystem():
+            custom_config = 'my_config.yml'
+            custom_output = 'my_results.nc'
+
+            # Create custom config file
+            with open(custom_config, 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            result = runner.invoke(app, ['run', '--config', custom_config, '--output', custom_output])
+
+            assert result.exit_code == 0
+            assert f"Validating configuration from '{custom_config}'" in result.stdout
+            assert f"Simulation complete. Output saved to '{custom_output}'." in result.stdout
+
+    def test_run_simulation_short_options(self, runner, sample_config_data, mock_simulation):
+        """Test run with short option flags."""
+        with runner.isolated_filesystem():
+            custom_config = 'config.yml'
+            custom_output = 'output.nc'
+
+            # Create config file
+            with open(custom_config, 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            result = runner.invoke(app, ['run', '-c', custom_config, '-o', custom_output])
+
+            assert result.exit_code == 0
+            assert f"Validating configuration from '{custom_config}'" in result.stdout
+            assert f"Simulation complete. Output saved to '{custom_output}'." in result.stdout
+
+    def test_run_simulation_validation_error(self, runner, sample_config_data, mock_simulation):
+        """Test run when validation fails."""
+        with runner.isolated_filesystem():
+            # Create config file
+            with open('sedtrails.yml', 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            # Mock validation to raise an exception
+            mock_simulation.validate_config.side_effect = Exception('Invalid configuration')
+
+            result = runner.invoke(app, ['run'])
+
+            assert result.exit_code == 1
+            assert 'Error validating configuration: Invalid configuration' in result.stdout
+            mock_simulation.validate_config.assert_called_once()
+            mock_simulation.run.assert_not_called()
+
+    def test_run_simulation_runtime_error(self, runner, sample_config_data, mock_simulation):
+        """Test run when simulation fails during execution."""
+        with runner.isolated_filesystem():
+            # Create config file and necessary files
+            with open('sedtrails.yml', 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            # Mock simulation to raise an exception during run
+            mock_simulation.run.side_effect = Exception('Simulation failed')
+
+            result = runner.invoke(app, ['run'])
+
+            assert result.exit_code == 1
+            assert 'Configuration validated successfully.' in result.stdout
+            assert 'Error running simulation: Simulation failed' in result.stdout
+            mock_simulation.validate_config.assert_called_once()
+            mock_simulation.run.assert_called_once()
+
+    @patch('sedtrails.configuration_interface.cli.main.Simulation')
+    def test_run_simulation_constructor_called_correctly(self, mock_simulation_class, runner, sample_config_data):
+        """Test that Simulation constructor is called with correct config file."""
+        with runner.isolated_filesystem():
+            custom_config = 'test_config.yml'
+
+            # Create config file
+            with open(custom_config, 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            runner.invoke(app, ['run', '--config', custom_config])
+
+            # Verify Simulation was instantiated with correct config file
+            mock_simulation_class.assert_called_once_with(custom_config)
+
+    def test_run_help(self, runner):
+        """Test run command help."""
+        result = runner.invoke(app, ['run', '--help'])
+
         assert result.exit_code == 0
-        assert f"Performing network analysis on '{custom_input}'" in result.stdout
-        assert f"Network analysis complete. Results saved to '{custom_output}'" in result.stdout
+        assert 'Run a simulation based on a configuratio file' in result.stdout  # Note: typo in original
+        assert '--config' in result.stdout
+        assert '--output' in result.stdout
+        assert 'sedtrails run --config my_config.yml --output results.nc' in result.stdout
+
+    def test_run_help_short(self, runner):
+        """Test run command help with -h."""
+        result = runner.invoke(app, ['run', '-h'])
+
+        assert result.exit_code == 0
+        assert '--config' in result.stdout
+        assert '--output' in result.stdout
+
+    @pytest.mark.parametrize(
+        'config_file,output_file',
+        [
+            ('config1.yml', 'output1.nc'),
+            ('test_config.yaml', 'test_output.nc'),
+            ('simulation.yml', 'simulation_results.nc'),
+        ],
+    )
+    def test_run_simulation_various_filenames(
+        self, runner, sample_config_data, mock_simulation, config_file, output_file
+    ):
+        """Test run with various config and output filenames."""
+        with runner.isolated_filesystem():
+            # Create config file
+            with open(config_file, 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            # Create necessary files/directories
+            os.makedirs('output', exist_ok=True)
+            Path('input_data.nc').touch()
+
+            result = runner.invoke(app, ['run', '--config', config_file, '--output', output_file])
+
+            assert result.exit_code == 0
+            assert f"Validating configuration from '{config_file}'" in result.stdout
+            assert f"Simulation complete. Output saved to '{output_file}'." in result.stdout
