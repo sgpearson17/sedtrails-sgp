@@ -66,51 +66,31 @@ class Duration:
         days, hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
         return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
+    def to_deltatime64(self) -> np.timedelta64:
+        """
+        Converts the duration string to a numpy.timedelta64 object.
+
+        Returns
+        -------
+        numpy.timedelta64
+            The duration as a Numpy timedelta64 object.
+        """
+        return np.timedelta64(self.to_seconds(), 's')
+
 
 @dataclass
-class Time:
-    """
-    Class representing time in the simulation.
-
-    Attributes
-    ----------
-    reference_date : str
-        The reference date as string in format 'YYYY-MM-DD hh:mm:ss'
-    start_time : str
-        The simulation start time as string in format 'YYYY-MM-DD hh:mm:ss'.
-    duration : str
-        The simulation duration as a string.
-    time_step : str
-        The simulation time step as a string in format '3D 2H1M3S'.
-
-    Methods
-    -------
-    get_current_time()
-        Returns the current time as a numpy.datetime64 object.
-    update(delta_seconds: numpy.timedelta64)
-        Updates the current time by adding a delta in seconds.
-    """
-
-    # reference_date and start_time should be a str,
-    # the class will do the transformation into a numpy.datetime64 object
-    reference_date: str = field(default='1970-01-01 00:00:00')
-    start_time: str = field(default='1970-01-01 00:00:00')
-    duration: str = field(default='3D 2H1M3S')
-    time_step: str = field(default='30S')
-    _reference_date_np: np.datetime64 = field(init=False)
+class Timer:
+    start_time: str  # Accept string input like '1970-01-01 00:00:00'
+    time_step: str  # Accept string input like '3D 2H1M3S'
+    _current: np.datetime64 = field(init=False)
     _start_time_np: np.datetime64 = field(init=False)
-    _duration_seconds: int = field(init=False)
-    _duration_timedelta: np.timedelta64 = field(init=False)
-    _time_step_seconds: int = field(init=False)
-    _time_step_timedelta: np.timedelta64 = field(init=False)
+    _time_step_np: np.timedelta64 = field(init=False)
 
     def __post_init__(self):
-        self._reference_date_np = self._convert_to_datetime64(self.reference_date)
+        """Initialize current time from start_time string and time_step from duration string."""
         self._start_time_np = self._convert_to_datetime64(self.start_time)
-        self._duration_seconds = self._parse_duration_to_seconds(self.duration)
-        self._duration_timedelta = np.timedelta64(self._duration_seconds, 's')
-        self._time_step_seconds = self._parse_duration_to_seconds(self.time_step)
-        self._time_step_timedelta = np.timedelta64(self._time_step_seconds, 's')
+        self._time_step_np = self._convert_duration_to_timedelta64(self.time_step)
+        self._current = self._start_time_np
 
     def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
         """
@@ -120,60 +100,82 @@ class Time:
             raise DateFormatError(f"date string '{date_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'")
         return np.datetime64(date_str, 's')
 
-    @staticmethod
-    def _parse_duration_to_seconds(duration_str: str) -> int:
+    def _convert_duration_to_timedelta64(self, duration_str: str) -> np.timedelta64:
         """
-        Parse a duration string ('3D 2H1M3S') into the total number of seconds.
-
-        The duration string may include days (D), hours (H), minutes (M), and seconds (S)
-        in any combination and order, separated by optional spaces. Missing units are treated as zero.
-
-        Parameters
-        ----------
-        duration_str : str
-            Duration string to parse ('3D 2H1M3S', '45S', '1H 30M').
-
-        Returns
-        -------
-        int
-            Total duration in seconds.
-
-        Raises
-        ------
-        DurationFormatError
-            If the input string does not match the expected format.
+        Convert duration string to numpy.timedelta64 using Duration class.
         """
-        pattern = r'(?:(\d+)D)?\s*(?:(\d+)H)?\s*(?:(\d+)M)?\s*(?:(\d+)S)?'
-        try:
-            match = re.fullmatch(pattern, duration_str.strip())
-            if not match:
-                raise DurationFormatError(f"Invalid duration format: '{duration_str}' (expected e.g. '3D 2H1M3S')")
-        except Exception as e:
-            raise DurationFormatError(f"Invalid duration format: '{duration_str}' (expected e.g. '3D 2H1M3S')") from e
-
-        days, hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
-        return days * 86400 + hours * 3600 + minutes * 60 + seconds
+        duration = Duration(duration_str)
+        return duration.to_deltatime64()
 
     @property
-    def end_time(self) -> np.datetime64:
+    def current(self) -> np.datetime64:
         """
-        Returns the simulation end time as a numpy.datetime64 object.
+        Returns the current time as a numpy.datetime64 object.
         """
-        return self._start_time_np + self._duration_timedelta
+        return self._current
 
-    def get_current_time(self, step: int = 0) -> np.datetime64:
+    @current.setter
+    def current(self, value: np.datetime64) -> None:
         """
-        Returns the current time in the simulation as a numpy.datetime64 object,
-        given a simulation step.
+        Sets the current time as a numpy.datetime64 object.
 
         Parameters
         ----------
-        step : int
-            The simulation step number (default is 0).
-
-        Returns
-        -------
-        numpy.datetime64
-            The current time in the simulation.
+        value : np.datetime64
+            The new current time.
         """
-        return self._start_time_np + step * self._time_step_timedelta
+        if not isinstance(value, np.datetime64):
+            raise TypeError(f"Expected 'current' to be a numpy.datetime64, got {type(value).__name__}")
+        self._current = value
+
+    @property
+    def next(self) -> np.datetime64:
+        """
+        Returns the next time as current + time_step.
+        """
+        return self._current + self._time_step_np
+
+    def advance(self) -> None:
+        """
+        Advance the current time by one time step.
+        """
+        self._current = self.next
+
+
+@dataclass
+class Time:
+    """
+    Class representing time parameters in the simulation.
+
+    Attributes
+    ----------
+    reference_date : str
+        The reference date as string in format 'YYYY-MM-DD hh:mm:ss'
+    start_time : str
+        The simulation start time as string in format 'YYYY-MM-DD hh:mm:ss'.
+    duration : str
+        The simulation duration as a string.
+    """
+
+    # reference_date and start_time should be a str,
+    # the class will do the transformation into a numpy.datetime64 object
+    reference_date: str = field(default='1970-01-01 00:00:00')  # TODO: I thinks this is not necessary here.
+    start: str = field(default='1970-01-01 00:00:00')
+    duration: Duration = field(default_factory=lambda: Duration('3D 2H1M3S'))
+
+    @property
+    def end(self) -> np.datetime64:
+        """
+        Returns the simulation end-time as a numpy.datetime64 object.
+        """
+        start_datetime = self._convert_to_datetime64(self.start)
+        duration_timedelta = self.duration.to_deltatime64()
+        return start_datetime + duration_timedelta
+
+    def _convert_to_datetime64(self, date_str: str) -> np.datetime64:
+        """
+        Convert date in str format to numpy.datetime64 enforcing 'YYYY-MM-DD hh:mm:ss'.
+        """
+        if not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', date_str):
+            raise DateFormatError(f"date string '{date_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'")
+        return np.datetime64(date_str, 's')

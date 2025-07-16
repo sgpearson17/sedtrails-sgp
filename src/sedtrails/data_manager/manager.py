@@ -37,7 +37,7 @@ class DataManager:
 
         self.output_dir = output_dir
         self.data_buffer = SimulationDataBuffer()
-        self.memory_manager = MemoryManager(output_dir=output_dir, max_bytes=max_bytes)
+        self.memory_manager = MemoryManager(max_bytes=max_bytes)
         self.writer = NetCDFWriter(output_dir)
         self._mesh_info = None
         self.file_counter = 0

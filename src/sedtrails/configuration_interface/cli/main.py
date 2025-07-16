@@ -5,14 +5,47 @@ SedTRAILS CLI interface.
 import typer
 from pathlib import Path
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController, YAMLConfigValidator
-from sedtrails.particle_tracer.simulation import Simulation
+from sedtrails.simulation import Simulation
 
 
-app = typer.Typer(help='Sedtrails: Configure, run, and analyze sediment particle tracking.')
+def version_callback(value: bool):
+    """Callback for version option."""
+    import sedtrails.__version__ as version
+
+    if value:
+        typer.echo(f'SedTRAILS {version}')  # You can import version from __version__.py
+        raise typer.Exit()
+
+
+app = typer.Typer(
+    help='Sedtrails: Configure, run, and analyze sediment particle tracking.',
+    add_completion=False,  # Disable completion to avoid conflicts
+    context_settings={'help_option_names': ['-h', '--help']},  # Enable -h for help
+)
+
+# separate Typer app for config subcommands
+config_app = typer.Typer(
+    help='Configuration file management commands.',
+    context_settings={'help_option_names': ['-h', '--help']},  # Enable -h for help in subcommands too
+)
+
+app.add_typer(config_app, name='config')
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False, '--version', '-v', callback=version_callback, is_eager=True, help='Show version and exit.'
+    ),
+):
+    """
+    SedTRAILS: Configure, run, and analyze sediment particle tracking.
+    """
+    pass
 
 
 # Subcommand to load and validate a YAML configuration file.
-@app.command('load-config')
+@config_app.command('load')
 def load_config(
     config_file: str = typer.Option(
         'sedtrails.yml',
@@ -22,7 +55,7 @@ def load_config(
     ),
 ) -> dict:
     """
-    Load and validate a YAML configuration file using an existing validator.
+    Load and validate a YAML configuration file.
     Returns a dictionary with the valid configuration settings.
 
     Parameters
@@ -53,7 +86,7 @@ def load_config(
         raise typer.Exit(code=1) from e
 
 
-@app.command('create-config')
+@config_app.command('create')
 def create_config_template(
     output_file: str = typer.Option(
         './sedtrails-template.yml',
@@ -63,7 +96,7 @@ def create_config_template(
     ),
 ):
     """
-    Create a configuration template file for SedTRAILS.
+    Create a configuration file for SedTRAILS with all possible configurations and default values.
 
     Parameters
     ----------
@@ -83,7 +116,7 @@ def create_config_template(
 
 
 # Subcommand to run a simulation; it also validates the configuration.
-@app.command('run-simulation')
+@app.command('run')
 def run_simulation(
     config_file: str = typer.Option(
         'sedtrails.yml',
@@ -99,7 +132,7 @@ def run_simulation(
     ),
 ):
     """
-    Validate the configuration and run a simulation based on it.
+    Run a simulation based on a configuratio file.
     The simulation results are written to a netCDF file.
 
     Parameters

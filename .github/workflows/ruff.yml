@@ -5,6 +5,9 @@ on:
     branches:
       - dev
   workflow_dispatch:
+  push:
+    branches:
+      - dev
 
 jobs:
   build:
