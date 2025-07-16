@@ -27,61 +27,6 @@ from scipy.spatial import Delaunay
 
 
 @njit
-def _interpolate_field(
-    field: NDArray, x_points: NDArray, y_points: NDArray, grid_x: NDArray, grid_y: NDArray, triangles: NDArray
-) -> NDArray:
-    """
-    Interpolates values of a scalar field at given (x, y) points using barycentric
-    interpolation over a triangulated grid.
-
-    Parameters
-    ----------
-    field : ndarray of shape (M,)
-        Values of the scalar field at the grid points.
-    x_points : ndarray of shape (N,)
-        X-coordinates of the target interpolation points.
-    y_points : ndarray of shape (N,)
-        Y-coordinates of the target interpolation points.
-    grid_x : ndarray of shape (M,)
-        X-coordinates of the grid points (same length as `field`).
-    grid_y : ndarray of shape (M,)
-        Y-coordinates of the grid points (same length as `field`).
-    triangles : ndarray of shape (K, 3)
-        Indices of grid points forming triangles in the triangulation. Each row
-        represents a triangle using indices into `grid_x`, `grid_y`, and `field`.
-
-    Returns
-    -------
-    out : ndarray of shape (N,)
-        Interpolated field values at the given `(x_points, y_points)`.
-
-    """
-    n = x_points.shape[0]
-    out = np.empty(n, dtype=np.float64)
-    for i in range(n):
-        x, y = x_points[i], y_points[i]
-        val = 0.0
-        for j in range(triangles.shape[0]):
-            v0, v1, v2 = triangles[j]
-            x0, y0 = grid_x[v0], grid_y[v0]
-            x1, y1 = grid_x[v1], grid_y[v1]
-            x2, y2 = grid_x[v2], grid_y[v2]
-
-            denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-            if abs(denom) < 1e-10:
-                continue
-
-            w1 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / denom
-            w2 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / denom
-            w3 = 1.0 - w1 - w2
-            if w1 >= -1e-10 and w2 >= -1e-10 and w3 >= -1e-10:
-                val = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
-                break
-        out[i] = val
-    return out
-
-
-@njit
 def _update_particles_rk4(
     x0: NDArray,
     y0: NDArray,
@@ -322,6 +267,38 @@ def _update_particles_rk4_parallel(
         y_new[i] = yi + dt / 6.0 * (vps[0] + 2 * vps[1] + 2 * vps[2] + vps[3])
 
     return x_new, y_new
+
+
+@njit(parallel=True)
+def _interpolate_field(
+    field: NDArray, x_points: NDArray, y_points: NDArray, grid_x: NDArray, grid_y: NDArray, triangles: NDArray
+) -> NDArray:
+    n = x_points.shape[0]
+    out = np.empty(n, dtype=np.float64)
+
+    for i in prange(n):
+        x, y = x_points[i], y_points[i]
+        val = np.nan  # Default to NaN
+        for j in range(triangles.shape[0]):
+            v0, v1, v2 = triangles[j]
+            x0, y0 = grid_x[v0], grid_y[v0]
+            x1, y1 = grid_x[v1], grid_y[v1]
+            x2, y2 = grid_x[v2], grid_y[v2]
+
+            # Compute barycentric weights using full determinant formula
+            detT = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if abs(detT) < 1e-12:
+                continue  # Skip degenerate triangle
+
+            w1 = ((x1 - x) * (y2 - y) - (x2 - x) * (y1 - y)) / detT
+            w2 = ((x2 - x) * (y0 - y) - (x0 - x) * (y2 - y)) / detT
+            w3 = 1.0 - w1 - w2
+
+            if w1 >= -1e-10 and w2 >= -1e-10 and w3 >= -1e-10:
+                val = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+                break
+        out[i] = val
+    return out
 
 
 # ------------------------------------------------------------------------------
