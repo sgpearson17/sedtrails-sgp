@@ -7,7 +7,15 @@ from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
+from sedtrails.data_manager import DataManager
 from typing import Any
+
+
+# Mesh setup. # TODO: Can this be a default? I don't see the need to
+NODE_X = np.array([0, 1, 1, 0])
+NODE_Y = np.array([0, 0, 1, 1])
+FACE_NODE_CONNECTIVITY = np.array([[0, 1, 2, 3]])
+FILL_VALUE = -1
 
 
 class Simulation:
@@ -31,7 +39,10 @@ class Simulation:
         self._controller = ConfigurationController(self._config_file)
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
-        self.data_manager = ''
+        self.data_manager = DataManager(self._get_output_dir())
+
+        # set mesh
+        self.data_manager.set_mesh(NODE_X, NODE_Y, FACE_NODE_CONNECTIVITY, FILL_VALUE)
 
     def _get_format_config(self):
         """
@@ -41,12 +52,16 @@ class Simulation:
         format_config = {
             'input_file': self._controller.get('folder_settings.input_data'),
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
-            'reference_date': self._controller.get(
-                'general.input_model.reference_date'
-            ),  # TODO: shall this be added to the json schema??
+            'reference_date': self._controller.get('general.input_model.reference_date'),
         }
 
         return format_config
+
+    def _get_output_dir(self):
+        """
+        Returns the output directory for the simulation.
+        """
+        return self._controller.get('folder_settings.output_dir')
 
     def _get_physics_config(self):
         """
@@ -155,7 +170,6 @@ class Simulation:
         sedtrails_data = self.format_converter.convert_to_sedtrails()
         # Add physics calculations to the SedtrailsData
         self.physics_converter.convert_physics(sedtrails_data)
-
         print('Data conversion completed')
 
         # Initialize flow field data retriever
@@ -173,13 +187,14 @@ class Simulation:
         TIMESTEP = Duration(self._controller.get('time.timestep'))
         # TODO: should be managed by data manager
 
-        OUTPUT_DIR = self._controller.get('folder_settings.output_dir')
+        OUTPUT_DIR = self.data_manager.output_dir
 
         # Start at the 3rd timestep (index 2)
         TIMESTEP_INDEX = 2
 
         # Get the initial flow field at specified timestep
         # TODO: this should be handled by time class
+
         initial_time = sedtrails_data.times[TIMESTEP_INDEX]
         # Duration: 6.333 hours = 6 hours and 20 minutes = 380 minutes = 22,800 seconds
         print(self._controller.get('time.duration'))
@@ -202,6 +217,7 @@ class Simulation:
                 particle_positions[str(id)] = (_point[0], _point[1])
                 id += 1
 
+        # TODO: INTEGRATE LOGGER
         # Create a particle at the specified position
         # TODO: this should be handled by the seeding tool.
         # ===== STEP 4: Simulation with Numba Implementation =====
@@ -217,8 +233,8 @@ class Simulation:
         print(f'Starting time at index {TIMESTEP_INDEX}: {initial_time} seconds')
         # print(f'Will run for {DURATION_HOURS:.3f} hours ({NUM_STEPS} steps) with timestep {TIMESTEP} seconds')
 
-        # Store trajectory
-        trajectory_numba_x = [particles[0].x]  # TODO: just handle multiple particles
+        # Store trajectory1
+        trajectory_numba_x = [particles[0].x]  # TODO: must handle multiple particles
         trajectory_numba_y = [particles[0].y]
 
         # First get the initial flow data to create calculator
@@ -272,7 +288,15 @@ class Simulation:
             trajectory_numba_x.append(particles[0].x)
             trajectory_numba_y.append(particles[0].y)
 
-            # Print progress every 20%
+            ## TEST data manager
+            self.data_manager.add_data(
+                particle_id=particles[0].id,
+                time=current_time,
+                x=particles[0].x,
+                y=particles[0].y,
+            )
+
+            # Print progress every 20% # TODO: use a progress bar package to do this.
             if step % max(1, NUM_STEPS // 5) == 0:
                 percent_complete = (step / NUM_STEPS) * 100
                 elapsed_hours = step * TIMESTEP.to_seconds() / 3600
@@ -281,6 +305,9 @@ class Simulation:
                     f'Time: {elapsed_hours:.2f} hours - '
                     f'Position: ({particles[0].x:.2f}, {particles[0].y:.2f})'
                 )
+
+        # Finalize results
+        self.data_manager.dump()  # Write remaining data to disk
 
         numba_time = time.time() - simulation_start
         print(f'Numba implementation completed in {numba_time:.4f} seconds')
@@ -305,7 +332,7 @@ class Simulation:
             trajectory_x=trajectory_numba_x,
             trajectory_y=trajectory_numba_y,
             title=f'Particle Trajectory - {DURATION_SECONDS} seconds, {NUM_STEPS} steps',
-            save_path=OUTPUT_DIR,
+            save_path=OUTPUT_DIR + '/trajectory_plot.png',
         )
         print(f'Trajectory plot saved to {OUTPUT_DIR}')
 
