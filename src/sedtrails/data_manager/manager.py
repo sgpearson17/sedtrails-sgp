@@ -2,6 +2,14 @@ from sedtrails.data_manager.simulation_buffer import SimulationDataBuffer
 from sedtrails.data_manager.memory_manager import MemoryManager
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 import logging
+import numpy as np
+
+
+# Mesh setup. # TODO: Can this be a default? I don't see the need to
+NODE_X = np.array([0, 1, 1, 0])
+NODE_Y = np.array([0, 0, 1, 1])
+FACE_NODE_CONNECTIVITY = np.array([[0, 1, 2, 3]])
+FILL_VALUE = -1
 
 
 class DataManager:
@@ -69,7 +77,9 @@ class DataManager:
                 # Log warning but don't fail the operation
                 logging.warning(f'Could not delete chunk file {chunk_file}: {e}')
 
-    def set_mesh(self, node_x, node_y, face_node_connectivity, fill_value=-1):
+    def set_mesh(
+        self, node_x=NODE_X, node_y=NODE_Y, face_node_connectivity=FACE_NODE_CONNECTIVITY, fill_value=FILL_VALUE
+    ):
         """
         Set or update the mesh information for output.
         """

@@ -144,7 +144,7 @@ def run_simulation(
 
     Example
     -------
-      sedtrails run-simulation --config my_config.yml --output results.nc
+      sedtrails run --config my_config.yml --output results.nc
 
     """
 
