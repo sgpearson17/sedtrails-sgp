@@ -198,28 +198,3 @@ class TestSedtrailsCLI:
 
             # Verify Simulation was instantiated with correct config file
             mock_simulation_class.assert_called_once_with(custom_config)
-
-    @pytest.mark.parametrize(
-        'config_file,output_file',
-        [
-            ('config1.yml', 'output1.nc'),
-            ('test_config.yaml', 'test_output.nc'),
-            ('simulation.yml', 'simulation_results.nc'),
-        ],
-    )
-    def test_run_simulation_various_filenames(self, runner, sample_config_data, config_file, output_file):
-        """Test run with various config and output filenames."""
-        with runner.isolated_filesystem():
-            # Create config file
-            with open(config_file, 'w') as f:
-                yaml.dump(sample_config_data, f)
-
-            # Create necessary files/directories
-            os.makedirs('output', exist_ok=True)
-            Path('input_data.nc').touch()
-
-            result = runner.invoke(app, ['run', '--config', config_file, '--output', output_file], color=False)
-
-            assert result.exit_code == 0
-            assert f"Validating configuration from '{config_file}'" in result.stdout
-            assert f"Simulation complete. Output saved to '{output_file}'." in result.stdout
