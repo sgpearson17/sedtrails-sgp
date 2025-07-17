@@ -13,7 +13,7 @@ dependencies = [
   "pandas",
   "matplotlib",
   "xarray",
-  "typer",
+  "typer >=0.15.0,<1.0",
   "xugrid",
   "numba",
 ]
