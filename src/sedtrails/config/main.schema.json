@@ -172,7 +172,6 @@
       "properties": {
         "input_data": {
           "type": "string",
-          "default": "",
           "description": "path to D-Flow data file"
         },
         "output_dir": {
@@ -182,7 +181,6 @@
         },
         "comp_dir": {
           "type": "string",
-          "default": "",
           "description": "path to directory where complementary validation data is stored"
         }
       },
@@ -195,17 +193,14 @@
       "properties": {
         "subset_x": {
           "type": "string",
-          "default": "",
           "description": "X coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 35000:52000"
         },
         "subset_y": {
           "type": "string",
-          "default": "",
           "description": "Y coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 12000:150000"
         },
         "pol_file": {
           "type": "string",
-          "default": "",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
         },
         "subset_m": {
@@ -240,7 +235,6 @@
                 },
                 "nested_pol_file": {
                   "type": "string",
-                  "default": "",
                   "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
                 },
                 "depth_average_flow": {
@@ -375,7 +369,6 @@
           "properties": {
             "mod_file": {
               "type": "string",
-              "default": "",
               "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner). If empty, then no bed shear stress is added."
             }
           }
@@ -561,7 +554,6 @@
       "properties": {
         "po_file": {
           "type": "string",
-          "default": "",
           "description": "path to Deltares '.pol' file containing thin dams/permeable strucures"
         }
       }
@@ -571,12 +563,12 @@
       "properties": {
         "class": {
           "type": "string",
-          "default": "'clusters'",
+          "default": "clusters",
           "description": "specify class of source to be used (choose from 'clusters','pointSource','lineSource','regularGrid','densePatch')"
         },
         "release_type": {
           "type": "string",
-          "default": "'instantaneous'",
+          "default": "instantaneous",
           "description": "type of release: 'instantaneous' or 'continuous'"
         },
         "lifespan": {
@@ -586,18 +578,15 @@
         },
         "release_interval": {
           "type": "string",
-          "default": "",
           "description": "particle's release interval, e.g., '1D' for 1 day, '1H' for 1 hour, '30S' for 30 seconds. If empty, all particles are released at once."
         },
         "release_start": {
           "type": "string",
-          "default": "",
           "description": "release start time, e.g., '2020-01-01 00:00:00'. If empty, then release starts at the beginning of the simulation."
         },
         "release_stop": {
-          "type": "number",
-          "default": "S.release_start+1/24",
-          "description": "[datenum]"
+          "type": "string",
+          "description": "release stop time, e.g., '2020-01-01 01:00:00'. If empty, then release stops immediately after the first particles are released."
         },
         "particles_per_timestep": {
           "type": "number",
@@ -612,7 +601,6 @@
               "properties": {
                 "pol_file": {
                   "type": "string",
-                  "default": "",
                   "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
                 },
                 "points": {
@@ -652,7 +640,6 @@
               "properties": {
                 "pol_file": {
                   "type": "string",
-                  "default": "",
                   "description": "path to Deltares '.pol; file with list of transects (line segments) to release particles from"
                 },
                 "lines": {
@@ -697,7 +684,6 @@
               "properties": {
                 "pol_file": {
                   "type": "string",
-                  "default": "",
                   "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
                 },
                 "regular": {
@@ -767,7 +753,6 @@
         },
         "polygon_name": {
           "type": "string",
-          "default": "",
           "description": "name of polygon to query"
         },
         "analyze": {
