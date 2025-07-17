@@ -19,7 +19,7 @@ class TestSedtrailsCLI:
     @pytest.fixture
     def runner(self):
         """Create a CLI test runner."""
-        return CliRunner()
+        return CliRunner(mix_stderr=False)
 
     @pytest.fixture
     def sample_config_data(self):
