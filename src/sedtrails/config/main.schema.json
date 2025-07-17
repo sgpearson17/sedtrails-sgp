@@ -684,7 +684,6 @@
               "properties": {
                 "pol_file": {
                   "type": "string",
-                  ,
                   "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
                 },
                 "regular": {
@@ -754,7 +753,6 @@
         },
         "polygon_name": {
           "type": "string",
-          ,
           "description": "name of polygon to query"
         },
         "analyze": {
