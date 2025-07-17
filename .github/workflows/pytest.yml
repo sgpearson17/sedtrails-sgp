@@ -12,26 +12,23 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python 3.13
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: "3.13"
         
     - name: Cache pip dependencies
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-python${{ matrix.python-version }}-pip-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-python3.13-pip-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
-          ${{ runner.os }}-python${{ matrix.python-version }}-pip-
+          ${{ runner.os }}-python3.13-pip-
           
     - name: Install dependencies
       run: |
@@ -46,7 +43,6 @@ jobs:
         pytest tests/ -v --tb=short --cov=src/sedtrails --cov-report=xml --cov-report=term
         
     - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.13'
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
@@ -58,7 +54,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: pytest-results-python${{ matrix.python-version }}
+        name: pytest-results-python3.13
         path: |
           coverage.xml
           .pytest_cache/
