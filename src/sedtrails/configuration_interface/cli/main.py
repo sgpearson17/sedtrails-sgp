@@ -132,7 +132,7 @@ def run_simulation(
     ),
 ):
     """
-    Run a simulation based on a configuratio file.
+    Run a simulation based on a configuration file.
     The simulation results are written to a netCDF file.
 
     Parameters

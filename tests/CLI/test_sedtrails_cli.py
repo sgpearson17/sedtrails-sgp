@@ -19,7 +19,7 @@ class TestSedtrailsCLI:
     @pytest.fixture
     def runner(self):
         """Create a CLI test runner."""
-        return CliRunner(mix_stderr=False)
+        return CliRunner()
 
     @pytest.fixture
     def sample_config_data(self):
@@ -204,7 +204,7 @@ class TestSedtrailsCLI:
         result = runner.invoke(app, ['run', '--help'])
 
         assert result.exit_code == 0
-        assert 'Run a simulation based on a configuratio file' in result.stdout  # Note: typo in original
+        assert 'Run a simulation based on a configuration file' in result.stdout
         assert '--config' in result.stdout
         assert '--output' in result.stdout
         assert 'sedtrails run --config my_config.yml --output results.nc' in result.stdout
