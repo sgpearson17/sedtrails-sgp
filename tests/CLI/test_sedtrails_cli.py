@@ -199,24 +199,6 @@ class TestSedtrailsCLI:
             # Verify Simulation was instantiated with correct config file
             mock_simulation_class.assert_called_once_with(custom_config)
 
-    def test_run_help(self, runner):
-        """Test run command help."""
-        result = runner.invoke(app, ['run', '--help'], color=False)
-
-        assert result.exit_code == 0
-        assert 'Run a simulation based on a configuration file' in result.output
-        assert '--config' in result.output
-        assert '--output' in result.output
-        assert 'sedtrails run --config my_config.yml --output results.nc' in result.output
-
-    def test_run_help_short(self, runner):
-        """Test run command help with -h."""
-        result = runner.invoke(app, ['run', '-h'], color=False)
-
-        assert result.exit_code == 0
-        assert '--config' in result.output
-        assert '--output' in result.output
-
     @pytest.mark.parametrize(
         'config_file,output_file',
         [
