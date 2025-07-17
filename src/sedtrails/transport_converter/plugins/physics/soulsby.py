@@ -5,8 +5,8 @@ from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
     """
-    Plugin for van Westen et al. (2025) sediment transport physics calculations.
-    This plugin implements the physics calculations as described in van Westen et al. (2025).
+    Plugin for Soulsby et al. (2011) sediment transport physics calculations.
+    This plugin implements the physics calculations as described in Soulsby et al. (2011).
     """
 
     def __init__(
