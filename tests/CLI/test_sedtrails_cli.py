@@ -218,7 +218,7 @@ class TestSedtrailsCLI:
             os.makedirs('output', exist_ok=True)
             Path('input_data.nc').touch()
 
-            result = runner.invoke(app, ['run', '--config', config_file, '--output', output_file])
+            result = runner.invoke(app, ['run', '--config', config_file, '--output', output_file], color=False)
 
             assert result.exit_code == 0
             assert f"Validating configuration from '{config_file}'" in result.stdout
