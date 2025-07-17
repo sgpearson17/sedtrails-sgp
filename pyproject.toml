@@ -8,15 +8,16 @@ dynamic = ["version"]
 description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
 dependencies = [
   "jsonschema",
-  "numpy",
+  "numpy<2.2,>=1.24",
   "pyyaml",
   "pandas",
   "matplotlib",
   "xarray",
   "typer",
   "xugrid",
+  "numba",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.10, <3.14"
 authors = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
   { name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl" },
@@ -37,7 +38,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-cli = ["typer"]
+cli = ["typer>=0.15.0,<1.0"]
 dev = [
   "pytest",
   "ruff",

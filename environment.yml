@@ -5,11 +5,12 @@ channels:
   
 dependencies:
   - python=3.13
-  - numpy
+  - numpy<2.2,>=1.24
+  - numba
   - pandas
   - matplotlib
   - xarray
-  - typer
+  - typer>=0.15.0,<1.0
   - pytest
   - flake8
   - sphinx=8.2.0
