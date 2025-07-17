@@ -201,21 +201,21 @@ class TestSedtrailsCLI:
 
     def test_run_help(self, runner):
         """Test run command help."""
-        result = runner.invoke(app, ['run', '--help'])
+        result = runner.invoke(app, ['run', '--help'], color=False)
 
         assert result.exit_code == 0
-        assert 'Run a simulation based on a configuration file' in result.stdout
-        assert '--config' in result.stdout
-        assert '--output' in result.stdout
-        assert 'sedtrails run --config my_config.yml --output results.nc' in result.stdout
+        assert 'Run a simulation based on a configuration file' in result.output
+        assert '--config' in result.output
+        assert '--output' in result.output
+        assert 'sedtrails run --config my_config.yml --output results.nc' in result.output
 
     def test_run_help_short(self, runner):
         """Test run command help with -h."""
-        result = runner.invoke(app, ['run', '-h'])
+        result = runner.invoke(app, ['run', '-h'], color=False)
 
         assert result.exit_code == 0
-        assert '--config' in result.stdout
-        assert '--output' in result.stdout
+        assert '--config' in result.output
+        assert '--output' in result.output
 
     @pytest.mark.parametrize(
         'config_file,output_file',
@@ -225,9 +225,7 @@ class TestSedtrailsCLI:
             ('simulation.yml', 'simulation_results.nc'),
         ],
     )
-    def test_run_simulation_various_filenames(
-        self, runner, sample_config_data, mock_simulation, config_file, output_file
-    ):
+    def test_run_simulation_various_filenames(self, runner, sample_config_data, config_file, output_file):
         """Test run with various config and output filenames."""
         with runner.isolated_filesystem():
             # Create config file
