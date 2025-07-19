@@ -39,12 +39,25 @@ class YamlOutputError(SedtrailsException):
 
 class DateFormatError(ValueError):
     """
-    Exception raised when the date string does not match the required 
+    Exception raised when the date string does not match the required
     format 'YYYY-MM-DD 00:00:00'.
     """
+
+    pass
+
+
+class ZeroDuration(SedtrailsException):
+    """
+    Exception raised when a time representing a duration is zero.
+    A simulation cannot run with a zero duration or time step.
+    """
+
+    pass
+
 
 class DurationFormatError(ValueError):
     """
     Exception raised when the duration string does not match the required format '3D 2H1M3S'.
     """
-    pass    
+
+    pass
