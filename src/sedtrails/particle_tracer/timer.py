@@ -265,6 +265,7 @@ class Timer:
     _current: int | float = field(init=False)  # in seconds
     _start_time_np: np.datetime64 = field(init=False)
     _time_step_np: np.timedelta64 = field(init=False)
+    stop: bool = False
 
     def __post_init__(self):
         """
@@ -345,7 +346,10 @@ class Timer:
             If advancing would exceed the simulation end time.
         """
 
-        if not self.next > self.simulation_time.end:
+        if self.stop:
+            raise RuntimeWarning('Timer has stopped. Cannot advance time.')
+
+        if self.next <= self.simulation_time.end:
             self._current = self.next
         else:
-            raise ValueError(f'Cannot advance time beyond simulation end time: {self.simulation_time.end}')
+            self.stop = True
