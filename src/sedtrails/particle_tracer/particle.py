@@ -79,7 +79,7 @@ class Particle(ABC):
         return self._release_time
 
     @property
-    def is_mobile(self) -> None:
+    def is_mobile(self) -> bool:
         return self._is_mobile
 
     @is_mobile.setter
