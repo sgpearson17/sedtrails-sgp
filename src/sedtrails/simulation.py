@@ -8,6 +8,7 @@ from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
+from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from typing import Any
 
 
@@ -155,6 +156,8 @@ class Simulation:
         Run the particle simulation using both original and Numba-optimized implementations.
         """
 
+        from tqdm import tqdm
+
         if not self._config_is_read:  # assure config is read only once
             print('Reading configuration file...')
             self._controller.load_config(self._config_file)
@@ -167,37 +170,18 @@ class Simulation:
 
         # Initialize flow field data retriever
         retriever = FlowFieldDataRetriever(sedtrails_data)
-        retriever.flow_field_name = 'suspended_velocity'  # TODO: shouldn't this be read from config?
+        # TODO: shouldn't this be read from config? https://github.com/sedtrails/sedtrails/issues/222
+        retriever.flow_field_name = 'suspended_velocity'
 
-        initial_time = sedtrails_data.times[2]  #  returns seconds since reference date as floats
-        # initial_flow = retriever.get_flow_field(initial_time)  # expects secondes since reference date
+        start_time = self._controller.get('time.start', None)
+        if start_time is None:
+            start_time = '1970-01-01 00:00:00'  # TODO: This should be the start of flow field time series
 
-        # # retrieve start time from configuration or use default
-        # START_TIME = self._controller.get('time.start_time')
-
-        from sedtrails.particle_tracer.timer import Duration
-
-        TIMESTEP = Duration(self._controller.get('time.timestep'))
-        # TODO: should be managed by data manager
-
-        OUTPUT_DIR = self.data_manager.output_dir
-
-        # Start at the 3rd timestep (index 2)
-        TIMESTEP_INDEX = 2
-
-        # Get the initial flow field at specified timestep
-        # TODO: this should be handled by time class
-
-        initial_time = sedtrails_data.times[TIMESTEP_INDEX]
-        # Duration: 6.333 hours = 6 hours and 20 minutes = 380 minutes = 22,800 seconds
-        print(self._controller.get('time.duration'))
-
-        DURATION = Duration(self._controller.get('time.duration'))
-
-        DURATION_SECONDS = DURATION.to_seconds()  # Total duration in seconds
-
-        # Calculate number of steps
-        NUM_STEPS = int(DURATION_SECONDS / TIMESTEP.to_seconds())
+        simulation_time = Time(
+            start_time,
+            duration=Duration(self._controller.get('time.duration')),
+            time_step=Duration(self._controller.get('time.timestep')),
+        )
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
@@ -211,10 +195,8 @@ class Simulation:
                 id += 1
 
         # TODO: INTEGRATE LOGGER
-        # Create a particle at the specified position
-        # TODO: this should be handled by the seeding tool.
-        # ===== STEP 4: Simulation with Numba Implementation =====
-        print('\n=== STEP 4: Running Simulation with Numba Implementation ===')
+
+        # TODO: PARTICLE SEEDING
         particles = []
         for id, (x, y) in particle_positions.items():
             START_X = float(x)
@@ -223,15 +205,12 @@ class Simulation:
             print(f'Created particle at position ({particle.x:.2f}, {particle.y:.2f})')
             particles.append(particle)
 
-        print(f'Starting time at index {TIMESTEP_INDEX}: {initial_time} seconds')
-        # print(f'Will run for {DURATION_HOURS:.3f} hours ({NUM_STEPS} steps) with timestep {TIMESTEP} seconds')
-
         # Store trajectory1
         trajectory_numba_x = [particles[0].x]  # TODO: must handle multiple particles
         trajectory_numba_y = [particles[0].y]
 
         # First get the initial flow data to create calculator
-        flow_data = retriever.get_flow_field(initial_time)
+        flow_data = retriever.get_flow_field(simulation_time.start)
 
         # Create and compile the numba calculator - this will include compilation time
         print('Creating and compiling Numba calculator...')
@@ -240,6 +219,7 @@ class Simulation:
         compile_time = time.time() - compile_start
         print(f'Numba calculator compiled in {compile_time:.4f} seconds')
 
+        TIME_STEP_SECONDS = simulation_time.time_step.seconds
         # Warm up with one calculation to trigger JIT compilation
         print('Warming up JIT compilation...')
         warmup_start = time.time()
@@ -248,29 +228,23 @@ class Simulation:
             np.array([particles[0].y]),
             flow_data['u'],
             flow_data['v'],
-            TIMESTEP.to_seconds(),
+            TIME_STEP_SECONDS,
         )
         warmup_time = time.time() - warmup_start
         print(f'JIT warm-up completed in {warmup_time:.4f} seconds')
 
         # Start timer after compilation
-        simulation_start = time.time()
-        current_time = initial_time
-
-        for step in range(1, NUM_STEPS + 1):
-            # Update current time
-            current_time = initial_time + step * TIMESTEP.to_seconds()
-
+        timer = Timer(simulation_time=simulation_time)
+        for _step in tqdm(range(1, timer.steps + 1), desc='Computing positions', unit='Steps'):
             # Get flow field at current time
-            flow_data = retriever.get_flow_field(current_time)
-
+            flow_data = retriever.get_flow_field(timer.current)
             # Update particle position using Numba calculator
             new_x, new_y = numba_calc['update_particles'](
                 np.array([particles[0].x]),
                 np.array([particles[0].y]),
                 flow_data['u'],
                 flow_data['v'],
-                TIMESTEP.to_seconds(),
+                TIME_STEP_SECONDS,
             )
 
             # Update particle with new position
@@ -284,30 +258,16 @@ class Simulation:
             ## TEST data manager
             self.data_manager.add_data(
                 particle_id=particles[0].id,
-                time=current_time,
+                time=timer.current,
                 x=particles[0].x,
                 y=particles[0].y,
             )
 
-            # Print progress every 20% # TODO: use a progress bar package to do this.
-            if step % max(1, NUM_STEPS // 5) == 0:
-                percent_complete = (step / NUM_STEPS) * 100
-                elapsed_hours = step * TIMESTEP.to_seconds() / 3600
-                print(
-                    f'Step {step}/{NUM_STEPS} ({percent_complete:.1f}%) - '
-                    f'Time: {elapsed_hours:.2f} hours - '
-                    f'Position: ({particles[0].x:.2f}, {particles[0].y:.2f})'
-                )
+            # Advance timer
+            timer.advance()
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
-
-        numba_time = time.time() - simulation_start
-        print(f'Numba implementation completed in {numba_time:.4f} seconds')
-        print(f'Average speed: {NUM_STEPS / numba_time:.1f} steps/second')
-        print(f'Final position: ({particles[0].x:.4f}, {particles[0].y:.4f})')
-
-        # ===== STEP 4: Visualize Results =====
 
         print('\n=== STEP: Visualizing Results ===')
 
@@ -316,7 +276,7 @@ class Simulation:
         trajectory_numba_y = np.array(trajectory_numba_y)
 
         # Plot flow field with particle trajectory using the function
-        final_flow = retriever.get_flow_field(current_time)
+        final_flow = retriever.get_flow_field(timer.current)
 
         from sedtrails.pathway_visualizer.visualization_utils import plot_particle_trajectory
 
@@ -324,10 +284,10 @@ class Simulation:
             flow_data=final_flow,
             trajectory_x=trajectory_numba_x,
             trajectory_y=trajectory_numba_y,
-            title=f'Particle Trajectory - {DURATION_SECONDS} seconds, {NUM_STEPS} steps',
-            save_path=OUTPUT_DIR + '/trajectory_plot.png',
+            title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
+            save_path=self.data_manager.output_dir + '/trajectory_plot.png',
         )
-        print(f'Trajectory plot saved to {OUTPUT_DIR}')
+        print(f'Trajectory plot saved to {self.data_manager.output_dir}/trajectory_plot.png')
 
 
 if __name__ == '__main__':
