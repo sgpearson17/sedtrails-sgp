@@ -4,6 +4,7 @@ import numpy as np
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
+from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
@@ -34,6 +35,7 @@ class Simulation:
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
+        self.particles: list[Particle] = []  # List to hold particles
 
         # set mesh
         self.data_manager.set_mesh()
@@ -197,17 +199,17 @@ class Simulation:
         # TODO: INTEGRATE LOGGER
 
         # TODO: PARTICLE SEEDING
-        particles = []
+
         for id, (x, y) in particle_positions.items():
             START_X = float(x)
             START_Y = float(y)
             particle = Sand(id=id, _x=START_X, _y=START_Y, name='Test Particle')
             print(f'Created particle at position ({particle.x:.2f}, {particle.y:.2f})')
-            particles.append(particle)
+            self.particles.append(particle)
 
         # Store trajectory1
-        trajectory_numba_x = [particles[0].x]  # TODO: must handle multiple particles
-        trajectory_numba_y = [particles[0].y]
+        trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
+        trajectory_numba_y = [self.particles[0].y]
 
         # First get the initial flow data to create calculator
         flow_data = retriever.get_flow_field(simulation_time.start)
@@ -224,8 +226,8 @@ class Simulation:
         print('Warming up JIT compilation...')
         warmup_start = time.time()
         _ = numba_calc['update_particles'](
-            np.array([particles[0].x]),
-            np.array([particles[0].y]),
+            np.array([self.particles[0].x]),
+            np.array([self.particles[0].y]),
             flow_data['u'],
             flow_data['v'],
             TIME_STEP_SECONDS,
@@ -240,27 +242,27 @@ class Simulation:
             flow_data = retriever.get_flow_field(timer.current)
             # Update particle position using Numba calculator
             new_x, new_y = numba_calc['update_particles'](
-                np.array([particles[0].x]),
-                np.array([particles[0].y]),
+                np.array([self.particles[0].x]),
+                np.array([self.particles[0].y]),
                 flow_data['u'],
                 flow_data['v'],
                 TIME_STEP_SECONDS,
             )
 
             # Update particle with new position
-            particles[0].x = new_x[0]
-            particles[0].y = new_y[0]
+            self.particles[0].x = new_x[0]
+            self.particles[0].y = new_y[0]
 
             # Store trajectory
-            trajectory_numba_x.append(particles[0].x)
-            trajectory_numba_y.append(particles[0].y)
+            trajectory_numba_x.append(self.particles[0].x)
+            trajectory_numba_y.append(self.particles[0].y)
 
             ## TEST data manager
             self.data_manager.add_data(
-                particle_id=particles[0].id,
+                particle_id=self.particles[0].id,
                 time=timer.current,
-                x=particles[0].x,
-                y=particles[0].y,
+                x=self.particles[0].x,
+                y=self.particles[0].y,
             )
 
             # Advance timer
