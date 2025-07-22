@@ -61,24 +61,72 @@ class LoggerManager:
 # Module instance
 _logger_manager = LoggerManager()
 
+def _format_seeding_strategy(strategy):
+    """Helper function to format seeding strategy for readable logging."""
+    if not strategy or strategy == 'unknown':
+        return 'none'
+    
+    if isinstance(strategy, str):
+        return strategy
+    
+    if isinstance(strategy, dict):
+        formatted_parts = []
+        
+        for strategy_type, config in strategy.items():
+            if strategy_type == 'point':
+                points = config.get('points', [])
+                if isinstance(points, list):
+                    point_count = len(points)
+                    if point_count == 1:
+                        formatted_parts.append(f"single point at {points[0]}")
+                    else:
+                        formatted_parts.append(f"{point_count} points")
+                else:
+                    formatted_parts.append("point seeding")
+            
+            elif strategy_type == 'line':
+                formatted_parts.append("line seeding")
+            
+            elif strategy_type == 'grid':
+                formatted_parts.append("grid seeding")
+            
+            elif strategy_type == 'random':
+                count = config.get('count', 'unknown')
+                formatted_parts.append(f"random ({count} particles)")
+            
+            else:
+                formatted_parts.append(f"{strategy_type} seeding")
+        
+        return ', '.join(formatted_parts)
+    
+    return str(strategy)
+
 def log_simulation_state(state: dict, level=logging.INFO) -> None:
     """
     Logs the current state of the simulation with human-readable sentences.
+    Long messages are split into multiple lines for readability.
     """
     logger = _logger_manager.setup_logger()
     
     status = state.get('status', state.get('state', 'unknown'))
     
-    # Create full sentence messages
+    # Create messages, split when necessary
     if status == 'simulation_started':
         command = state.get('command', 'unknown')
         config = state.get('config_file', 'unknown')
         python_ver = state.get('python_version', 'unknown')
-        message = f"Starting SedTRAILS simulation with command: '{command}' using Python {python_ver} and config: {config}"
+        working_dir = state.get('working_directory', 'unknown')
+        
+        # Split into multiple log lines
+        logger.log(level, "=== SIMULATION START ===")
+        logger.log(level, f"Command: {command}")
+        logger.log(level, f"Python: {python_ver}")
+        logger.log(level, f"Config: {config}")
+        logger.log(level, f"Working directory: {working_dir}")
         
     elif status == 'config_loading':
         config_path = state.get('config_file_path', 'unknown')
-        message = f"Loading configuration from: {config_path}"
+        logger.log(level, f"Loading configuration: {config_path}")
         
     elif status == 'simulation_parameters':
         duration = state.get('duration', 'unknown')
@@ -86,45 +134,97 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
         start_time = state.get('start_time', 'unknown')
         strategy = state.get('seeding_strategy', 'unknown')
         output_dir = state.get('output_dir', 'unknown')
-        message = f"Simulation parameters: duration={duration}, timestep={timestep}, start_time={start_time}, seeding={strategy}, output={output_dir}"
+        
+        # Format seeding strategy for readability
+        formatted_strategy = _format_seeding_strategy(strategy)
+        
+        # Split parameters into multiple lines
+        logger.log(level, "--- Simulation Parameters ---")
+        logger.log(level, f"Duration: {duration}")
+        logger.log(level, f"Time step: {timestep}")
+        logger.log(level, f"Start time: {start_time}")
+        logger.log(level, f"Seeding: {formatted_strategy}")
+        logger.log(level, f"Output directory: {output_dir}")
         
     elif status == 'particles_created' or status == 'particles_initialized':
         count = state.get('count', 1)
         position = state.get('start_position', state.get('position', 'unknown'))
-        message = f"Created {count} particle(s) starting at position {position}"
+        seeding_strategy = state.get('seeding_strategy', {})
+        
+        logger.log(level, f"Created {count} particle(s)")
+        logger.log(level, f"Starting position: {position}")
+        
+        # Format seeding strategy if provided
+        if seeding_strategy and seeding_strategy != {}:
+            formatted_strategy = _format_seeding_strategy(seeding_strategy)
+            logger.log(level, f"Seeding method: {formatted_strategy}")
+            
+    elif status == 'data_conversion_completed':
+        timesteps = state.get('num_timesteps', 'unknown')
+        field_name = state.get('flow_field_name', 'unknown')
+        duration = state.get('simulation_duration_seconds', 'unknown')
+        timestep = state.get('simulation_timestep_seconds', 'unknown')
+        
+        logger.log(level, "--- Data Conversion Complete ---")
+        logger.log(level, f"Timesteps: {timesteps}")
+        logger.log(level, f"Flow field: {field_name}")
+        logger.log(level, f"Duration: {duration}s")
+        logger.log(level, f"Time step: {timestep}s")
+        
+    elif status == 'numba_compilation_started':
+        grid_x = state.get('grid_size_x', 'unknown')
+        grid_y = state.get('grid_size_y', 'unknown')
+        logger.log(level, f"Compiling calculator for {grid_x}x{grid_y} grid")
         
     elif status == 'compilation_complete':
         time_sec = state.get('time_sec', 'unknown')
-        message = f"Particle calculator compiled successfully in {time_sec} seconds"
+        logger.log(level, f"Calculator compiled in {time_sec} seconds")
         
     elif status == 'warmup_complete':
         time_sec = state.get('time_sec', 'unknown')
-        message = f"JIT compiler warmed up in {time_sec} seconds"
+        logger.log(level, f"JIT warmed up in {time_sec} seconds")
         
     elif status == 'simulation_progress':
         progress = state.get('progress_pct', 0)
         step = state.get('step', 0)
         position = state.get('position', 'unknown')
-        message = f"Simulation {progress}% complete (step {step}) - particle at {position}"
+        logger.log(level, f"Progress: {progress}% (step {step}) at {position}")
         
     elif status == 'simulation_complete' or status == 'simulation_completed':
         steps = state.get('total_steps', 'unknown')
         time_sec = state.get('total_time_sec', 'unknown')
         final_pos = state.get('final_position', 'unknown')
-        message = f"Simulation completed! {steps} steps in {time_sec}s, final position: {final_pos}"
+        
+        logger.log(level, "=== SIMULATION COMPLETE ===")
+        logger.log(level, f"Total steps: {steps}")
+        logger.log(level, f"Runtime: {time_sec}s")
+        logger.log(level, f"Final position: {final_pos}")
         
     elif status == 'visualization_saved':
         filename = state.get('file', 'trajectory plot')
-        message = f"Trajectory visualization saved as {filename}"
+        output_path = state.get('output_plot_path', 'unknown')
+        
+        logger.log(level, f"Visualization saved: {filename}")
+        if output_path != 'unknown':
+            logger.log(level, f"Location: {output_path}")
+            
+    elif status == 'creating_visualization':
+        points = state.get('trajectory_points', 'unknown')
+        logger.log(level, f"Creating visualization with {points} trajectory points")
         
     else:
         # Fallback for unmapped states
-        message = f"{status.replace('_', ' ').title()}"
-        details = [f"{k}: {v}" for k, v in state.items() if k not in ['status', 'state']]
-        if details:
-            message += f" ({', '.join(details)})"
-    
-    logger.log(level, message)
+        clean_status = status.replace('_', ' ').title()
+        logger.log(level, f"Status: {clean_status}")
+        
+        # Log each parameter on separate line if many parameters
+        params = {k: v for k, v in state.items() if k not in ['status', 'state']}
+        if len(params) > 3:  # If more than 3 params, split them
+            for k, v in params.items():
+                logger.log(level, f"  {k}: {v}")
+        elif params:  # If 3 or fewer, keep on one line
+            param_str = ', '.join(f"{k}: {v}" for k, v in params.items())
+            logger.log(level, f"  {param_str}")
 
 def log_exception(e: Exception) -> None:
     """Logs exceptions with stack trace."""
