@@ -11,7 +11,16 @@ from sedtrails.particle_tracer.position_calculator_numba import create_numba_par
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import log_simulation_state, _logger_manager
+from sedtrails.logger.logger import log_simulation_state, log_exception, _logger_manager
+from sedtrails.exceptions.exceptions import (
+    ConfigurationError,
+    DataConversionError, 
+    ParticleInitializationError,
+    NumbaCompilationError,
+    SimulationExecutionError,
+    VisualizationError,
+    SedtrailsException
+)
 from typing import Any
 
 
@@ -31,6 +40,10 @@ class Simulation:
 
         self._start_time = None
         self._config_is_read = False
+
+       # Validate config file exists early
+        if not os.path.exists(config_file):
+            raise ConfigurationError(f"Configuration file not found: {config_file}")
 
         # Lazy initialization of controllers and converters
         self._controller = ConfigurationController(self._config_file)
@@ -118,8 +131,10 @@ class Simulation:
         if not self._config_is_read:  # assure config is read only once
             try:
                 self._controller.load_config(self._config_file)
+                self._config_is_read = True
+                return True
             except Exception as e:
-                print(f'Error validating configuration file: {e}')
+                raise ConfigurationError(f'Error validating configuration file: {e}')  # noqa: B904
                 return False  # validation fails
             else:
                 return True  # validation succeeds
