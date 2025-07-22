@@ -59,14 +59,50 @@ _logger_manager = LoggerManager()
 
 def log_simulation_state(state: dict, level=logging.INFO) -> None:
     """
-    Logs the current state of the simulation.
-    
-    :param state: Dictionary containing relevant simulation data.
-    :param level: Logging level (e.g., logging.INFO, logging.DEBUG)
+    Logs the current state of the simulation with human-readable sentences.
     """
-    logger = _logger_manager.setup_logger()    
-    message = ", ".join(f"{key}={value}" for key, value in state.items())
-    logger.log(level, f"Simulation State: {message}")
+    logger = _logger_manager.setup_logger()
+    
+    status = state.get('status', state.get('state', 'unknown'))
+    
+    # Create full sentence messages
+    if status == 'particles_created' or status == 'particles_initialized':
+        count = state.get('count', 1)
+        position = state.get('start_position', state.get('position', 'unknown'))
+        message = f"Created {count} particle(s) starting at position {position}"
+        
+    elif status == 'compilation_complete':
+        time_sec = state.get('time_sec', 'unknown')
+        message = f"Particle calculator compiled successfully in {time_sec} seconds"
+        
+    elif status == 'warmup_complete':
+        time_sec = state.get('time_sec', 'unknown')
+        message = f"JIT compiler warmed up in {time_sec} seconds"
+        
+    elif status == 'simulation_progress':
+        progress = state.get('progress_pct', 0)
+        step = state.get('step', 0)
+        position = state.get('position', 'unknown')
+        message = f"Simulation {progress}% complete (step {step}) - particle at {position}"
+        
+    elif status == 'simulation_complete' or status == 'simulation_completed':
+        steps = state.get('total_steps', 'unknown')
+        time_sec = state.get('total_time_sec', 'unknown')
+        final_pos = state.get('final_position', 'unknown')
+        message = f"Simulation completed! {steps} steps in {time_sec}s, final position: {final_pos}"
+        
+    elif status == 'visualization_saved':
+        filename = state.get('file', 'trajectory plot')
+        message = f"Trajectory visualization saved as {filename}"
+        
+    else:
+        # Fallback for unmapped states
+        message = f"{status.replace('_', ' ').title()}"
+        details = [f"{k}: {v}" for k, v in state.items() if k not in ['status', 'state']]
+        if details:
+            message += f" ({', '.join(details)})"
+    
+    logger.log(level, message)
 
 def log_exception(e: Exception) -> None:
     """Logs exceptions with stack trace."""

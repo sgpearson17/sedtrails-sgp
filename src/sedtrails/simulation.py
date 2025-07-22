@@ -1,4 +1,6 @@
 import time
+import os
+import sys
 import numpy as np
 
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
@@ -158,6 +160,15 @@ class Simulation:
         """
 
         from tqdm import tqdm
+
+        # Log the command that started the simulation
+        log_simulation_state({
+            "status": "simulation_started",
+            "command": " ".join(sys.argv),
+            "config_file": self._config_file,
+            "working_directory": os.getcwd(),
+            "python_version": sys.version.split()[0]
+        })
 
         if not self._config_is_read:  # assure config is read only once
             log_simulation_state({
