@@ -54,8 +54,10 @@ class LoggerManager:
 
             # Log the file location immediately
             absolute_path = os.path.abspath(log_filename)
-            self.logger.info(f"Simulation logs are being saved to: {absolute_path}")
-        
+            self.logger.info("=== LOGGING INITIALIZED ===")
+            self.logger.info(f"Log file: {os.path.basename(absolute_path)}")
+            self.logger.info(f"Location: {os.path.dirname(absolute_path)}")
+            
         return self.logger
 
 # Module instance
