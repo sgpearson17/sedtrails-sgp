@@ -11,7 +11,7 @@ from sedtrails.particle_tracer.position_calculator_numba import create_numba_par
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import log_simulation_state, log_exception
+from sedtrails.logger.logger import log_simulation_state
 from typing import Any
 
 
