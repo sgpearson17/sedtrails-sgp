@@ -66,7 +66,25 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
     status = state.get('status', state.get('state', 'unknown'))
     
     # Create full sentence messages
-    if status == 'particles_created' or status == 'particles_initialized':
+    if status == 'simulation_started':
+        command = state.get('command', 'unknown')
+        config = state.get('config_file', 'unknown')
+        python_ver = state.get('python_version', 'unknown')
+        message = f"Starting SedTRAILS simulation with command: '{command}' using Python {python_ver} and config: {config}"
+        
+    elif status == 'config_loading':
+        config_path = state.get('config_file_path', 'unknown')
+        message = f"Loading configuration from: {config_path}"
+        
+    elif status == 'simulation_parameters':
+        duration = state.get('duration', 'unknown')
+        timestep = state.get('timestep', 'unknown')
+        start_time = state.get('start_time', 'unknown')
+        strategy = state.get('seeding_strategy', 'unknown')
+        output_dir = state.get('output_dir', 'unknown')
+        message = f"Simulation parameters: duration={duration}, timestep={timestep}, start_time={start_time}, seeding={strategy}, output={output_dir}"
+        
+    elif status == 'particles_created' or status == 'particles_initialized':
         count = state.get('count', 1)
         position = state.get('start_position', state.get('position', 'unknown'))
         message = f"Created {count} particle(s) starting at position {position}"
