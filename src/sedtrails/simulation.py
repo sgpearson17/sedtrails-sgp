@@ -187,25 +187,24 @@ class Simulation:
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
-        particle_positions = {}
+        # TODO: PARTICLE SEEDING
+        # particle_positions = {}
         strategy = self._controller.get('particle_seeding.strategy')
         if 'point' in strategy:
-            id = 1
             for point in strategy['point']['points']:
                 _point = point.split(',')
-                particle_positions[str(id)] = (_point[0], _point[1])
-                id += 1
+                self.particles.append(
+                    Sand(id=len(self.particles) + 1, _x=float(_point[0]), _y=float(_point[1]), name='Sand Particle')
+                )
 
         # TODO: INTEGRATE LOGGER
 
-        # TODO: PARTICLE SEEDING
-
-        for id, (x, y) in particle_positions.items():
-            START_X = float(x)
-            START_Y = float(y)
-            particle = Sand(id=id, _x=START_X, _y=START_Y, name='Test Particle')
-            print(f'Created particle at position ({particle.x:.2f}, {particle.y:.2f})')
-            self.particles.append(particle)
+        # for id, (x, y) in particle_positions.items():
+        #     START_X = float(x)
+        #     START_Y = float(y)
+        #     particle = Sand(id=id, _x=START_X, _y=START_Y, name='Test Particle')
+        #     print(f'Created particle at position ({particle.x:.2f}, {particle.y:.2f})')
+        #     self.particles.append(particle)
 
         # Store trajectory1
         trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
