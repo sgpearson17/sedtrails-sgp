@@ -21,8 +21,8 @@ class LoggerManager:
         # Create logs directory if not exists
         os.makedirs(self.log_dir, exist_ok=True)
         
-        # Generate log filename based on timestamp
-        log_filename = os.path.join(self.log_dir, f"simulation_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        # Simple log file name
+        log_filename = os.path.join(self.log_dir, "log.txt")
         
         # Create logger directly (avoid basicConfig)
         self.logger = logging.getLogger("simulation_logger")
