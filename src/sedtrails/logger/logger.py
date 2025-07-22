@@ -51,6 +51,10 @@ class LoggerManager:
             
             # Prevent propagation to root logger
             self.logger.propagate = False
+
+            # Log the file location immediately
+            absolute_path = os.path.abspath(log_filename)
+            self.logger.info(f"Simulation logs are being saved to: {absolute_path}")
         
         return self.logger
 
