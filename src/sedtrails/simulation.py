@@ -11,7 +11,7 @@ from sedtrails.particle_tracer.position_calculator_numba import create_numba_par
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import log_simulation_state
+from sedtrails.logger.logger import log_simulation_state, _logger_manager
 from typing import Any
 
 
@@ -37,6 +37,9 @@ class Simulation:
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
+
+        # Initialize logger with correct output directory
+        _logger_manager.log_dir = self.data_manager.output_dir
 
         # set mesh
         self.data_manager.set_mesh()
