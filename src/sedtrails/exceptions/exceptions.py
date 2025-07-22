@@ -13,6 +13,8 @@ class SedtrailsException(Exception):
     pass
 
 
+# === YAML/Configuration Exceptions ===
+
 class YamlParsingError(SedtrailsException):
     """
     Exception raised when there is an error parsing a YAML file.
@@ -37,6 +39,15 @@ class YamlOutputError(SedtrailsException):
     pass
 
 
+class ConfigurationError(SedtrailsException):
+    """
+    Exception raised when configuration is invalid or cannot be loaded.
+    """
+    pass
+
+
+# === Time/Date Exceptions ===
+
 class DateFormatError(ValueError):
     """
     Exception raised when the date string does not match the required
@@ -60,4 +71,47 @@ class DurationFormatError(ValueError):
     Exception raised when the duration string does not match the required format '3D 2H1M3S'.
     """
 
+    pass
+
+# === Simulation Exceptions ===
+
+class DataConversionError(SedtrailsException):
+    """
+    Exception raised when data conversion or processing fails.
+    """
+    pass
+
+
+class ParticleInitializationError(SedtrailsException):
+    """
+    Exception raised when particle initialization fails.
+    """
+    pass
+
+
+class NumbaCompilationError(SedtrailsException):
+    """
+    Exception raised when Numba JIT compilation fails.
+    """
+    pass
+
+
+class SimulationExecutionError(SedtrailsException):
+    """
+    Exception raised during simulation loop execution.
+    """
+    pass
+
+
+class VisualizationError(SedtrailsException):
+    """
+    Exception raised when visualization generation fails (typically non-critical).
+    """
+    pass
+
+
+class OutputError(SedtrailsException):
+    """
+    Exception raised when output file generation fails.
+    """
     pass
