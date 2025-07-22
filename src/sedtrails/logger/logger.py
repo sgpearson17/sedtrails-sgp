@@ -57,7 +57,7 @@ class LoggerManager:
             self.logger.info("=== LOGGING INITIALIZED ===")
             self.logger.info(f"Log file: {os.path.basename(absolute_path)}")
             self.logger.info(f"Location: {os.path.dirname(absolute_path)}")
-            
+
         return self.logger
 
 # Module instance
@@ -228,7 +228,26 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
             param_str = ', '.join(f"{k}: {v}" for k, v in params.items())
             logger.log(level, f"  {param_str}")
 
-def log_exception(e: Exception) -> None:
-    """Logs exceptions with stack trace."""
+def log_exception(e: Exception, context: str = None) -> None:
+    """
+    Logs exceptions with stack trace and context information.
+    
+    Parameters
+    ----------
+    e : Exception
+        The exception that occurred
+    context : str, optional
+        Additional context about where/when the exception occurred
+    """
     logger = _logger_manager.setup_logger()
-    logger.error("Simulation encountered an error!", exc_info=True)
+    
+    # Log exception with context
+    if context:
+        logger.error(f"=== ERROR: {context} ===")
+    else:
+        logger.error("=== SIMULATION ERROR ===")
+    
+    logger.error(f"Exception type: {type(e).__name__}")
+    logger.error(f"Exception message: {str(e)}")
+    logger.error("Stack trace:", exc_info=True)
+    logger.error("=" * 50)
