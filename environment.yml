@@ -19,4 +19,5 @@ dependencies:
   - pyyaml
   - jsonschema
   - xugrid
+  - tqdm
   
