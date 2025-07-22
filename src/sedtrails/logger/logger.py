@@ -213,6 +213,15 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
     elif status == 'creating_visualization':
         points = state.get('trajectory_points', 'unknown')
         logger.log(level, f"Creating visualization with {points} trajectory points")
+
+    elif status == 'simulation_failed':
+        error_type = state.get('error_type', 'unknown')
+        error_message = state.get('error_message', 'unknown')
+        
+        logger.log(level, "=== SIMULATION FAILED ===")
+        logger.log(level, f"Error type: {error_type}")
+        logger.log(level, f"Error message: {error_message}")
+        logger.log(level, "Check log above for full stack trace")
         
     else:
         # Fallback for unmapped states
