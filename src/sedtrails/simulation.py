@@ -131,7 +131,7 @@ class Simulation:
         Parameters
         ----------
         key : str
-            The dot-separted key to retrieve.
+            The dot-separated key to retrieve.
 
         Returns
         -------
