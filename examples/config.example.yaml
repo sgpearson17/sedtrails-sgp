@@ -6,6 +6,7 @@ folder_settings:
   input_data: "./sample-data/inlet_sedtrails.nc"
   output_dir: "./results"
 time:
+  start: '2016-09-21 19:30:00'
   timestep: '30S'
   duration: '6H18M18S'
 particles:
