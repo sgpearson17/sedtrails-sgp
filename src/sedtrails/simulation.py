@@ -12,17 +12,35 @@ from sedtrails.configuration_interface.configuration_controller import Configura
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import log_simulation_state, log_exception, _logger_manager
-from sedtrails.exceptions.exceptions import (
-    ConfigurationError,
-    DataConversionError, 
-    ParticleInitializationError,
-    NumbaCompilationError,
-    SimulationExecutionError,
-    VisualizationError,
-    SedtrailsException
-)
+from sedtrails.exceptions.exceptions import ConfigurationError
 from typing import Any
 
+def setup_global_exception_logging():
+    """Setup global exception logging for unhandled exceptions."""
+    original_excepthook = sys.excepthook
+    
+    def exception_handler(exc_type, exc_value, exc_traceback):
+        # Don't log KeyboardInterrupt (Ctrl+C)
+        if issubclass(exc_type, KeyboardInterrupt):
+            original_excepthook(exc_type, exc_value, exc_traceback)
+            return
+        
+        # Log all other exceptions
+        log_exception(exc_value, "Global Exception Handler")
+        log_simulation_state({
+            "status": "simulation_failed",
+            "error_type": exc_type.__name__,
+            "error_message": str(exc_value)
+        })
+        
+        # Call original handler
+        original_excepthook(exc_type, exc_value, exc_traceback)
+    
+    sys.excepthook = exception_handler
+
+# Setup default logging immediately when module is imported
+_logger_manager.log_dir = 'results'  # Default directory
+setup_global_exception_logging()
 
 class Simulation:
     """Class to encapsulate the particle simulation process."""
@@ -41,20 +59,28 @@ class Simulation:
         self._start_time = None
         self._config_is_read = False
 
-       # Validate config file exists early
+        # Validate config file exists early
         if not os.path.exists(config_file):
             raise ConfigurationError(f"Configuration file not found: {config_file}")
 
-        # Lazy initialization of controllers and converters
-        self._controller = ConfigurationController(self._config_file)
+        # Try to read config and update logger directory
+        try:
+            self._controller = ConfigurationController(self._config_file)
+            self._controller.load_config(self._config_file)
+            self._config_is_read = True
+            
+            # Update logger directory from config
+            output_dir = self._controller.get('folder_settings.output_dir', 'results')
+            _logger_manager.log_dir = output_dir
+            
+        except Exception:
+            # Global exception handler will catch and log this
+            raise
+
+        # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
-
-        # Initialize logger with correct output directory
-        _logger_manager.log_dir = self.data_manager.output_dir
-
-        # set mesh
         self.data_manager.set_mesh()
 
     def _get_format_config(self):
