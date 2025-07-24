@@ -12,10 +12,14 @@ time:
 particles:
   population:
     name: my_population
-    type: sand
+    particle_type: sand
     characteristics:
       grain_size: 0.01  # Diameter in meters
       density: 2650.0  # Density in kg/m^3
+    tracer_methods:
+      vanwesten:
+        alpha: 0.2
+        beta: 0.3
     seeding:
       release_start: 2025-06-18 13:00:00
       particles_per_timestep: 1
