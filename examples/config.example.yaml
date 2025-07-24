@@ -1,5 +1,4 @@
 general:
-# TODO: create valid example with new schema
   input_model: 
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
