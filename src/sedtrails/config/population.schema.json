@@ -141,7 +141,7 @@
             "default": "particle",
             "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
         },
-        "type": {
+        "particle_type": {
             "type": "string",
             "enum": [
                 "passive",
@@ -171,6 +171,12 @@
                 }
             },
             "minProperties": 1,
+            "default": {
+                "soulsby": {
+                    "f": 0.1,
+                    "r": 0.8
+                }
+            },
             "description": "At least one tracer method must be specified"
         },
         "seeding": {
