@@ -38,9 +38,6 @@ def setup_global_exception_logging():
     
     sys.excepthook = exception_handler
 
-# Setup global exception handling
-setup_global_exception_logging()
-
 class Simulation:
     """Class to encapsulate the particle simulation process."""
 
@@ -71,6 +68,9 @@ class Simulation:
             # Update logger directory from config
             output_dir = self._controller.get('folder_settings.output_dir', 'results')
             _logger_manager.log_dir = output_dir
+
+            # Setup global exception handling
+            setup_global_exception_logging()    
             
         except Exception:
             # Global exception handler will catch and log this
