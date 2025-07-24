@@ -6,6 +6,23 @@ from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidati
 from pathlib import Path
 
 
+# A custom YAML loader that avoid converting datetime strings to datetime objects
+# datetime strings are handled internally by the SedTRAILS configuration interface
+class SedtrailsYamlLoader(yaml.SafeLoader):
+    """Custom YAML loader that avoids converting datetime strings to datetime objects."""
+
+    pass
+
+
+# Add a constructor that treats timestamps as strings instead of datetime objects
+def construct_timestamp_as_string(loader, node):
+    """Construct timestamp nodes as strings instead of datetime objects."""
+    return loader.construct_scalar(node)
+
+
+SedtrailsYamlLoader.add_constructor('tag:yaml.org,2002:timestamp', construct_timestamp_as_string)
+
+
 class YAMLConfigValidator:
     """
     A class to load, validate, and process a YAML configuration file based on a JSON Schema.
@@ -144,12 +161,13 @@ class YAMLConfigValidator:
         # loading the YAML file
         try:
             with open(yml_filepath, 'r') as f:
-                yaml_data: Dict[str, Any] = yaml.safe_load(f)
+                yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
         # Resolver to handle references in different files
-        resolver = jsonschema.RefResolver(base_uri=f'file://{self.schema_path.parent}/', referrer=self.schema_content)
+        base_uri = self.schema_path.parent.as_uri() + '/'
+        resolver = jsonschema.RefResolver(base_uri=base_uri, referrer=self.schema_content)
 
         # Validate the YAML data against the schema
         try:
@@ -270,3 +288,11 @@ class YAMLConfigValidator:
 
         except Exception as e:
             raise YamlOutputError(f'Error writing config template to file: {e}') from e
+
+
+if __name__ == '__main__':
+    validator = YAMLConfigValidator('/Users/mgarciaalvarez/devel/sedtrails/src/sedtrails/config/main.schema.json')
+
+    data = validator.validate_yaml('examples/config.example.yaml')
+
+    print(data)
