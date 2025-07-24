@@ -1,8 +1,8 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Schema for Sedtrails Configuration",
   "additionalProperties": false,
-  "definitions": {
+  "$defs": {
     "soulsby_bed_interaction_type": {
       "type": "string",
       "enum": [
@@ -26,7 +26,7 @@
           "type": "object",
           "properties": {
             "bed_interaction": {
-              "$ref": "#/definitions/soulsby_bed_interaction_type",
+              "$ref": "#/$defs/soulsby_bed_interaction_type",
               "description": "bed interaction module"
             },
             "background_grain_size": {
@@ -120,16 +120,16 @@
           "default": "1970-01-01",
           "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
         }
-      },
-      "fm_format_type": {
-        "type": "string",
-        "enum": [
-          "sedtrails_nc",
-          "merged_nc"
-        ],
-        "default": "sedtrails_nc",
-        "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
       }
+    },
+    "fm_format_type": {
+      "type": "string",
+      "enum": [
+        "sedtrails_nc",
+        "merged_nc"
+      ],
+      "default": "sedtrails_nc",
+      "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
     }
   },
   "type": "object",
@@ -148,7 +148,7 @@
           "description": "true: (re)run everything; false: load existing pathways"
         },
         "input_model": {
-          "$ref": "#/definitions/input_model_type",
+          "$ref": "#/$defs/input_model_type",
           "description": "input model for the simulations (e.g., fm_netcdf, d3d4, xbeach, aeolis)"
         },
         "n_runs": {
@@ -161,7 +161,7 @@
           "description": "display all metadata"
         },
         "numerical_scheme": {
-          "$ref": "#/definitions/numerical_scheme_type",
+          "$ref": "#/$defs/numerical_scheme_type",
           "default": "rk4",
           "description": "numerical scheme ('rk4' = Runge Kutta 4)"
         }
@@ -221,7 +221,7 @@
           "type": "object",
           "properties": {
             "fm": {
-              "$ref": "#/definitions/fm_format_type",
+              "$ref": "#/$defs/fm_format_type",
               "default": "sedtrails_nc",
               "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
             },
@@ -243,7 +243,7 @@
                   "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
                 },
                 "vertical_layer": {
-                  "$ref": "#/definitions/delft3d4_vertical_layer_type",
+                  "$ref": "#/$defs/delft3d4_vertical_layer_type",
                   "default": "lowest",
                   "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
                 }
@@ -387,7 +387,7 @@
               "description": "resolution to which bedslope should be reinterpolated"
             },
             "bedslope_check_plot": {
-              "type": "object",
+              "type": "boolean",
               "default": false,
               "description": "if true, it creates a check plot to make sure bedslopes are in the right direction"
             },
@@ -414,7 +414,7 @@
       "type": "object",
       "properties": {
         "population": {
-          "$ref": "population.schema.json#/properties"
+          "$ref": "population.schema.json"
         }
       }
     },
@@ -486,7 +486,7 @@
       ]
     },
     "visualization": {
-      "$ref": "visualization.schema.json#/properties"
+      "$ref": "visualization.schema.json"
     }
   }
 }

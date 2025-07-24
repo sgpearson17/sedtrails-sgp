@@ -1,8 +1,9 @@
 {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "title": "Sediment Trails Population Configuration",
     "description": "Configuration for particle populations in Sediment Trails",
-    "definitions": {
+    "$defs": {
         "passive_characteristics": {
             "type": "object",
             "properties": {
@@ -161,13 +162,13 @@
             "type": "object",
             "properties": {
                 "vanwesten": {
-                    "$ref": "#/definitions/van_westen_method"
+                    "$ref": "#/$defs/van_westen_method"
                 },
                 "vanwesten_bl": {
-                    "$ref": "#/definitions/van_westen_bl_method"
+                    "$ref": "#/$defs/van_westen_bl_method"
                 },
                 "soulsby": {
-                    "$ref": "#/definitions/soulsby_method"
+                    "$ref": "#/$defs/soulsby_method"
                 }
             },
             "minProperties": 1,
@@ -381,7 +382,7 @@
         {
             "if": {
                 "properties": {
-                    "type": {
+                    "particle_type": {
                         "const": "passive"
                     }
                 }
@@ -389,7 +390,7 @@
             "then": {
                 "properties": {
                     "characteristics": {
-                        "$ref": "#/definitions/passive_characteristics"
+                        "$ref": "#/$defs/passive_characteristics"
                     }
                 }
             }
@@ -397,7 +398,7 @@
         {
             "if": {
                 "properties": {
-                    "type": {
+                    "particle_type": {
                         "const": "sand"
                     }
                 }
@@ -405,7 +406,7 @@
             "then": {
                 "properties": {
                     "characteristics": {
-                        "$ref": "#/definitions/sand_characteristics"
+                        "$ref": "#/$defs/sand_characteristics"
                     }
                 }
             }
@@ -413,7 +414,7 @@
         {
             "if": {
                 "properties": {
-                    "type": {
+                    "particle_type": {
                         "const": "mud"
                     }
                 }
@@ -421,7 +422,7 @@
             "then": {
                 "properties": {
                     "characteristics": {
-                        "$ref": "#/definitions/mud_characteristics"
+                        "$ref": "#/$defs/mud_characteristics"
                     }
                 }
             }
@@ -429,7 +430,7 @@
         {
             "if": {
                 "properties": {
-                    "type": {
+                    "particle_type": {
                         "const": "bio"
                     }
                 }
@@ -437,7 +438,7 @@
             "then": {
                 "properties": {
                     "characteristics": {
-                        "$ref": "#/definitions/bio_characteristics"
+                        "$ref": "#/$defs/bio_characteristics"
                     }
                 }
             }
@@ -445,7 +446,7 @@
         {
             "if": {
                 "properties": {
-                    "type": {
+                    "particle_type": {
                         "const": "gravel"
                     }
                 }
@@ -453,14 +454,14 @@
             "then": {
                 "properties": {
                     "characteristics": {
-                        "$ref": "#/definitions/gravel_characteristics"
+                        "$ref": "#/$defs/gravel_characteristics"
                     }
                 }
             }
         }
     ],
     "required": [
-        "type",
+        "particle_type",
         "characteristics",
         "tracer_methods",
         "seeding"

@@ -1,7 +1,8 @@
 {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "title": "Visualization Configuration",
-    "visualization_definitions": {
+    "$defs": {
         "velocity_component_types": {
             "type": "string",
             "enum": [
@@ -136,12 +137,12 @@
                             "description": "monitoring point for checking e.g. tidal signal"
                         },
                         "monitoring_point_vel_component": {
-                            "$ref": "#/visualization_definitions/velocity_component_types",
+                            "$ref": "#/$defs/velocity_component_types",
                             "default": "E",
                             "description": "'E' for X-component, 'N' for Y-component"
                         },
                         "monitoring_point_signal": {
-                            "$ref": "#/visualization_definitions/monitorin_point_signal_types",
+                            "$ref": "#/$defs/monitorin_point_signal_types",
                             "default": "velocity",
                             "description": "'velocity' or 'waterlevel' but water level not yet enabled"
                         },
