@@ -3,17 +3,6 @@
     "title": "Sediment Trails Population Configuration",
     "description": "Configuration for particle populations in Sediment Trails",
     "definitions": {
-        "particle_type_": {
-            "type": "string",
-            "enum": [
-                "passive",
-                "sand",
-                "mud",
-                "bio",
-                "gravel"
-            ],
-            "description": "'passive' = passive particle, 'sand' = sand particle, 'mud' = mud particle, 'bio' = biological particle, 'gravel' = gravel particle"
-        },
         "passive_characteristics": {
             "type": "object",
             "properties": {
@@ -153,8 +142,15 @@
             "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
         },
         "type": {
-            "$ref": "#/definitions/particle_type_",
-            "default": "sand",
+            "type": "string",
+            "enum": [
+                "passive",
+                "sand",
+                "mud",
+                "bio",
+                "gravel"
+            ],
+            "default": "passive",
             "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'gravel')"
         },
         "characteristics": {
