@@ -10,9 +10,92 @@
                 "sand",
                 "mud",
                 "bio",
-                "lum"
+                "gravel"
             ],
-            "description": "'passive' = passive particle, 'sand' = sand particle, 'mud' = mud particle, 'bio' = biological particle, 'lum' = luminescence analysis"
+            "description": "'passive' = passive particle, 'sand' = sand particle, 'mud' = mud particle, 'bio' = biological particle, 'gravel' = gravel particle"
+        },
+        "passive_characteristics": {
+            "type": "object",
+            "properties": {
+                "diffusion_coefficient": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "random walk diffusion coefficient for passive particles"
+                }
+            },
+            "required": [
+                "diffusion_coefficient"
+            ]
+        },
+        "sand_characteristics": {
+            "type": "object",
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2650.0,
+                    "description": "density of sand particles [kg/m3]"
+                },
+                "grain_size": {
+                    "type": "number",
+                    "default": 0.0005,
+                    "description": "grain size of sand particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "grain_size"
+            ]
+        },
+        "mud_characteristics": {
+            "type": "object",
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2000.0,
+                    "description": "density of mud particles [kg/m3]"
+                },
+                "size": {
+                    "type": "number",
+                    "default": 0.00005,
+                    "description": "grain size of mud particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "size"
+            ]
+        },
+        "bio_characteristics": {
+            "type": "object",
+            "properties": {
+                "buoyancy": {
+                    "type": "number",
+                    "default": 0.95,
+                    "description": "buoyancy factor for biological particles (relative to water)"
+                }
+            },
+            "required": [
+                "buoyancy"
+            ]
+        },
+        "gravel_characteristics": {
+            "type": "object",
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2800.0,
+                    "description": "density of gravel particles [kg/m3]"
+                },
+                "grain_size": {
+                    "type": "number",
+                    "default": 0.01,
+                    "description": "grain size of gravel particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "grain_size"
+            ]
         },
         "van_westen_method": {
             "type": "object",
@@ -69,31 +152,14 @@
             "default": "particle",
             "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
         },
-        "particle_type": {
+        "type": {
             "$ref": "#/definitions/particle_type_",
             "default": "sand",
-            "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'lum')"
+            "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'gravel')"
         },
         "characteristics": {
             "type": "object",
-            "description": "characteristics of particles ",
-            "properties": {
-                "density": {
-                    "type": "number",
-                    "default": 2650.0,
-                    "description": "density of particles [kg/m3]"
-                },
-                "grain_size": {
-                    "type": "number",
-                    "default": 0.0002,
-                    "description": "grain size of particles [m]"
-                },
-                "diffusion_coefficient": {
-                    "type": "number",
-                    "default": 0.1,
-                    "description": "random walk diffusion coefficient"
-                }
-            }
+            "description": "characteristics specific to the particle type"
         },
         "tracer_methods": {
             "type": "object",
@@ -107,7 +173,9 @@
                 "soulsby": {
                     "$ref": "#/definitions/soulsby_method"
                 }
-            }
+            },
+            "minProperties": 1,
+            "description": "At least one tracer method must be specified"
         },
         "seeding": {
             "type": "object",
@@ -160,18 +228,17 @@
                                     "items": {
                                         "type": "string"
                                     },
-                                    "default": [],
                                     "description": "a list of X,Y coordinates reprsenting points where particles will be released, e.g., 1000,2000 "
                                 },
                                 "show_check_plots": {
                                     "type": "boolean",
                                     "default": false,
-                                    "description": "Do you want to show cluster check plots?"
+                                    "description": "Do you want to show cluster check plots? TODO: move to validation section"
                                 },
                                 "save_check_plots": {
                                     "type": "boolean",
                                     "default": false,
-                                    "description": "Do you want to save cluster check plots?"
+                                    "description": "Do you want to save cluster check plots? TODO: move to validation section"
                                 }
                             },
                             "oneOf": [
@@ -295,8 +362,7 @@
                 }
             },
             "required": [
-                "quantity",
-                "release_start"
+                "quantity"
             ]
         },
         "barriers": {
@@ -309,9 +375,91 @@
             }
         }
     },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "type": {
+                        "const": "passive"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/definitions/passive_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "type": {
+                        "const": "sand"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/definitions/sand_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "type": {
+                        "const": "mud"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/definitions/mud_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "type": {
+                        "const": "bio"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/definitions/bio_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "type": {
+                        "const": "gravel"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/definitions/gravel_characteristics"
+                    }
+                }
+            }
+        }
+    ],
     "required": [
-        "name",
-        "particle_type",
+        "type",
+        "characteristics",
         "tracer_methods",
         "seeding"
     ]
