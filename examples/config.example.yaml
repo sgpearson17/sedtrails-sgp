@@ -14,8 +14,8 @@ particles:
     name: my_population
     particle_type: sand
     characteristics:
-      grain_size: 0.01  # Diameter in meters
-      density: 2650.0  # Density in kg/m^3
+      grain_size: 0.01 
+      density: 2650.0  
     tracer_methods:
       vanwesten:
         alpha: 0.2
