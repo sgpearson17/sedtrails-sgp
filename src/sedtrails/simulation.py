@@ -38,8 +38,7 @@ def setup_global_exception_logging():
     
     sys.excepthook = exception_handler
 
-# Setup default logging immediately when module is imported
-_logger_manager.log_dir = 'results'  # Default directory
+# Setup global exception handling
 setup_global_exception_logging()
 
 class Simulation:
@@ -205,6 +204,20 @@ class Simulation:
 
         from tqdm import tqdm
 
+        if not self._config_is_read:  # assure config is read only once
+            self._controller.load_config(self._config_file)
+            self._config_is_read = True
+
+            # Ensure logger directory is set from config
+            output_dir = self._controller.get('folder_settings.output_dir', 'results')
+            _logger_manager.log_dir = output_dir
+
+            log_simulation_state({
+                "state": "config_loading",
+                "config_file_path": self._config_file,
+                "timestamp": time.time()
+            })
+
         # Log the command that started the simulation
         log_simulation_state({
             "status": "simulation_started",
@@ -212,16 +225,7 @@ class Simulation:
             "config_file": self._config_file,
             "working_directory": os.getcwd(),
             "python_version": sys.version.split()[0]
-        })
-
-        if not self._config_is_read:  # assure config is read only once
-            log_simulation_state({
-                "state": "config_loading",
-                "config_file_path": self._config_file,
-                "timestamp": time.time()
-            })
-            self._controller.load_config(self._config_file)
-            self._config_is_read = True
+        })            
 
         sedtrails_data = self.format_converter.convert_to_sedtrails()
         # Add physics calculations to the SedtrailsData
