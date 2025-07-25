@@ -13,22 +13,12 @@ import pytest
 import os
 import tempfile
 import shutil
-import yaml
 import sys
 import logging
-from unittest.mock import patch, MagicMock
-from pathlib import Path
 
 from sedtrails.simulation import Simulation, setup_global_exception_logging
 from sedtrails.logger.logger import _logger_manager, log_exception, log_simulation_state
-from sedtrails.exceptions.exceptions import (
-    ConfigurationError,
-    SedtrailsException,
-    DataConversionError,
-    ParticleInitializationError,
-    VisualizationError
-)
-
+from sedtrails.exceptions.exceptions import ConfigurationError
 
 # Test Configuration Data
 def get_valid_config(output_dir):

@@ -6,7 +6,6 @@ A global logger for the SedTRAILS Particle Tracer System.
 
 import logging
 import os
-import datetime
 
 class LoggerManager:
     def __init__(self):
