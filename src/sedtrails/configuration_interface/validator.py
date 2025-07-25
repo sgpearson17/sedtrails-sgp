@@ -52,11 +52,12 @@ class YAMLConfigValidator:
             The path to the JSON schema file (YAML or JSON format).
         """
 
-        self.schema_content: Dict[str, Any] = self.load_schema_from_file(schema_filepath)
+        self.schema_content: Dict[str, Any] = self._load_schema_from_file(schema_filepath)
         self.schema_path = Path(schema_filepath).resolve()
         self.config: Dict[str, Any] = {}
+        self._applied_defaults: bool = False
 
-    def load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
+    def _load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
         """
         Loads the JSON schema from an external file and fills self.schema with its content.
 
@@ -127,7 +128,9 @@ class YAMLConfigValidator:
 
         elif schema_type == 'array' and isinstance(config_data, list):
             item_schema = schema_content.get('items', {})
+            print(f'schema_type: {schema_type}, item_schema: {item_schema}')
             for i, item in enumerate(config_data):
+                print(f'key: {i}, item: {item}')
                 config_data[i] = self._apply_defaults(item_schema, item)
 
         return config_data
@@ -158,6 +161,7 @@ class YAMLConfigValidator:
             If there is an error applying default values from the schema.
         """
 
+        # TODO: CONITINUE HERE: substitute this for https://referencing.readthedocs.io/en/stable/intro/
         # loading the YAML file
         try:
             with open(yml_filepath, 'r') as f:
@@ -177,15 +181,19 @@ class YAMLConfigValidator:
             raise YamlValidationError(f'YAML config validation error: {e.message}') from e
 
         # apply default values from the schema
+        if self._applied_defaults:  # skip applying defaults if already done
+            return self.config
+
         try:
             config_with_defaults = self._apply_defaults(self.schema_content, config_data=yaml_data)
         except Exception as e:
             raise ValueError(f'Error applying defaults: {e}') from e
         else:
             self.config = config_with_defaults
+            self._applied_defaults = True
             return self.config
 
-    def export_schema_to_yaml(self, output_file: Optional[str] = None) -> str | None:
+    def export_schema(self, output_file: Optional[str] = None) -> str | None:
         """
         Exports the JSON schema as a valid YAML string.
 
@@ -215,7 +223,7 @@ class YAMLConfigValidator:
         else:
             return schema_yaml
 
-    def export_config_to_yaml(self, output_file: str = './example.sedtrails.yaml') -> None:
+    def export_config(self, output_file: str = './example.sedtrails.yaml') -> None:
         """
         Exports the validated configuration as a valid YAML string.
 
@@ -234,7 +242,8 @@ class YAMLConfigValidator:
             If there is an error while writing the configuration to the file.
         """
 
-        self._apply_defaults(self.schema_content, self.config)
+        if not self._applied_defaults:
+            self._apply_defaults(self.schema_content, self.config)
         print(f'Applied defaults to config: {self.config}')
 
         config_yaml: str = yaml.dump(self.config, sort_keys=False)
@@ -264,8 +273,8 @@ class YAMLConfigValidator:
 
         try:
             # Create empty config and apply all schema defaults
-            empty_config = {}
-            config_with_all_defaults = self._apply_defaults(self.schema_content, empty_config)
+            # empty_config = {}
+            self._apply_defaults(self.schema_content, self.config)
 
             # Create output directory if needed
             from pathlib import Path
@@ -275,7 +284,7 @@ class YAMLConfigValidator:
 
             # Convert to YAML
             config_yaml = yaml.dump(
-                config_with_all_defaults, default_flow_style=False, sort_keys=False, indent=2, allow_unicode=True
+                self.config, default_flow_style=False, sort_keys=False, indent=2, allow_unicode=True
             )
 
             # Write to file with header
@@ -293,6 +302,9 @@ class YAMLConfigValidator:
 if __name__ == '__main__':
     validator = YAMLConfigValidator('/Users/mgarciaalvarez/devel/sedtrails/src/sedtrails/config/main.schema.json')
 
+    # TODO: export to YAML with defaults is not working properly. The population values and sheer stress are not included.
     data = validator.validate_yaml('examples/config.example.yaml')
 
-    print(data)
+    conf = validator.export_config()
+
+    print(conf)
