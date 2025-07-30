@@ -13,7 +13,7 @@ class LoggerManager:
         self.log_dir = "logs"
     
     def setup_logger(self):
-        """Set up the logger with timestamped file."""
+        """Set up the logger"""
         if self.logger is not None:
             return self.logger
             
