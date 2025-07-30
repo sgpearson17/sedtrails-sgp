@@ -60,7 +60,7 @@ class LoggerManager:
         return self.logger
 
 # Module instance
-_logger_manager = LoggerManager()
+logger_manager = LoggerManager()
 
 def _format_seeding_strategy(strategy):
     """Helper function to format seeding strategy for readable logging."""
