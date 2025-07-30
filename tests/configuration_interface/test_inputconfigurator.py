@@ -18,7 +18,7 @@ def validator():
     yaml.dump(dummy_schema, dummy_schema_file)
     dummy_schema_file.close()
 
-    DummyValidator = YAMLConfigValidator(schema_filepath=dummy_schema_file.name)
+    DummyValidator = YAMLConfigValidator()
 
     return DummyValidator
 

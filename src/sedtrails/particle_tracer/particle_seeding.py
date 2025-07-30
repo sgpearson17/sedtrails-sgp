@@ -13,7 +13,7 @@ Seeding strategies for positions include:
 """
 
 from abc import ABC, abstractmethod
-from sedtrails.particle_tracer.particle import Particle, Passive
+from sedtrails.particle_tracer.particle import Particle, Passive, Sand
 from typing import List, Tuple, Optional, Dict
 import random
 from dataclasses import dataclass, field
@@ -47,9 +47,7 @@ class SeedingConfig:
         if 'point' in strategy_object:
             for point in strategy_object['point']['points']:
                 _point = point.split(',')
-                initial_positions.append(
-                    Sand(id=len(self.particles) + 1, _x=float(_point[0]), _y=float(_point[1]), name='Sand Particle')
-                )
+                initial_positions.append(Sand(name='Sand'))
 
     def _extract_release_times(self) -> List[int]:
         """
@@ -385,14 +383,14 @@ class ParticleFactory:
         if type not in ParticleFactory.TYPES:
             raise ValueError(f'Unknown particle type: {type}')
 
-        particle_class = ParticleFactory.TYPES[particle_type]
+        # TODO: fix
+        # particle_class = ParticleFactory.TYPES[particle_type]
 
+        # particles = [particle_class() for _ in range(count)]
 
-        particles = [particle_class() for _ in range(count)]
-
-
-    def _add_positions_and_times():
-
+    def _add_positions_and_times(self):
+        pass
+        # TODO: Add logic to assign initial positions and release times to the particles
 
 
 if __name__ == '__main__':

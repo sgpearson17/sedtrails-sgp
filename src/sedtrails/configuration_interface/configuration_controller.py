@@ -6,8 +6,6 @@ Reads simulation configuration files, applies default configuration values,
 and provides configurations to other components.
 """
 
-import os
-import importlib.resources as pkg_resources
 from abc import ABC, abstractmethod
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from typing import Dict, Any

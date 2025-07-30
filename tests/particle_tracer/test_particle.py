@@ -16,21 +16,21 @@ class TestParticle:
         Test the initialization of the Mud class.
         """
 
-        mud = Mud(id=1, name='Mud Particle', _x=1, _y=2)
+        mud = Mud()
         assert isinstance(mud, Mud)
 
     def test_sand_initialization(self):
         """
         Test the initialization of the Sand class.
         """
-        sand = Sand(id=1, name='Sand Particle', _x=1, _y=2)
+        sand = Sand()
         assert isinstance(sand, Sand)
 
     def test_passive_initialization(self):
         """
         Test the initialization of the Passive class.
         """
-        passive = Passive(id=1, name='Passive Particle', _x=1, _y=2)
+        passive = Passive()
         assert isinstance(passive, Passive)
 
     def test_particle_name_type_error(self):
@@ -98,6 +98,7 @@ class TestPhysics:
     Test suite for the Physics class.
     """
 
+
 class TestPhysicalProperties:
     """
     Test suite for the PhysicalProperties class.
@@ -115,20 +116,20 @@ class TestPhysicalProperties:
         """
         Test initialization with invalid density values.
         """
-        with pytest.raises(ValueError, match="Density must be positive"):
+        with pytest.raises(ValueError, match='Density must be positive'):
             PhysicalProperties(density=-1.0, diameter=2e-4)
-        
-        with pytest.raises(ValueError, match="Density must be positive"):
+
+        with pytest.raises(ValueError, match='Density must be positive'):
             PhysicalProperties(density=0.0, diameter=2e-4)
 
     def test_invalid_diameter(self):
         """
         Test initialization with invalid diameter values.
         """
-        with pytest.raises(ValueError, match="Diameter must be positive"):
+        with pytest.raises(ValueError, match='Diameter must be positive'):
             PhysicalProperties(density=2650.0, diameter=-2e-4)
-        
-        with pytest.raises(ValueError, match="Diameter must be positive"):
+
+        with pytest.raises(ValueError, match='Diameter must be positive'):
             PhysicalProperties(density=2650.0, diameter=0.0)
 
     def test_particle_physical_properties(self):
