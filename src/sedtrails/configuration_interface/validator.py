@@ -17,19 +17,10 @@ REF_SCHEMAS = [
 
 class YAMLConfigValidator:
     """
-    A class to load, validate, and process a YAML configuration file based on a JSON Schema.
-
-    The class is initialized with the path to a valid JSON schema (in YAML or JSON format).
-    Later, you can use the `validate_yaml` method to check if a YAML configuration adheres
-    to the loaded schema. Default directives for folder names (using "$ref", "transform", etc.)
-    are supported.
+    A class to load, validate a YAML configuration file based on a JSON Schema.
 
     Attributes
     ----------
-    schema_content : Dict[str, Any]
-        The loaded JSON schema content as a dictionary.
-    schema_path : Path
-        The resolved path to the JSON schema file.
     config : Dict[str, Any]
         The validated configuration data as a nested dictionary.
     """
@@ -42,6 +33,7 @@ class YAMLConfigValidator:
 
         self.config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
+        self.__registry = None
         self.__validator = self._validator()
 
     def _load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
@@ -95,32 +87,104 @@ class YAMLConfigValidator:
         ValueError
             If the default value cannot be resolved.
         """
+        return self._apply_defaults_with_resolver(schema_content, config_data, self.__validator)
 
+    def _apply_defaults_with_resolver(
+        self, schema_content: Dict[str, Any], config_data: Dict[str, Any], validator: jsonschema.Draft202012Validator
+    ) -> Dict[str, Any]:
+        """
+        Internal method that applies defaults with access to the schema resolver.
+        """
         schema_type = schema_content.get('type')
+
+        # Handle $ref references
+        if '$ref' in schema_content:
+            # Resolve the reference using the validator's schema resolver
+            try:
+                resolved_schema = validator.resolver.resolve(schema_content['$ref']).contents
+                return self._apply_defaults_with_resolver(resolved_schema, config_data, validator)
+            except Exception as e:
+                print(f'Warning: Could not resolve $ref {schema_content["$ref"]}: {e}')
+                return config_data
 
         if schema_type == 'object' and isinstance(config_data, dict):
             properties = schema_content.get('properties', {})
+
+            # Handle allOf, anyOf, oneOf schemas
+            for conditional_key in ['allOf', 'anyOf', 'oneOf']:
+                if conditional_key in schema_content:
+                    for sub_schema in schema_content[conditional_key]:
+                        if conditional_key == 'allOf' or self._schema_matches(sub_schema, config_data, validator):
+                            config_data = self._apply_defaults_with_resolver(sub_schema, config_data, validator)
+
             for key, prop_schema in properties.items():
                 if key not in config_data:
                     # Create missing property with default value
                     if 'default' in prop_schema:
-                        config_data[key] = prop_schema['default']
+                        config_data[key] = self._deep_copy_default(prop_schema['default'])
                     elif prop_schema.get('type') == 'object':
                         # Create empty object and apply defaults recursively
                         config_data[key] = {}
-                        config_data[key] = self._apply_defaults(prop_schema, config_data[key])
+                        config_data[key] = self._apply_defaults_with_resolver(prop_schema, config_data[key], validator)
+                    elif (
+                        prop_schema.get('type') == 'array'
+                        and 'items' in prop_schema
+                        and 'default' in prop_schema['items']
+                    ):
+                        # Handle arrays with default items
+                        config_data[key] = []
                 else:
-                    # Property exists, apply defaults recursively
-                    config_data[key] = self._apply_defaults(prop_schema, config_data[key])
+                    # Property exists, apply defaults recursively if it's an object or array
+                    if prop_schema.get('type') == 'object' and isinstance(config_data[key], dict):
+                        config_data[key] = self._apply_defaults_with_resolver(prop_schema, config_data[key], validator)
+                    elif prop_schema.get('type') == 'array' and isinstance(config_data[key], list):
+                        item_schema = prop_schema.get('items', {})
+                        for i, item in enumerate(config_data[key]):
+                            if isinstance(item, dict) and item_schema.get('type') == 'object':
+                                config_data[key][i] = self._apply_defaults_with_resolver(item_schema, item, validator)
 
         elif schema_type == 'array' and isinstance(config_data, list):
             item_schema = schema_content.get('items', {})
-            print(f'schema_type: {schema_type}, item_schema: {item_schema}')
             for i, item in enumerate(config_data):
-                print(f'key: {i}, item: {item}')
-                config_data[i] = self._apply_defaults(item_schema, item)
+                if isinstance(item, dict) and item_schema.get('type') == 'object':
+                    config_data[i] = self._apply_defaults_with_resolver(item_schema, item, validator)
 
         return config_data
+
+    def _schema_matches(
+        self, schema: Dict[str, Any], data: Dict[str, Any], validator: jsonschema.Draft202012Validator
+    ) -> bool:
+        """
+        Check if data matches a schema (used for anyOf/oneOf conditions).
+        """
+        try:
+            # Create a temporary validator for this schema
+            temp_validator = jsonschema.Draft202012Validator(schema, registry=self.__registry)
+            temp_validator.validate(data)
+            return True
+        except jsonschema.ValidationError:
+            return False
+
+    def _deep_copy_default(self, value: Any) -> Any:
+        """
+        Deep copy default values to avoid reference issues.
+        """
+        import copy
+
+        return copy.deepcopy(value)
+
+    def _get_root_schema_content(self) -> Dict[str, Any]:
+        """
+        Get the root schema content from the validator.
+        """
+        return self.__validator.schema
+
+    @property
+    def schema_content(self) -> Dict[str, Any]:
+        """
+        Property to access the root schema content.
+        """
+        return self._get_root_schema_content()
 
     def _validator(self) -> jsonschema.Draft202012Validator:
         """
@@ -146,6 +210,8 @@ class YAMLConfigValidator:
             resource = Resource(contents=schema_content, specification=DRAFT202012)
             uri = f'urn:sedtrails:config:{Path(schema_file).name}'
             registry = registry.with_resource(uri=uri, resource=resource)
+
+        self.__registry = registry
 
         validator_class = jsonschema.Draft202012Validator
         validator = validator_class(schema=root_schema_content, registry=registry)
@@ -199,13 +265,14 @@ class YAMLConfigValidator:
         if self._applied_defaults:  # skip applying defaults if already done
             return self.config
 
-        # try:
-        #     config_with_defaults = self._apply_defaults(self.schema_content, config_data=yaml_data)
-        # except Exception as e:
-        #     raise ValueError(f'Error applying defaults: {e}') from e
-        # else:
-        # self.config = config_with_defaults
-        # self._applied_defaults = True
+        # Apply default values from the schema
+        try:
+            config_with_defaults = self._apply_defaults(self.schema_content, yaml_data.copy())
+            self.config = config_with_defaults
+            self._applied_defaults = True
+        except Exception as e:
+            raise ValueError(f'Error applying defaults: {e}') from e
+
         return self.config
 
     def export_schema(self, output_file: Optional[str] = None) -> str | None:
@@ -295,7 +362,6 @@ class YAMLConfigValidator:
             from pathlib import Path
 
             output_path = Path(output_file)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Convert to YAML
             config_yaml = yaml.dump(
@@ -317,11 +383,10 @@ class YAMLConfigValidator:
 if __name__ == '__main__':
     validator = YAMLConfigValidator()
 
-    # TODO: export to YAML with defaults is not working properly. The population values and sheer stress are not included.
     data = validator.validate_yaml('examples/config.example.yaml')
 
-    print(f'Validated data: {data}')
+    # print(f'Validated data: {data}')
 
-    # conf = validator.export_config()
+    conf = validator.export_config()
 
-    # print(conf)
+    print(conf)
