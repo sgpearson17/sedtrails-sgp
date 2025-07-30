@@ -107,7 +107,7 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
     Logs the current state of the simulation with human-readable sentences.
     Long messages are split into multiple lines for readability.
     """
-    logger = _logger_manager.setup_logger()
+    logger = logger_manager.setup_logger()
     
     status = state.get('status', state.get('state', 'unknown'))
     
@@ -247,7 +247,7 @@ def log_exception(e: Exception, context: str = None) -> None:
     context : str, optional
         Additional context about where/when the exception occurred
     """
-    logger = _logger_manager.setup_logger()
+    logger = logger_manager.setup_logger()
     
     # Log exception with context
     if context:
