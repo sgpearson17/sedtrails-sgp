@@ -337,7 +337,7 @@
               "default": 0.4,
               "description": "von Karman's constant"
             },
-            "kinetic_viscosity": {
+            "kinematic_viscosity": {
               "type": "number",
               "default": 1.36e-06,
               "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
