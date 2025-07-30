@@ -11,7 +11,7 @@ from sedtrails.particle_tracer.position_calculator_numba import create_numba_par
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import log_simulation_state, log_exception, _logger_manager
+from sedtrails.logger.logger import log_simulation_state, log_exception, logger_manager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from typing import Any
 
@@ -67,7 +67,7 @@ class Simulation:
             
             # Update logger directory from config
             output_dir = self._controller.get('folder_settings.output_dir', 'results')
-            _logger_manager.log_dir = output_dir
+            logger_manager.log_dir = output_dir
 
             # Setup global exception handling
             setup_global_exception_logging()    
