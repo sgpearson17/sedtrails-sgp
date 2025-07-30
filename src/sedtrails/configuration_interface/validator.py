@@ -4,23 +4,15 @@ import json
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 from pathlib import Path
+from sedtrails.configuration_interface.yaml_loader import SedtrailsYamlLoader
 
 
-# A custom YAML loader that avoid converting datetime strings to datetime objects
-# datetime strings are handled internally by the SedTRAILS configuration interface
-class SedtrailsYamlLoader(yaml.SafeLoader):
-    """Custom YAML loader that avoids converting datetime strings to datetime objects."""
-
-    pass
-
-
-# Add a constructor that treats timestamps as strings instead of datetime objects
-def construct_timestamp_as_string(loader, node):
-    """Construct timestamp nodes as strings instead of datetime objects."""
-    return loader.construct_scalar(node)
-
-
-SedtrailsYamlLoader.add_constructor('tag:yaml.org,2002:timestamp', construct_timestamp_as_string)
+ROOT_SCHEMA = 'src/sedtrails/config/main.schema.json'
+REF_SCHEMAS = [
+    # Add sub-schemas here
+    'src/sedtrails/config/population.schema.json',
+    'src/sedtrails/config/visualization.schema.json',
+]
 
 
 class YAMLConfigValidator:
@@ -42,20 +34,15 @@ class YAMLConfigValidator:
         The validated configuration data as a nested dictionary.
     """
 
-    def __init__(self, schema_filepath: str) -> None:
+    def __init__(self) -> None:
         """
-        Initialize the YAML configuration validator by loading the schema from an external file.
+        Initialize a validator to validate SedTRAILS configuration files written in YAML.
 
-        Parameters
-        ----------
-        schema_filepath : str
-            The path to the JSON schema file (YAML or JSON format).
         """
 
-        self.schema_content: Dict[str, Any] = self._load_schema_from_file(schema_filepath)
-        self.schema_path = Path(schema_filepath).resolve()
         self.config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
+        self.__validator = self._validator()
 
     def _load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
         """
@@ -135,6 +122,40 @@ class YAMLConfigValidator:
 
         return config_data
 
+    def _validator(self) -> jsonschema.Draft202012Validator:
+        """
+        Creates a JSON schema validator using the SedTRAILS schema.
+
+        Returns
+        -------
+        jsonschema.Draft202012Validator
+            A validator instance that can be used to validate YAML configurations
+            against the SedTRAILS JSON schema.
+
+        """
+
+        from referencing import Registry, Resource
+        from referencing.jsonschema import DRAFT202012
+
+        registry = Registry()
+
+        root_schema_content = self._load_schema_from_file(ROOT_SCHEMA)
+
+        for schema_file in REF_SCHEMAS:
+            schema_content = self._load_schema_from_file(schema_file)
+            resource = Resource(contents=schema_content, specification=DRAFT202012)
+            uri = f'urn:sedtrails:config:{Path(schema_file).name}'
+            registry = registry.with_resource(uri=uri, resource=resource)
+
+        validator_class = jsonschema.Draft202012Validator
+        validator = validator_class(schema=root_schema_content, registry=registry)
+        try:
+            validator.check_schema(root_schema_content)
+        except jsonschema.SchemaError as e:
+            raise ValueError(f'Schema validation error: {e.message}') from e
+
+        return validator
+
     def validate_yaml(self, yml_filepath: str) -> Dict[str, Any]:
         """
         Loads the YAML file, validates it against the SedTRAILS JSON schema,
@@ -161,22 +182,16 @@ class YAMLConfigValidator:
             If there is an error applying default values from the schema.
         """
 
-        # TODO: CONITINUE HERE: substitute this for https://referencing.readthedocs.io/en/stable/intro/
-        # loading the YAML file
         try:
             with open(yml_filepath, 'r') as f:
                 yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
 
-        # Resolver to handle references in different files
-        base_uri = self.schema_path.parent.as_uri() + '/'
-        resolver = jsonschema.RefResolver(base_uri=base_uri, referrer=self.schema_content)
-
         # Validate the YAML data against the schema
         try:
-            jsonschema.validate(instance=yaml_data, schema=self.schema_content, resolver=resolver)
-
+            # jsonschema.validate(instance=yaml_data, schema=self.schema_content, resolver=new_resolver)
+            self.__validator.validate(yaml_data)
         except jsonschema.ValidationError as e:
             raise YamlValidationError(f'YAML config validation error: {e.message}') from e
 
@@ -184,14 +199,14 @@ class YAMLConfigValidator:
         if self._applied_defaults:  # skip applying defaults if already done
             return self.config
 
-        try:
-            config_with_defaults = self._apply_defaults(self.schema_content, config_data=yaml_data)
-        except Exception as e:
-            raise ValueError(f'Error applying defaults: {e}') from e
-        else:
-            self.config = config_with_defaults
-            self._applied_defaults = True
-            return self.config
+        # try:
+        #     config_with_defaults = self._apply_defaults(self.schema_content, config_data=yaml_data)
+        # except Exception as e:
+        #     raise ValueError(f'Error applying defaults: {e}') from e
+        # else:
+        # self.config = config_with_defaults
+        # self._applied_defaults = True
+        return self.config
 
     def export_schema(self, output_file: Optional[str] = None) -> str | None:
         """
@@ -300,11 +315,13 @@ class YAMLConfigValidator:
 
 
 if __name__ == '__main__':
-    validator = YAMLConfigValidator('/Users/mgarciaalvarez/devel/sedtrails/src/sedtrails/config/main.schema.json')
+    validator = YAMLConfigValidator()
 
     # TODO: export to YAML with defaults is not working properly. The population values and sheer stress are not included.
     data = validator.validate_yaml('examples/config.example.yaml')
 
-    conf = validator.export_config()
+    print(f'Validated data: {data}')
 
-    print(conf)
+    # conf = validator.export_config()
+
+    # print(conf)
