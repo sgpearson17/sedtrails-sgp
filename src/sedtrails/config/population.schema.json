@@ -1,4 +1,5 @@
 {
+    "$id": "urn:sedtrails:config:population.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "title": "Sediment Trails Population Configuration",

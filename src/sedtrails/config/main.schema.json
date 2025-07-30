@@ -1,4 +1,5 @@
 {
+  "$id": "urn:sedtrails:config:main.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Schema for Sedtrails Configuration",
   "$defs": {
@@ -413,7 +414,7 @@
       "type": "object",
       "properties": {
         "population": {
-          "$ref": "population.schema.json"
+          "$ref": "urn:sedtrails:config:population.schema.json"
         }
       }
     },
@@ -485,7 +486,7 @@
       ]
     },
     "visualization": {
-      "$ref": "visualization.schema.json"
+      "$ref": "urn:sedtrails:config:visualization.schema.json"
     }
   }
 }
