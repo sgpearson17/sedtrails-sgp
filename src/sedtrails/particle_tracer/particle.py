@@ -5,7 +5,7 @@ Classes for representing internal data structures of the particle tracer.
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from numpy import ndarray
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, ClassVar
 
 
 @dataclass
@@ -35,15 +35,20 @@ class Particle(ABC):
         such as position, velocity, and other relevant data during the simulation.
     """
 
-    id: int
-    _x: float  # initial position
-    _y: float  # initial position
+    _id_counter: ClassVar[int] = 0  # Class variable to keep track IDs
+
+    id: int = field(init=False)  # Unique identifier for the particle
+    _x: float = field(init=False)  # initial position
+    _y: float = field(init=False)  # initial position
     _release_time: int | float = field(init=False)  # release time of the particle
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
     trace: Dict = field(default_factory=dict)  # trace of the particle
 
     def __post_init__(self):
+        Particle._id_counter += 1
+        self.id = Particle._id_counter  # Assign a unique ID to the particle
+
         self._position_id = 1  # Id for indexing positions in the trace
         if not isinstance(self.name, str):
             raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
@@ -96,7 +101,7 @@ class Particle(ABC):
         self._release_time = value
 
     @release_time.getter
-    def release_time(self) -> int:
+    def release_time(self) -> int | float:
         return self._release_time
 
     @property
