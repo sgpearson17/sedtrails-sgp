@@ -19,9 +19,8 @@ import shutil
 import sys
 import logging
 
-from sedtrails.simulation import Simulation, setup_global_exception_logging
+from sedtrails.simulation import setup_global_exception_logging
 from sedtrails.logger.logger import logger_manager, log_exception, log_simulation_state
-from sedtrails.exceptions.exceptions import ConfigurationError
 
 class LoggerTestBase:
     """Base class for logger tests with proper isolation."""
