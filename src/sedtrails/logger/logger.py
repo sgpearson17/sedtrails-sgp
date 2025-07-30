@@ -8,18 +8,19 @@ import logging
 import os
 
 class LoggerManager:
-    def __init__(self):
+    def __init__(self, log_dir: str = "logs"):
         self.logger = None
-        self.log_dir = "logs"
+        self.log_dir = log_dir
     
     def setup_logger(self):
         """Set up the logger"""
         if self.logger is not None:
             return self.logger
             
-        # Create logs directory if not exists
-        os.makedirs(self.log_dir, exist_ok=True)
-        
+        # Check if logs directory exists; raise error if not
+        if not os.path.isdir(self.log_dir):
+            raise FileNotFoundError(f"Log directory does not exist: {self.log_dir}")
+
         # Simple log file name
         log_filename = os.path.join(self.log_dir, "log.txt")
         
@@ -58,9 +59,6 @@ class LoggerManager:
             self.logger.info(f"Location: {os.path.dirname(absolute_path)}")
 
         return self.logger
-
-# Module instance
-logger_manager = LoggerManager()
 
 def _format_seeding_strategy(strategy):
     """Helper function to format seeding strategy for readable logging."""
@@ -102,13 +100,11 @@ def _format_seeding_strategy(strategy):
     
     return str(strategy)
 
-def log_simulation_state(state: dict, level=logging.INFO) -> None:
+def log_simulation_state(state: dict, logger, level=logging.INFO) -> None:
     """
     Logs the current state of the simulation with human-readable sentences.
     Long messages are split into multiple lines for readability.
-    """
-    logger = logger_manager.setup_logger()
-    
+    """    
     status = state.get('status', state.get('state', 'unknown'))
     
     # Create messages, split when necessary
@@ -236,7 +232,7 @@ def log_simulation_state(state: dict, level=logging.INFO) -> None:
             param_str = ', '.join(f"{k}: {v}" for k, v in params.items())
             logger.log(level, f"  {param_str}")
 
-def log_exception(e: Exception, context: str = None) -> None:
+def log_exception(e: Exception, logger, context: str = None) -> None:
     """
     Logs exceptions with stack trace and context information.
     
@@ -247,8 +243,6 @@ def log_exception(e: Exception, context: str = None) -> None:
     context : str, optional
         Additional context about where/when the exception occurred
     """
-    logger = logger_manager.setup_logger()
-    
     # Log exception with context
     if context:
         logger.error(f"=== ERROR: {context} ===")
