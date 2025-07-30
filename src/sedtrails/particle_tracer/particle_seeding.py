@@ -14,8 +14,49 @@ Seeding strategies for positions include:
 
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle, Passive
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict
 import random
+from dataclasses import dataclass, field
+
+
+@dataclass
+class SeedingConfig:
+    """
+    Configuration class for particle seeding strategies.
+    This class can be extended to include more configuration options as needed.
+    """
+
+    particles_config: Dict
+    particle_seeding_config: Dict
+    count: Optional[int] = field(init=False)
+    initial_positions: List[Tuple] = field(init=False)
+    release_times: int | float | List[int | float] = field(init=False)
+
+    def __post_init__(self):
+        self.strategy = str(self.particle_seeding_config.get('strategy', {}).keys())
+
+    def _extract_initial_positions(self) -> List[Tuple[float, float]]:
+        """
+        Extract initial positions from the configuration.
+        Returns a list of tuples containing (x, y) coordinates.
+        """
+
+        initial_positions = []
+
+        strategy_object = self.particle_seeding_config.get('strategy', {})
+        if 'point' in strategy_object:
+            for point in strategy_object['point']['points']:
+                _point = point.split(',')
+                initial_positions.append(
+                    Sand(id=len(self.particles) + 1, _x=float(_point[0]), _y=float(_point[1]), name='Sand Particle')
+                )
+
+    def _extract_release_times(self) -> List[int]:
+        """
+        Extract release times from the configuration.
+        Returns a list of integers representing the release times for each particle.
+        """
+        return self.release_times
 
 
 class SeedingStrategy(ABC):
@@ -23,15 +64,12 @@ class SeedingStrategy(ABC):
     Abstract base class for seeding strategies.
     """
 
-    def __init__(self, **config):
-        self.config = config
-
     @abstractmethod
     def seed(self, initial_positions: List[tuple] | tuple, release_times: List | str, count: int = 1) -> list[Particle]:
         """
         Seed particles at the specified location.
 
-        Parametersc
+        Parameters
         ----------
         initial_positions : list[tuple] | tuple
             List of tuples containing the (x,y) coordinates of the particles.
@@ -46,7 +84,9 @@ class SeedingStrategy(ABC):
         """
         pass
 
-    def _validate_initial_positions(self, initial_positions: List[tuple] | tuple, count: int) -> bool:
+    def _validate_initial_positions(
+        self, initial_positions: List[tuple] | tuple, count: int, domain_extent: Optional[Tuple | None] = None
+    ) -> bool:
         """
         Validate the initial positions and count of particles.
 
@@ -60,6 +100,11 @@ class SeedingStrategy(ABC):
         release_times : list | int
             List of release times for each particle. Times must refer to simulation time.
             If a single integer is provided, it will be used for all particles.
+        domain_extent : tuple | None, optional
+            Optional tuple specifying the spatial domain extent (min_x, max_x, min_y, max_y).
+            This is use to validate that the initial positions fall within the domain extent.
+            Such domain extent can represent the limit of the flow-field dataset, for example.
+
 
         Returns
         -------
@@ -74,8 +119,15 @@ class SeedingStrategy(ABC):
             If the number of initial positions does not match the count.
         """
 
-        # TODO: we should add a validation check to ensure that the initial positions all lie within the model domain
-        # (i.e. to make sure we are placing particles somewhere where they will actually move)
+        # Makes sure that the particle positions fall within the domain extent
+        if domain_extent is not None:
+            if not isinstance(domain_extent, tuple) or len(domain_extent) != 4:
+                raise TypeError("Expected 'domain_extent' to be a tuple of four floats (min_x, max_x, min_y, max_y)")
+            for pos in initial_positions:
+                if not (
+                    domain_extent[0] <= pos[0] <= domain_extent[1] and domain_extent[2] <= pos[1] <= domain_extent[3]
+                ):
+                    raise ValueError(f'Position {pos} is out of the domain extent {domain_extent}')
 
         validity = True
         if not isinstance(initial_positions, (list, tuple)):
@@ -261,6 +313,86 @@ class GridSeeding(SeedingStrategy):
         # assign the initial position (x,y) to each particle, and the release time (t) to each particle.
 
         return particles
+
+
+class TransectSeeding(SeedingStrategy):
+    """
+    Seeding strategy to release particles along a transect (line) between two points (x1,y1) and (x2,y2).
+    Particles are spaced by a specified distance.
+    """
+
+    def seed(self, start: Tuple[float, float], end: Tuple[float, float], distance: float, count: int = 1):
+        """
+        Seed particles along a transect between two points.
+
+        Parameters
+        ----------
+        start : tuple
+            Starting point of the transect (x1, y1).
+        end : tuple
+            Ending point of the transect (x2, y2).
+        distance : float
+            Distance between particles along the transect.
+        count : int
+            Number of particles to seed. Default is 1.
+
+        Returns
+        -------
+        list[Particle]
+            List of seeded particles.
+        """
+
+        raise NotImplementedError('Transect seeding strategy is not implemented yet.')
+
+
+class ParticleFactory:
+    from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+
+    TYPES = {
+        'sand': Sand,
+        'clay': Mud,
+        'silt': Passive,
+    }
+
+    STRATEGIES = {
+        'point': XYSeeding,
+        'random': RandomSeeding,
+        'grid': GridSeeding,
+    }
+
+    def create_particles(cls, particle_type: str, count: int = 1) -> list[Particle]:
+        """
+        Create a particle of the specified type and strategy.
+
+        Parameters
+        ----------
+        type : str
+            Type of the particle to create (e.g., 'sand', 'clay', 'silt').
+        strategy : str
+            Seeding strategy to use (e.g., 'point', 'random', 'grid').
+        initial_positions : list[tuple] | tuple
+            Initial positions for the particles.
+        release_times : list | int
+            Release times for the particles.
+        count : int
+            Number of particles to create. Default is 1.
+
+        Returns
+        -------
+        list[Particle]
+            List of created particles.
+        """
+        if type not in ParticleFactory.TYPES:
+            raise ValueError(f'Unknown particle type: {type}')
+
+        particle_class = ParticleFactory.TYPES[particle_type]
+
+
+        particles = [particle_class() for _ in range(count)]
+
+
+    def _add_positions_and_times():
+
 
 
 if __name__ == '__main__':
