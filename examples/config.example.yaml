@@ -22,7 +22,7 @@ particles:
         beta: 0.3
     seeding:
       release_start: 2025-06-18 13:00:00
-      particles_per_timestep: 1
+      quantity: 1
       strategy: 
         point:
           points: 
