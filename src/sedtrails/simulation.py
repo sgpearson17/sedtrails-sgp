@@ -208,10 +208,6 @@ class Simulation:
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
-            # Ensure logger directory is set from config
-            output_dir = self._controller.get('folder_settings.output_dir', 'results')
-            _logger_manager.log_dir = output_dir
-
             log_simulation_state({
                 "state": "config_loading",
                 "config_file_path": self._config_file,
