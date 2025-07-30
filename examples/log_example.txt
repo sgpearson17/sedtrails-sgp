@@ -1,0 +1,28 @@
+2025-07-22 15:42:52,727 - INFO - === LOGGING INITIALIZED ===
+2025-07-22 15:42:52,727 - INFO - Log file: log.txt
+2025-07-22 15:42:52,727 - INFO - Location: /home/aurhan/Work/Projects/SedTRAILS/sedtrails/results
+2025-07-22 15:42:52,727 - INFO - === SIMULATION START ===
+2025-07-22 15:42:52,727 - INFO - Command: src/sedtrails/simulation.py
+2025-07-22 15:42:52,727 - INFO - Python: 3.13.2
+2025-07-22 15:42:52,727 - INFO - Config: examples/config.example.yaml
+2025-07-22 15:42:52,727 - INFO - Working directory: /home/aurhan/Work/Projects/SedTRAILS/sedtrails
+2025-07-22 15:42:52,727 - INFO - Loading configuration: examples/config.example.yaml
+2025-07-22 15:42:53,169 - INFO - --- Data Conversion Complete ---
+2025-07-22 15:42:53,170 - INFO - Timesteps: 290
+2025-07-22 15:42:53,170 - INFO - Flow field: suspended_velocity
+2025-07-22 15:42:53,170 - INFO - Duration: 22698s
+2025-07-22 15:42:53,170 - INFO - Time step: 30s
+2025-07-22 15:42:53,170 - INFO - Created 1 particle(s)
+2025-07-22 15:42:53,170 - INFO - Starting position: unknown
+2025-07-22 15:42:53,170 - INFO - Seeding method: single point at 40000,17000, transect seeding, grid seeding
+2025-07-22 15:42:53,170 - INFO - Compiling calculator for 3213x3213 grid
+2025-07-22 15:42:53,212 - INFO - Calculator compiled in 0.04 seconds
+2025-07-22 15:42:53,212 - INFO - Status: Warming Up Jit
+2025-07-22 15:42:55,355 - INFO - JIT warmed up in 2.14 seconds
+2025-07-22 15:42:55,723 - INFO - === SIMULATION COMPLETE ===
+2025-07-22 15:42:55,723 - INFO - Total steps: 756
+2025-07-22 15:42:55,723 - INFO - Runtime: 2.55s
+2025-07-22 15:42:55,723 - INFO - Final position: (38516.48, 16461.79)
+2025-07-22 15:42:56,007 - INFO - Creating visualization with 757 trajectory points
+2025-07-22 15:42:57,617 - INFO - Status: Visualization Complete
+2025-07-22 15:42:57,617 - INFO -   output_plot_path: ./results/trajectory_plot.png
