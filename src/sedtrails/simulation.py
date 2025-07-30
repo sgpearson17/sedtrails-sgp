@@ -189,13 +189,17 @@ class Simulation:
         # TODO: this should be handle by the seeding tool.
         # TODO: PARTICLE SEEDING
         # particle_positions = {}
-        strategy = self._controller.get('particle_seeding.strategy')
+        strategy = self._controller.get('particles.population.seeding.strategy')
         if 'point' in strategy:
             for point in strategy['point']['points']:
                 _point = point.split(',')
-                self.particles.append(
-                    Sand(id=len(self.particles) + 1, _x=float(_point[0]), _y=float(_point[1]), name='Sand Particle')
-                )
+
+                sand = Sand()
+                sand.x = float(_point[0])
+                sand.y = float(_point[1])
+                # sand.release_time = simulation_time.start.seconds
+                sand.name = 'Sand Particle'  # Set release time to start of simulation
+                self.particles.append(sand)
 
         # TODO: INTEGRATE LOGGER
 
