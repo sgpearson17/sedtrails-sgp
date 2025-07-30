@@ -101,7 +101,9 @@ class YAMLConfigValidator:
         if '$ref' in schema_content:
             # Resolve the reference using the validator's schema resolver
             try:
-                resolved_schema = validator.resolver.resolve(schema_content['$ref']).contents
+                resolver = self.__registry.resolver()
+                resolved = resolver.lookup(schema_content['$ref'])
+                resolved_schema = resolved.contents
                 return self._apply_defaults_with_resolver(resolved_schema, config_data, validator)
             except Exception as e:
                 print(f'Warning: Could not resolve $ref {schema_content["$ref"]}: {e}')
@@ -385,8 +387,8 @@ if __name__ == '__main__':
 
     data = validator.validate_yaml('examples/config.example.yaml')
 
-    # print(f'Validated data: {data}')
+    print(f'Validated data: {data}')
 
-    conf = validator.export_config()
+    # conf = validator.export_config()
 
-    print(conf)
+    # print(conf)s
