@@ -26,7 +26,7 @@ def setup_global_exception_logging(logger):
             return
         
         # Log all other exceptions
-        log_exception(exc_value, "Global Exception Handler", logger)
+        log_exception(exc_value, logger, "Global Exception Handler")
         log_simulation_state({
             "status": "simulation_failed",
             "error_type": exc_type.__name__,
