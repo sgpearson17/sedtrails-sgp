@@ -2,6 +2,7 @@
     "$id": "urn:sedtrails:config:visualization.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
+    "additionalProperties": false,
     "title": "Visualization Configuration",
     "$defs": {
         "velocity_component_types": {
@@ -24,9 +25,11 @@
     "properties": {
         "plotting": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "general_settings": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                         "animation": {
                             "type": "boolean",
@@ -39,6 +42,7 @@
                             "description": "plot by particle age? true/false"
                         },
                         "overview_origin": {
+                            "additionalProperties": false,
                             "type": "object",
                             "properties": {
                                 "plot": {
@@ -160,6 +164,7 @@
                 },
                 "validation": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                         "tracer_validation_data": {
                             "type": "string",

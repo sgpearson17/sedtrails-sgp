@@ -4,9 +4,11 @@
     "type": "object",
     "title": "Sediment Trails Population Configuration",
     "description": "Configuration for particle populations in Sediment Trails",
+    "unevaluatedProperties": false,
     "$defs": {
         "passive_characteristics": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "diffusion_coefficient": {
                     "type": "number",
@@ -20,6 +22,7 @@
         },
         "sand_characteristics": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "density": {
                     "type": "number",
@@ -39,6 +42,7 @@
         },
         "mud_characteristics": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "density": {
                     "type": "number",
@@ -58,6 +62,7 @@
         },
         "bio_characteristics": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "buoyancy": {
                     "type": "number",
@@ -71,6 +76,7 @@
         },
         "gravel_characteristics": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "density": {
                     "type": "number",
@@ -90,6 +96,7 @@
         },
         "van_westen_method": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "alpha": {
                     "type": "number",
@@ -106,6 +113,7 @@
         },
         "van_westen_bl_method": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "gamma": {
                     "type": "number",
@@ -122,6 +130,7 @@
         },
         "soulsby_method": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "f": {
                     "type": "number",
@@ -161,6 +170,7 @@
         },
         "tracer_methods": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "vanwesten": {
                     "$ref": "#/$defs/van_westen_method"
@@ -183,6 +193,7 @@
         },
         "seeding": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "class": {
                     "type": "string",
@@ -219,9 +230,11 @@
                 },
                 "strategy": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                         "point": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
@@ -260,6 +273,7 @@
                         },
                         "transect": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
@@ -371,6 +385,7 @@
         },
         "barriers": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "po_file": {
                     "type": "string",

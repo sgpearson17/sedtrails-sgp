@@ -133,9 +133,11 @@
     }
   },
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "general": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "preprocess": {
           "type": "boolean",
@@ -169,6 +171,7 @@
     },
     "folder_settings": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "input_data": {
           "type": "string",
@@ -190,6 +193,7 @@
     },
     "domain": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "subset_x": {
           "type": "string",
@@ -219,6 +223,7 @@
         },
         "flow_field_data": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "fm": {
               "$ref": "#/$defs/fm_format_type",
@@ -301,6 +306,7 @@
     },
     "time": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "start": {
           "type": "string",
@@ -323,6 +329,7 @@
     },
     "physics": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "constants": {
           "type": "object",
@@ -366,6 +373,7 @@
         },
         "bed_shear_stress": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "mod_file": {
               "type": "string",
@@ -375,6 +383,7 @@
         },
         "bed_slope": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "calculate": {
               "type": "boolean",
@@ -412,6 +421,7 @@
     },
     "particles": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "population": {
           "$ref": "urn:sedtrails:config:population.schema.json"
@@ -420,6 +430,7 @@
     },
     "pathways": {
       "type": "object",
+      "unevaluatedProperties": false,
       "properties": {
         "polygon_query": {
           "type": "boolean",
@@ -455,6 +466,7 @@
     },
     "output": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "timestep": {
           "type": "number",
