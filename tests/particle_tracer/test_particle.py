@@ -3,7 +3,7 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 
 import pytest
-from sedtrails.particle_tracer.particle import Mud, Sand, Passive, Particle, PhysicalProperties
+from sedtrails.particle_tracer.particle import Mud, Sand, Passive, PhysicalProperties
 
 
 class TestParticle:
@@ -33,33 +33,18 @@ class TestParticle:
         passive = Passive()
         assert isinstance(passive, Passive)
 
-    def test_particle_name_type_error(self):
-        """
-        Test the type error for invalid name in Particle class.
-        """
-
-        with pytest.raises(TypeError):
-            Particle(name=123)
-
-    def test_particle_trace_type_error(self):
-        """
-        Test the type error for invalid trace in Particle class.
-        """
-        with pytest.raises(TypeError):
-            Particle(name='Particle', trace=123)
-
     def test_name_property_is_optional(self):
         """
         Test that the name property is optional in the Particle class, and
         the default value is an empty string.
         """
-        particle = Sand(id=1, _x=1, _y=2)
+        particle = Sand()
         assert particle.name == ''
 
-        particle = Mud(id=1, _x=1, _y=2)
+        particle = Mud()
         assert particle.name == ''
 
-        particle = Passive(id=1, _x=1, _y=2)
+        particle = Passive()
         assert particle.name == ''
 
 
@@ -137,6 +122,6 @@ class TestPhysicalProperties:
         Test physical properties for different particle types.
         """
         # Test Mud properties
-        mud = Mud(id=1, _x=0.0, _y=0.0)
+        mud = Mud()
         assert mud.physical_properties.density == 2650.0
         assert mud.physical_properties.diameter == 2e-6
