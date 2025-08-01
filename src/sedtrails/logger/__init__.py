@@ -1,6 +1,5 @@
-from .logger import log_simulation_state, log_exception
+from .logger import LoggerManager
 
 __all__ = [
-            "log_simulation_state",
-            "log_exception"
+            "LoggerManager"
            ]
