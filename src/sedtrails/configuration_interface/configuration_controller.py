@@ -6,8 +6,6 @@ Reads simulation configuration files, applies default configuration values,
 and provides configurations to other components.
 """
 
-import os
-import importlib.resources as pkg_resources
 from abc import ABC, abstractmethod
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from typing import Dict, Any
@@ -85,16 +83,16 @@ class ConfigurationController(Controller):
         else:
             self.config = config_file
 
-        with pkg_resources.as_file(
-            pkg_resources.files('sedtrails.config').joinpath('main.schema.json')
-        ) as config_schema:
-            if not os.path.exists(config_schema):
-                raise FileNotFoundError(
-                    f'SedTRAILS validation schema file not found: {config_schema}. \
-                    Input cannot be parsed.'
-                )
+            # with pkg_resources.as_file(
+            #     pkg_resources.files('sedtrails.config').joinpath('main.schema.json')
+            # ) as config_schema:
+            #     if not os.path.exists(config_schema):
+            #         raise FileNotFoundError(
+            #             f'SedTRAILS validation schema file not found: {config_schema}. \
+            #             Input cannot be parsed.'
+            #         )
 
-            validator = YAMLConfigValidator(str(config_schema))
+            validator = YAMLConfigValidator()
             self.config_data = validator.validate_yaml(config_file)
 
         return None

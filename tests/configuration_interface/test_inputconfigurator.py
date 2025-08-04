@@ -7,7 +7,7 @@ import pytest
 import yaml
 import json
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
-from sedtrails.exceptions import YamlValidationError
+from sedtrails.exceptions import YamlValidationError, YamlOutputError
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def validator():
     yaml.dump(dummy_schema, dummy_schema_file)
     dummy_schema_file.close()
 
-    DummyValidator = YAMLConfigValidator(schema_filepath=dummy_schema_file.name)
+    DummyValidator = YAMLConfigValidator()
 
     return DummyValidator
 
@@ -74,31 +74,20 @@ class TestYAMLConfigValidator:
         """
         Test YAML file validation when a YAML file is created successfully
         """
-        # Define a schema that requires "path" and provides defaults for "name" and "folder"
-        schema = {
-            '$schema': 'http://json-schema.org/draft-07/schema#',
-            'type': 'object',
-            'properties': {
-                'path': {'type': 'string'},
-                'name': {'type': 'string', 'default': 'default_name'},
-            },
-            'required': ['path'],
-        }
 
-        # Create a temporary schema file with the desired schema.
-        schema_file = tmp_path / 'schema.json'
-        schema_file.write_text(json.dumps(schema))
         # Create a temporary YAML configuration file containing only "path"
-        config_data = {'path': '/a/b/c.txt'}
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+        }
         config_file = tmp_path / 'valid_config.yml'
         config_file.write_text(yaml.dump(config_data))
 
         # Instantiate the validator with the schema file.
-        validator = YAMLConfigValidator(schema_file)
+        validator = YAMLConfigValidator()
         result = validator.validate_yaml(str(config_file))
 
-        assert result['path'] == '/a/b/c.txt'
-        assert result['name'] == 'default_name'  # Default applied
+        assert result['general']['input_model']['format'] == 'fm_netcdf'
+        assert result['general']['input_model']['reference_date'] == '2023-01-01'  # Default applied
 
     def test_validate_yaml_validation_error(self, tmp_path):
         """
@@ -106,7 +95,7 @@ class TestYAMLConfigValidator:
         """
         # Schema requires "path", so if it's missing, validation should error.
         schema = {
-            '$schema': 'http://json-schema.org/draft-07/schema#',
+            '$schema': 'https://json-schema.org/draft/2020-12/schema#',
             'type': 'object',
             'properties': {'path': {'type': 'string'}},
             'required': ['path'],
@@ -119,52 +108,111 @@ class TestYAMLConfigValidator:
         config_data = {'name': 'some_name'}
         config_file = tmp_path / 'config_invalid.yml'
         config_file.write_text(yaml.dump(config_data))
-        validator_instance = YAMLConfigValidator(schema_file)
+        validator_instance = YAMLConfigValidator()
         with pytest.raises(YamlValidationError, match='YAML config validation error'):
             validator_instance.validate_yaml(str(config_file))
 
     # -----------------------------
-    # Tests for export_schema_to_yaml: file contents
+    # Tests for export_schema
     # -----------------------------
-    def test_export_schema_to_yaml(self, tmp_path):
+    def test_export_schema_return_yaml_string(self, validator):
         """
-        Test yaml file contents to see if a yaml file with the correct input schema is saved to the file system
+        Test export_schema method returns schema as YAML string when no output file is specified
         """
-        schema = {'test': 'value'}
-        schema_file = tmp_path / 'schema.json'
-        schema_file.write_text(json.dumps(schema))
-        validator = YAMLConfigValidator(schema_file)
+        # Call export_schema without output_file parameter
+        result = validator.export_schema()
 
-        # Test export without writing to a file.
-        yaml_str = validator.export_schema_to_yaml()
+        # Check that result is a string
+        assert isinstance(result, str)
 
-        loaded_schema = yaml.safe_load(str(yaml_str))
-        assert loaded_schema == schema
+        # Check that the string is valid YAML by parsing it
+        parsed_yaml = yaml.safe_load(result)
+        assert isinstance(parsed_yaml, dict)
 
-        # Test export with writing to a file.
+        # Check that the parsed YAML matches the schema content
+        assert parsed_yaml == validator.schema_content
+
+    def test_export_schema_write_to_file(self, tmp_path, validator):
+        """
+        Test export_schema method writes schema to file when output_file is specified
+        """
+        # Define the path for the temporary YAML file
         output_file = tmp_path / 'schema_output.yml'
-        validator.export_schema_to_yaml(str(output_file))
-        saved_file_content = output_file.read_text()
-        loaded_schema_file = yaml.safe_load(saved_file_content)
 
-        assert loaded_schema_file == schema
+        # Call export_schema with output_file parameter
+        result = validator.export_schema(str(output_file))
+
+        # Check that the method returns None when writing to file
+        assert result is None
+
+        # Check if the YAML file has been created
+        assert output_file.exists()
+
+        # Read the file content and verify it's correct
+        with open(output_file, 'r') as f:
+            file_content = f.read()
+
+        # Parse the file content as YAML
+        parsed_yaml = yaml.safe_load(file_content)
+
+        # Check that the file content matches the schema content
+        assert parsed_yaml == validator.schema_content
+
+    def test_export_schema_file_write_error(self, validator, tmp_path):
+        """
+        Test export_schema method raises YamlOutputError when file cannot be written
+        """
+        # Create a directory path that doesn't exist and can't be created
+        invalid_output_file = tmp_path / 'nonexistent_dir' / 'subdir' / 'schema.yml'
+
+        # Ensure the parent directory doesn't exist
+        assert not invalid_output_file.parent.exists()
+
+        # Mock the file opening to raise an exception
+        import unittest.mock
+
+        with unittest.mock.patch('builtins.open', side_effect=PermissionError('Permission denied')):
+            with pytest.raises(YamlOutputError, match='Error writing schema to file'):
+                validator.export_schema(str(invalid_output_file))
+
+    def test_export_schema_file_content_matches_string_output(self, tmp_path, validator):
+        """
+        Test that export_schema produces the same content whether returning string or writing to file
+        """
+        # Get schema as string
+        schema_string = validator.export_schema()
+
+        # Write schema to file
+        output_file = tmp_path / 'schema_compare.yml'
+        validator.export_schema(str(output_file))
+
+        # Read file content
+        with open(output_file, 'r') as f:
+            file_content = f.read()
+
+        # Both should be identical
+        assert schema_string == file_content
 
     # -----------------------------
     # Tests for export_schema_to_yaml: file creation
     # -----------------------------
-    def test_yaml_file_creation(self, tmp_path, validator):
+    def test_export_schema_yaml_file_creation(self, tmp_path, validator):
         """
-        Test if a yaml file is saved to the file saved
+        Test if export_schema creates a YAML file when output_file is provided
         """
-        # Define the data to be written to the YAML file
-        schema = {'test': 'value'}
-        validator.schema_content = schema
-
         # Define the path for the temporary YAML file
         output_file = tmp_path / 'schema_output.yml'
 
         # Write the data to the YAML file
-        _ = validator.export_schema_to_yaml(str(output_file))
+        validator.export_schema(str(output_file))
 
         # Check if the YAML file has been created
         assert output_file.exists()
+
+        # Verify the file contains valid YAML content
+        with open(output_file, 'r') as f:
+            content = f.read()
+
+        # Should be able to parse as YAML without error
+        parsed_content = yaml.safe_load(content)
+        assert isinstance(parsed_content, dict)
