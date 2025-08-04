@@ -1,1 +1,1 @@
-recursive-include sedtrails/config/schema.json
+recursive-include src/sedtrails/config *.json

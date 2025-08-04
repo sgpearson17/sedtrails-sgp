@@ -5,7 +5,7 @@ Classes for representing internal data structures of the particle tracer.
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from numpy import ndarray
-from typing import Optional
+from typing import Optional, Tuple, Dict, ClassVar
 
 
 @dataclass
@@ -29,18 +29,44 @@ class Particle(ABC):
         Whether the particle can move in the current simulation step or not. Default is True.
     name : str
         A name for the particle. Optional.
+
+    trace : dict
+        A dictionary to store the trace of the particle, which can include various attributes
+        such as position, velocity, and other relevant data during the simulation.
     """
 
-    id: int
-    _x: float  # initial position
-    _y: float  # initial position
-    _release_time: int = field(default=1)  # release time of the particle
+    _id_counter: ClassVar[int] = 0  # Class variable to keep track IDs
+
+    id: int = field(init=False)  # Unique identifier for the particle
+    _x: float = field(init=False)  # initial position
+    _y: float = field(init=False)  # initial position
+    _release_time: int | float = field(init=False)  # release time of the particle
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
+    trace: Dict = field(default_factory=dict)  # trace of the particle
 
     def __post_init__(self):
+        Particle._id_counter += 1
+        self.id = Particle._id_counter  # Assign a unique ID to the particle
+
+        self._position_id = 1  # Id for indexing positions in the trace
         if not isinstance(self.name, str):
             raise TypeError(f"Expected 'name' to be a string, got {type(self.name).__name__}")
+
+    def add_position(self, position: Tuple) -> None:
+        """
+        Add a position to the particle's trace.
+
+        Parameters
+        ----------
+        position : Tuple[float, float]
+            A tuple containing the x and y coordinates of the particle's position.
+        """
+        if not isinstance(position, tuple) or len(position) != 2:
+            raise TypeError("Expected 'position' to be a tuple of two floats (x, y)")
+
+        self.trace[self._position_id] = position
+        self._position_id += 1
 
     @property
     def x(self) -> float:
@@ -63,7 +89,7 @@ class Particle(ABC):
         self._y = value
 
     @property
-    def release_time(self) -> None:
+    def release_time(self) -> int | float:
         return self._release_time
 
     @release_time.setter
@@ -75,11 +101,11 @@ class Particle(ABC):
         self._release_time = value
 
     @release_time.getter
-    def release_time(self) -> int:
+    def release_time(self) -> int | float:
         return self._release_time
 
     @property
-    def is_mobile(self) -> None:
+    def is_mobile(self) -> bool:
         return self._is_mobile
 
     @is_mobile.setter

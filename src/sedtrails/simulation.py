@@ -6,6 +6,7 @@ import numpy as np
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
+from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
@@ -57,7 +58,7 @@ class Simulation:
 
         # Validate config file exists early
         if not os.path.exists(config_file):
-            raise ConfigurationError(f"Configuration file not found: {config_file}")
+            raise ConfigurationError(f'Configuration file not found: {config_file}')
 
         # Try to read config and update logger directory
         try:
@@ -75,6 +76,8 @@ class Simulation:
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()
+        self.particles: list[Particle] = []  # List to hold particles
+
 
         self.logger_manager = LoggerManager(output_dir)
         self.logger_manager.setup_logger()
@@ -223,6 +226,13 @@ class Simulation:
             "python_version": sys.version.split()[0]
         })            
 
+        if not self._config_is_read:  # assure config is read only once
+            log_simulation_state(
+                {'state': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
+            )
+            self._controller.load_config(self._config_file)
+            self._config_is_read = True
+
         sedtrails_data = self.format_converter.convert_to_sedtrails()
         # Add physics calculations to the SedtrailsData
         self.physics_converter.convert_physics(sedtrails_data)
@@ -252,14 +262,12 @@ class Simulation:
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
-        particle_positions = {}
-        strategy = self._controller.get('particle_seeding.strategy')
+        # TODO: PARTICLE SEEDING
+        # particle_positions = {}
+        strategy = self._controller.get('particles.population.seeding.strategy')
         if 'point' in strategy:
-            id = 1
             for point in strategy['point']['points']:
                 _point = point.split(',')
-                particle_positions[str(id)] = (_point[0], _point[1])
-                id += 1
 
         # TODO: PARTICLE SEEDING
         particles = []
@@ -276,9 +284,10 @@ class Simulation:
             "seeding_strategy": strategy
         })
 
+
         # Store trajectory1
-        trajectory_numba_x = [particles[0].x]  # TODO: must handle multiple particles
-        trajectory_numba_y = [particles[0].y]
+        trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
+        trajectory_numba_y = [self.particles[0].y]
 
         # First get the initial flow data to create calculator
         flow_data = retriever.get_flow_field(simulation_time.start)
@@ -302,10 +311,11 @@ class Simulation:
         self.logger_manager.log_simulation_state({
             "status": "warming_up_jit"
         })
+
         warmup_start = time.time()
         _ = numba_calc['update_particles'](
-            np.array([particles[0].x]),
-            np.array([particles[0].y]),
+            np.array([self.particles[0].x]),
+            np.array([self.particles[0].y]),
             flow_data['u'],
             flow_data['v'],
             TIME_STEP_SECONDS,
@@ -322,27 +332,27 @@ class Simulation:
             flow_data = retriever.get_flow_field(timer.current)
             # Update particle position using Numba calculator
             new_x, new_y = numba_calc['update_particles'](
-                np.array([particles[0].x]),
-                np.array([particles[0].y]),
+                np.array([self.particles[0].x]),
+                np.array([self.particles[0].y]),
                 flow_data['u'],
                 flow_data['v'],
                 TIME_STEP_SECONDS,
             )
 
             # Update particle with new position
-            particles[0].x = new_x[0]
-            particles[0].y = new_y[0]
+            self.particles[0].x = new_x[0]
+            self.particles[0].y = new_y[0]
 
             # Store trajectory
-            trajectory_numba_x.append(particles[0].x)
-            trajectory_numba_y.append(particles[0].y)
+            trajectory_numba_x.append(self.particles[0].x)
+            trajectory_numba_y.append(self.particles[0].y)
 
             ## TEST data manager
             self.data_manager.add_data(
-                particle_id=particles[0].id,
+                particle_id=self.particles[0].id,
                 time=timer.current,
-                x=particles[0].x,
-                y=particles[0].y,
+                x=self.particles[0].x,
+                y=self.particles[0].y,
             )
 
             # Advance timer
@@ -350,12 +360,14 @@ class Simulation:
 
         simulation_end_time = time.time()
         total_time = simulation_end_time - compile_start  # Total time including compilation
+
         self.logger_manager.log_simulation_state({
             "status": "simulation_complete",
             "total_steps": timer.steps,
             "total_time_sec": round(total_time, 2),
             "final_position": f"({particles[0].x:.2f}, {particles[0].y:.2f})"
         })
+
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
@@ -381,10 +393,12 @@ class Simulation:
             title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
             save_path=self.data_manager.output_dir + '/trajectory_plot.png',
         )
+
         self.logger_manager.log_simulation_state({
             "status": "visualization_complete",
             "output_plot_path": self.data_manager.output_dir + '/trajectory_plot.png'
         })
+
 
 if __name__ == '__main__':
     sim = Simulation(config_file='examples/config.example.yaml')

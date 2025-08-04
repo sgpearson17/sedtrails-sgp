@@ -16,47 +16,48 @@ class LoggerManager:
         """Set up the logger"""
         if self.logger is not None:
             return self.logger
-            
+
         # Check if logs directory exists; raise error if not
         if not os.path.isdir(self.log_dir):
             raise FileNotFoundError(f"Log directory does not exist: {self.log_dir}")
 
+
         # Simple log file name
-        log_filename = os.path.join(self.log_dir, "log.txt")
-        
+        log_filename = os.path.join(self.log_dir, 'log.txt')
+
         # Create logger directly (avoid basicConfig)
-        self.logger = logging.getLogger("simulation_logger")
-        
+        self.logger = logging.getLogger('simulation_logger')
+
         # Only configure if not already configured
         if not self.logger.handlers:
             # Set logging level
             self.logger.setLevel(logging.DEBUG)
-            
+
             # Create formatter
-            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-            
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
             # Create file handler
             file_handler = logging.FileHandler(log_filename)
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)
-            
+
             # Create console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.INFO)
             console_handler.setFormatter(formatter)
-            
+
             # Add handlers to logger
             self.logger.addHandler(file_handler)
             self.logger.addHandler(console_handler)
-            
+
             # Prevent propagation to root logger
             self.logger.propagate = False
 
             # Log the file location immediately
             absolute_path = os.path.abspath(log_filename)
-            self.logger.info("=== LOGGING INITIALIZED ===")
-            self.logger.info(f"Log file: {os.path.basename(absolute_path)}")
-            self.logger.info(f"Location: {os.path.dirname(absolute_path)}")
+            self.logger.info('=== LOGGING INITIALIZED ===')
+            self.logger.info(f'Log file: {os.path.basename(absolute_path)}')
+            self.logger.info(f'Location: {os.path.dirname(absolute_path)}')
 
         return self.logger
 
@@ -253,5 +254,3 @@ class LoggerManager:
             return ', '.join(formatted_parts)
         
         return str(strategy)
-
-

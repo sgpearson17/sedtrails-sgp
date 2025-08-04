@@ -1,25 +1,32 @@
 general:
   input_model: 
-    format: "fm_netcdf"
-    reference_date: "1970-01-01"  # Default reference date for the input model
+    format: fm_netcdf
+    reference_date: 1970-01-01  # Default reference date for the input model
 folder_settings:
-  input_data: "./sample-data/inlet_sedtrails.nc"
-  output_dir: "./results"
+  input_data: ./sample-data/inlet_sedtrails.nc
+  output_dir: ./results
 time:
-  start: '2016-09-21 19:30:00'
-  timestep: '30S'
-  duration: '6H18M18S'
+  start: 2016-09-21 19:30:00
+  timestep: 30S
+  duration: 6H18M18S
 particles:
-  sand:
-    grain_size: 0.0005
-particle_seeding:
-  release_start: '2025-06-18 13:00:00'
-  particles_per_timestep: 1.
-  # TODO: provide a config template with all defaults
-  strategy: 
-    point:
-      points: 
-        - "40000,17000"
+  population:
+    name: my_population
+    particle_type: sand
+    characteristics:
+      grain_size: 0.01 
+      density: 2650.0  
+    tracer_methods:
+      vanwesten:
+        alpha: 0.2
+        beta: 0.3
+    seeding:
+      release_start: 2025-06-18 13:00:00
+      quantity: 1
+      strategy: 
+        point:
+          points: 
+            - "40000,17000"
 output:
   store_tracks: true
 visualization:
