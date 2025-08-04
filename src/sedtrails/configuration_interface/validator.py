@@ -5,13 +5,15 @@ from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 from pathlib import Path
 from sedtrails.configuration_interface.yaml_loader import SedtrailsYamlLoader
+from importlib.resources import files
 
 
-ROOT_SCHEMA = 'src/sedtrails/config/main.schema.json'
+# Schema file names (will be resolved using importlib.resources or pkg_resources)
+ROOT_SCHEMA = 'main.schema.json'
 REF_SCHEMAS = [
     # Add sub-schemas here
-    'src/sedtrails/config/population.schema.json',
-    'src/sedtrails/config/visualization.schema.json',
+    'population.schema.json',
+    'visualization.schema.json',
 ]
 
 
@@ -38,12 +40,12 @@ class YAMLConfigValidator:
 
     def _load_schema_from_file(self, schema_file: str) -> Dict[str, Any]:
         """
-        Loads the JSON schema from an external file and fills self.schema with its content.
+        Loads the JSON schema from a package resource file.
 
         Parameters
         ----------
         schema_file : str
-            The path to JSON schema file.
+            The name of the JSON schema file (e.g., 'main.schema.json').
 
         Returns
         -------
@@ -54,13 +56,24 @@ class YAMLConfigValidator:
         ------
         json.JSONDecodeError
             If the schema file is not a valid JSON file.
+        FileNotFoundError
+            If the schema file cannot be found in the package resources.
         """
-
         try:
-            with open(schema_file, 'r') as f:
+            # Use importlib.resources to access schema files in the package
+            config_files = files('sedtrails') / 'config'
+            schema_file_path = config_files / schema_file
+
+            # Read the schema file content
+            with schema_file_path.open('r', encoding='utf-8') as f:
                 schema_data: Any = json.load(f)
+
         except json.JSONDecodeError as err:
             raise err
+        except FileNotFoundError as err:
+            raise FileNotFoundError(f'Schema file {schema_file} not found in package resources') from err
+        except Exception as err:
+            raise RuntimeError(f'Error loading schema file {schema_file}: {err}') from err
         else:
             return schema_data
 
