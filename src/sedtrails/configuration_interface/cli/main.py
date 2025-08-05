@@ -57,17 +57,6 @@ def load_config(
     """
     Load and validate a YAML configuration file.
     Returns a dictionary with the valid configuration settings.
-
-    Parameters
-    ----------
-      config_file : Path
-         Path to the YAML configuration file.
-
-    Returns
-    -------
-      dict
-         A dictionary with the validated configuration settings.
-
     """
 
     controller = ConfigurationController(config_file)
@@ -96,12 +85,8 @@ def create_config_template(
     ),
 ):
     """
-    Create a configuration file for SedTRAILS with all possible configurations and default values.
-
-    Parameters
-    ----------
-      output_file : Path
-         Path to the output configuration template file.
+    Create a configuration file for simulations in SedTRAILS.
+    The file contains most possible configurations items with default values.
     """
     try:
         # Use importlib.resources to get the schema file from the installed package
@@ -135,16 +120,7 @@ def run_simulation(
     Run a simulation based on a configuration file.
     The simulation results are written to a netCDF file.
 
-    Parameters
-    ----------
-      config_file : Path
-         Path to the SedTRAILS configuration file.
-      output_file : Path
-         Path to the output SedTRAILS netCDF file.
-
-    Example
-    -------
-      sedtrails run --config my_config.yml --output results.nc
+    Example: sedtrails run --config my_config.yml --output results.nc
 
     """
 

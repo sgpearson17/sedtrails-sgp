@@ -17,6 +17,7 @@ dependencies = [
   "xugrid",
   "numba",
   "tqdm",
+  "referencing>=0.36.2",
 ]
 requires-python = ">=3.10, <3.14"
 authors = [
