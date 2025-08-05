@@ -42,22 +42,22 @@
               "default": 1,
               "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
             },
-            "gamma_e": {
+            "soulsby_gamma_e": {
               "type": "number",
               "default": 0.1,
               "description": "long-term equilibrium proportion of free particles"
             },
-            "theta_s": {
+            "soulsby_theta_s": {
               "type": "number",
               "default": 0.1,
               "description": "transition scale value"
             },
-            "b_e": {
+            "soulsby_b_e": {
               "type": "number",
               "default": 1.7e-07,
               "description": "maximum free-to-trapped transition probability per second [1/s]"
             },
-            "mu_d": {
+            "soulsby_mu_d": {
               "type": "number",
               "default": 0.5,
               "description": "dynamic friction coefficient (0.5-1.0)"
