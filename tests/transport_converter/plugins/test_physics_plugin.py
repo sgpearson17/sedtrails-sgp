@@ -60,4 +60,22 @@ def test_plugin_add_physics_callable(plugin_class):
     method = getattr(plugin_class, "add_physics", None)
     assert callable(method), (
         f"{plugin_class.__name__}.add_physics is not callable"
-    )    
+    )
+
+@pytest.mark.integration
+@pytest.mark.parametrize("plugin_class", get_plugin_classes())
+def test_plugin_add_physics_accepts_sedtrails_data(plugin_class):
+    """
+    Integration test to ensure each plugin's add_physics method accepts sedtrails_data as parameter.
+    """
+    method = getattr(plugin_class, "add_physics", None)
+    assert method is not None, f"{plugin_class.__name__} does not have an add_physics method"
+    
+    sig = inspect.signature(method)
+    param_names = list(sig.parameters.keys())
+    
+    # Should we check the position of the sedtrails_data as well?
+    assert "sedtrails_data" in param_names, (
+        f"{plugin_class.__name__}.add_physics should have 'sedtrails_data' parameter. "
+        f"Found parameters: {param_names}"
+    )
