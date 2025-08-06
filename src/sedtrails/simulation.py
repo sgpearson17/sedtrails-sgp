@@ -227,9 +227,11 @@ class Simulation:
         })            
 
         if not self._config_is_read:  # assure config is read only once
-            log_simulation_state(
-                {'state': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
-            )
+            self.logger_manager.log_simulation_state({
+                "status": "config_loading",
+                "config_file_path": self._config_file,
+                "timestamp": time.time()
+            })     
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
