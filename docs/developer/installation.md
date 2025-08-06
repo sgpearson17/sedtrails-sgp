@@ -8,7 +8,6 @@ This is the step-by-step process to install SedTRAILS.
  
 :On Windows:
 
-
 1. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio) is installed.
 
 2. Clone the SedTRAILS repository from github in your desired directory:
@@ -25,10 +24,14 @@ cd sedtrails
 ```
 4. Install the dependencies:
 
-:As a user:
+
+:As a developer: 
 ```bash
-pip install .
+pip install -e .[dev]
 ```
+For more details, see the following page:
+https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md
+
 
 Confirming the installation
 -----------
