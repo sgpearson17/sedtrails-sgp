@@ -25,10 +25,8 @@ particles:
       quantity: 1
       strategy: 
         point:
-          points: 
+          locations: 
             - "40000,17000"
 output:
   store_tracks: true
-visualization:
-  plotting:
-    point_size: 7.0
+
