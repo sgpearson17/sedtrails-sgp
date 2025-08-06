@@ -1,14 +1,14 @@
 """
 Particle Seeding Tool
 =====================
-Computes initial particle positions (x,y) and  particle's release times (t)
-using various particle release strategies.
+Manage the creation of particles, their positions (x,y) and  release times (t)
+using various release strategies.
 Seeding strategies for positions include:
 - At location: Release particles at a specific location (x,y).
 - Regular grid: Release particles in a regular grid pattern based
     on the specified grid size (distance between particles), and the simulation
     domain size. A mask can be applied to restrict the area of seeding.
-- Linear: release particle along a line between two points (x1,y1) and (x2,y2), and
+- Transect: release particle along a line between two points (x1,y1) and (x2,y2), and
     spaced by a specified distance.
 """
 
@@ -22,39 +22,30 @@ from dataclasses import dataclass, field
 @dataclass
 class SeedingConfig:
     """
-    Configuration class for particle seeding strategies.
+    Configuration class for particle seeding strategies in a particle population.
     This class can be extended to include more configuration options as needed.
     """
 
-    particles_config: Dict
-    particle_seeding_config: Dict
+    population_config: Dict
     count: Optional[int] = field(init=False)
     initial_positions: List[Tuple] = field(init=False)
-    release_times: int | float | List[int | float] = field(init=False)
+    release_start: str = field(init=False)
 
     def __post_init__(self):
-        self.strategy = str(self.particle_seeding_config.get('strategy', {}).keys())
+        strategy = self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
+        if not strategy:
+            raise ValueError('Seeding strategy is not defined in the population configuration.')
+        self.strategy = next(iter(strategy))
 
-    def _extract_initial_positions(self) -> List[Tuple[float, float]]:
+    def _extract_release_times(self) -> None:
         """
-        Extract initial positions from the configuration.
-        Returns a list of tuples containing (x, y) coordinates.
+        Extract release time from the configuration.
         """
 
-        initial_positions = []
+        # TODO: make the config controllert to be the one to se the release time == to
+        # the simulation start time when not specified
 
-        strategy_object = self.particle_seeding_config.get('strategy', {})
-        if 'point' in strategy_object:
-            for point in strategy_object['point']['points']:
-                _point = point.split(',')
-                initial_positions.append(Sand(name='Sand'))
-
-    def _extract_release_times(self) -> List[int]:
-        """
-        Extract release times from the configuration.
-        Returns a list of integers representing the release times for each particle.
-        """
-        return self.release_times
+        self.release_start = self.population_config.get('seeding', {}).get('release_start', '0')
 
 
 class SeedingStrategy(ABC):
@@ -174,7 +165,7 @@ class SeedingStrategy(ABC):
         return validity  # List to store the particles
 
 
-class XYSeeding(SeedingStrategy):
+class PointStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles at a specific location (x,y).
     """
@@ -221,7 +212,7 @@ class XYSeeding(SeedingStrategy):
         return particles
 
 
-class RandomSeeding(SeedingStrategy):
+class RandomStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles at at random locations (x,y).
     """
@@ -274,7 +265,7 @@ class RandomSeeding(SeedingStrategy):
         return particles
 
 
-class GridSeeding(SeedingStrategy):
+class GridStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles at a regular grid pattern.
     """
@@ -313,7 +304,7 @@ class GridSeeding(SeedingStrategy):
         return particles
 
 
-class TransectSeeding(SeedingStrategy):
+class TransectStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles along a transect (line) between two points (x1,y1) and (x2,y2).
     Particles are spaced by a specified distance.
@@ -353,9 +344,10 @@ class ParticleFactory:
     }
 
     STRATEGIES = {
-        'point': XYSeeding,
-        'random': RandomSeeding,
-        'grid': GridSeeding,
+        'point': PointStrategy,
+        'random': RandomStrategy,
+        'grid': GridStrategy,
+        'transect': TransectStrategy,
     }
 
     def create_particles(cls, particle_type: str, count: int = 1) -> list[Particle]:
@@ -394,19 +386,22 @@ class ParticleFactory:
 
 
 if __name__ == '__main__':
-    pos = [(1, 2), (3, 4), (5, 6)]
-    release_times = [0, 1, 2]
-    count = 3
-    xy_seeding = XYSeeding()
-    particles = xy_seeding.seed(initial_positions=pos, release_times=release_times, count=count)
-    particles_single = xy_seeding.seed(initial_positions=(1, 2), release_times=0, count=1)
-    print(particles)
+    particles_config = {
+        'population': {
+            'name': 'test_population',
+            'type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'point': {
+                        'locations': [(0, 0), (1, 1)],
+                    },
+                },
+                'release_start': '0',
+                'quantity': 1,
+            },
+        }
+    }
 
-    # Example usage of the RandomSeeding class
-    random_seeding = RandomSeeding()
-    x_range = (0, 10)
-    y_range = (0, 100)
-    release_times = [0, 1, 2]
-    count = 3
-    particles = random_seeding.seed(x_range=x_range, y_range=y_range, release_times=release_times, count=count)
-    print(particles)
+    config = SeedingConfig(population_config=particles_config)
+
+    print(f'Seeding strategy: {config.strategy}')
