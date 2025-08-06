@@ -12,12 +12,32 @@ from sedtrails.particle_tracer.position_calculator_numba import create_numba_par
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import log_simulation_state, _logger_manager
-from sedtrails.exceptions.exceptions import (
-    ConfigurationError,
-)
+from sedtrails.logger.logger import LoggerManager
+from sedtrails.exceptions.exceptions import ConfigurationError
 from typing import Any
 
+def setup_global_exception_logging(logger_manager):
+    """Setup global exception logging for unhandled exceptions."""
+    original_excepthook = sys.excepthook
+    
+    def exception_handler(exc_type, exc_value, exc_traceback):
+        # Don't log KeyboardInterrupt (Ctrl+C)
+        if issubclass(exc_type, KeyboardInterrupt):
+            original_excepthook(exc_type, exc_value, exc_traceback)
+            return
+        
+        # Log all other exceptions
+        logger_manager.log_exception(exc_value, "Global Exception Handler")
+        logger_manager.log_simulation_state({
+            "status": "simulation_failed",
+            "error_type": exc_type.__name__,
+            "error_message": str(exc_value)
+        })
+        
+        # Call original handler
+        original_excepthook(exc_type, exc_value, exc_traceback)
+    
+    sys.excepthook = exception_handler
 
 class Simulation:
     """Class to encapsulate the particle simulation process."""
@@ -40,18 +60,30 @@ class Simulation:
         if not os.path.exists(config_file):
             raise ConfigurationError(f'Configuration file not found: {config_file}')
 
-        # Lazy initialization of controllers and converters
-        self._controller = ConfigurationController(self._config_file)
+        # Try to read config and update logger directory
+        try:
+            self._controller = ConfigurationController(self._config_file)
+            self._controller.load_config(self._config_file)
+            self._config_is_read = True            
+            output_dir = self._controller.get('folder_settings.output_dir', 'results')
+            
+        except Exception:
+            # Global exception handler will catch and log this
+            raise
+
+        # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
+        self.data_manager.set_mesh()
         self.particles: list[Particle] = []  # List to hold particles
 
-        # Initialize logger with correct output directory
-        _logger_manager.log_dir = self.data_manager.output_dir
 
-        # set mesh
-        self.data_manager.set_mesh()
+        self.logger_manager = LoggerManager(output_dir)
+        self.logger_manager.setup_logger()
+
+        # Setup global exception handling
+        setup_global_exception_logging(self.logger_manager)
 
     def _get_format_config(self):
         """
@@ -175,21 +207,31 @@ class Simulation:
 
         from tqdm import tqdm
 
+        if not self._config_is_read:  # assure config is read only once
+            self._controller.load_config(self._config_file)
+            self._config_is_read = True
+
+            self.logger_manager.log_simulation_state({
+                "state": "config_loading",
+                "config_file_path": self._config_file,
+                "timestamp": time.time()
+            })
+
         # Log the command that started the simulation
-        log_simulation_state(
-            {
-                'status': 'simulation_started',
-                'command': ' '.join(sys.argv),
-                'config_file': self._config_file,
-                'working_directory': os.getcwd(),
-                'python_version': sys.version.split()[0],
-            }
-        )
+        self.logger_manager.log_simulation_state({
+            "status": "simulation_started",
+            "command": " ".join(sys.argv),
+            "config_file": self._config_file,
+            "working_directory": os.getcwd(),
+            "python_version": sys.version.split()[0]
+        })            
 
         if not self._config_is_read:  # assure config is read only once
-            log_simulation_state(
-                {'state': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
-            )
+            self.logger_manager.log_simulation_state({
+                "status": "config_loading",
+                "config_file_path": self._config_file,
+                "timestamp": time.time()
+            })     
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
@@ -211,16 +253,14 @@ class Simulation:
             time_step=Duration(self._controller.get('time.timestep')),
         )
 
-        log_simulation_state(
-            {
-                'state': 'data_conversion_completed',
-                'num_timesteps': len(sedtrails_data.times),
-                'flow_field_name': 'suspended_velocity',
-                'start_time': start_time,
-                'simulation_duration_seconds': simulation_time.duration.seconds,
-                'simulation_timestep_seconds': simulation_time.time_step.seconds,
-            }
-        )
+        self.logger_manager.log_simulation_state({
+            "state": "data_conversion_completed",
+            "num_timesteps": len(sedtrails_data.times),
+            "flow_field_name": "suspended_velocity",
+            "start_time": start_time,
+            "simulation_duration_seconds": simulation_time.duration.seconds,
+            "simulation_timestep_seconds": simulation_time.time_step.seconds
+        })
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
@@ -247,6 +287,7 @@ class Simulation:
                     }
                 )
 
+
         # Store trajectory1
         trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
         trajectory_numba_y = [self.particles[0].y]
@@ -255,21 +296,25 @@ class Simulation:
         flow_data = retriever.get_flow_field(simulation_time.start)
 
         # Create and compile the numba calculator - this will include compilation time
-        log_simulation_state(
-            {
-                'state': 'numba_compilation_started',
-                'grid_size_x': len(flow_data['x']),
-                'grid_size_y': len(flow_data['y']),
-            }
-        )
+        self.logger_manager.log_simulation_state({
+            "state": "numba_compilation_started",
+            "grid_size_x": len(flow_data['x']),
+            "grid_size_y": len(flow_data['y'])
+        })
         compile_start = time.time()
         numba_calc = create_numba_particle_calculator(grid_x=flow_data['x'], grid_y=flow_data['y'])
         compile_time = time.time() - compile_start
-        log_simulation_state({'status': 'compilation_complete', 'time_sec': round(compile_time, 2)})
+        self.logger_manager.log_simulation_state({
+            "status": "compilation_complete", 
+            "time_sec": round(compile_time, 2)
+        })
 
         TIME_STEP_SECONDS = simulation_time.time_step.seconds
         # Warm up with one calculation to trigger JIT compilation
-        log_simulation_state({'status': 'warming_up_jit'})
+        self.logger_manager.log_simulation_state({
+            "status": "warming_up_jit"
+        })
+
         warmup_start = time.time()
         _ = numba_calc['update_particles'](
             np.array([self.particles[0].x]),
@@ -279,7 +324,10 @@ class Simulation:
             TIME_STEP_SECONDS,
         )
         warmup_time = time.time() - warmup_start
-        log_simulation_state({'status': 'warmup_complete', 'time_sec': round(warmup_time, 2)})
+        self.logger_manager.log_simulation_state({
+            "status": "warmup_complete",
+            "time_sec": round(warmup_time, 2)
+        })
         # Start timer after compilation
         timer = Timer(simulation_time=simulation_time)
         for _step in tqdm(range(1, timer.steps + 1), desc='Computing positions', unit='Steps'):
@@ -315,14 +363,14 @@ class Simulation:
 
         simulation_end_time = time.time()
         total_time = simulation_end_time - compile_start  # Total time including compilation
-        log_simulation_state(
-            {
-                'status': 'simulation_complete',
-                'total_steps': timer.steps,
-                'total_time_sec': round(total_time, 2),
-                'final_position': 'None',
-            }
-        )
+
+        self.logger_manager.log_simulation_state({
+            "status": "simulation_complete",
+            "total_steps": timer.steps,
+            "total_time_sec": round(total_time, 2),
+            "final_position": f"({particles[0].x:.2f}, {particles[0].y:.2f})"
+        })
+
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
@@ -331,7 +379,10 @@ class Simulation:
         trajectory_numba_x = np.array(trajectory_numba_x)
         trajectory_numba_y = np.array(trajectory_numba_y)
 
-        log_simulation_state({'status': 'creating_visualization', 'trajectory_points': len(trajectory_numba_x)})
+        self.logger_manager.log_simulation_state({
+            "status": "creating_visualization",
+            "trajectory_points": len(trajectory_numba_x)
+        })
 
         # Plot flow field with particle trajectory using the function
         final_flow = retriever.get_flow_field(timer.current)
@@ -345,12 +396,11 @@ class Simulation:
             title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
             save_path=self.data_manager.output_dir + '/trajectory_plot.png',
         )
-        log_simulation_state(
-            {
-                'status': 'visualization_complete',
-                'output_plot_path': self.data_manager.output_dir + '/trajectory_plot.png',
-            }
-        )
+
+        self.logger_manager.log_simulation_state({
+            "status": "visualization_complete",
+            "output_plot_path": self.data_manager.output_dir + '/trajectory_plot.png'
+        })
 
 
 if __name__ == '__main__':
