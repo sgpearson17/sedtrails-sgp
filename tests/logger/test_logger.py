@@ -217,6 +217,3 @@ class TestLoggerConfiguration(LoggerTestBase):
         logger_manager = LoggerManager(non_existent_dir)
         with pytest.raises(FileNotFoundError):
             logger_manager.setup_logger()
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
