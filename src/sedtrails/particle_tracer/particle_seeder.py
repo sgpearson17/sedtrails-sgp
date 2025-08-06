@@ -13,7 +13,7 @@ Seeding strategies for positions include:
 """
 
 from abc import ABC, abstractmethod
-from sedtrails.particle_tracer.particle import Particle, Passive, Sand
+from sedtrails.particle_tracer.particle import Particle, Passive
 from typing import List, Tuple, Optional, Dict
 import random
 from dataclasses import dataclass, field
