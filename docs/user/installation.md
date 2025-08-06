@@ -25,7 +25,6 @@ cd sedtrails
 ```
 4. Install the dependencies:
 
-:As a user:
 ```bash
 pip install .
 ```

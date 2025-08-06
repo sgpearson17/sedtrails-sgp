@@ -25,7 +25,6 @@ cd sedtrails
 4. Install the dependencies:
 
 
-:As a developer: 
 ```bash
 pip install -e .[dev]
 ```
