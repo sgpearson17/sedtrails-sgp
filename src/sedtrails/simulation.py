@@ -228,7 +228,7 @@ class Simulation:
         # particle_positions = {}
         strategy = self._controller.get('particles.population.seeding.strategy')
         if 'point' in strategy:
-            for point in strategy['point']['points']:
+            for point in strategy['point']['locations']:
                 _point = point.split(',')
 
                 sand = Sand()
