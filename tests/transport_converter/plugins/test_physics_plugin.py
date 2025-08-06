@@ -32,16 +32,32 @@ def get_plugin_classes():
     return plugin_classes
 
 @pytest.mark.integration
-def test_all_plugins_inherit_base_and_implement_add_physics():
+@pytest.mark.parametrize("plugin_class", get_plugin_classes())
+def test_plugin_inherits_base(plugin_class):
     """
-    Integration test to ensure all plugins in the physics plugin directory:
-    - Inherit from BasePhysicsPlugin
-    - Implement a callable add_physics method
-    """    
-    plugin_classes = get_plugin_classes()
-    assert plugin_classes, "No plugin classes found in the plugins directory."
-    for cls in plugin_classes:
-        assert issubclass(cls, BasePhysicsPlugin), f"{cls.__name__} does not inherit from BasePhysicsPlugin"
-        assert hasattr(cls, "add_physics"), f"{cls.__name__} does not have an add_physics method"
-        method = cls.add_physics
-        assert callable(method), f"{cls.__name__}.add_physics is not callable"
+    Integration test to ensure each plugin inherits from BasePhysicsPlugin.
+    """
+    assert issubclass(plugin_class, BasePhysicsPlugin), (
+        f"{plugin_class.__name__} does not inherit from BasePhysicsPlugin"
+    )
+
+@pytest.mark.integration
+@pytest.mark.parametrize("plugin_class", get_plugin_classes())
+def test_plugin_has_add_physics(plugin_class):
+    """
+    Integration test to ensure each plugin has an add_physics method.
+    """
+    assert hasattr(plugin_class, "add_physics"), (
+        f"{plugin_class.__name__} does not have an add_physics method"
+    )
+
+@pytest.mark.integration
+@pytest.mark.parametrize("plugin_class", get_plugin_classes())
+def test_plugin_add_physics_callable(plugin_class):
+    """
+    Integration test to ensure each plugin's add_physics method is callable.
+    """
+    method = getattr(plugin_class, "add_physics", None)
+    assert callable(method), (
+        f"{plugin_class.__name__}.add_physics is not callable"
+    )    
