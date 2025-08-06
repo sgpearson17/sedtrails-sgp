@@ -241,8 +241,8 @@ class Simulation:
                 log_simulation_state(
                     {
                         'state': 'particles_initialized',
-                        'num_particles': 'none',
-                        'particle_positions': 'none',
+                        'num_particles': 1,
+                        'particle_positions': {},
                         'seeding_strategy': strategy,
                     }
                 )
