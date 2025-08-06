@@ -16,28 +16,28 @@ from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from typing import Any
 
+
 def setup_global_exception_logging(logger_manager):
     """Setup global exception logging for unhandled exceptions."""
     original_excepthook = sys.excepthook
-    
+
     def exception_handler(exc_type, exc_value, exc_traceback):
         # Don't log KeyboardInterrupt (Ctrl+C)
         if issubclass(exc_type, KeyboardInterrupt):
             original_excepthook(exc_type, exc_value, exc_traceback)
             return
-        
+
         # Log all other exceptions
-        logger_manager.log_exception(exc_value, "Global Exception Handler")
-        logger_manager.log_simulation_state({
-            "status": "simulation_failed",
-            "error_type": exc_type.__name__,
-            "error_message": str(exc_value)
-        })
-        
+        logger_manager.log_exception(exc_value, 'Global Exception Handler')
+        logger_manager.log_simulation_state(
+            {'status': 'simulation_failed', 'error_type': exc_type.__name__, 'error_message': str(exc_value)}
+        )
+
         # Call original handler
         original_excepthook(exc_type, exc_value, exc_traceback)
-    
+
     sys.excepthook = exception_handler
+
 
 class Simulation:
     """Class to encapsulate the particle simulation process."""
@@ -64,9 +64,9 @@ class Simulation:
         try:
             self._controller = ConfigurationController(self._config_file)
             self._controller.load_config(self._config_file)
-            self._config_is_read = True            
+            self._config_is_read = True
             output_dir = self._controller.get('folder_settings.output_dir', 'results')
-            
+
         except Exception:
             # Global exception handler will catch and log this
             raise
@@ -77,7 +77,6 @@ class Simulation:
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()
         self.particles: list[Particle] = []  # List to hold particles
-
 
         self.logger_manager = LoggerManager(output_dir)
         self.logger_manager.setup_logger()
@@ -211,27 +210,25 @@ class Simulation:
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
-            self.logger_manager.log_simulation_state({
-                "state": "config_loading",
-                "config_file_path": self._config_file,
-                "timestamp": time.time()
-            })
+            self.logger_manager.log_simulation_state(
+                {'state': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
+            )
 
         # Log the command that started the simulation
-        self.logger_manager.log_simulation_state({
-            "status": "simulation_started",
-            "command": " ".join(sys.argv),
-            "config_file": self._config_file,
-            "working_directory": os.getcwd(),
-            "python_version": sys.version.split()[0]
-        })            
+        self.logger_manager.log_simulation_state(
+            {
+                'status': 'simulation_started',
+                'command': ' '.join(sys.argv),
+                'config_file': self._config_file,
+                'working_directory': os.getcwd(),
+                'python_version': sys.version.split()[0],
+            }
+        )
 
         if not self._config_is_read:  # assure config is read only once
-            self.logger_manager.log_simulation_state({
-                "status": "config_loading",
-                "config_file_path": self._config_file,
-                "timestamp": time.time()
-            })     
+            self.logger_manager.log_simulation_state(
+                {'status': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
+            )
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
@@ -253,14 +250,16 @@ class Simulation:
             time_step=Duration(self._controller.get('time.timestep')),
         )
 
-        self.logger_manager.log_simulation_state({
-            "state": "data_conversion_completed",
-            "num_timesteps": len(sedtrails_data.times),
-            "flow_field_name": "suspended_velocity",
-            "start_time": start_time,
-            "simulation_duration_seconds": simulation_time.duration.seconds,
-            "simulation_timestep_seconds": simulation_time.time_step.seconds
-        })
+        self.logger_manager.log_simulation_state(
+            {
+                'state': 'data_conversion_completed',
+                'num_timesteps': len(sedtrails_data.times),
+                'flow_field_name': 'suspended_velocity',
+                'start_time': start_time,
+                'simulation_duration_seconds': simulation_time.duration.seconds,
+                'simulation_timestep_seconds': simulation_time.time_step.seconds,
+            }
+        )
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
@@ -268,24 +267,24 @@ class Simulation:
         # particle_positions = {}
         strategy = self._controller.get('particles.population.seeding.strategy')
         if 'point' in strategy:
-            for point in strategy['point']['points']:
+            for point in strategy['point']['locations']:
                 _point = point.split(',')
 
-        # TODO: PARTICLE SEEDING
-        particles = []
-        for id, (x, y) in particle_positions.items():
-            START_X = float(x)
-            START_Y = float(y)
-            particle = Sand(id=id, _x=START_X, _y=START_Y, name='Test Particle')
-            particles.append(particle)
+                sand = Sand()
+                sand.x = float(_point[0])
+                sand.y = float(_point[1])
+                # sand.release_time = simulation_time.start.seconds
+                sand.name = 'Sand Particle'  # Set release time to start of simulation
+                self.particles.append(sand)
 
-        self.logger_manager.log_simulation_state({
-            "state": "particles_initialized",
-            "num_particles": len(particles),
-            "particle_positions": {p.id: {"x": round(p.x, 2), "y": round(p.y, 2)} for p in particles},
-            "seeding_strategy": strategy
-        })
-
+                self.logger_manager.log_simulation_state(
+                    {
+                        'state': 'particles_initialized',
+                        'num_particles': 1,
+                        'particle_positions': {},
+                        'seeding_strategy': strategy,
+                    }
+                )
 
         # Store trajectory1
         trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
@@ -295,24 +294,21 @@ class Simulation:
         flow_data = retriever.get_flow_field(simulation_time.start)
 
         # Create and compile the numba calculator - this will include compilation time
-        self.logger_manager.log_simulation_state({
-            "state": "numba_compilation_started",
-            "grid_size_x": len(flow_data['x']),
-            "grid_size_y": len(flow_data['y'])
-        })
+        self.logger_manager.log_simulation_state(
+            {
+                'state': 'numba_compilation_started',
+                'grid_size_x': len(flow_data['x']),
+                'grid_size_y': len(flow_data['y']),
+            }
+        )
         compile_start = time.time()
         numba_calc = create_numba_particle_calculator(grid_x=flow_data['x'], grid_y=flow_data['y'])
         compile_time = time.time() - compile_start
-        self.logger_manager.log_simulation_state({
-            "status": "compilation_complete", 
-            "time_sec": round(compile_time, 2)
-        })
+        self.logger_manager.log_simulation_state({'status': 'compilation_complete', 'time_sec': round(compile_time, 2)})
 
         TIME_STEP_SECONDS = simulation_time.time_step.seconds
         # Warm up with one calculation to trigger JIT compilation
-        self.logger_manager.log_simulation_state({
-            "status": "warming_up_jit"
-        })
+        self.logger_manager.log_simulation_state({'status': 'warming_up_jit'})
 
         warmup_start = time.time()
         _ = numba_calc['update_particles'](
@@ -323,10 +319,7 @@ class Simulation:
             TIME_STEP_SECONDS,
         )
         warmup_time = time.time() - warmup_start
-        self.logger_manager.log_simulation_state({
-            "status": "warmup_complete",
-            "time_sec": round(warmup_time, 2)
-        })
+        self.logger_manager.log_simulation_state({'status': 'warmup_complete', 'time_sec': round(warmup_time, 2)})
         # Start timer after compilation
         timer = Timer(simulation_time=simulation_time)
         for _step in tqdm(range(1, timer.steps + 1), desc='Computing positions', unit='Steps'):
@@ -363,13 +356,14 @@ class Simulation:
         simulation_end_time = time.time()
         total_time = simulation_end_time - compile_start  # Total time including compilation
 
-        self.logger_manager.log_simulation_state({
-            "status": "simulation_complete",
-            "total_steps": timer.steps,
-            "total_time_sec": round(total_time, 2),
-            "final_position": f"({particles[0].x:.2f}, {particles[0].y:.2f})"
-        })
-
+        self.logger_manager.log_simulation_state(
+            {
+                'status': 'simulation_complete',
+                'total_steps': timer.steps,
+                'total_time_sec': round(total_time, 2),
+                'final_position': f'({self.particles[0].x:.2f}, {self.particles[0].y:.2f})',
+            }
+        )
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
@@ -378,10 +372,9 @@ class Simulation:
         trajectory_numba_x = np.array(trajectory_numba_x)
         trajectory_numba_y = np.array(trajectory_numba_y)
 
-        self.logger_manager.log_simulation_state({
-            "status": "creating_visualization",
-            "trajectory_points": len(trajectory_numba_x)
-        })
+        self.logger_manager.log_simulation_state(
+            {'status': 'creating_visualization', 'trajectory_points': len(trajectory_numba_x)}
+        )
 
         # Plot flow field with particle trajectory using the function
         final_flow = retriever.get_flow_field(timer.current)
@@ -396,10 +389,12 @@ class Simulation:
             save_path=self.data_manager.output_dir + '/trajectory_plot.png',
         )
 
-        self.logger_manager.log_simulation_state({
-            "status": "visualization_complete",
-            "output_plot_path": self.data_manager.output_dir + '/trajectory_plot.png'
-        })
+        self.logger_manager.log_simulation_state(
+            {
+                'status': 'visualization_complete',
+                'output_plot_path': self.data_manager.output_dir + '/trajectory_plot.png',
+            }
+        )
 
 
 if __name__ == '__main__':

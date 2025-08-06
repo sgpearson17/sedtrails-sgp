@@ -240,7 +240,7 @@
                                     "type": "string",
                                     "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
                                 },
-                                "points": {
+                                "locations": {
                                     "type": "array",
                                     "items": {
                                         "type": "string"
@@ -266,7 +266,7 @@
                                 },
                                 {
                                     "required": [
-                                        "points"
+                                        "locations"
                                     ]
                                 }
                             ]

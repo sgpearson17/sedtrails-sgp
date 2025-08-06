@@ -3,7 +3,7 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 
 import pytest
-from sedtrails.particle_tracer.particle_seeding import XYSeeding, RandomSeeding
+from sedtrails.particle_tracer.particle_seeder import PointStrategy, RandomStrategy
 
 
 @pytest.fixture
@@ -11,7 +11,7 @@ def xy_seeder():
     """
     Fixture for creating an instance of XYSeeding.
     """
-    return XYSeeding()
+    return PointStrategy()
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def random_seeder():
     """
     Fixture for creating an instance of RandomSeeding.
     """
-    return RandomSeeding()
+    return RandomStrategy()
 
 
 # class TestXYSeeding:
