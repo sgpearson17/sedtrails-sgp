@@ -16,6 +16,7 @@ documentation for details.
 
    README
    quickstart
+   introduction
 
 .. toctree::
    :maxdepth: 2
