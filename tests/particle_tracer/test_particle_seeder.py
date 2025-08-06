@@ -3,7 +3,7 @@ Unit tests for data classes in the particle.py module of the sedtrails package.
 """
 
 import pytest
-from sedtrails.particle_tracer.particle_seeding import XYSeeding, RandomSeeding
+from sedtrails.particle_tracer.particle_seeder import XYSeeding, RandomSeeding
 
 
 @pytest.fixture
