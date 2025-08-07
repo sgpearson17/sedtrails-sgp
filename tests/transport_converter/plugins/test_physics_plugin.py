@@ -37,13 +37,8 @@ def test_plugin_inherits_base(plugin_class):
     """
     Integration test to ensure each plugin inherits from BasePhysicsPlugin.
     """
-    plugin_module = plugin_class.__module__
-    if hasattr(plugin_module, '__file__') and plugin_module.__file__:
-        plugin_file = os.path.basename(plugin_module.__file__)
-    else:
-        # Try to extract from module name
-        module_parts = plugin_module.split('.')
-        plugin_file = f"{module_parts[-1]}.py" if module_parts else "unknown"
+    module_parts = plugin_class.__module__.split('.')
+    plugin_file = module_parts[-1] + ".py" if module_parts else "unknown"
     assert issubclass(plugin_class, BasePhysicsPlugin), (
         f"{plugin_file} does not inherit from BasePhysicsPlugin"
     )
@@ -54,13 +49,9 @@ def test_plugin_has_add_physics(plugin_class):
     """
     Integration test to ensure each plugin has an add_physics method.
     """
-    plugin_module = plugin_class.__module__
-    if hasattr(plugin_module, '__file__') and plugin_module.__file__:
-        plugin_file = os.path.basename(plugin_module.__file__)
-    else:
-        # Try to extract from module name
-        module_parts = plugin_module.split('.')
-        plugin_file = f"{module_parts[-1]}.py" if module_parts else "unknown"
+    # Try to extract from module name
+    module_parts = plugin_class.__module__.split('.')
+    plugin_file = module_parts[-1] + ".py" if module_parts else "unknown"
     assert hasattr(plugin_class, "add_physics"), (
         f"{plugin_file} does not have an add_physics method"
     )
@@ -71,13 +62,9 @@ def test_plugin_add_physics_callable(plugin_class):
     """
     Integration test to ensure each plugin's add_physics method is callable.
     """
-    plugin_module = plugin_class.__module__
-    if hasattr(plugin_module, '__file__') and plugin_module.__file__:
-        plugin_file = os.path.basename(plugin_module.__file__)
-    else:
-        # Try to extract from module name
-        module_parts = plugin_module.split('.')
-        plugin_file = f"{module_parts[-1]}.py" if module_parts else "unknown"
+    # Try to extract from module name
+    module_parts = plugin_class.__module__.split('.')
+    plugin_file = module_parts[-1] + ".py" if module_parts else "unknown"
     method = getattr(plugin_class, "add_physics", None)
     assert callable(method), (
         f"add_physics method in {plugin_file} is not callable"
@@ -89,13 +76,9 @@ def test_plugin_add_physics_accepts_sedtrails_data(plugin_class):
     """
     Integration test to ensure each plugin's add_physics method accepts sedtrails_data as parameter.
     """
-    plugin_module = plugin_class.__module__
-    if hasattr(plugin_module, '__file__') and plugin_module.__file__:
-        plugin_file = os.path.basename(plugin_module.__file__)
-    else:
-        # Try to extract from module name
-        module_parts = plugin_module.split('.')
-        plugin_file = f"{module_parts[-1]}.py" if module_parts else "unknown"
+    # Try to extract from module name
+    module_parts = plugin_class.__module__.split('.')
+    plugin_file = module_parts[-1] + ".py" if module_parts else "unknown"
     
     method = getattr(plugin_class, "add_physics", None)
     assert method is not None, f"{plugin_file} does not have an add_physics method"
