@@ -72,10 +72,12 @@ def test_plugin_add_physics_accepts_sedtrails_data(plugin_class):
     assert method is not None, f"{plugin_class.__name__} does not have an add_physics method"
     
     sig = inspect.signature(method)
-    param_names = list(sig.parameters.keys())
+    params = list(sig.parameters.values())
     
-    # Should we check the position of the sedtrails_data as well?
-    assert "sedtrails_data" in param_names, (
-        f"{plugin_class.__name__}.add_physics should have 'sedtrails_data' parameter. "
-        f"Found parameters: {param_names}"
+    # The first parameter should be 'self', the second should be 'sedtrails_data'
+    assert len(params) >= 2, (
+        f"{plugin_class.__name__}.add_physics should accept at least 'self' and 'sedtrails_data' as arguments"
+    )
+    assert params[1].name == "sedtrails_data", (
+        f"{plugin_class.__name__}.add_physics: second parameter should be 'sedtrails_data', got '{params[1].name}'"
     )
