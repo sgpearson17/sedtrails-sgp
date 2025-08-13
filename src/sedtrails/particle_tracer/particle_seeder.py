@@ -1,19 +1,21 @@
 """
 Particle Seeding Tool
 =====================
-Manage the creation of particles, their positions (x,y) and  release times (t)
+Manage the creation of particles, their positions (x,y) and distribution.
 using various release strategies.
 Seeding strategies for positions include:
-- At location: Release particles at a specific location (x,y).
+- At location: Release particles at a specific locations (x,y).
 - Regular grid: Release particles in a regular grid pattern based
-    on the specified grid size (distance between particles), and the simulation
-    domain size. A mask can be applied to restrict the area of seeding.
-- Transect: release particle along a line between two points (x1,y1) and (x2,y2), and
-    spaced by a specified distance.
+    on distances between particles in x and y directions, and the
+    simulation domain size. A mask can be applied to restrict the area of seeding.
+- Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
+- Random: Release particles at random locations (x,y) within an area
+    constrained by a bounding box (xmin, xmax, ymin, ymax).
 """
 
 from abc import ABC, abstractmethod
-from sedtrails.particle_tracer.particle import Particle, Passive
+from sedtrails.particle_tracer.particle import Particle
+from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Optional, Dict
 import random
 from dataclasses import dataclass, field
@@ -22,20 +24,25 @@ from dataclasses import dataclass, field
 @dataclass
 class SeedingConfig:
     """
-    Configuration class for particle seeding strategies in a particle population.
-    This class can be extended to include more configuration options as needed.
+    A class to represent the seeding parameters of a population of particle.
+    A population is a group of particles that share the same type and seeding strategy.
     """
 
     population_config: Dict
-    count: Optional[int] = field(init=False)
-    initial_positions: List[Tuple] = field(init=False)
-    release_start: str = field(init=False)
+    particle_type: str = field(init=False)
+    release_start: str = field(init=False)  # particle for a given population are released at this time
+    quantity: Optional[int] = field(init=False)  # number of particles to release per release location
 
     def __post_init__(self):
-        strategy = self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
-        if not strategy:
-            raise ValueError('Seeding strategy is not defined in the population configuration.')
-        self.strategy = next(iter(strategy))
+        _strategy = self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
+        if not _strategy:
+            raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
+        self.strategy = next(iter(_strategy))
+
+        _quantity = self.population_config.get('population', {}).get('seeding', {}).get('quantity', {})
+        if not _quantity:
+            raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
+        self.quantity = _quantity
 
     def _extract_release_times(self) -> None:
         """
@@ -45,7 +52,10 @@ class SeedingConfig:
         # TODO: make the config controllert to be the one to se the release time == to
         # the simulation start time when not specified
 
-        self.release_start = self.population_config.get('seeding', {}).get('release_start', '0')
+        release_start = self.population_config.get('population', {}).get('seeding', {}).get('release_start', {})
+        if not release_start:
+            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
+        self.release_start = release_start
 
 
 class SeedingStrategy(ABC):
@@ -54,354 +64,147 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, initial_positions: List[tuple] | tuple, release_times: List | str, count: int = 1) -> list[Particle]:
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
         """
-        Seed particles at the specified location.
+        Asociates quantity of particles to a seeding locations for a given strategy.
 
         Parameters
         ----------
-        initial_positions : list[tuple] | tuple
-            List of tuples containing the (x,y) coordinates of the particles.
-            If a single tuple is provided, it will be used for all particles.
-        count : int
-            Number of particles to seed. Default is 1.
+        config : SeedingConfig
+            Configuration object containing the seeding parameters.
 
         Returns
         -------
-        list[Particle]
-            List of seeded particles.
+        list[Tuple[int, float, float]]
+            A list of tuples where each tuple contains:
+            - int: The quantity of particles to  be releases at a location.
+            - float: The x-coordinate of the release location.
+            - float: The y-coordinate of the release location.
         """
         pass
-
-    def _validate_initial_positions(
-        self, initial_positions: List[tuple] | tuple, count: int, domain_extent: Optional[Tuple | None] = None
-    ) -> bool:
-        """
-        Validate the initial positions and count of particles.
-
-        Parameters
-        ----------
-        initial_positions : list[tuple] | tuple
-            List of tuples containing the (x,y) coordinates of the particles.
-            If a single tuple is provided, it will be used for all particles.
-        count : int
-            Number of particles to seed. Default is 1.
-        release_times : list | int
-            List of release times for each particle. Times must refer to simulation time.
-            If a single integer is provided, it will be used for all particles.
-        domain_extent : tuple | None, optional
-            Optional tuple specifying the spatial domain extent (min_x, max_x, min_y, max_y).
-            This is use to validate that the initial positions fall within the domain extent.
-            Such domain extent can represent the limit of the flow-field dataset, for example.
-
-
-        Returns
-        -------
-        bool
-            True if the initial positions are valid, False otherwise.
-
-        Raises
-        ------
-        TypeError
-            If initial_positions is not a list or tuple.
-        ValueError
-            If the number of initial positions does not match the count.
-        """
-
-        # Makes sure that the particle positions fall within the domain extent
-        if domain_extent is not None:
-            if not isinstance(domain_extent, tuple) or len(domain_extent) != 4:
-                raise TypeError("Expected 'domain_extent' to be a tuple of four floats (min_x, max_x, min_y, max_y)")
-            for pos in initial_positions:
-                if not (
-                    domain_extent[0] <= pos[0] <= domain_extent[1] and domain_extent[2] <= pos[1] <= domain_extent[3]
-                ):
-                    raise ValueError(f'Position {pos} is out of the domain extent {domain_extent}')
-
-        validity = True
-        if not isinstance(initial_positions, (list, tuple)):
-            validity = False
-            raise TypeError(
-                f"Expected 'initial_positions' to be a list or tuple, got {type(initial_positions).__name__}"
-            )
-        if isinstance(initial_positions, list) and len(initial_positions) != count:
-            validity = False
-            raise ValueError(
-                f'Number of initial positions ({len(initial_positions)}) does not match the count ({count}).'
-            )
-        if isinstance(initial_positions, tuple) and count != 1:
-            validity = False
-            raise ValueError(f'Number of initial positions ({initial_positions}) does not match the count ({count}).')
-        return validity
-
-    def _validate_release_times(self, release_times: List | int, count: int):
-        """
-        Validate the release times and count of particles.
-
-        Parameters
-        ----------
-        release_times : list | int
-            List of release times for each particle. Times must refer to simulation time.
-            If a single integer is provided, it will be used for all particles.
-        count : int
-            Number of particles to seed.
-
-        Raises
-        ------
-        TypeError
-            If release_times is not a list or int.
-        ValueError
-            If the number of release times does not match the count.
-        """
-        validity = True
-        if isinstance(release_times, int):
-            release_times = [release_times] * count
-        elif not isinstance(release_times, list):
-            validity = False
-            raise TypeError(f"Expected 'release_times' to be a list or int, got {type(release_times).__name__}")
-        if len(release_times) != count:
-            validity = False
-            raise ValueError(f'Number of release times ({len(release_times)}) does not match the count ({count}).')
-        return validity  # List to store the particles
 
 
 class PointStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at a specific location (x,y).
+    Seeding strategy to release particles at specific locations (x,y).
     """
 
-    def seed(self, initial_positions: List[tuple] | tuple, release_times: List | str, count: int = 1) -> list[Particle]:
-        """
-        Seed particles at the specified location.
-
-        Parameters
-        ----------
-        initial_positions : list[tuple] | tuple
-            List of tuples containing the (x,y) coordinates of the particles.
-            If a single tuple is provided, it will be used for all particles.
-        count : int
-            Number of particles to seed. Default is 1.
-        release_times : list | int
-            List of release times for each particle. Times must refer to simulation time.
-            If a single integer is provided, it will be used for all particles.
-
-        Returns
-        -------
-        list[Particle]
-            List of seeded particles.
-        """
-
-        # Validate the initial positions and realise times
-        self._validate_initial_positions(initial_positions, count)
-        self._validate_release_times(release_times, count)
-
-        particles = []  # List to store the particles
-        if isinstance(initial_positions, tuple):  # If a single tuple is provided, use it for all particles
-            initial_positions = [initial_positions] * count
-
-        if isinstance(release_times, int):  # If a single integer is provided, use it for all particles
-            release_times = [release_times] * count
-        for i in range(count):
-            # Create a particle object with the initial position and release time
-
-            particle = Passive(
-                id=i, _x=initial_positions[i][0], _y=initial_positions[i][1], _release_time=release_times[i]
-            )
-            particles.append(particle)
-
-        return particles
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        # Expect config.population_config['population']['seeding']['locations'] = ['x,y', ...]
+        locations = config.population_config.get('population', {}).get('seeding', {}).get('locations', [])
+        if not locations:
+            raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
+        if config.quantity is None:
+            raise MissingConfigurationParameter('"quantity" must be an integer for PointStrategy.')
+        quantity = int(config.quantity)
+        parsed_locations = []
+        for loc_str in locations:
+            try:
+                x_str, y_str = loc_str.split(',')
+                x = float(x_str.strip())
+                y = float(y_str.strip())
+                parsed_locations.append((quantity, x, y))
+            except Exception as e:
+                raise ValueError(f"Invalid location string '{loc_str}': {e}") from e
+        return parsed_locations
 
 
 class RandomStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at at random locations (x,y).
+    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box (xmin, xmax, ymin, ymax).
     """
 
-    def seed(
-        self, x_range: Tuple[float, float], y_range: Tuple[float, float], release_times: List[str] | str, count: int = 1
-    ) -> list[Particle]:
-        """
-        Seed particles at the specified location.
-
-        Parameters
-        ----------
-        count : int
-            Number of particles to seed. Default is 1.
-        release_times : list | int
-            List of release times for each particle. Times must refer to simulation time.
-            If a single integer is provided, it will be used for all particles.
-
-        Returns
-        -------
-        list[Particle]
-            List of seeded particles.
-        """
-
-        # Validate the initial positions and realise times
-        if isinstance(release_times, list):
-            if len(release_times) != count:
-                raise ValueError(f'Number of release times ({len(release_times)}) does not match the count ({count}).')
-
-        def random_position(x_range: float, y_range: float) -> Tuple[float, float]:
-            """
-            Generate a random position within the specified ranges.
-            """
-            x = random.uniform(x_range[0], x_range[1])
-            y = random.uniform(y_range[0], y_range[1])
-            return x, y
-
-        particles = []  # List to store the particles
-
-        if isinstance(
-            release_times, int
-        ):  # generate a list of release times when the same time should be used for all particles
-            release_times = [release_times] * count
-        for i in range(count):
-            initial_position = random_position(x_range, y_range)
-            # TODO: find if it is needed to round the position to a specific number of decimal places
-            particle = Passive(id=i, _x=initial_position[0], _y=initial_position[1], _release_time=release_times[i])
-            particles.append(particle)
-
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        # Expect config.population_config['population']['seeding']['bbox'] = {'xmin':..., 'xmax':..., 'ymin':..., 'ymax':...}
+        bbox = config.population_config.get('population', {}).get('seeding', {}).get('bbox', {})
+        if not bbox or not all(k in bbox for k in ['xmin', 'xmax', 'ymin', 'ymax']):
+            raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
+        if config.quantity is None:
+            raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
+        quantity = int(config.quantity)
+        particles = []
+        for _ in range(quantity):
+            x = random.uniform(bbox['xmin'], bbox['xmax'])
+            y = random.uniform(bbox['ymin'], bbox['ymax'])
+            particles.append((1, x, y))
         return particles
 
 
 class GridStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at a regular grid pattern.
+    Seeding strategy to release particles that follows regular grid pattern. The grid is defined by the distance between particles (dx, dy) and the simulation domain size. If dx and dy have the same value, a square grid is created.
     """
 
-    def seed(self, spatial_domain, count: int = 1, release_times: List | int = 1, mask=None) -> list[Particle]:
-        # TODO: agree ont he data type for spatial_domain and mask
-
-        """
-        Seed particles in a regular grid pattern based on the specified grid size (distance between particles),
-        and the simulation domain size. A mask can be applied to restrict the area of seeding.
-
-        Parameters
-        ----------
-        spatial_domain :
-            The simulation domain size (width, height).
-        count : int
-            Number of particles to seed. Default is 1.
-        release_times : list | int
-            List of release times for each particle. Times must refer to simulation time.
-            If a single integer is provided, it will be used for all particles. Default is 1.
-        mask :
-            Optional mask to restrict the area of seeding. Default is None.
-            If None, particles will be seeded in the entire domain.
-
-        Returns
-        -------
-        list[Particle]
-            List of seeded particles.
-        """
-
-        particles = []  # List to store the particles
-
-        # TODO: Add logic to create a list of particles objects using the Particle class and the 'count', and
-        # assign the initial position (x,y) to each particle, and the release time (t) to each particle.
-
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        # Expect config.population_config['population']['seeding']['grid'] = {'xmin':..., 'xmax':..., 'ymin':..., 'ymax':..., 'dx':..., 'dy':...}
+        grid = config.population_config.get('population', {}).get('seeding', {}).get('grid', {})
+        if not grid or not all(k in grid for k in ['xmin', 'xmax', 'ymin', 'ymax', 'dx', 'dy']):
+            raise MissingConfigurationParameter('"grid" must be provided for GridStrategy.')
+        if config.quantity is None:
+            raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
+        quantity = int(config.quantity)
+        particles = []
+        xvals = [grid['xmin'] + i * grid['dx'] for i in range(int((grid['xmax'] - grid['xmin']) / grid['dx']) + 1)]
+        yvals = [grid['ymin'] + j * grid['dy'] for j in range(int((grid['ymax'] - grid['ymin']) / grid['dy']) + 1)]
+        for x in xvals:
+            for y in yvals:
+                particles.append((quantity, x, y))
         return particles
 
 
 class TransectStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles along a transect (line) between two points (x1,y1) and (x2,y2).
-    Particles are spaced by a specified distance.
+    Seeding strategy to release particles along straight line segments.
+    A line segment is defined by two points (x1, y1) and (x2, y2).
+    Particles along each segment are equally spaced, and the distance between particles is defined by the number of release locations per segment (k).
     """
 
-    def seed(self, start: Tuple[float, float], end: Tuple[float, float], distance: float, count: int = 1):
-        """
-        Seed particles along a transect between two points.
-
-        Parameters
-        ----------
-        start : tuple
-            Starting point of the transect (x1, y1).
-        end : tuple
-            Ending point of the transect (x2, y2).
-        distance : float
-            Distance between particles along the transect.
-        count : int
-            Number of particles to seed. Default is 1.
-
-        Returns
-        -------
-        list[Particle]
-            List of seeded particles.
-        """
-
-        raise NotImplementedError('Transect seeding strategy is not implemented yet.')
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        # Expect config.population_config['population']['seeding']['transect'] = {'x1':..., 'y1':..., 'x2':..., 'y2':..., 'k':...}
+        transect = config.population_config.get('population', {}).get('seeding', {}).get('transect', {})
+        if not transect or not all(k in transect for k in ['x1', 'y1', 'x2', 'y2', 'k']):
+            raise MissingConfigurationParameter('"transect" must be provided for TransectStrategy.')
+        x1, y1, x2, y2, k = transect['x1'], transect['y1'], transect['x2'], transect['y2'], transect['k']
+        if config.quantity is None:
+            raise MissingConfigurationParameter('"quantity" must be an integer for TransectStrategy.')
+        quantity = int(config.quantity)
+        particles = []
+        for i in range(k):
+            frac = i / (k - 1) if k > 1 else 0
+            x = x1 + frac * (x2 - x1)
+            y = y1 + frac * (y2 - y1)
+            particles.append((quantity, x, y))
+        return particles
 
 
 class ParticleFactory:
-    from sedtrails.particle_tracer.particle import Sand, Mud, Passive
-
-    TYPES = {
-        'sand': Sand,
-        'clay': Mud,
-        'silt': Passive,
-    }
-
-    STRATEGIES = {
-        'point': PointStrategy,
-        'random': RandomStrategy,
-        'grid': GridStrategy,
-        'transect': TransectStrategy,
-    }
-
-    def create_particles(cls, particle_type: str, count: int = 1) -> list[Particle]:
+    @staticmethod
+    def create_particles(
+        config: SeedingConfig, strategy: SeedingStrategy, particle_type: str, release_time: Optional[int] = None
+    ) -> list[Particle]:
         """
-        Create a particle of the specified type and strategy.
-
-        Parameters
-        ----------
-        type : str
-            Type of the particle to create (e.g., 'sand', 'clay', 'silt').
-        strategy : str
-            Seeding strategy to use (e.g., 'point', 'random', 'grid').
-        initial_positions : list[tuple] | tuple
-            Initial positions for the particles.
-        release_times : list | int
-            Release times for the particles.
-        count : int
-            Number of particles to create. Default is 1.
-
-        Returns
-        -------
-        list[Particle]
-            List of created particles.
+        Create a list of particles of the specified type using a seeding strategy.
         """
-        if type not in ParticleFactory.TYPES:
-            raise ValueError(f'Unknown particle type: {type}')
+        from sedtrails.particle_tracer.particle import Sand, Mud, Passive
 
-        # TODO: fix
-        # particle_class = ParticleFactory.TYPES[particle_type]
+        type_map = {'sand': Sand, 'mud': Mud, 'passive': Passive}
+        if particle_type.lower() not in type_map:
+            raise ValueError(f'Unknown particle type: {particle_type}')
+        ParticleClass = type_map[particle_type.lower()]
 
-        # particles = [particle_class() for _ in range(count)]
-
-    def _add_positions_and_times(self):
-        pass
-        # TODO: Add logic to assign initial positions and release times to the particles
-
-
-if __name__ == '__main__':
-    particles_config = {
-        'population': {
-            'name': 'test_population',
-            'type': 'sand',
-            'seeding': {
-                'strategy': {
-                    'point': {
-                        'locations': [(0, 0), (1, 1)],
-                    },
-                },
-                'release_start': '0',
-                'quantity': 1,
-            },
-        }
-    }
-
-    config = SeedingConfig(population_config=particles_config)
-
-    print(f'Seeding strategy: {config.strategy}')
+        positions = strategy.seed(config)
+        particles = []
+        for qty, x, y in positions:
+            for _ in range(qty):
+                p = ParticleClass()
+                p.x = x
+                p.y = y
+                # Use config.release_start if available, else release_time arg, else 0
+                if hasattr(config, 'release_start'):
+                    p.release_time = int(getattr(config, 'release_start', 0))
+                elif release_time is not None:
+                    p.release_time = int(release_time)
+                else:
+                    p.release_time = 0
+                particles.append(p)
+        return particles
