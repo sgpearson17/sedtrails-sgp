@@ -65,7 +65,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, config: SeedingConfig) -> List[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, *args) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
@@ -73,6 +73,8 @@ class SeedingStrategy(ABC):
         ----------
         config : SeedingConfig
             Configuration object containing the seeding parameters.
+        *args :
+            Additional positional arguments that may be used by specific strategies.
 
         Returns
         -------
@@ -90,7 +92,7 @@ class PointStrategy(SeedingStrategy):
     Seeding strategy to release particles at specific locations (x,y).
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
         locations = find_value(config.population_config, 'population.seeding.strategy.point.locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
@@ -114,7 +116,7 @@ class RandomStrategy(SeedingStrategy):
     Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box 'xmin,ymin xmax,ymax'.
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
         bbox = find_value(config.population_config, 'population.seeding.strategy.random.bbox', {})
         print(bbox)
         if not bbox:
@@ -135,19 +137,50 @@ class RandomStrategy(SeedingStrategy):
 class GridStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles that follows regular grid pattern. The grid is defined by the distance between particles (dx, dy) and the simulation domain size. If dx and dy have the same value, a square grid is created.
+    The origin of the grid is at the bottom left corner of the bounding box
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        # Expect config.population_config['population']['seeding']['grid'] = {'xmin':..., 'xmax':..., 'ymin':..., 'ymax':..., 'dx':..., 'dy':...}
-        grid = config.population_config.get('population', {}).get('seeding', {}).get('grid', {})
-        if not grid or not all(k in grid for k in ['xmin', 'xmax', 'ymin', 'ymax', 'dx', 'dy']):
+    def seed(self, config: SeedingConfig, bbox: Dict = None, *args) -> list[Tuple[int, float, float]]:
+        """
+        Parameters
+        ----------
+        config : SeedingConfig
+            Configuration object containing the seeding parameters.
+        bbox : Dict
+            Bounding box to constrain the grid area. If not provided, compuation will fail.
+            Expects a dicstionary with keys 'xmin', 'xmax', 'ymin', 'ymax'.
+        """
+        if bbox is None:
+            raise RuntimeError('Bounding box must be provided for GridStrategy.')
+
+        grid = find_value(config.population_config, 'population.seeding.strategy.grid', {})
+
+        if not grid or not all(k in grid.get('separation') for k in ['dx', 'dy']):
             raise MissingConfigurationParameter('"grid" must be provided for GridStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
         quantity = int(config.quantity)
         seed_locations = []
-        xvals = [grid['xmin'] + i * grid['dx'] for i in range(int((grid['xmax'] - grid['xmin']) / grid['dx']) + 1)]
-        yvals = [grid['ymin'] + j * grid['dy'] for j in range(int((grid['ymax'] - grid['ymin']) / grid['dy']) + 1)]
+        dx = find_value(grid, 'separation.dx')
+        dy = find_value(grid, 'separation.dy')
+        xvals = []
+        yvals = []
+        x = bbox['xmin']
+        while x <= bbox['xmax']:
+            if x > bbox['xmax']:
+                break
+            xvals.append(x)
+            x += dx
+        if xvals and xvals[-1] > bbox['xmax']:
+            xvals.pop()
+        y = bbox['ymin']
+        while y <= bbox['ymax']:
+            if y > bbox['ymax']:
+                break
+            yvals.append(y)
+            y += dy
+        if yvals and yvals[-1] > bbox['ymax']:
+            yvals.pop()
         for x in xvals:
             for y in yvals:
                 seed_locations.append((quantity, x, y))
@@ -161,21 +194,49 @@ class TransectStrategy(SeedingStrategy):
     Particles along each segment are equally spaced, and the distance between particles is defined by the number of release locations per segment (k).
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        # Expect config.population_config['population']['seeding']['transect'] = {'x1':..., 'y1':..., 'x2':..., 'y2':..., 'k':...}
-        transect = config.population_config.get('population', {}).get('seeding', {}).get('transect', {})
-        if not transect or not all(k in transect for k in ['x1', 'y1', 'x2', 'y2', 'k']):
+    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
+        # expect to return a dictionary with keys 'segments', 'k'
+        transect = find_value(config.population_config, 'population.seeding.strategy.transect', {})
+        if not transect:
             raise MissingConfigurationParameter('"transect" must be provided for TransectStrategy.')
-        x1, y1, x2, y2, k = transect['x1'], transect['y1'], transect['x2'], transect['y2'], transect['k']
+
+        segments = transect.get('segments', [])
+        if not segments:
+            raise MissingConfigurationParameter('"segments" must be provided for TransectStrategy.')
+        k = transect.get('k', {})
+        if not k:
+            raise MissingConfigurationParameter('"k" must be provided for TransectStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for TransectStrategy.')
         quantity = int(config.quantity)
         seed_locations = []
-        for i in range(k):
-            frac = i / (k - 1) if k > 1 else 0
-            x = x1 + frac * (x2 - x1)
-            y = y1 + frac * (y2 - y1)
-            seed_locations.append((quantity, x, y))
+
+        # Process each segment
+        for segment_str in segments:
+            try:
+                # Parse segment string like '1000,2000 3000,4000'
+                points = segment_str.strip().split()
+                if len(points) != 2:
+                    raise ValueError(f'Segment must contain exactly 2 points, got {len(points)}')
+
+                # Parse first point (x1, y1)
+                x1_str, y1_str = points[0].split(',')
+                x1, y1 = float(x1_str.strip()), float(y1_str.strip())
+
+                # Parse second point (x2, y2)
+                x2_str, y2_str = points[1].split(',')
+                x2, y2 = float(x2_str.strip()), float(y2_str.strip())
+
+                # Generate k equally spaced points along the segment
+                for i in range(k):
+                    frac = i / (k - 1) if k > 1 else 0
+                    x = x1 + frac * (x2 - x1)
+                    y = y1 + frac * (y2 - y1)
+                    seed_locations.append((quantity, x, y))
+
+            except Exception as e:
+                raise ValueError(f"Invalid segment string '{segment_str}': {e}") from e
+
         return seed_locations
 
 
@@ -209,6 +270,8 @@ class ParticleFactory:
                 else:
                     p.release_time = 0
                 seed_locations.append(p)
+
+        # TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
         return seed_locations
 
 
@@ -241,4 +304,48 @@ if __name__ == '__main__':
         }
     )
     particles = strategy.seed(config)
-    print(particles)  # Should print the seeded locations with quantities
+    print('Random strategy \n', particles)  # Should print the seeded locations with quantities
+
+    strategy = GridStrategy()
+
+    config = SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 1.0, 'dy': 1.0},
+                        }
+                    },
+                    'quantity': 10,
+                }
+            }
+        }
+    )
+
+    bbox = {'xmin': 0.0, 'xmax': 5.0, 'ymin': 0.0, 'ymax': 5.0}
+    particles = strategy.seed(config, bbox=bbox)
+    print('Grid startegy \n', particles)  # Should print t
+
+    strategy = TransectStrategy()
+
+    config = SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'transect': {
+                            'segments': [
+                                '0,0 2,3',
+                            ],
+                            'k': 3,  # Number of points per segment
+                        }
+                    },
+                    'quantity': 10,
+                }
+            }
+        }
+    )
+
+    particles = strategy.seed(config)
+    print('Transect strategy \n', particles)  # Should print the seeded locations with
