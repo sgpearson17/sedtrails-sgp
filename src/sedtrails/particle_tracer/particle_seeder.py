@@ -65,7 +65,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, config: SeedingConfig, *args) -> List[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, **kwargs) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
@@ -73,8 +73,8 @@ class SeedingStrategy(ABC):
         ----------
         config : SeedingConfig
             Configuration object containing the seeding parameters.
-        *args :
-            Additional positional arguments that may be used by specific strategies.
+        **kwargs :
+            Additional keyword arguments that may be used by specific strategies.
 
         Returns
         -------
@@ -92,7 +92,7 @@ class PointStrategy(SeedingStrategy):
     Seeding strategy to release particles at specific locations (x,y).
     """
 
-    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
         locations = find_value(config.population_config, 'population.seeding.strategy.point.locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
@@ -116,7 +116,7 @@ class RandomStrategy(SeedingStrategy):
     Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box 'xmin,ymin xmax,ymax'.
     """
 
-    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
         bbox = find_value(config.population_config, 'population.seeding.strategy.random.bbox', {})
         print(bbox)
         if not bbox:
@@ -140,7 +140,7 @@ class GridStrategy(SeedingStrategy):
     The origin of the grid is at the bottom left corner of the bounding box
     """
 
-    def seed(self, config: SeedingConfig, bbox: Dict = None, *args) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
         """
         Parameters
         ----------
@@ -150,6 +150,7 @@ class GridStrategy(SeedingStrategy):
             Bounding box to constrain the grid area. If not provided, compuation will fail.
             Expects a dicstionary with keys 'xmin', 'xmax', 'ymin', 'ymax'.
         """
+        bbox = kwargs.get('bbox')
         if bbox is None:
             raise RuntimeError('Bounding box must be provided for GridStrategy.')
 
@@ -194,7 +195,7 @@ class TransectStrategy(SeedingStrategy):
     Particles along each segment are equally spaced, and the distance between particles is defined by the number of release locations per segment (k).
     """
 
-    def seed(self, config: SeedingConfig, *args) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
         transect = find_value(config.population_config, 'population.seeding.strategy.transect', {})
         if not transect:
@@ -243,10 +244,33 @@ class TransectStrategy(SeedingStrategy):
 class ParticleFactory:
     @staticmethod
     def create_particles(
-        config: SeedingConfig, strategy: SeedingStrategy, particle_type: str, release_time: Optional[int] = None
+        config: SeedingConfig,
+        strategy: SeedingStrategy,
+        particle_type: str,
+        release_time: Optional[int] = None,
+        *args,
+        **kwargs,
     ) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
+
+        Parameters
+        ----------
+        config : SeedingConfig
+            Configuration object containing the seeding parameters.
+        strategy : SeedingStrategy
+            The seeding strategy to use for generating positions.
+        particle_type : str
+            The type of particle to create ('sand', 'mud', 'passive').
+        release_time : Optional[int]
+            The release time for the particles. If not provided, will use config.release_start or default to 0.
+        *args, **kwargs
+            Additional arguments that may be required by specific strategies (e.g., bbox for GridStrategy).
+
+        Returns
+        -------
+        list[Particle]
+            List of created particles with positions and release times set.
         """
         from sedtrails.particle_tracer.particle import Sand, Mud, Passive
 
@@ -255,8 +279,9 @@ class ParticleFactory:
             raise ValueError(f'Unknown particle type: {particle_type}')
         ParticleClass = type_map[particle_type.lower()]
 
-        positions = strategy.seed(config)
-        seed_locations = []
+        # Call the strategy's seed method with additional arguments
+        positions = strategy.seed(config, *args, **kwargs)
+        particles = []
         for qty, x, y in positions:
             for _ in range(qty):
                 p = ParticleClass()
@@ -269,83 +294,33 @@ class ParticleFactory:
                     p.release_time = int(release_time)
                 else:
                     p.release_time = 0
-                seed_locations.append(p)
+                particles.append(p)
 
-        # TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
-        return seed_locations
+        return particles
 
+
+# TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
 
 if __name__ == '__main__':
     # Example usage
-    config = SeedingConfig(
+    config_point = SeedingConfig(
         {
             'population': {
                 'seeding': {
                     'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                    'quantity': 10,
-                }
-            }
-        }
-    )
-    strategy = PointStrategy()
-    particles = strategy.seed(config)
-    print(particles)  # Should print the seeded locations with quantities
-
-    strategy = RandomStrategy()
-
-    config = SeedingConfig(
-        {
-            'population': {
-                'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0'}},
-                    'quantity': 10,
-                }
-            }
-        }
-    )
-    particles = strategy.seed(config)
-    print('Random strategy \n', particles)  # Should print the seeded locations with quantities
-
-    strategy = GridStrategy()
-
-    config = SeedingConfig(
-        {
-            'population': {
-                'seeding': {
-                    'strategy': {
-                        'grid': {
-                            'separation': {'dx': 1.0, 'dy': 1.0},
-                        }
-                    },
-                    'quantity': 10,
+                    'quantity': 1,
                 }
             }
         }
     )
 
-    bbox = {'xmin': 0.0, 'xmax': 5.0, 'ymin': 0.0, 'ymax': 5.0}
-    particles = strategy.seed(config, bbox=bbox)
-    print('Grid startegy \n', particles)  # Should print t
+    particles = ParticleFactory.create_particles(config_point, PointStrategy(), particle_type='sand', release_time=0)
+    print(
+        'Created particles:', particles[-5:]
+    )  # Should print the created particles with their positions and release times
 
-    strategy = TransectStrategy()
+    # Measure memory size of particles
+    import sys
 
-    config = SeedingConfig(
-        {
-            'population': {
-                'seeding': {
-                    'strategy': {
-                        'transect': {
-                            'segments': [
-                                '0,0 2,3',
-                            ],
-                            'k': 3,  # Number of points per segment
-                        }
-                    },
-                    'quantity': 10,
-                }
-            }
-        }
-    )
-
-    particles = strategy.seed(config)
-    print('Transect strategy \n', particles)  # Should print the seeded locations with
+    total_memory = sum(sys.getsizeof(particle) for particle in particles)
+    print(f'Total memory size of {len(particles)} particles: {total_memory} bytes ({total_memory / 1024:.2f} KB)')
