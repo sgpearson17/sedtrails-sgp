@@ -1,39 +1,29 @@
 
-# Installation
+# SedTRAILS Installation
 
-SedTRAILS (Sediment TRAnsport vIsualization and Lagrangian Simulator). 
-================
+## Installation for developers
+
 This is the step-by-step process to install SedTRAILS.
-
- 
-:On Windows:
 
 1. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio) is installed.
 
 2. Clone the SedTRAILS repository from github in your desired directory:
-
 ```bash
 cd <your desired directory>
 git clone https://github.com/sedtrails/sedtrails.git
 ```
 
 3. Change the directory:
-
 ```bash
 cd sedtrails
 ```
-4. Install the dependencies:
 
-
+4. Install the dependencies: ([more details](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md))
 ```bash
 pip install -e .[dev]
 ```
-For more details, see the following page:
-https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md
 
-
-Confirming the installation
------------
+## Confirming the installation
 
 Type the following command in the terminal:
 ```bash
@@ -45,13 +35,11 @@ For help:
 sedtrails -h
 
 ```
-Running an example model
------------
-1. Download data-set from the following link:
-https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm
+## Running an example model
+
+1. Download the dataset file named "inlet_sedtrails.nc" from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
 
 2. Change the directory:
-
 ```bash
 cd examples
 ```
