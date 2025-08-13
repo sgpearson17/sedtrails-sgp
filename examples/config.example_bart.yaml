@@ -9,6 +9,7 @@ time:
   start: 2011-08-01 00:00:00
   timestep: PT30S      # ISO 8601: 30 seconds
   read_input_timestep: PT1M    # ISO 8601: 1 minute
+  duration: P1Y        # ISO 8601: 1 year
 particles:
   population:
     name: my_population
@@ -30,7 +31,8 @@ particles:
 output:
   store_tracks: true
 
-# ISO 8601 Duration Format Examples:
+# ISO 8601 Duration Format Examples 
+# (P to indicate period (start), T to indicate time (before H/M/S), Y/M/D/H/M/S to specify the unit):
 #   PT30S              # 30 seconds
 #   PT1M               # 1 minute  
 #   PT1H               # 1 hour
@@ -41,4 +43,3 @@ output:
 #   P1Y6M15D           # 1 year, 6 months, 15 days
 #   P1Y6M15DT12H25M30S # 1 year, 6 months, 15 days, 12 hours, 25 minutes, 30 seconds
 #   P3DT2H1M3S         # 3 days, 2 hours, 1 minute, 3 seconds
-#   PT12H              # 12 hours (time-only duration)
