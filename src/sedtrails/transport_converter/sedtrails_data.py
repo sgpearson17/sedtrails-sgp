@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict
 from dataclasses import dataclass
-
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 @dataclass
 class SedtrailsData:
@@ -48,6 +48,8 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    metadata: SedtrailsMetadata
+        Additional metadata for this dataset        
 
     # === PHYSICS FIELDS (added by PhysicsConverter) ===
     # Note: All physics fields match the structure of transport data
@@ -82,6 +84,7 @@ class SedtrailsData:
     max_bed_shear_stress: np.ndarray
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
+    metadata: SedtrailsMetadata
 
     def __post_init__(self):
         """Initialize container for dynamic physics fields."""
