@@ -87,9 +87,22 @@ class SedtrailsData:
     metadata: SedtrailsMetadata
 
     def __post_init__(self):
-        """Initialize container for dynamic physics fields."""
+        """Initialize container for dynamic physics fields and validate metadata."""
+        # Validate metadata field
+        self._validate_metadata()
+        # TODO: do we also need to check that min max values are sensible? i.e. min <= max
+        
         # Create a container for physics data that can be added later
-        self._physics_fields = {}
+        self._physics_fields = {}    
+
+    def _validate_metadata(self):
+        """Validate that metadata field exists and is the correct type."""
+        # Only check that metadata is the right type
+        if not isinstance(self.metadata, SedtrailsMetadata):
+            raise TypeError(
+                f"metadata must be an instance of SedtrailsMetadata, "
+                f"got {type(self.metadata).__name__}"
+            )
 
     def add_physics_field(self, name: str, data):
         """
