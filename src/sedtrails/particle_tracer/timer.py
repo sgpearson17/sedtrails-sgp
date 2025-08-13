@@ -152,6 +152,9 @@ class Time:
         The simulation time step as a Duration object. Defaults to Duration('1H').
     duration : Duration
         The simulation duration as a Duration object. Defaults to Duration('3D 2H1M3S').
+    read_input_timestep : Duration
+        The timestep for reading input data in chunks as a Duration object. 
+        Defaults to Duration('30D12H25M0S').
     reference_date : str
         The reference date as string in format 'YYYY-MM-DD hh:mm:ss'.
         Defaults to UTC epoch '1970-01-01 00:00:00'.
@@ -164,17 +167,18 @@ class Time:
     _start: str
     time_step: Duration = field(default_factory=lambda: Duration('1H'), init=True)
     duration: Duration = field(default_factory=lambda: Duration('3D 2H1M3S'), init=True)
+    read_input_timestep: Duration = field(default_factory=lambda: Duration('30D12H25M0S'), init=True)
     reference_date: str = field(default='1970-01-01 00:00:00')
     _start_time_np: np.datetime64 = field(init=False)
 
     def __post_init__(self):
         """
-        Validates time_step and duration aren't zero and initializes internal datetime representation.
+        Validates time_step, duration, and read_input_timestep aren't zero and initializes internal datetime representation.
 
         Raises
         ------
         ZeroDuration
-            If time_step or duration is zero length.
+            If time_step, duration, or read_input_timestep is zero length.
         DateFormatError
             If the start time string format is invalid.
         """
@@ -182,6 +186,8 @@ class Time:
             raise ZeroDuration('time_step cannot be of length zero')
         if self.duration.seconds == 0:
             raise ZeroDuration('duration cannot be of length zero')
+        if self.read_input_timestep.seconds == 0:
+            raise ZeroDuration('read_input_timestep cannot be of length zero')
 
         # Convert start time to numpy.datetime64
         self._start_time_np = convert_datetime_string_to_datetime64(self._start)
