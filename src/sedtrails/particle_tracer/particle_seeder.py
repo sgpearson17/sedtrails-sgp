@@ -35,12 +35,12 @@ class SeedingConfig:
     quantity: Optional[int] = field(init=False)  # number of particles to release per release location
 
     def __post_init__(self):
-        _strategy = self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
+        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
+        # self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
-
-        _quantity = self.population_config.get('population', {}).get('seeding', {}).get('quantity', {})
+        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
@@ -53,7 +53,7 @@ class SeedingConfig:
         # TODO: make the config controllert to be the one to se the release time == to
         # the simulation start time when not specified
 
-        release_start = self.population_config.get('population', {}).get('seeding', {}).get('release_start', {})
+        release_start = find_value(self.population_config, 'population.seeding.release_start', {})
         if not release_start:
             raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
         self.release_start = release_start
@@ -65,7 +65,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
@@ -111,22 +111,24 @@ class PointStrategy(SeedingStrategy):
 
 class RandomStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box (xmin, xmax, ymin, ymax).
+    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box 'xmin,ymin xmax,ymax'.
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        # Expect config.population_config['population']['seeding']['bbox'] = {'xmin':..., 'xmax':..., 'ymin':..., 'ymax':...}
-        bbox = config.population_config.get('population', {}).get('seeding', {}).get('bbox', {})
-        if not bbox or not all(k in bbox for k in ['xmin', 'xmax', 'ymin', 'ymax']):
+        bbox = find_value(config.population_config, 'population.seeding.strategy.random.bbox', {})
+        print(bbox)
+        if not bbox:
             raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
         quantity = int(config.quantity)
         seed_locations = []
+
+        _bbox = bbox.replace(',', ' ').split()  # separates values with whitespaces. Order is xmin, ymin, xmax, ymax
         for _ in range(quantity):
-            x = random.uniform(bbox['xmin'], bbox['xmax'])
-            y = random.uniform(bbox['ymin'], bbox['ymax'])
-            seed_locations.append((1, x, y))
+            x = random.uniform(float(_bbox[0]), float(_bbox[2]))
+            y = random.uniform(float(_bbox[1]), float(_bbox[3]))
+            seed_locations.append((quantity, x, y))
         return seed_locations
 
 
@@ -223,5 +225,20 @@ if __name__ == '__main__':
         }
     )
     strategy = PointStrategy()
+    particles = strategy.seed(config)
+    print(particles)  # Should print the seeded locations with quantities
+
+    strategy = RandomStrategy()
+
+    config = SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0'}},
+                    'quantity': 10,
+                }
+            }
+        }
+    )
     particles = strategy.seed(config)
     print(particles)  # Should print the seeded locations with quantities
