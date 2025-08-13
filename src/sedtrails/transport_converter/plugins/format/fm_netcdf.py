@@ -5,6 +5,7 @@ import xarray as xr
 import numpy as np
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from pathlib import Path
 from typing import Dict, Any, List, Union
 
@@ -120,6 +121,16 @@ class FormatPlugin(BaseFormatPlugin):
             'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
         }
 
+        # Create SedtrailsMetadata object
+        metadata = SedtrailsMetadata(
+            flowfield_domain={
+                'x_min': np.min(mapped_data['x']),
+                'x_max': np.max(mapped_data['x']),
+                'y_min': np.min(mapped_data['y']),
+                'y_max': np.max(mapped_data['y']),
+            }
+        )
+
         # Create SedtrailsData object
         sedtrails_data = SedtrailsData(
             times=seconds_since_ref,
@@ -136,6 +147,7 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            metadata=metadata,
         )
 
         return sedtrails_data
