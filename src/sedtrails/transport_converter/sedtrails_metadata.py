@@ -82,3 +82,19 @@ class SedtrailsMetadata:
         """Custom repr showing all attributes."""
         attrs = {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
         return f"SedtrailsMetadata({attrs})"
+    
+
+# Example usage
+# 1. Create with flowfield_domain dictionary
+# metadata = SedtrailsMetadata(
+#     flowfield_domain={
+#         "x_min": 0.0,
+#         "x_max": 100.0,
+#         "y_min": 0.0,
+#         "y_max": 50.0
+#     }
+# )
+# 2. Add additional metadata dynamically
+# metadata.add("model", "delft3d")
+# metadata.add("timestep", 600)
+# metadata.add("units", "meters")
