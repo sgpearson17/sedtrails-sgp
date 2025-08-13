@@ -7,9 +7,9 @@ folder_settings:
   output_dir: ./results
 time:
   start: 2011-08-01 00:00:00
-  timestep: PT30S      # ISO 8601: 30 seconds
-  read_input_timestep: PT1M    # ISO 8601: 1 minute
-  duration: P1Y        # ISO 8601: 1 year
+  timestep: 30S
+  read_input_timestep: 1M
+  duration: 1Y0D0H0M0S
 particles:
   population:
     name: my_population

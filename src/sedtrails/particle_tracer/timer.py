@@ -5,19 +5,21 @@ Time related classes used internally to represent simulation time.
 from dataclasses import dataclass, field
 import numpy as np
 import re
-import isodate
 
 from sedtrails.exceptions.exceptions import DateFormatError, DurationFormatError, ZeroDuration
 
 
 def convert_duration_string_to_seconds(duration_str: str) -> int:
     """
-    Parse an ISO 8601 duration string into the total number of seconds.
+    Parse a duration string ('3D 2H1M3S') into the total number of seconds.
+
+    The duration string may include days (D), hours (H), minutes (M), and seconds (S)
+    in any combination and order, separated by optional spaces. Missing units are treated as zero.
 
     Parameters
     ----------
     duration_str : str
-        Duration string in ISO 8601 format (e.g., 'P1Y6M15DT12H25M30S', 'PT30S', 'P1Y').
+        Duration string to parse ('3D 2H1M3S', '45S', '1H 30M').
 
     Returns
     -------
@@ -27,17 +29,18 @@ def convert_duration_string_to_seconds(duration_str: str) -> int:
     Raises
     ------
     DurationFormatError
-        If the input string does not match ISO 8601 duration format.
+        If the input string does not match the expected format.
     """
+    pattern = r'(?:(\d+)D)?\s*(?:(\d+)H)?\s*(?:(\d+)M)?\s*(?:(\d+)S)?'
     try:
-        duration = isodate.parse_duration(duration_str)
-        # Convert to total seconds
-        return int(duration.total_seconds())
-    except (isodate.ISO8601Error, ValueError) as e:
-        raise DurationFormatError(
-            f"Invalid ISO 8601 duration format: '{duration_str}' "
-            "(expected e.g. 'P1Y6M15DT12H25M30S', 'PT30S', 'P1Y')"
-        ) from e
+        match = re.fullmatch(pattern, duration_str.strip())
+        if not match:
+            raise DurationFormatError(f"Invalid duration format: '{duration_str}' (expected e.g. '3D 2H1M3S')")
+    except Exception as e:
+        raise DurationFormatError(f"Invalid duration format: '{duration_str}' (expected e.g. '3D 2H1M3S')") from e
+
+    days, hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 def convert_datetime_string_to_datetime64(datetime_str: str) -> np.datetime64:
@@ -66,12 +69,12 @@ def convert_datetime_string_to_datetime64(datetime_str: str) -> np.datetime64:
 
 class Duration:
     """
-    Class representing a duration in the simulation using ISO 8601 format.
+    Class representing a duration in the simulation.
 
     Attributes
     ----------
     _duration : str
-        The duration as a string in ISO 8601 format.
+        The duration as a string in format '3D 2H1M3S'.
 
     Properties
     ----------
@@ -90,7 +93,7 @@ class Duration:
         Parameters
         ----------
         duration : str
-            Duration string in ISO 8601 format (e.g., 'P1Y6M15DT12H25M30S', 'PT30S', 'P1Y').
+            Duration string in format '3D 2H1M3S'.
         """
         self._duration = duration
 
@@ -102,7 +105,7 @@ class Duration:
         Returns
         -------
         str
-            The original duration string in ISO 8601 format.
+            The original duration string in format '3D 2H1M3S'.
         """
         return self._duration
 
@@ -146,9 +149,9 @@ class Time:
     _start : str
         The simulation start time as string in format 'YYYY-MM-DD hh:mm:ss'.
     time_step : Duration
-        The simulation time step as a Duration object. Defaults to Duration('PT1H').
+        The simulation time step as a Duration object. Defaults to Duration('1H').
     duration : Duration
-        The simulation duration as a Duration object. Defaults to Duration('P3DT2H1M3S').
+        The simulation duration as a Duration object. Defaults to Duration('3D 2H1M3S').
     reference_date : str
         The reference date as string in format 'YYYY-MM-DD hh:mm:ss'.
         Defaults to UTC epoch '1970-01-01 00:00:00'.
@@ -159,8 +162,8 @@ class Time:
     # reference_date and start_time should be a str,
     # the class will do the transformation into a numpy.datetime64 object
     _start: str
-    time_step: Duration = field(default_factory=lambda: Duration('PT1H'), init=True)
-    duration: Duration = field(default_factory=lambda: Duration('P3DT2H1M3S'), init=True)
+    time_step: Duration = field(default_factory=lambda: Duration('1H'), init=True)
+    duration: Duration = field(default_factory=lambda: Duration('3D 2H1M3S'), init=True)
     reference_date: str = field(default='1970-01-01 00:00:00')
     _start_time_np: np.datetime64 = field(init=False)
 
