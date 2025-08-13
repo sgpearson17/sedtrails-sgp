@@ -9,33 +9,194 @@ from sedtrails.particle_tracer.particle_seeder import (
     RandomStrategy,
     GridStrategy,
     TransectStrategy,
+    ParticleFactory,
 )
 from sedtrails.exceptions import MissingConfigurationParameter
+
+
+# Strategy fixtures
+@pytest.fixture
+def point_strategy():
+    return PointStrategy()
+
+
+@pytest.fixture
+def random_strategy():
+    return RandomStrategy()
+
+
+@pytest.fixture
+def grid_strategy():
+    return GridStrategy()
+
+
+@pytest.fixture
+def transect_strategy():
+    return TransectStrategy()
+
+
+# Data fixtures
+@pytest.fixture
+def standard_bbox():
+    return {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0}
+
+
+@pytest.fixture
+def small_bbox():
+    return {'xmin': 0.0, 'xmax': 1.0, 'ymin': 0.0, 'ymax': 1.0}
+
+
+# Config fixtures
+@pytest.fixture
+def point_config_basic():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                    'quantity': 10,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def point_config_simple():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def point_config_dual():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                    'quantity': 2,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def random_config():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0'}},
+                    'quantity': 5,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def grid_config():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 1.0, 'dy': 1.0},
+                        }
+                    },
+                    'quantity': 2,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def grid_config_single():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 1.0, 'dy': 1.0},
+                        }
+                    },
+                    'quantity': 1,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def transect_config():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'transect': {
+                            'segments': ['0,0 2,0'],
+                            'k': 3,
+                        }
+                    },
+                    'quantity': 5,
+                }
+            }
+        }
+    )
+
+
+@pytest.fixture
+def transect_config_multi():
+    return SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {
+                        'transect': {
+                            'segments': ['0,0 1,0', '1,0 1,1'],
+                            'k': 2,
+                        }
+                    },
+                    'quantity': 1,
+                }
+            }
+        }
+    )
+
+
+# Particle classes fixture
+@pytest.fixture
+def particle_classes():
+    from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+
+    return {'Sand': Sand, 'Mud': Mud, 'Passive': Passive}
 
 
 class TestPointStrategy:
     """Test cases for PointStrategy."""
 
-    def test_point_strategy(self):
+    def test_point_strategy(self, point_strategy, point_config_basic):
         """Test basic point strategy functionality."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                        'quantity': 10,
-                    }
-                }
-            }
-        )
-        strategy = PointStrategy()
-        result = strategy.seed(config)
+        result = point_strategy.seed(point_config_basic)
 
         assert len(result) == 2
         assert result[0] == (10, 1.0, 2.0)
         assert result[1] == (10, 3.0, 4.0)
 
-    def test_point_strategy_missing_locations(self):
+    def test_point_strategy_missing_locations(self, point_strategy):
         """Test point strategy with missing locations."""
         config = SeedingConfig(
             {
@@ -47,12 +208,11 @@ class TestPointStrategy:
                 }
             }
         )
-        strategy = PointStrategy()
 
         with pytest.raises(MissingConfigurationParameter, match='"locations" must be provided'):
-            strategy.seed(config)
+            point_strategy.seed(config)
 
-    def test_point_strategy_invalid_location_format(self):
+    def test_point_strategy_invalid_location_format(self, point_strategy):
         """Test point strategy with invalid location format."""
         config = SeedingConfig(
             {
@@ -64,29 +224,17 @@ class TestPointStrategy:
                 }
             }
         )
-        strategy = PointStrategy()
 
         with pytest.raises(ValueError, match='Invalid location string'):
-            strategy.seed(config)
+            point_strategy.seed(config)
 
 
 class TestRandomStrategy:
     """Test cases for RandomStrategy."""
 
-    def test_random_strategy(self):
+    def test_random_strategy(self, random_strategy, random_config):
         """Test basic random strategy functionality."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0'}},
-                        'quantity': 5,
-                    }
-                }
-            }
-        )
-        strategy = RandomStrategy()
-        result = strategy.seed(config)
+        result = random_strategy.seed(random_config)
 
         assert len(result) == 5
         # Check all particles have quantity 5 and coordinates within bounds
@@ -95,7 +243,7 @@ class TestRandomStrategy:
             assert 1.0 <= x <= 3.0
             assert 2.0 <= y <= 4.0
 
-    def test_random_strategy_missing_bbox(self):
+    def test_random_strategy_missing_bbox(self, random_strategy):
         """Test random strategy with missing bounding box."""
         config = SeedingConfig(
             {
@@ -107,34 +255,17 @@ class TestRandomStrategy:
                 }
             }
         )
-        strategy = RandomStrategy()
 
         with pytest.raises(MissingConfigurationParameter, match='"bbox" must be provided'):
-            strategy.seed(config)
+            random_strategy.seed(config)
 
 
 class TestGridStrategy:
     """Test cases for GridStrategy."""
 
-    def test_grid_strategy(self):
+    def test_grid_strategy(self, grid_strategy, grid_config, standard_bbox):
         """Test basic grid strategy functionality."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {
-                            'grid': {
-                                'separation': {'dx': 1.0, 'dy': 1.0},
-                            }
-                        },
-                        'quantity': 2,
-                    }
-                }
-            }
-        )
-        strategy = GridStrategy()
-        bbox = {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0}
-        result = strategy.seed(config, bbox=bbox)
+        result = grid_strategy.seed(grid_config, bbox=standard_bbox)
 
         # Should generate a 3x3 grid (0,1,2 in both directions)
         assert len(result) == 9
@@ -142,28 +273,12 @@ class TestGridStrategy:
         assert (2, 0.0, 0.0) in result
         assert (2, 2.0, 2.0) in result
 
-    def test_grid_strategy_no_bbox(self):
+    def test_grid_strategy_no_bbox(self, grid_strategy, grid_config):
         """Test grid strategy without bounding box."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {
-                            'grid': {
-                                'separation': {'dx': 1.0, 'dy': 1.0},
-                            }
-                        },
-                        'quantity': 2,
-                    }
-                }
-            }
-        )
-        strategy = GridStrategy()
-
         with pytest.raises(RuntimeError, match='Bounding box must be provided'):
-            strategy.seed(config)
+            grid_strategy.seed(grid_config)
 
-    def test_grid_strategy_missing_separation(self):
+    def test_grid_strategy_missing_separation(self, grid_strategy, standard_bbox):
         """Test grid strategy with missing separation parameters."""
         config = SeedingConfig(
             {
@@ -175,35 +290,17 @@ class TestGridStrategy:
                 }
             }
         )
-        strategy = GridStrategy()
-        bbox = {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0}
 
         with pytest.raises(MissingConfigurationParameter, match='"grid" must be provided'):
-            strategy.seed(config, bbox=bbox)
+            grid_strategy.seed(config, bbox=standard_bbox)
 
 
 class TestTransectStrategy:
     """Test cases for TransectStrategy."""
 
-    def test_transect_strategy(self):
+    def test_transect_strategy(self, transect_strategy, transect_config):
         """Test basic transect strategy functionality."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {
-                            'transect': {
-                                'segments': ['0,0 2,0'],
-                                'k': 3,
-                            }
-                        },
-                        'quantity': 5,
-                    }
-                }
-            }
-        )
-        strategy = TransectStrategy()
-        result = strategy.seed(config)
+        result = transect_strategy.seed(transect_config)
 
         # Should generate 3 points along the line from (0,0) to (2,0)
         assert len(result) == 3
@@ -211,25 +308,9 @@ class TestTransectStrategy:
         assert result[1] == (5, 1.0, 0.0)  # Middle point
         assert result[2] == (5, 2.0, 0.0)  # End point
 
-    def test_transect_strategy_multiple_segments(self):
+    def test_transect_strategy_multiple_segments(self, transect_strategy, transect_config_multi):
         """Test transect strategy with multiple segments."""
-        config = SeedingConfig(
-            {
-                'population': {
-                    'seeding': {
-                        'strategy': {
-                            'transect': {
-                                'segments': ['0,0 1,0', '1,0 1,1'],
-                                'k': 2,
-                            }
-                        },
-                        'quantity': 1,
-                    }
-                }
-            }
-        )
-        strategy = TransectStrategy()
-        result = strategy.seed(config)
+        result = transect_strategy.seed(transect_config_multi)
 
         # Should generate 2 points per segment = 4 total points
         assert len(result) == 4
@@ -240,7 +321,7 @@ class TestTransectStrategy:
         assert (1, 1.0, 0.0) in result
         assert (1, 1.0, 1.0) in result
 
-    def test_transect_strategy_missing_segments(self):
+    def test_transect_strategy_missing_segments(self, transect_strategy):
         """Test transect strategy with missing segments."""
         config = SeedingConfig(
             {
@@ -252,12 +333,11 @@ class TestTransectStrategy:
                 }
             }
         )
-        strategy = TransectStrategy()
 
         with pytest.raises(MissingConfigurationParameter, match='"segments" must be provided'):
-            strategy.seed(config)
+            transect_strategy.seed(config)
 
-    def test_transect_strategy_invalid_segment_format(self):
+    def test_transect_strategy_invalid_segment_format(self, transect_strategy):
         """Test transect strategy with invalid segment format."""
         config = SeedingConfig(
             {
@@ -274,7 +354,73 @@ class TestTransectStrategy:
                 }
             }
         )
-        strategy = TransectStrategy()
 
         with pytest.raises(ValueError, match='Invalid segment string'):
-            strategy.seed(config)
+            transect_strategy.seed(config)
+
+
+class TestParticleFactory:
+    """Test cases for ParticleFactory."""
+
+    def test_create_particles_point_strategy(self, point_strategy, point_config_dual, particle_classes):
+        """Test particle creation with PointStrategy."""
+        Sand = particle_classes['Sand']
+
+        particles = ParticleFactory.create_particles(point_config_dual, point_strategy, 'sand', release_time=5)
+
+        # Should create 2 particles per location (2 locations * 2 particles = 4 total)
+        assert len(particles) == 4
+        # Check all particles are Sand type
+        assert all(isinstance(p, Sand) for p in particles)
+        # Check positions
+        positions = [(p.x, p.y) for p in particles]
+        assert positions.count((1.0, 2.0)) == 2  # 2 particles at first location
+        assert positions.count((3.0, 4.0)) == 2  # 2 particles at second location
+        # Check release times
+        assert all(p.release_time == 5 for p in particles)
+
+    def test_create_particles_grid_strategy(self, grid_strategy, grid_config_single, small_bbox, particle_classes):
+        """Test particle creation with GridStrategy requiring bbox parameter."""
+        Mud = particle_classes['Mud']
+
+        particles = ParticleFactory.create_particles(grid_config_single, grid_strategy, 'mud', bbox=small_bbox)
+
+        # Should create 4 particles (2x2 grid)
+        assert len(particles) == 4
+        # Check all particles are Mud type
+        assert all(isinstance(p, Mud) for p in particles)
+        # Check positions include corners
+        positions = [(p.x, p.y) for p in particles]
+        assert (0.0, 0.0) in positions
+        assert (1.0, 1.0) in positions
+
+    def test_create_particles_different_particle_types(self, point_strategy, point_config_simple, particle_classes):
+        """Test creating different particle types."""
+        Sand, Mud, Passive = particle_classes['Sand'], particle_classes['Mud'], particle_classes['Passive']
+
+        # Test Sand particles
+        sand_particles = ParticleFactory.create_particles(point_config_simple, point_strategy, 'sand')
+        assert len(sand_particles) == 1
+        assert isinstance(sand_particles[0], Sand)
+
+        # Test Mud particles
+        mud_particles = ParticleFactory.create_particles(point_config_simple, point_strategy, 'mud')
+        assert len(mud_particles) == 1
+        assert isinstance(mud_particles[0], Mud)
+
+        # Test Passive particles
+        passive_particles = ParticleFactory.create_particles(point_config_simple, point_strategy, 'passive')
+        assert len(passive_particles) == 1
+        assert isinstance(passive_particles[0], Passive)
+
+    def test_create_particles_invalid_particle_type(self, point_strategy, point_config_simple):
+        """Test error handling for invalid particle type."""
+        with pytest.raises(ValueError, match='Unknown particle type'):
+            ParticleFactory.create_particles(point_config_simple, point_strategy, 'invalid_type')
+
+    def test_create_particles_release_time_default(self, point_strategy, point_config_simple):
+        """Test default release time behavior."""
+        particles = ParticleFactory.create_particles(point_config_simple, point_strategy, 'sand')
+
+        # Should default to release_time = 0
+        assert particles[0].release_time == 0
