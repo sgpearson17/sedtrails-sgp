@@ -19,6 +19,7 @@ from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Optional, Dict
 import random
 from dataclasses import dataclass, field
+from sedtrails.configuration_interface.find import find_value
 
 
 @dataclass
@@ -90,23 +91,22 @@ class PointStrategy(SeedingStrategy):
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        # Expect config.population_config['population']['seeding']['locations'] = ['x,y', ...]
-        locations = config.population_config.get('population', {}).get('seeding', {}).get('locations', [])
+        locations = find_value(config.population_config, 'population.seeding.strategy.point.locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for PointStrategy.')
         quantity = int(config.quantity)
-        parsed_locations = []
+        seed_locations = []
         for loc_str in locations:
             try:
                 x_str, y_str = loc_str.split(',')
                 x = float(x_str.strip())
                 y = float(y_str.strip())
-                parsed_locations.append((quantity, x, y))
+                seed_locations.append((quantity, x, y))
             except Exception as e:
                 raise ValueError(f"Invalid location string '{loc_str}': {e}") from e
-        return parsed_locations
+        return seed_locations
 
 
 class RandomStrategy(SeedingStrategy):
@@ -122,12 +122,12 @@ class RandomStrategy(SeedingStrategy):
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
         quantity = int(config.quantity)
-        particles = []
+        seed_locations = []
         for _ in range(quantity):
             x = random.uniform(bbox['xmin'], bbox['xmax'])
             y = random.uniform(bbox['ymin'], bbox['ymax'])
-            particles.append((1, x, y))
-        return particles
+            seed_locations.append((1, x, y))
+        return seed_locations
 
 
 class GridStrategy(SeedingStrategy):
@@ -143,13 +143,13 @@ class GridStrategy(SeedingStrategy):
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
         quantity = int(config.quantity)
-        particles = []
+        seed_locations = []
         xvals = [grid['xmin'] + i * grid['dx'] for i in range(int((grid['xmax'] - grid['xmin']) / grid['dx']) + 1)]
         yvals = [grid['ymin'] + j * grid['dy'] for j in range(int((grid['ymax'] - grid['ymin']) / grid['dy']) + 1)]
         for x in xvals:
             for y in yvals:
-                particles.append((quantity, x, y))
-        return particles
+                seed_locations.append((quantity, x, y))
+        return seed_locations
 
 
 class TransectStrategy(SeedingStrategy):
@@ -168,13 +168,13 @@ class TransectStrategy(SeedingStrategy):
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for TransectStrategy.')
         quantity = int(config.quantity)
-        particles = []
+        seed_locations = []
         for i in range(k):
             frac = i / (k - 1) if k > 1 else 0
             x = x1 + frac * (x2 - x1)
             y = y1 + frac * (y2 - y1)
-            particles.append((quantity, x, y))
-        return particles
+            seed_locations.append((quantity, x, y))
+        return seed_locations
 
 
 class ParticleFactory:
@@ -193,7 +193,7 @@ class ParticleFactory:
         ParticleClass = type_map[particle_type.lower()]
 
         positions = strategy.seed(config)
-        particles = []
+        seed_locations = []
         for qty, x, y in positions:
             for _ in range(qty):
                 p = ParticleClass()
@@ -206,5 +206,22 @@ class ParticleFactory:
                     p.release_time = int(release_time)
                 else:
                     p.release_time = 0
-                particles.append(p)
-        return particles
+                seed_locations.append(p)
+        return seed_locations
+
+
+if __name__ == '__main__':
+    # Example usage
+    config = SeedingConfig(
+        {
+            'population': {
+                'seeding': {
+                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                    'quantity': 10,
+                }
+            }
+        }
+    )
+    strategy = PointStrategy()
+    particles = strategy.seed(config)
+    print(particles)  # Should print the seeded locations with quantities
