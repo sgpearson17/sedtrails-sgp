@@ -238,7 +238,7 @@
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
-                                    "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
+                                    "description": "path to Deltares '.pol; file with list of points to release particles from"
                                 },
                                 "locations": {
                                     "type": "array",
