@@ -34,7 +34,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             Dictionary containing grain properties such as 'critical_shields' and 'settling_velocity'.
 
         """
-        print('Using van Westen et al. (2025) to compute transport velocities and add to SedTRAILS data...')
+        # print('Using van Westen et al. (2025) to compute transport velocities and add to SedTRAILS data...')
 
         # === LOAD: Extract data ===
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
@@ -53,7 +53,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Detect number of fractions from data shape (assuming shape is [time, fractions, spatial])
         detected_fractions = bed_load_transport_magnitude.shape[1] if len(bed_load_transport_magnitude.shape) > 2 else 1
 
-        print(f'Detected {detected_fractions} sediment fraction(s)')
+        # print(f'Detected {detected_fractions} sediment fraction(s)')
 
         # Error if more than 1 fraction
         if detected_fractions > 1:
@@ -66,7 +66,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # For physics calculations, we need to work with squeezed data (no fraction dimension)
         # but we'll add the dimension back to velocities at the end
         if len(bed_load_transport_magnitude.shape) > 2:
-            print('Working with squeezed transport data for physics calculations')
+            # print('Working with squeezed transport data for physics calculations')
             bed_load_transport_x_calc = bed_load_transport_x.squeeze(axis=1)
             bed_load_transport_y_calc = bed_load_transport_y.squeeze(axis=1)
             bed_load_transport_magnitude_calc = bed_load_transport_magnitude.squeeze(axis=1)
@@ -155,7 +155,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # === EXPAND DIMENSIONS TO MATCH ORIGINAL STRUCTURE ===
         if has_fraction_dim:
-            print('Expanding velocity dimensions to match transport data structure')
+            # print('Expanding velocity dimensions to match transport data structure')
             # Add fraction dimension (axis=1) to all computed physics quantities
             shields_number = shields_number[:, np.newaxis, :]
             bed_load_layer_thickness = bed_load_layer_thickness[:, np.newaxis, :]
@@ -171,24 +171,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
             suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
 
-        # === COMPUTE TRANSPORT PROBABILITY ===
-        bed_load_exposed_ratio = bed_load_layer_thickness / mixing_layer_thickness
-        suspended_exposed_ratio = suspended_layer_thickness / mixing_layer_thickness
+        # # If the "reduced velocity" method is used, the velocities are reduced by the trapped/exposed ratios
+        # if self.config.trapped_exposed_method == 'reduced_velocity':
+        #     bed_load_velocity *= bed_load_exposed_ratio
+        #     suspended_velocity *= suspended_exposed_ratio
 
-        # If the "reduced velocity" method is used, the velocities are reduced by the trapped/exposed ratios
-        if self.config.trapped_exposed_method == 'reduced_velocity':
-            bed_load_velocity *= bed_load_exposed_ratio
-            suspended_velocity *= suspended_exposed_ratio
+        #     # Recompute the directions
+        #     suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
+        #         suspended_velocity, suspended_transport_x_calc, suspended_transport_y_calc, suspended_transport_magnitude_calc,
+        #     )
+        #     bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
+        #         bed_load_velocity, bed_load_transport_x_calc, bed_load_transport_y_calc, bed_load_transport_magnitude_calc
+        #     )
 
-            # Recompute the directions
-            suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
-                suspended_velocity, suspended_transport_x_calc, suspended_transport_y_calc, suspended_transport_magnitude_calc,
-            )
-            bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
-                bed_load_velocity, bed_load_transport_x_calc, bed_load_transport_y_calc, bed_load_transport_magnitude_calc
-            )
-
-        print('Adding physics fields to SedtrailsData...')
+        # print('Adding physics fields to SedtrailsData...')
 
         # Physics parameters (scalar fields)
         sedtrails_data.add_physics_field('shields_number', shields_number)
