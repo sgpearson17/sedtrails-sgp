@@ -5,7 +5,7 @@ import numpy as np
 
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
-from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
+from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
@@ -290,8 +290,9 @@ class Simulation:
         )
 
         self.physics_converter.convert_physics(sedtrails_data)
-        retriever = FlowFieldDataRetriever(sedtrails_data)
-        retriever.flow_field_name = 'suspended_velocity'
+        
+        # Updated: Create FieldDataRetriever without specifying field name
+        retriever = FieldDataRetriever(sedtrails_data)
 
         self.logger_manager.log_simulation_state(
             {
@@ -304,7 +305,8 @@ class Simulation:
         )
 
         # Initialize numba calculator
-        flow_data = retriever.get_flow_field(simulation_time.start)
+        # Updated: Pass field name to the method
+        flow_data = retriever.get_flow_field(simulation_time.start, 'suspended_velocity')
 
         self.logger_manager.log_simulation_state(
             {
@@ -355,11 +357,13 @@ class Simulation:
                     reading_interval=read_input_seconds
                 )
                 self.physics_converter.convert_physics(sedtrails_data)
-                retriever = FlowFieldDataRetriever(sedtrails_data)
-                retriever.flow_field_name = 'suspended_velocity'
+                
+                # Updated: Create new FieldDataRetriever with updated data
+                retriever = FieldDataRetriever(sedtrails_data)
 
+                # Updated: Pass field name to method
                 plot_particle_trajectory(
-                    flow_data=retriever.get_flow_field(timer.current),
+                    flow_data=retriever.get_flow_field(timer.current, 'suspended_velocity'),
                     trajectory_x=trajectory_numba_x,
                     trajectory_y=trajectory_numba_y,
                     title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {step_count} steps',
@@ -370,8 +374,8 @@ class Simulation:
             flow_data_list = []
             for method in self.config['particles']['population']['tracer_methods']:
                 for flow_field_name in self.config['particles']['population']['tracer_methods'][method]['flow_field_name']:
-                    retriever.flow_field_name = flow_field_name
-                    flow_data = retriever.get_flow_field(timer.current)
+                    # Updated: Pass field name to method
+                    flow_data = retriever.get_flow_field(timer.current, flow_field_name)
                     flow_data_list.append(flow_data)
 
             # Compute CFL-based timestep across all flow fields
@@ -381,10 +385,9 @@ class Simulation:
             # Next loop over multiple methods and flow_fields as provided in config
             for method in self.config['particles']['population']['tracer_methods']:
                 for flow_field_name in self.config['particles']['population']['tracer_methods'][method]['flow_field_name']:
-                    retriever.flow_field_name = flow_field_name
-
-                    # Get flow field at current time
-                    flow_data = retriever.get_flow_field(timer.current)
+                    
+                    # Updated: Pass field name to method instead of setting attribute
+                    flow_data = retriever.get_flow_field(timer.current, flow_field_name)
 
                     # Update particle position using Numba calculator
                     new_x, new_y = numba_calc['update_particles'](
@@ -468,7 +471,8 @@ class Simulation:
         )
 
         # Plot flow field with particle trajectory using the function
-        final_flow = retriever.get_flow_field(timer.current)
+        # Updated: Pass field name to method
+        final_flow = retriever.get_flow_field(timer.current, 'suspended_velocity')
 
         plot_particle_trajectory(
             flow_data=final_flow,
