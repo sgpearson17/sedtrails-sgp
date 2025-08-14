@@ -27,36 +27,48 @@ class SeedingConfig:
     """
     A class to represent the seeding parameters of a population of particle.
     A population is a group of particles that share the same type and seeding strategy.
+
+    Attributes
+    ----------
+    population_config : Dict
+        The configuration dictionary containing the seeding parameters.
+    particle_type : str
+        The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
+    release_start : str
+        The time at which the particles for a given population are released.
+    quantity : int
+        The number of particles to release per release location.
+    strategy_settings : Dict
+        The settings for the seeding strategy, extracted from the configuration.
+        These are any key-value pairs defined under the specific strategy in the configuration.
     """
 
     population_config: Dict
+    strategy: str = field(init=False)
     particle_type: str = field(init=False)
     release_start: str = field(init=False)  # particle for a given population are released at this time
-    quantity: Optional[int] = field(init=False)  # number of particles to release per release location
+    quantity: int = field(init=False)  # number of particles to release per release location
+    strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
         _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
-        # self.population_config.get('population', {}).get('seeding', {}).get('strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
+        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
+        if not self.strategy_settings:
+            raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
         _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-
-    def _extract_release_times(self) -> None:
-        """
-        Extract release time from the configuration.
-        """
-
-        # TODO: make the config controllert to be the one to se the release time == to
-        # the simulation start time when not specified
-
-        release_start = find_value(self.population_config, 'population.seeding.release_start', {})
-        if not release_start:
+        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
+        if not _release_start:
             raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = release_start
+        self.release_start = _release_start
+        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
+        if not self.particle_type:
+            raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
 
 
 class SeedingStrategy(ABC):
@@ -65,7 +77,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, config: SeedingConfig, **kwargs) -> List[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
@@ -73,8 +85,6 @@ class SeedingStrategy(ABC):
         ----------
         config : SeedingConfig
             Configuration object containing the seeding parameters.
-        **kwargs :
-            Additional keyword arguments that may be used by specific strategies.
 
         Returns
         -------
@@ -92,8 +102,8 @@ class PointStrategy(SeedingStrategy):
     Seeding strategy to release particles at specific locations (x,y).
     """
 
-    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
-        locations = find_value(config.population_config, 'population.seeding.strategy.point.locations', [])
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        locations = getattr(config, 'strategy_settings', {}).get('locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
         if config.quantity is None:
@@ -116,9 +126,8 @@ class RandomStrategy(SeedingStrategy):
     Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box 'xmin,ymin xmax,ymax'.
     """
 
-    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
-        bbox = find_value(config.population_config, 'population.seeding.strategy.random.bbox', {})
-        print(bbox)
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        bbox = getattr(config, 'strategy_settings', {}).get('bbox', [])
         if not bbox:
             raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
         if config.quantity is None:
@@ -140,17 +149,8 @@ class GridStrategy(SeedingStrategy):
     The origin of the grid is at the bottom left corner of the bounding box
     """
 
-    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
-        """
-        Parameters
-        ----------
-        config : SeedingConfig
-            Configuration object containing the seeding parameters.
-        bbox : Dict
-            Bounding box to constrain the grid area. If not provided, compuation will fail.
-            Expects a dicstionary with keys 'xmin', 'xmax', 'ymin', 'ymax'.
-        """
-        bbox = kwargs.get('bbox')
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+        bbox = getattr(config, 'strategy_settings', {}).get('bbox', [])
         if bbox is None:
             raise RuntimeError('Bounding box must be provided for GridStrategy.')
 
@@ -195,9 +195,9 @@ class TransectStrategy(SeedingStrategy):
     Particles along each segment are equally spaced, and the distance between particles is defined by the number of release locations per segment (k).
     """
 
-    def seed(self, config: SeedingConfig, **kwargs) -> list[Tuple[int, float, float]]:
+    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
-        transect = find_value(config.population_config, 'population.seeding.strategy.transect', {})
+        transect = getattr(config, 'strategy_settings', {}).get('transect', [])
         if not transect:
             raise MissingConfigurationParameter('"transect" must be provided for TransectStrategy.')
 
@@ -243,14 +243,7 @@ class TransectStrategy(SeedingStrategy):
 
 class ParticleFactory:
     @staticmethod
-    def create_particles(
-        config: SeedingConfig,
-        strategy: SeedingStrategy,
-        particle_type: str,
-        release_time: Optional[int] = None,
-        *args,
-        **kwargs,
-    ) -> list[Particle]:
+    def create_particles(config: SeedingConfig) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
 
@@ -258,14 +251,6 @@ class ParticleFactory:
         ----------
         config : SeedingConfig
             Configuration object containing the seeding parameters.
-        strategy : SeedingStrategy
-            The seeding strategy to use for generating positions.
-        particle_type : str
-            The type of particle to create ('sand', 'mud', 'passive').
-        release_time : Optional[int]
-            The release time for the particles. If not provided, will use config.release_start or default to 0.
-        *args, **kwargs
-            Additional arguments that may be required by specific strategies (e.g., bbox for GridStrategy).
 
         Returns
         -------
@@ -274,26 +259,35 @@ class ParticleFactory:
         """
         from sedtrails.particle_tracer.particle import Sand, Mud, Passive
 
-        type_map = {'sand': Sand, 'mud': Mud, 'passive': Passive}
-        if particle_type.lower() not in type_map:
-            raise ValueError(f'Unknown particle type: {particle_type}')
-        ParticleClass = type_map[particle_type.lower()]
+        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
+        STRATEGY_MAP = {
+            'point': PointStrategy(),
+            'random': RandomStrategy(),
+            'grid': GridStrategy(),
+            'transect': TransectStrategy(),
+        }
 
-        # Call the strategy's seed method with additional arguments
-        positions = strategy.seed(config, *args, **kwargs)
+        particle_type = getattr(config, 'particle_type', '')
+        if particle_type.lower() not in PARTICLE_MAP:
+            raise ValueError(f'Unknown particle type: {particle_type}')
+        ParticleClass = PARTICLE_MAP[particle_type.lower()]
+
+        strategy_name = getattr(config, 'strategy', '')
+        if strategy_name.lower() not in STRATEGY_MAP:
+            raise ValueError(f'Unknown seeding strategy: {strategy_name}')
+        StrategyClass = STRATEGY_MAP[strategy_name.lower()]
+
+        # computes seeding positions using the strategy in config
+        positions = StrategyClass.seed(config)
         particles = []
         for qty, x, y in positions:
             for _ in range(qty):
                 p = ParticleClass()
                 p.x = x
                 p.y = y
-                # Use config.release_start if available, else release_time arg, else 0
-                if hasattr(config, 'release_start'):
-                    p.release_time = int(getattr(config, 'release_start', 0))
-                elif release_time is not None:
-                    p.release_time = int(release_time)
-                else:
-                    p.release_time = 0
+
+                p.release_time = getattr(config, 'release_start', None)
+
                 particles.append(p)
 
         return particles
@@ -306,21 +300,23 @@ if __name__ == '__main__':
     config_point = SeedingConfig(
         {
             'population': {
+                'particle_type': 'sand',
                 'seeding': {
                     'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
                     'quantity': 1,
-                }
+                    'release_start': '2025-06-18 13:00:00',
+                },
             }
         }
     )
 
-    particles = ParticleFactory.create_particles(config_point, PointStrategy(), particle_type='sand', release_time=0)
+    particles = ParticleFactory.create_particles(config_point)
     print(
         'Created particles:', particles[-5:]
     )  # Should print the created particles with their positions and release times
 
-    # Measure memory size of particles
-    import sys
+    # # Measure memory size of particles
+    # import sys
 
-    total_memory = sum(sys.getsizeof(particle) for particle in particles)
-    print(f'Total memory size of {len(particles)} particles: {total_memory} bytes ({total_memory / 1024:.2f} KB)')
+    # total_memory = sum(sys.getsizeof(particle) for particle in particles)
+    # print(f'Total memory size of {len(particles)} particles: {total_memory} bytes ({total_memory / 1024:.2f} KB)')
