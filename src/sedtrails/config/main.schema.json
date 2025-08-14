@@ -333,7 +333,23 @@
       "properties": {
         "constants": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
+            "grain_diameter": {
+              "type": "number",
+              "default": 2.5e-4,
+              "description": "grain diameter of sediment [m]"
+            },
+            "morphology_factor": {
+              "type": "number",
+              "default": 1.0,
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
+            },
+            "porosity": {
+              "type": "number",
+              "default": 0.4,
+              "description": "porosity of sediment (40% default)"
+            },
             "g": {
               "type": "number",
               "default": 9.81,
