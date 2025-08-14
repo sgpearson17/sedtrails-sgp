@@ -404,14 +404,14 @@ class Simulation:
             # Get the scalar field data
             mixing_data = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
 
-            # Interpolate to particle positions
-            particle_x = np.array([p.x for p in self.particles])
-            particle_y = np.array([p.y for p in self.particles])
-            interpolated_values = numba_calc['interpolate_field'](mixing_data, particle_x, particle_y)
-
             # Next loop over multiple methods and flow_fields as provided in config
             for method in tracer_methods:
                 for flow_field_name in tracer_methods[method]['flow_field_name']:
+
+                    # CHECK PARTICLE STATES HERE! Below example of interpolation
+                    particle_x = np.array([p.x for p in self.particles])
+                    particle_y = np.array([p.y for p in self.particles])
+                    interpolated_values = numba_calc['interpolate_field'](mixing_data, particle_x, particle_y)
                     
                     # Updated: Pass field name to method instead of setting attribute
                     flow_data = retriever.get_flow_field(timer.current, flow_field_name)
