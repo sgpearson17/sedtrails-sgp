@@ -339,8 +339,8 @@ class Simulation:
         self.logger_manager.log_simulation_state({'status': 'warming_up_jit'})
         warmup_start = time.time()
         _ = numba_calc['update_particles'](
-            np.array([self.particles[0].x]),
-            np.array([self.particles[0].y]),
+            np.array([p.x for p in self.particles]),
+            np.array([p.y for p in self.particles]),
             flow_data['u'],
             flow_data['v'],
             1, # simulation_time.time_step.seconds, # TEMP: 1 second timestep
@@ -399,6 +399,15 @@ class Simulation:
             # Compute CFL-based timestep across all flow fields
             if cfl_condition > 0:
                 timer.compute_cfl_timestep(flow_data_list, sedtrails_data, cfl_condition)
+
+
+            # Get the scalar field data
+            mixing_data = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+
+            # Interpolate to particle positions
+            particle_x = np.array([p.x for p in self.particles])
+            particle_y = np.array([p.y for p in self.particles])
+            interpolated_values = numba_calc['interpolate_field'](mixing_data, particle_x, particle_y)
 
             # Next loop over multiple methods and flow_fields as provided in config
             for method in tracer_methods:

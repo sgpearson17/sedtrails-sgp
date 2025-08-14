@@ -36,5 +36,6 @@ particles:
         point:
           locations: 
             - "71000,450200"
+            - "71000,450300"
 output:
   store_tracks: true
