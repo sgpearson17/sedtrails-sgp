@@ -69,7 +69,7 @@ class FormatConverter:
 
         if self._reference_date is None:
             self._reference_date = self.config.get('reference_date', '1970-01-01')
-        return self.reference_date  # Default to Unix epoch
+        return self._reference_date  # Default to Unix epoch
 
     @property
     def format_plugin(self):
@@ -95,15 +95,21 @@ class FormatConverter:
 
         return self._format_plugin
 
-    def convert_to_sedtrails(self) -> SedtrailsData:
+    def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
-        Converts dataset to SedtrailsData format for all time steps.
+        Converts dataset to SedtrailsData format.
+
+        Parameters:
+        -----------
+        current_time : float, optional
+            Current simulation time in seconds
+        reading_interval : float, optional  
+            Reading interval in seconds
 
         Returns:
         --------
         SedtrailsData:
-            Data in SedtrailsData format with time as the first dimension for
-            time-dependent variables, with time in seconds since reference_date
+            Data in SedtrailsData format
         """
 
         if self._format_plugin is None:
@@ -113,7 +119,7 @@ class FormatConverter:
 
         print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
 
-        sedtrails_data = plugin.convert()
+        sedtrails_data = plugin.convert(current_time, reading_interval)
         print('Successfully converted data to SedtrailsData format.')
         return sedtrails_data
 

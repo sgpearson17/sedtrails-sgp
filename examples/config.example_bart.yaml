@@ -7,9 +7,9 @@ folder_settings:
   output_dir: ./results
 time:
   start: 2011-08-01 00:00:00
-  timestep: 30S
-  read_input_timestep: 1M
-  duration: 1Y0D0H0M0S
+  timestep: 60S
+  read_input_timestep: 30D
+  duration: 30D
 particles:
   population:
     name: my_population
@@ -19,27 +19,16 @@ particles:
       density: 2650.0  
     tracer_methods:
       vanwesten:
-        alpha: 0.2
-        beta: 0.3
+        flow_field_name: 
+          - bed_load_velocity
+          - suspended_velocity
     seeding:
       release_start: 2011-08-01 00:00:00
       quantity: 1
       strategy: 
         point:
           locations: 
-            - "40000,17000"
+            - "71000,450200"
 output:
   store_tracks: true
 
-# ISO 8601 Duration Format Examples 
-# (P to indicate period (start), T to indicate time (before H/M/S), Y/M/D/H/M/S to specify the unit):
-#   PT30S              # 30 seconds
-#   PT1M               # 1 minute  
-#   PT1H               # 1 hour
-#   P1D                # 1 day
-#   P1Y                # 1 year
-#   P1M                # 1 month
-#   P1Y6M              # 1 year, 6 months
-#   P1Y6M15D           # 1 year, 6 months, 15 days
-#   P1Y6M15DT12H25M30S # 1 year, 6 months, 15 days, 12 hours, 25 minutes, 30 seconds
-#   P3DT2H1M3S         # 3 days, 2 hours, 1 minute, 3 seconds

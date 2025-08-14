@@ -171,7 +171,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
             suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
 
-        # === STORE ===
+        # === COMPUTE TRANSPORT PROBABILITY ===
+        bed_load_exposed_ratio = bed_load_layer_thickness / mixing_layer_thickness
+        suspended_exposed_ratio = suspended_layer_thickness / mixing_layer_thickness
+
+        # If the "reduced velocity" method is used, the velocities are reduced by the trapped/exposed ratios
+        if self.config.trapped_exposed_method == 'reduced_velocity':
+            bed_load_velocity *= bed_load_exposed_ratio
+            suspended_velocity *= suspended_exposed_ratio
+
+            # Recompute the directions
+            suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
+                suspended_velocity, suspended_transport_x_calc, suspended_transport_y_calc, suspended_transport_magnitude_calc,
+            )
+            bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
+                bed_load_velocity, bed_load_transport_x_calc, bed_load_transport_y_calc, bed_load_transport_magnitude_calc
+            )
 
         print('Adding physics fields to SedtrailsData...')
 

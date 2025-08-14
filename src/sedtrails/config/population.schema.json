@@ -98,10 +98,13 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "alpha": {
-                    "type": "number",
-                    "default": 0.1,
-                    "description": "alpha parameter for van Westen method"
+                "flow_field_name": {
+                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description":  "flow field name for van Westen method used in particle computation"
+                   
                 },
                 "beta": {
                     "type": "number",
@@ -110,23 +113,6 @@
                 }
             },
             "description": "van Westen method for particle tracking"
-        },
-        "van_westen_bl_method": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "gamma": {
-                    "type": "number",
-                    "default": 0.5,
-                    "description": "gamma parameter for van Westen method"
-                },
-                "delta": {
-                    "type": "number",
-                    "default": 0.4,
-                    "description": "delta parameter for van Westen method"
-                }
-            },
-            "description": "van Westen BL method for particle tracking"
         },
         "soulsby_method": {
             "type": "object",

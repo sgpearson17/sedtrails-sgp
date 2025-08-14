@@ -338,6 +338,7 @@
       "properties": {
         "constants": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "g": {
               "type": "number",

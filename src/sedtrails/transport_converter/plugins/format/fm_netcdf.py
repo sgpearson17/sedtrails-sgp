@@ -6,7 +6,7 @@ import numpy as np
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from pathlib import Path
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Optional
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -57,9 +57,16 @@ class FormatPlugin(BaseFormatPlugin):
 
         return self._input_variables
 
-    def convert(self) -> SedtrailsData:
+    def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
+
+        Parameters:
+        -----------
+        current_time : float, optional
+            Current simulation time in seconds
+        reading_interval : float, optional
+            Reading interval in seconds  
 
         Returns:
         --------
@@ -70,10 +77,24 @@ class FormatPlugin(BaseFormatPlugin):
         # Read the NetCDF file
         self.load()
 
+        # print all variables in the input dataset (self.input_data, keys)
+        print(f'Variables in input_data: {list(self.input_data.data_vars)}')
+        print(f'Coordinates in input_data: {list(self.input_data.coords)}')
+
         time_info = self._get_time_info(self.input_data, reference_date=np.datetime64('1970-01-01T00:00:00'))
 
+        # Determine if we need to slice based on current_time and reading_interval
+        time_start_idx, time_end_idx = self._calculate_time_slice(
+            current_time, reading_interval, time_info
+        )
+
+        # Apply time slicing if needed
+        if time_start_idx is not None or time_end_idx is not None:
+            time_slice = slice(time_start_idx, time_end_idx)
+            time_info = self._slice_time_info(time_info, time_slice)
+
         # Map the variables to SedtrailsData structure
-        mapped_data = self._map_dfm_variables(time_info)
+        mapped_data = self._map_dfm_variables(time_info, time_start_idx, time_end_idx)
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
@@ -140,6 +161,32 @@ class FormatPlugin(BaseFormatPlugin):
 
         return sedtrails_data
 
+    def _calculate_time_slice(self, current_time, reading_interval, time_info):
+        """Calculate time slice indices based on current time and reading interval."""
+        
+        # If no chunking parameters provided, load entire file
+        if current_time is None or reading_interval is None:
+            return None, None
+            
+        # If reading_interval is 0 or very large, load entire file
+        if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
+            return None, None
+            
+        times_array = time_info['seconds_since_reference']
+        
+        # Find current time index
+        current_idx = np.searchsorted(times_array, current_time)
+        
+        # Calculate chunk size based on reading interval and NetCDF timestep
+        netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
+        chunk_steps = max(10, int(reading_interval / netcdf_timestep))
+        
+        # Calculate start and end indices with some buffer
+        start_idx = max(0, current_idx - chunk_steps // 4)
+        end_idx = min(len(times_array), current_idx + chunk_steps)
+        
+        return start_idx, end_idx
+
     def load(self) -> Any:
         """
         Reads and loads a Delft3D Flexible Mesh NetCDF file using xugrid.
@@ -161,6 +208,17 @@ class FormatPlugin(BaseFormatPlugin):
                     print(f'Sucessfully loaded (Xarray): {self.input_file}')
             else:
                 print('Successfully loaded (Xugrid)', self.input_file)
+
+    def _slice_time_info(self, time_info: Dict, time_slice: slice) -> Dict:
+        """Slice time info to specified range."""
+        sliced_info = time_info.copy()
+        sliced_info['time_values'] = time_info['time_values'][time_slice]
+        sliced_info['seconds_since_reference'] = time_info['seconds_since_reference'][time_slice]
+        sliced_info['num_times'] = len(sliced_info['time_values'])
+        if len(sliced_info['time_values']) > 0:
+            sliced_info['time_start'] = sliced_info['time_values'][0]
+            sliced_info['time_end'] = sliced_info['time_values'][-1]
+        return sliced_info
 
     def _get_time_info(self, input_data: Union[xu.UgridDataset, xr.Dataset], reference_date: np.datetime64) -> Dict:
         """
@@ -212,11 +270,18 @@ class FormatPlugin(BaseFormatPlugin):
             'num_times': len(time_values),
         }
 
-    def _map_dfm_variables(self, time_info) -> Dict:
+    def _map_dfm_variables(self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None) -> Dict:
         """
         Map Delft3D Flexible Mesh variables to SedtrailsData structure.
 
-        This function processes all time steps at once.
+        Parameters:
+        -----------
+        time_info : Dict
+            Time information
+        time_start_idx : int, optional
+            Start time index for slicing
+        time_end_idx : int, optional
+            End time index for slicing
 
         Returns:
         --------
@@ -228,6 +293,7 @@ class FormatPlugin(BaseFormatPlugin):
 
         # Get time information
         num_times = time_info['num_times']
+        time_slice = slice(time_start_idx, time_end_idx) if time_start_idx is not None or time_end_idx is not None else slice(None)
 
         # Variable mapping for DFM files
         variable_map = {
@@ -297,11 +363,11 @@ class FormatPlugin(BaseFormatPlugin):
                 if 'time' in var.dims:
                     # Check if variable has layer dimension
                     if 'layer' in var.dims:
-                        # For variables with time and layer, select layer 0
-                        data[key] = var.isel(layer=0).values
+                        # For variables with time and layer, select layer 0 and apply time slice
+                        data[key] = var.isel(layer=0, time=time_slice).values
                     else:
-                        # For variables with time but no layer
-                        data[key] = var.values
+                        # For variables with time but no layer, apply time slice
+                        data[key] = var.isel(time=time_slice).values
                 else:
                     # For variables without time dimension, broadcast to all time steps
                     data[key] = np.broadcast_to(var.values, (num_times, *var.shape))
