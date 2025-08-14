@@ -28,7 +28,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         Parameters:
         -----------
-        sedtrails_data : SedTRAILSData
+        sedtrails_data : SedtrailsData
             The SedTRAILS data object containing transport data.
         grain_properties : dict[str, float]
             Dictionary containing grain properties such as 'critical_shields' and 'settling_velocity'.
@@ -185,3 +185,21 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             'suspended_velocity',
             {'x': suspended_velocity_x, 'y': suspended_velocity_y, 'magnitude': suspended_velocity},
         )
+
+        # Compute transport probabilities
+        with np.errstate(divide='ignore', invalid='ignore'):
+            bed_load_probability = np.where(
+                mixing_layer_thickness > 0,
+                bed_load_layer_thickness / mixing_layer_thickness,
+                0.0
+            )
+            
+            suspended_probability = np.where(
+                mixing_layer_thickness > 0,
+                suspended_layer_thickness / mixing_layer_thickness,
+                0.0
+            )
+        
+        # Add probability fields to SedtrailsData
+        sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
+        sedtrails_data.add_physics_field('suspended_probability', suspended_probability)

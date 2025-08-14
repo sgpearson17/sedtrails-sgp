@@ -350,18 +350,21 @@ class Simulation:
             # Check if current time is within loaded SedTRAILS data (temporary memory fix)
             current_time_seconds = timer.current
             if current_time_seconds < sedtrails_data.times[0] or current_time_seconds > sedtrails_data.times[-1]:
-
                 # Need to reload data
+
+                # Convert to SedTRAILS format
                 sedtrails_data = self.format_converter.convert_to_sedtrails(
                     current_time=current_time_seconds,
                     reading_interval=read_input_seconds
                 )
+
+                # Convert physics fields
                 self.physics_converter.convert_physics(sedtrails_data)
-                
-                # Updated: Create new FieldDataRetriever with updated data
+
+                # Create new FieldDataRetriever with updated data
                 retriever = FieldDataRetriever(sedtrails_data)
 
-                # Updated: Pass field name to method
+                # Pass field name to method
                 plot_particle_trajectory(
                     flow_data=retriever.get_flow_field(timer.current, 'suspended_velocity'),
                     trajectory_x=trajectory_numba_x,
