@@ -326,6 +326,11 @@
           "type": "string",
           "default": "30D12H25M0S",
           "description": "timestep for reading the input data (*.nc) in chunks, e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "cfl_condition": {
+          "type": "number",
+          "default": 0.7,
+          "description": "CFL condition for adaptive timestep calculation. If 0, timestep is not adapted."
         }
       },
       "required": [

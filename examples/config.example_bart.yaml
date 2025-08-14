@@ -8,8 +8,9 @@ folder_settings:
 time:
   start: 2011-08-01 00:00:00
   timestep: 60S
-  read_input_timestep: 30D
-  duration: 30D
+  read_input_timestep: 10D
+  duration: 365D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   population:
     name: my_population
@@ -31,4 +32,3 @@ particles:
             - "71000,450200"
 output:
   store_tracks: true
-

@@ -116,6 +116,6 @@ class PhysicsConverter:
         else:
             plugin = self._physics_plugin
 
-        print(f'Using {plugin.__class__.__name__} to compute transport velocities and add to SedTRAILS data...')
+        # print(f'Using {plugin.__class__.__name__} to compute transport velocities and add to SedTRAILS data...')
 
         plugin.add_physics(sedtrails_data, self.grain_properties)

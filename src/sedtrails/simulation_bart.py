@@ -203,7 +203,7 @@ class Simulation:
 
     def run(self):
         """
-        Run the particle simulation using both original and Numba-optimized implementations.
+        Execute the complete particle simulation workflow.
         """
 
         # ------------- STEP 0: Loading configuration -----------------------------------
@@ -276,6 +276,9 @@ class Simulation:
 
         read_input_seconds = simulation_time.read_input_timestep.seconds
         timer = Timer(simulation_time=simulation_time)
+        
+        # Get CFL condition from config
+        cfl_condition = self._controller.get('time.cfl_condition', 0.7)
 
         # ------------- STEP 3: Main simulation loop ------------------------------------
         # -------------------------------------------------------------------------------
@@ -295,6 +298,8 @@ class Simulation:
                 'state': 'initial_data_loaded',
                 'num_timesteps': len(sedtrails_data.times),
                 'flow_field_name': 'suspended_velocity',
+                'min_resolution': sedtrails_data.min_resolution,
+                'cfl_condition': cfl_condition,
             }
         )
 
@@ -321,14 +326,24 @@ class Simulation:
             np.array([self.particles[0].y]),
             flow_data['u'],
             flow_data['v'],
-            simulation_time.time_step.seconds,
+            1, # simulation_time.time_step.seconds, # TEMP: 1 second timestep
         )
         warmup_time = time.time() - warmup_start
         self.logger_manager.log_simulation_state({'status': 'warmup_complete', 'time_sec': round(warmup_time, 2)})
 
         covered_dist_dict = {}
-        # Main simulation loop
-        for _step in tqdm(range(1, timer.steps + 1), desc='Computing positions', unit='Steps'):
+        step_count = 0
+        
+        # Calculate total simulation duration for progress bar
+        total_duration = simulation_time.end - simulation_time.start
+        
+        print('Simulation loop is starting...')
+        # Initialize time-based progress bar
+        pbar = tqdm(total=100, desc='Computing positions', unit='%', bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]')
+        
+        # Main simulation loop with variable timestep
+        while not timer.stop:
+            step_count += 1
             
             # Check if current time is within loaded SedTRAILS data (temporary memory fix)
             current_time_seconds = timer.current
@@ -347,9 +362,21 @@ class Simulation:
                     flow_data=retriever.get_flow_field(timer.current),
                     trajectory_x=trajectory_numba_x,
                     trajectory_y=trajectory_numba_y,
-                    title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
+                    title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {step_count} steps',
                     save_path=self.data_manager.output_dir + f'/trajectory_plot_{timer.current}.png'
                 )
+
+            # Collect flow fields for CFL computation
+            flow_data_list = []
+            for method in self.config['particles']['population']['tracer_methods']:
+                for flow_field_name in self.config['particles']['population']['tracer_methods'][method]['flow_field_name']:
+                    retriever.flow_field_name = flow_field_name
+                    flow_data = retriever.get_flow_field(timer.current)
+                    flow_data_list.append(flow_data)
+
+            # Compute CFL-based timestep across all flow fields
+            if cfl_condition > 0:
+                timer.compute_cfl_timestep(flow_data_list, sedtrails_data, cfl_condition)
 
             # Next loop over multiple methods and flow_fields as provided in config
             for method in self.config['particles']['population']['tracer_methods']:
@@ -359,15 +386,13 @@ class Simulation:
                     # Get flow field at current time
                     flow_data = retriever.get_flow_field(timer.current)
 
-                    # COMPUTE CFL-BASED TIMESTEP HERE!!!
-
                     # Update particle position using Numba calculator
                     new_x, new_y = numba_calc['update_particles'](
                         np.array([self.particles[0].x]),
                         np.array([self.particles[0].y]),
                         flow_data['u'],
                         flow_data['v'],
-                        simulation_time.time_step.seconds,
+                        timer.current_timestep,
                     )
 
                     # Store per flow_field_name the covered distance
@@ -384,6 +409,14 @@ class Simulation:
             trajectory_numba_y.append(self.particles[0].y)
 
             # # Save data
+            # THE DATA MANAGER MAKES THE SIMULATION SLOWER OVER TIME, THEREFORE TURNED OFF FOR NOW.
+            # Other data that should be stored; 
+            # - covered distance by different transport methods and/or flow fields
+            # - CFL per timestep
+            # - number of active particles
+            # - vertical position
+            # - burial depth
+            # - other states?
             # self.data_manager.add_data(
             #     particle_id=self.particles[0].id,
             #     time=timer.current,
@@ -393,16 +426,33 @@ class Simulation:
 
             # Advance timer
             timer.advance()
+            
+            # Calculate progress percentage based on simulation time
+            elapsed_time = timer.current - simulation_time.start
+            progress_percent = (elapsed_time / total_duration) * 100
+            
+            # Update progress bar
+            pbar.n = progress_percent
+            pbar.set_postfix({
+                'Step': step_count,
+                'Time': f'{timer.current:.0f}s',
+                'dt': f'{timer.current_timestep:.2f}s',
+                'Pos': f'({self.particles[0].x:.0f}, {self.particles[0].y:.0f})'
+            })
+            pbar.refresh()
 
+        pbar.close()
+        
         simulation_end_time = time.time()
         total_time = simulation_end_time - compile_start  # Total time including compilation
 
         self.logger_manager.log_simulation_state(
             {
                 'status': 'simulation_complete',
-                'total_steps': timer.steps,
+                'total_steps': step_count,
                 'total_time_sec': round(total_time, 2),
                 'final_position': f'({self.particles[0].x:.2f}, {self.particles[0].y:.2f})',
+                'cfl_condition': cfl_condition,
             }
         )
 
@@ -424,7 +474,7 @@ class Simulation:
             flow_data=final_flow,
             trajectory_x=trajectory_numba_x,
             trajectory_y=trajectory_numba_y,
-            title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
+            title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {step_count} steps',
             save_path=self.data_manager.output_dir + '/trajectory_plot.png',
         )
 

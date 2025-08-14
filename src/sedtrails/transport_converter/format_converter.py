@@ -117,10 +117,10 @@ class FormatConverter:
         else:
             plugin = self._format_plugin
 
-        print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
+        # print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
 
         sedtrails_data = plugin.convert(current_time, reading_interval)
-        print('Successfully converted data to SedtrailsData format.')
+        # print('Successfully converted data to SedtrailsData format.')
         return sedtrails_data
 
 
