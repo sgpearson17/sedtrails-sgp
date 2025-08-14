@@ -4,10 +4,10 @@ Particle Seeding Tool
 Manage the creation of particles, their positions (x,y) and distribution.
 using various release strategies.
 Seeding strategies for positions include:
-- At location: Release particles at a specific locations (x,y).
-- Regular grid: Release particles in a regular grid pattern based
+- Point: Release particles at a specific locations (x,y).
+- Regular Grid: Release particles in a regular grid pattern based
     on distances between particles in x and y directions, and the
-    simulation domain size. A mask can be applied to restrict the area of seeding.
+    simulation. A mask can be applied to restrict the area of seeding.
 - Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
 - Random: Release particles at random locations (x,y) within an area
     constrained by a bounding box (xmin, xmax, ymin, ymax).
@@ -16,7 +16,7 @@ Seeding strategies for positions include:
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Dict
 import random
 from dataclasses import dataclass, field
 from sedtrails.configuration_interface.find import find_value
@@ -123,7 +123,8 @@ class PointStrategy(SeedingStrategy):
 
 class RandomStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a bounding box 'xmin,ymin xmax,ymax'.
+    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a
+    bounding box 'xmin,ymin xmax,ymax'.
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
@@ -145,7 +146,9 @@ class RandomStrategy(SeedingStrategy):
 
 class GridStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles that follows regular grid pattern. The grid is defined by the distance between particles (dx, dy) and the simulation domain size. If dx and dy have the same value, a square grid is created.
+    Seeding strategy to release particles that follows regular grid pattern.
+    The grid is defined by the distance between particles (dx, dy) and the simulation domain size.
+    If dx and dy have the same value, a square grid is created.
     The origin of the grid is at the bottom left corner of the bounding box
     """
 
@@ -192,7 +195,8 @@ class TransectStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles along straight line segments.
     A line segment is defined by two points (x1, y1) and (x2, y2).
-    Particles along each segment are equally spaced, and the distance between particles is defined by the number of release locations per segment (k).
+    Particles along each segment are equally spaced, and the distance between particles is defined by
+    the number of release locations per segment (k).
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
@@ -311,12 +315,4 @@ if __name__ == '__main__':
     )
 
     particles = ParticleFactory.create_particles(config_point)
-    print(
-        'Created particles:', particles[-5:]
-    )  # Should print the created particles with their positions and release times
-
-    # # Measure memory size of particles
-    # import sys
-
-    # total_memory = sum(sys.getsizeof(particle) for particle in particles)
-    # print(f'Total memory size of {len(particles)} particles: {total_memory} bytes ({total_memory / 1024:.2f} KB)')
+    print('Created particles:', particles)  # Should print the created particles with their positions and release times
