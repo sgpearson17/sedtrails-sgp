@@ -16,7 +16,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         super().__init__()
         self.config = config
 
-    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float]) -> None:
+    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_config: dict) -> None:
         """
         Add physics to SedtrailsData object using van Westen et al. (2025) approach.
 
@@ -203,3 +203,19 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Add probability fields to SedtrailsData
         sedtrails_data.add_physics_field('bed_load_probability', bed_load_probability)
         sedtrails_data.add_physics_field('suspended_probability', suspended_probability)
+
+        # Apply reduced velocity if configured
+        if transport_probability_config.get('method') == 'reduced_velocity':
+            probability_field_names = transport_probability_config.get('probability_field_name', [])
+            
+            # Apply reduced velocity to bed load velocity
+            if 'bed_load_probability' in probability_field_names:
+                sedtrails_data.bed_load_velocity['x'] *= bed_load_probability
+                sedtrails_data.bed_load_velocity['y'] *= bed_load_probability
+                sedtrails_data.bed_load_velocity['magnitude'] *= bed_load_probability
+            
+            # Apply reduced velocity to suspended velocity
+            if 'suspended_probability' in probability_field_names:
+                sedtrails_data.suspended_velocity['x'] *= suspended_probability
+                sedtrails_data.suspended_velocity['y'] *= suspended_probability
+                sedtrails_data.suspended_velocity['magnitude'] *= suspended_probability

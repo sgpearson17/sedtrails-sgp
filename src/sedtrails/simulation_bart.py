@@ -56,6 +56,7 @@ class Simulation:
 
         self._start_time = None
         self._config_is_read = False
+        self._population_config = None
 
         # Validate config file exists early
         if not os.path.exists(config_file):
@@ -134,6 +135,15 @@ class Simulation:
         if not self._config_is_read:
             self._controller.load_config(self._config_file)
         return self._controller.get_config()  # delagates to the controller
+
+    @property
+    def population_config(self):
+        """
+        Returns the particle population configuration.
+        """
+        if self._population_config is None:
+            self._population_config = self.config.get('particles', {}).get('population', {})
+        return self._population_config
 
     @property
     def start_time(self):
@@ -229,15 +239,19 @@ class Simulation:
             }
         )
 
+        # Extract population configuration once
+        pop_config = self.population_config
+        tracer_methods = pop_config.get('tracer_methods', {})
+        transport_prob_config = pop_config.get('transport_probability', {})
+        seeding_strategy = pop_config.get('seeding', {}).get('strategy', {})
+
         # ------------- STEP 1: Seeding -------------------------------------------------
         # -------------------------------------------------------------------------------
 
         # Particle seeding parameters
         # TODO: this should be handle by the seeding tool.
-        # particle_positions = {}
-        strategy = self._controller.get('particles.population.seeding.strategy')
-        if 'point' in strategy:
-            for point in strategy['point']['locations']:
+        if 'point' in seeding_strategy:
+            for point in seeding_strategy['point']['locations']:
                 _point = point.split(',')
 
                 sand = Sand()
@@ -252,7 +266,7 @@ class Simulation:
                         'state': 'particles_initialized',
                         'num_particles': 1,
                         'particle_positions': {},
-                        'seeding_strategy': strategy,
+                        'seeding_strategy': seeding_strategy,
                     }
                 )
 
@@ -289,7 +303,8 @@ class Simulation:
             reading_interval=read_input_seconds
         )
 
-        self.physics_converter.convert_physics(sedtrails_data)
+        # Convert physics fields with transport probability configuration
+        self.physics_converter.convert_physics(sedtrails_data, transport_prob_config)
         
         # Updated: Create FieldDataRetriever without specifying field name
         retriever = FieldDataRetriever(sedtrails_data)
@@ -358,8 +373,8 @@ class Simulation:
                     reading_interval=read_input_seconds
                 )
 
-                # Convert physics fields
-                self.physics_converter.convert_physics(sedtrails_data)
+                # Convert physics fields with transport probability configuration
+                self.physics_converter.convert_physics(sedtrails_data, transport_prob_config)
 
                 # Create new FieldDataRetriever with updated data
                 retriever = FieldDataRetriever(sedtrails_data)
@@ -375,8 +390,8 @@ class Simulation:
 
             # Collect flow fields for CFL computation
             flow_data_list = []
-            for method in self.config['particles']['population']['tracer_methods']:
-                for flow_field_name in self.config['particles']['population']['tracer_methods'][method]['flow_field_name']:
+            for method in tracer_methods:
+                for flow_field_name in tracer_methods[method]['flow_field_name']:
                     # Updated: Pass field name to method
                     flow_data = retriever.get_flow_field(timer.current, flow_field_name)
                     flow_data_list.append(flow_data)
@@ -386,8 +401,8 @@ class Simulation:
                 timer.compute_cfl_timestep(flow_data_list, sedtrails_data, cfl_condition)
 
             # Next loop over multiple methods and flow_fields as provided in config
-            for method in self.config['particles']['population']['tracer_methods']:
-                for flow_field_name in self.config['particles']['population']['tracer_methods'][method]['flow_field_name']:
+            for method in tracer_methods:
+                for flow_field_name in tracer_methods[method]['flow_field_name']:
                     
                     # Updated: Pass field name to method instead of setting attribute
                     flow_data = retriever.get_flow_field(timer.current, flow_field_name)
