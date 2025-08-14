@@ -128,9 +128,16 @@ class RandomStrategy(SeedingStrategy):
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        bbox = getattr(config, 'strategy_settings', {}).get('bbox', [])
+        # expects strategy_settings to contain 'bbox' and 'seed'
+        bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
         if not bbox:
             raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
+
+        seed = getattr(config, 'strategy_settings', {}).get('seed', None)
+        if not seed:
+            raise MissingConfigurationParameter('"seed" must be provided for RandomStrategy.')
+        random.seed(seed)
+
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
         quantity = int(config.quantity)
@@ -328,5 +335,18 @@ if __name__ == '__main__':
         }
     )
 
-    particles = ParticleFactory.create_particles(config_transect)
+    config_random = SeedingConfig(
+        {
+            'population': {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'seed': 42}},
+                    'quantity': 5,
+                    'release_start': '2025-06-18 13:00:00',
+                },
+            }
+        }
+    )
+
+    particles = ParticleFactory.create_particles(config_random)
     print('Created particles:', particles)  # Should print the created particles with their positions and release times
