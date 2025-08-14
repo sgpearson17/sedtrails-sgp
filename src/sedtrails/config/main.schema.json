@@ -340,10 +340,10 @@
               "default": 2.5e-4,
               "description": "grain diameter of sediment [m]"
             },
-            "morfology_factor": {
+            "morphology_factor": {
               "type": "number",
               "default": 1.0,
-              "description": "morphology factor for sediment transport (1.0 = no effect)"
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
             },
             "porosity": {
               "type": "number",
