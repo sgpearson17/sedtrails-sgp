@@ -3,6 +3,8 @@
 import xugrid as xu
 import xarray as xr
 import numpy as np
+from scipy.spatial.distance import pdist
+from scipy.spatial import ConvexHull
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from pathlib import Path
@@ -57,6 +59,39 @@ class FormatPlugin(BaseFormatPlugin):
 
         return self._input_variables
 
+    def _compute_grid_metadata(self, x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """
+        Compute grid metadata: minimum resolution and outer envelope.
+        
+        Parameters:
+        -----------
+        x : np.ndarray
+            X-coordinates of grid points
+        y : np.ndarray
+            Y-coordinates of grid points
+            
+        Returns:
+        --------
+        Dict
+            Dictionary containing 'min_resolution' and 'outer_envelope'
+        """
+        # Stack coordinates for distance calculations
+        coords = np.column_stack((x.flatten(), y.flatten()))
+        
+        # Compute minimum resolution (minimum distance between any two points)
+        distances = pdist(coords)
+        min_resolution = np.min(distances)
+        
+        # FIXME: temporary solution!
+        # Compute outer envelope using convex hull
+        hull = ConvexHull(coords)
+        outer_envelope = coords[hull.vertices]
+        
+        return {
+            'min_resolution': min_resolution,
+            'outer_envelope': outer_envelope
+        }
+
     def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
@@ -76,11 +111,6 @@ class FormatPlugin(BaseFormatPlugin):
 
         # Read the NetCDF file
         self.load()
-
-        # print all variables in the input dataset (self.input_data, keys)
-        print(f'Variables in input_data: {list(self.input_data.data_vars)}')
-        print(f'Coordinates in input_data: {list(self.input_data.coords)}')
-
         time_info = self._get_time_info(self.input_data, reference_date=np.datetime64('1970-01-01T00:00:00'))
 
         # Determine if we need to slice based on current_time and reading_interval
@@ -97,6 +127,9 @@ class FormatPlugin(BaseFormatPlugin):
         mapped_data = self._map_dfm_variables(time_info, time_start_idx, time_end_idx)
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
+
+        # Compute grid metadata
+        grid_metadata = self._compute_grid_metadata(mapped_data['x'], mapped_data['y'])
 
         # Calculate magnitudes for vector quantities
         # Flow velocity magnitude
@@ -157,6 +190,8 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            min_resolution=grid_metadata['min_resolution'],
+            outer_envelope=grid_metadata['outer_envelope'],
         )
 
         return sedtrails_data

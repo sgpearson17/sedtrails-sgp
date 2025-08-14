@@ -48,6 +48,11 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    min_resolution: float
+        Minimum distance between any grid cells [m]
+    outer_envelope: np.ndarray
+        Convex hull vertices defining the outer boundary of the grid
+        Shape: (n_vertices, 2) with columns [x, y]
 
     # === PHYSICS FIELDS (added by PhysicsConverter) ===
     # Note: All physics fields match the structure of transport data
@@ -82,6 +87,8 @@ class SedtrailsData:
     max_bed_shear_stress: np.ndarray
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
+    min_resolution: float
+    outer_envelope: np.ndarray
 
     def __post_init__(self):
         """Initialize container for dynamic physics fields."""
@@ -166,6 +173,8 @@ class SedtrailsData:
             'y': self.y,
             'bed_level': self.bed_level,  # Bed level is typically time-independent
             'fractions': self.fractions,
+            'min_resolution': self.min_resolution,
+            'outer_envelope': self.outer_envelope,
             # Extract time slice from time-dependent variables
             'water_depth': self.water_depth[time_index],
             'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
