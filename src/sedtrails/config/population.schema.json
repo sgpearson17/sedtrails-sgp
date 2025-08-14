@@ -327,6 +327,11 @@
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
                                 },
+                                "seed": {
+                                    "type": "number",
+                                    "default": 1,
+                                    "description": "seed for random number generator"
+                                },
                                 "show_check_plots": {
                                     "type": "boolean",
                                     "default": false,
