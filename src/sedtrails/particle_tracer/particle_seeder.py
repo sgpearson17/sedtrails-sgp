@@ -153,13 +153,13 @@ class GridStrategy(SeedingStrategy):
     """
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
-        bbox = getattr(config, 'strategy_settings', {}).get('bbox', [])
-        if bbox is None:
+        bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
+        if not bbox:
             raise RuntimeError('Bounding box must be provided for GridStrategy.')
 
         grid = find_value(config.population_config, 'population.seeding.strategy.grid', {})
 
-        if not grid or not all(k in grid.get('separation') for k in ['dx', 'dy']):
+        if not grid or not all(k in grid.get('separation', {}) for k in ['dx', 'dy']):
             raise MissingConfigurationParameter('"grid" must be provided for GridStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
@@ -201,21 +201,17 @@ class TransectStrategy(SeedingStrategy):
 
     def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
-        transect = getattr(config, 'strategy_settings', {}).get('transect', [])
-        if not transect:
-            raise MissingConfigurationParameter('"transect" must be provided for TransectStrategy.')
-
-        segments = transect.get('segments', [])
+        segments = getattr(config, 'strategy_settings', {}).get('segments', None)
         if not segments:
             raise MissingConfigurationParameter('"segments" must be provided for TransectStrategy.')
-        k = transect.get('k', {})
+        k = getattr(config, 'strategy_settings', {}).get('k', None)
         if not k:
             raise MissingConfigurationParameter('"k" must be provided for TransectStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for TransectStrategy.')
         quantity = int(config.quantity)
-        seed_locations = []
 
+        seed_locations = []
         # Process each segment
         for segment_str in segments:
             try:
@@ -314,5 +310,23 @@ if __name__ == '__main__':
         }
     )
 
-    particles = ParticleFactory.create_particles(config_point)
+    config_transect = SeedingConfig(
+        {
+            'population': {
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'transect': {
+                            'segments': ['0,0 2,0'],
+                            'k': 3,
+                        }
+                    },
+                    'quantity': 5,
+                    'release_start': '2025-06-18 13:00:00',
+                },
+            }
+        }
+    )
+
+    particles = ParticleFactory.create_particles(config_transect)
     print('Created particles:', particles)  # Should print the created particles with their positions and release times
