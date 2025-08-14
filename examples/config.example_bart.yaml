@@ -2,6 +2,7 @@ general:
   input_model: 
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
 folder_settings:
   input_data: ./sample-data/dfm_sedtrails.nc
   output_dir: ./results

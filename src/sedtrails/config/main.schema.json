@@ -119,6 +119,11 @@
           "type": "string",
           "default": "1970-01-01",
           "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
+        },
+        "morfac": {
+          "type": "number",
+          "default": 1,
+          "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
         }
       }
     },

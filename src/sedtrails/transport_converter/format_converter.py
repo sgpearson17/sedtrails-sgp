@@ -28,7 +28,7 @@ class FormatConverter:
         config : dict
             Configuration dictionary containing settings for the converter.
             Must include 'input_file', 'input_format', optionally 'reference_date' (default
-            "1970-01-01" (Unix epoch))
+            "1970-01-01" (Unix epoch)) and 'morfac' (default 1.0)
         """
         self.config = config
         self._reference_date: Union[str, None] = None
@@ -36,6 +36,7 @@ class FormatConverter:
         self._format_plugin = None
         self._input_format: Union[str, None] = None
         self._input_file: Union[str, None] = None
+        self._morfac: Union[float, None] = None
 
     def __post_init__(self):
         """
@@ -72,6 +73,13 @@ class FormatConverter:
         return self._reference_date  # Default to Unix epoch
 
     @property
+    def morfac(self) -> float:
+        """Get the morphological acceleration factor."""
+        if self._morfac is None:
+            self._morfac = self.config.get('morfac', 1.0)
+        return self._morfac
+
+    @property
     def format_plugin(self):
         """
         Get the format plugin instance based on the specified format.
@@ -90,8 +98,8 @@ class FormatConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                # Initialize the format plugin with the input file and type
-                self._format_plugin = plugin_module.FormatPlugin(self.input_file)
+                # Initialize the format plugin with the input file and morfac
+                self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
 
         return self._format_plugin
 
@@ -131,6 +139,7 @@ if __name__ == '__main__':
         'input_file': 'sedtrails/sample-data/inlet_sedtrails.nc',
         'input_format': 'fm_netcdf',
         'reference_date': '1970-01-01',
+        'morfac': 1.0,
     }
 
     converter = FormatConverter(conf)

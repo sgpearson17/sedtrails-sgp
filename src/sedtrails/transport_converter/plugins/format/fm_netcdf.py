@@ -16,7 +16,7 @@ class FormatPlugin(BaseFormatPlugin):
     Plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format.
     """
 
-    def __init__(self, input_file: str):
+    def __init__(self, input_file: str, morfac: float = 1.0):
         """
         Initialize the plugin with the input file.
 
@@ -24,9 +24,12 @@ class FormatPlugin(BaseFormatPlugin):
         -----------
         input_file : str
             Path to the Delft3D Flexible Mesh NetCDF file.
+        morfac : float, optional
+            Morphological acceleration factor for time decompression (default: 1.0)
         """
         super().__init__()
         self.input_file = Path(input_file)
+        self.morfac = morfac
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
 
@@ -92,6 +95,39 @@ class FormatPlugin(BaseFormatPlugin):
             'outer_envelope': outer_envelope
         }
 
+    def _decompress_time(self, time_info: Dict) -> Dict:
+        """
+        Apply morfac decompression to time values.
+        
+        Parameters:
+        -----------
+        time_info : Dict
+            Original time information
+            
+        Returns:
+        --------
+        Dict
+            Time information with decompressed time values
+        """
+        decompressed_info = time_info.copy()
+        
+        # Apply morfac decompression to time values
+        time_start = time_info['time_start']
+        decompressed_time_values = time_start + (time_info['time_values'] - time_start) * self.morfac
+        
+        # Update time info with decompressed values
+        decompressed_info['time_values'] = decompressed_time_values
+        decompressed_info['time_start'] = decompressed_time_values[0]
+        decompressed_info['time_end'] = decompressed_time_values[-1]
+        
+        # Recalculate seconds since reference with decompressed times
+        decompressed_info['seconds_since_reference'] = np.array([
+            float((t - time_info['reference_date']) / np.timedelta64(1, 's')) 
+            for t in decompressed_time_values
+        ])
+        
+        return decompressed_info
+
     def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
@@ -112,6 +148,9 @@ class FormatPlugin(BaseFormatPlugin):
         # Read the NetCDF file
         self.load()
         time_info = self._get_time_info(self.input_data, reference_date=np.datetime64('1970-01-01T00:00:00'))
+
+        # Apply morfac decompression to time before time slicing
+        time_info = self._decompress_time(time_info)
 
         # Determine if we need to slice based on current_time and reading_interval
         time_start_idx, time_end_idx = self._calculate_time_slice(
@@ -417,7 +456,7 @@ class FormatPlugin(BaseFormatPlugin):
 if __name__ == '__main__':
     # Example usage
     input_file = '/sedtrails/sample-data/inlet_sedtrails.nc'
-    plugin = FormatPlugin(input_file)
+    plugin = FormatPlugin(input_file, morfac=3.0)
 
     plugin.load()
 

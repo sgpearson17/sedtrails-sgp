@@ -95,6 +95,7 @@ class Simulation:
             'input_file': self._controller.get('folder_settings.input_data'),
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
+            'morfac': self._controller.get('general.input_model.morfac', 1.0),
         }
 
         return format_config
@@ -306,7 +307,7 @@ class Simulation:
         # Convert physics fields with transport probability configuration
         self.physics_converter.convert_physics(sedtrails_data, transport_prob_config)
         
-        # Updated: Create FieldDataRetriever without specifying field name
+        # Create FieldDataRetriever
         retriever = FieldDataRetriever(sedtrails_data)
 
         self.logger_manager.log_simulation_state(
@@ -320,7 +321,6 @@ class Simulation:
         )
 
         # Initialize numba calculator
-        # Updated: Pass field name to the method
         flow_data = retriever.get_flow_field(simulation_time.start, 'suspended_velocity')
 
         self.logger_manager.log_simulation_state(
