@@ -39,25 +39,19 @@ class SedtrailsMetadata:
             self.flowfield_domain[key] = float(self.flowfield_domain[key])
 
     def __setattr__(self, name: str, value: Any):
-        """Allow setting dynamic attributes while protecting reserved ones."""
+        """Protect reserved attributes after initialization."""
         if name in self.RESERVED_KEYS and hasattr(self, name):
-            # Only allow setting flowfield_domain during initialization
-            if name == "flowfield_domain" and not hasattr(self, '_initialized'):
-                super().__setattr__(name, value)
-                super().__setattr__('_initialized', True)
-            else:
-                raise ValueError(f"'{name}' is reserved and cannot be overwritten")
-        else:
-            super().__setattr__(name, value)
+            raise ValueError(f"'{name}' is reserved and cannot be overwritten")
+        super().__setattr__(name, value)
 
     def add(self, key: str, value: Any):
         """Add a single metadata entry as an attribute."""
         setattr(self, key, value)
 
     def update(self, metadata_dict: Mapping[str, Any]):
-        """Add multiple metadata entries as attributes."""
+        """Update metadata with a dictionary of key-value pairs."""
         for key, value in metadata_dict.items():
-            setattr(self, key, value)
+            self.add(key, value) 
 
     def get(self, key: str, default=None) -> Any:
         """Get metadata value by key."""
@@ -77,12 +71,6 @@ class SedtrailsMetadata:
             if not key.startswith('_'):  # Skip private attributes
                 result[key] = value
         return result
-
-    def __repr__(self) -> str:
-        """Custom repr showing all attributes."""
-        attrs = {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
-        return f"SedtrailsMetadata({attrs})"
-    
 
 # Example usage
 # 1. Create with flowfield_domain dictionary
