@@ -138,13 +138,17 @@ class RandomStrategy(SeedingStrategy):
             raise MissingConfigurationParameter('"seed" must be provided for RandomStrategy.')
         random.seed(seed)
 
+        nlocations = getattr(config, 'strategy_settings', {}).get('nlocations', None)
+        if not nlocations:
+            raise MissingConfigurationParameter('"nlocations" must be provided for RandomStrategy.')
+
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
         quantity = int(config.quantity)
         seed_locations = []
 
         _bbox = bbox.replace(',', ' ').split()  # separates values with whitespaces. Order is xmin, ymin, xmax, ymax
-        for _ in range(quantity):
+        for _ in range(nlocations):
             x = random.uniform(float(_bbox[0]), float(_bbox[2]))
             y = random.uniform(float(_bbox[1]), float(_bbox[3]))
             seed_locations.append((quantity, x, y))
@@ -340,7 +344,7 @@ if __name__ == '__main__':
             'population': {
                 'particle_type': 'sand',
                 'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'seed': 42}},
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
                     'quantity': 5,
                     'release_start': '2025-06-18 13:00:00',
                 },
@@ -349,4 +353,6 @@ if __name__ == '__main__':
     )
 
     particles = ParticleFactory.create_particles(config_random)
-    print('Created particles:', particles)  # Should print the created particles with their positions and release times
+    print(
+        'Created particles:', len(particles)
+    )  # Should print the created particles with their positions and release times
