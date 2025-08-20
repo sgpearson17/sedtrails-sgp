@@ -1,4 +1,5 @@
-from sedtrails.particle_tracer import PopulationConfig
+from sedtrails.particle_tracer import PopulationConfig, ParticlePopulation
+import numpy as np
 
 # Example usage of the ParticleFactory  to create population of particles
 config_random = PopulationConfig(
@@ -14,9 +15,6 @@ config_random = PopulationConfig(
     }
 )
 
-
-from sedtrails.particle_tracer import ParticlePopulation
-import numpy as np
 
 population = ParticlePopulation(
     field_x=np.array([0.0, 1.0, 2.5, 5.0]),
