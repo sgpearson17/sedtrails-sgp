@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from typing import Dict, Any
 import numpy as np
-from sedtrails.particle_tracer import ParticleFactory, SeedingConfig
+from .particle_seeder import PopulationConfig, ParticleFactory
 
 
 @dataclass
@@ -18,7 +18,7 @@ class ParticlePopulation:
         The x-coordinates of the flow field data where particles are seeded.
     field_y : ndarray
         The y-coordinates of the flow field data where particles are seeded.
-    population_config : SeedingConfig
+    population_config : PopulationConfig
         Configuration for the particle population, including seeding strategy and parameters.
     particles : Dict
         A dictionary containing particle attributes such as positions and status.
@@ -38,7 +38,7 @@ class ParticlePopulation:
 
     field_x: ndarray
     field_y: ndarray
-    population_config: SeedingConfig
+    population_config: PopulationConfig
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)  # holds a Numba function
     _position_calculator: Any = field(init=False)  # holds a Numba function

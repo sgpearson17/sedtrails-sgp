@@ -1,5 +1,6 @@
 """A directory for the Lagrangian Particle Tracer"""
 
-from .particle_seeder import SeedingConfig, ParticleFactory
+from .particle_seeder import PopulationConfig
+from .population import ParticlePopulation
 
-__all__ = ['SeedingConfig', 'ParticleFactory']
+__all__ = ['PopulationConfig', 'ParticlePopulation']
