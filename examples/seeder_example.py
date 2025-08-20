@@ -1,7 +1,7 @@
-from sedtrails.particle_tracer import SeedingConfig, ParticleFactory
+from sedtrails.particle_tracer import PopulationConfig
 
 # Example usage of the ParticleFactory  to create population of particles
-config_random = SeedingConfig(
+config_random = PopulationConfig(
     {
         'population': {
             'particle_type': 'sand',
@@ -14,5 +14,12 @@ config_random = SeedingConfig(
     }
 )
 
-particles = ParticleFactory.create_particles(config_random)
-print('Created particles:', particles)
+
+from sedtrails.particle_tracer import ParticlePopulation
+import numpy as np
+
+population = ParticlePopulation(
+    field_x=np.array([0.0, 1.0, 2.5, 5.0]),
+    field_y=np.array([0.0, 1.0, 2.0, 3.0]),
+    population_config=config_random,
+)
