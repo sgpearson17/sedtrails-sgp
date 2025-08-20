@@ -23,7 +23,7 @@ from sedtrails.configuration_interface.find import find_value
 
 
 @dataclass
-class SeedingConfig:
+class PopulationConfig:
     """
     A class to represent the seeding parameters of a population of particle.
     A population is a group of particles that share the same type and seeding strategy.
@@ -77,7 +77,7 @@ class SeedingStrategy(ABC):
     """
 
     @abstractmethod
-    def seed(self, config: SeedingConfig) -> List[Tuple[int, float, float]]:
+    def seed(self, config: PopulationConfig) -> List[Tuple[int, float, float]]:
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
@@ -102,7 +102,7 @@ class PointStrategy(SeedingStrategy):
     Seeding strategy to release particles at specific locations (x,y).
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         locations = getattr(config, 'strategy_settings', {}).get('locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
@@ -127,7 +127,7 @@ class RandomStrategy(SeedingStrategy):
     bounding box 'xmin,ymin xmax,ymax'.
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         # expects strategy_settings to contain 'bbox' and 'seed'
         bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
         if not bbox:
@@ -159,7 +159,7 @@ class GridStrategy(SeedingStrategy):
     The origin of the grid is at the bottom left corner of the bounding box
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
         if not bbox:
             raise RuntimeError('Bounding box must be provided for GridStrategy.')
@@ -206,7 +206,7 @@ class TransectStrategy(SeedingStrategy):
     the number of release locations per segment (k).
     """
 
-    def seed(self, config: SeedingConfig) -> list[Tuple[int, float, float]]:
+    def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
         segments = getattr(config, 'strategy_settings', {}).get('segments', None)
         if not segments:
@@ -250,7 +250,7 @@ class TransectStrategy(SeedingStrategy):
 
 class ParticleFactory:
     @staticmethod
-    def create_particles(config: SeedingConfig) -> list[Particle]:
+    def create_particles(config: PopulationConfig) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
 
@@ -304,7 +304,7 @@ class ParticleFactory:
 
 if __name__ == '__main__':
     # Example usage
-    config_point = SeedingConfig(
+    config_point = PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -317,7 +317,7 @@ if __name__ == '__main__':
         }
     )
 
-    config_transect = SeedingConfig(
+    config_transect = PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
@@ -335,7 +335,7 @@ if __name__ == '__main__':
         }
     )
 
-    config_random = SeedingConfig(
+    config_random = PopulationConfig(
         {
             'population': {
                 'particle_type': 'sand',
