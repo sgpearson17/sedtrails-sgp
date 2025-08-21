@@ -24,11 +24,7 @@ particles:
         flow_field_name: 
           - bed_load_velocity
           - suspended_velocity
-    transport_probability:
-      method: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity
-      probability_field_name:
-        - bed_load_probability
-        - suspended_probability
+    transport_probability: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity
     seeding:
       release_start: 2011-08-01 00:00:00
       quantity: 1

@@ -129,43 +129,6 @@
                 }
             },
             "description": "Soulsby method for particle tracking"
-        },
-        "transport_probability": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "method": {
-                    "type": "string",
-                    "enum": [
-                        "no_probability",
-                        "stochastic_transport",
-                        "reduced_velocity"
-                    ],
-                    "default": "no_probability",
-                    "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
-                },
-                "probability_field_name": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "probability field names corresponding to flow_field_name order (required for stochastic_transport and reduced_velocity methods)"
-                }
-            },
-            "required": [
-                "method"
-            ],
-            "if": {
-                "properties": {
-                    "method": {
-                        "enum": ["stochastic_transport", "reduced_velocity"]
-                    }
-                }
-            },
-            "then": {
-                "required": ["probability_field_name"]
-            },
-            "description": "Configuration for transport probability effects on particle movement"
         }
     },
     "properties": {
@@ -214,7 +177,14 @@
             "description": "At least one tracer method must be specified"
         },
         "transport_probability": {
-            "$ref": "#/$defs/transport_probability"
+            "type": "string",
+            "enum": [
+                "no_probability",
+                "stochastic_transport",
+                "reduced_velocity"
+            ],
+            "default": "no_probability",
+            "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
         },
         "seeding": {
             "type": "object",
