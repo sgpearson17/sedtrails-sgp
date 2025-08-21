@@ -16,3 +16,15 @@ Inputs required for seeding strategies:
 | ???           | x2, y2           | x2, y2            | ???            | 
 | ???           | ???              | particle distance | ???            | 
 | ???           | ???              | ???               | ???            | 
+
+
+Here I copy paste Manuel's comments in Github issue#267. I will revise this part of the documentation while the seeding factory is finalised.
+
+"""
+The code in this PR follows this reasoning:
+
+The seeding tool generates n-number of particles for a population using the seeding strategy defined in the configuration for each population.
+The number of particle per location are defined by quantity and the number of seeding locations depend on the strategy used. e.g., above only one seed location is specified. The number of seeding locations for some of the strategies are computed at runtime (e.g., grid).
+The total number of particle in a population is the product of quantity * seeding locations
+When seeding happens a list with the total number of particles in a population is created. If more than one population is specified in the configuration file, than particle creation should be repeated for each one (I will work on automating this). The creation of particle is manage by a ParticleFactory, which takes the configuration for a population and generates the particles, assigns the initial x,y coordinates, release_time (release_start) and quantity.
+"""
