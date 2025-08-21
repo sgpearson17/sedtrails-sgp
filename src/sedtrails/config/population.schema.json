@@ -336,7 +336,56 @@
                                 },
                                 {
                                     "required": [
-                                        "lines"
+                                        "segments"
+                                    ]
+                                }
+                            ]
+                        },
+                        "random": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
+                                },
+                                "bbox": {
+                                    "type": "string",
+                                    "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "nlocations": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "description": "number of random points to generate within the bounding box or polygon"
+                                },
+                                "seed": {
+                                    "type": "number",
+                                    "default": 42,
+                                    "description": "seed for random number generator"
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots?"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots?"
+                                }
+                            },
+                            "required": [
+                                "nlocations"
+                            ],
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "bbox"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "pol_file"
                                     ]
                                 }
                             ]
@@ -348,7 +397,7 @@
                                     "type": "string",
                                     "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
                                 },
-                                "regular": {
+                                "separation": {
                                     "type": "object",
                                     "properties": {
                                         "dx": {
@@ -381,7 +430,19 @@
                                     "type": "boolean",
                                     "default": false,
                                     "description": "Do you want to save cluster check plots?"
-                                }
+                                },
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "pol_file"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "separation"
+                                        ]
+                                    }
+                                ]
                             }
                         }
                     },
