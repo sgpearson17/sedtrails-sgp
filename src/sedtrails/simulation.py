@@ -8,13 +8,11 @@ from sedtrails.transport_converter.format_converter import FormatConverter, Sedt
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
-from sedtrails.pathway_visualizer.visualization_utils import plot_particle_trajectory
 from typing import Any
 
 
@@ -335,8 +333,8 @@ class Simulation:
             # Saving and plotting
             # TODO: enable saving and plotting again: addapt writer with structure issue 297
             # TODO: remove default insertion on configuration retrieval
-            interval_output = self._controller.get('output.interval_output', '1H')
-            interval_plot = self._controller.get('output.interval_plot', '1D')
+            # interval_output = self._controller.get('output.interval_output', '1H')
+            # interval_plot = self._controller.get('output.interval_plot', '1D')
 
             # # Data manager
             # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > (
