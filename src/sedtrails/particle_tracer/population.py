@@ -7,6 +7,7 @@ from .particle_seeder import PopulationConfig, ParticleFactory
 from matplotlib.path import Path
 from scipy.spatial import ConvexHull
 
+
 @dataclass
 class ParticlePopulation:
     """
@@ -61,7 +62,6 @@ class ParticlePopulation:
         hull = ConvexHull(coords)
         self._outer_envelope = Path(coords[hull.vertices])
 
-
     def update_information(
         self, current_time: ndarray, mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
     ) -> None:
@@ -95,7 +95,6 @@ class ParticlePopulation:
         if not np.isnan(bed_level).all():
             self.particles['bed_level'] = self._field_interpolator(bed_level, self.particles['x'], self.particles['y'])
 
-
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
         This method is a placeholder and should be implemented with the actual logic for updating burial depth.
@@ -105,15 +104,14 @@ class ParticlePopulation:
         # FIXME: 'z' (or vertical particle position) needs to be initialized by the seeder
         # Placeholder: Initialize 'z' position based on bed level
         if 'z' not in self.particles:
-            self.particles['z'] = self.particles['bed_level'] - np.random.rand(len(self.particles['x'])) * 0.1 
+            self.particles['z'] = self.particles['bed_level'] - np.random.rand(len(self.particles['x'])) * 0.1
 
         # Make sure particles can never be higher than the bed level
-        i_above_bed = (self.particles['z'] > self.particles['bed_level'])
+        i_above_bed = self.particles['z'] > self.particles['bed_level']
         self.particles['z'][i_above_bed] = self.particles['bed_level'][i_above_bed]
 
         # Update burial depth (is always a positive value)
         self.particles['burial_depth'] = self.particles['bed_level'] - self.particles['z']
-
 
     def update_status(self) -> None:
         """
@@ -127,7 +125,8 @@ class ParticlePopulation:
 
         # Compute whether particles are inside (or outside) the domain envelope
         self.particles['is_inside'] = self._outer_envelope.contains_points(
-                np.column_stack((self.particles['x'], self.particles['y'])))
+            np.column_stack((self.particles['x'], self.particles['y']))
+        )
 
         # Compute whether particles are exposed (or buried)
         self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']

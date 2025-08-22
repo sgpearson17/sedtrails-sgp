@@ -233,7 +233,7 @@
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
-                                    "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
+                                    "description": "path to Deltares '.pol; file with list of points to release particles from"
                                 },
                                 "locations": {
                                     "type": "array",
@@ -274,18 +274,17 @@
                                     "type": "string",
                                     "description": "path to Deltares '.pol; file with list of transects (line segments) to release particles from"
                                 },
-                                "lines": {
+                                "segments": {
                                     "type": "array",
                                     "items": {
                                         "type": "string"
                                     },
-                                    "default": [],
-                                    "description": "the enpoints (X,Y coordinates) of a list of line segments to where particles will be released, e.g., '1000,2000 3000,4000'"
+                                    "description": "a list of line segments along which particles are released, e.g., '1000,2000 3000,4000'"
                                 },
                                 "k": {
                                     "type": "number",
                                     "default": 100.0,
-                                    "description": "number of release points to create per transect"
+                                    "description": "number of release points to create per segment"
                                 },
                                 "show_check_plots": {
                                     "type": "boolean",

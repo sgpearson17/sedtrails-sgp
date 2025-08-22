@@ -2,8 +2,16 @@
 Particle Seeding Tool
 =====================
 Manage the creation of particles, their positions (x,y) and distribution.
+Manage the creation of particles, their positions (x,y) and distribution.
 using various release strategies.
 Seeding strategies for positions include:
+- Point: Release particles at a specific locations (x,y).
+- Regular Grid: Release particles in a regular grid pattern based
+    on distances between particles in x and y directions, and the
+    simulation. A mask can be applied to restrict the area of seeding.
+- Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
+- Random: Release particles at random locations (x,y) within an area
+    constrained by a bounding box (xmin, xmax, ymin, ymax).
 - Point: Release particles at a specific locations (x,y).
 - Regular Grid: Release particles in a regular grid pattern based
     on distances between particles in x and y directions, and the
@@ -17,14 +25,34 @@ from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Dict
+from sedtrails.particle_tracer.particle import Particle
+from sedtrails.exceptions import MissingConfigurationParameter
+from typing import List, Tuple, Dict
 import random
 from dataclasses import dataclass, field
+from sedtrails.configuration_interface.find import find_value
 from sedtrails.configuration_interface.find import find_value
 
 
 @dataclass
 class PopulationConfig:
     """
+    A class to represent the seeding parameters of a population of particle.
+    A population is a group of particles that share the same type and seeding strategy.
+
+    Attributes
+    ----------
+    population_config : Dict
+        The configuration dictionary containing the seeding parameters.
+    particle_type : str
+        The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
+    release_start : str
+        The time at which the particles for a given population are released.
+    quantity : int
+        The number of particles to release per release location.
+    strategy_settings : Dict
+        The settings for the seeding strategy, extracted from the configuration.
+        These are any key-value pairs defined under the specific strategy in the configuration.
     A class to represent the seeding parameters of a population of particle.
     A population is a group of particles that share the same type and seeding strategy.
 
@@ -49,8 +77,31 @@ class PopulationConfig:
     release_start: str = field(init=False)  # particle for a given population are released at this time
     quantity: int = field(init=False)  # number of particles to release per release location
     strategy_settings: Dict = field(init=False, default_factory=dict)
+    strategy: str = field(init=False)
+    particle_type: str = field(init=False)
+    release_start: str = field(init=False)  # particle for a given population are released at this time
+    quantity: int = field(init=False)  # number of particles to release per release location
+    strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
+        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
+        if not _strategy:
+            raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
+        self.strategy = next(iter(_strategy))
+        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
+        if not self.strategy_settings:
+            raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
+        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
+        if not _quantity:
+            raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
+        self.quantity = _quantity
+        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
+        if not _release_start:
+            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
+        self.release_start = _release_start
+        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
+        if not self.particle_type:
+            raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
         _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
@@ -81,9 +132,10 @@ class SeedingStrategy(ABC):
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
+
         Parameters
         ----------
-        config : SeedingConfig
+        config : PopulationConfig
             Configuration object containing the seeding parameters.
 
         Returns
@@ -260,7 +312,7 @@ class ParticleFactory:
 
         Parameters
         ----------
-        config : SeedingConfig
+        config : PopulationConfig
             Configuration object containing the seeding parameters.
 
         Returns
@@ -287,6 +339,15 @@ class ParticleFactory:
         if strategy_name.lower() not in STRATEGY_MAP:
             raise ValueError(f'Unknown seeding strategy: {strategy_name}')
         StrategyClass = STRATEGY_MAP[strategy_name.lower()]
+        from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+
+        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
+        STRATEGY_MAP = {
+            'point': PointStrategy(),
+            'random': RandomStrategy(),
+            'grid': GridStrategy(),
+            'transect': TransectStrategy(),
+        }
 
         # computes seeding positions using the strategy in config
         positions = StrategyClass.seed(config)
@@ -305,6 +366,7 @@ class ParticleFactory:
 
 
 # TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
+
 
 if __name__ == '__main__':
     # Example usage

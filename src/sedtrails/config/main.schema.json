@@ -350,6 +350,21 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "grain_diameter": {
+              "type": "number",
+              "default": 2.5e-4,
+              "description": "grain diameter of sediment [m]"
+            },
+            "morphology_factor": {
+              "type": "number",
+              "default": 1.0,
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
+            },
+            "porosity": {
+              "type": "number",
+              "default": 0.4,
+              "description": "porosity of sediment (40% default)"
+            },
             "g": {
               "type": "number",
               "default": 9.81,
@@ -360,7 +375,7 @@
               "default": 0.4,
               "description": "von Karman's constant"
             },
-            "kinetic_viscosity": {
+            "kinematic_viscosity": {
               "type": "number",
               "default": 1.36e-06,
               "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"

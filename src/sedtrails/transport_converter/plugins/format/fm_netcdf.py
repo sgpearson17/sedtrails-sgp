@@ -7,6 +7,7 @@ from scipy.spatial.distance import pdist
 from scipy.spatial import ConvexHull
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from pathlib import Path
 from typing import Dict, Any, List, Union, Optional
 
@@ -65,14 +66,14 @@ class FormatPlugin(BaseFormatPlugin):
     def _compute_grid_metadata(self, x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """
         Compute grid metadata: minimum resolution and outer envelope.
-        
+
         Parameters:
         -----------
         x : np.ndarray
             X-coordinates of grid points
         y : np.ndarray
             Y-coordinates of grid points
-            
+
         Returns:
         --------
         Dict
@@ -80,52 +81,48 @@ class FormatPlugin(BaseFormatPlugin):
         """
         # Stack coordinates for distance calculations
         coords = np.column_stack((x.flatten(), y.flatten()))
-        
+
         # Compute minimum resolution (minimum distance between any two points)
         distances = pdist(coords)
         min_resolution = np.min(distances)
-        
+
         # FIXME: temporary solution!
         # Compute outer envelope using convex hull
         hull = ConvexHull(coords)
         outer_envelope = coords[hull.vertices]
-        
-        return {
-            'min_resolution': min_resolution,
-            'outer_envelope': outer_envelope
-        }
+
+        return {'min_resolution': min_resolution, 'outer_envelope': outer_envelope}
 
     def _decompress_time(self, time_info: Dict) -> Dict:
         """
         Apply morfac decompression to time values.
-        
+
         Parameters:
         -----------
         time_info : Dict
             Original time information
-            
+
         Returns:
         --------
         Dict
             Time information with decompressed time values
         """
         decompressed_info = time_info.copy()
-        
+
         # Apply morfac decompression to time values
         time_start = time_info['time_start']
         decompressed_time_values = time_start + (time_info['time_values'] - time_start) * self.morfac
-        
+
         # Update time info with decompressed values
         decompressed_info['time_values'] = decompressed_time_values
         decompressed_info['time_start'] = decompressed_time_values[0]
         decompressed_info['time_end'] = decompressed_time_values[-1]
-        
+
         # Recalculate seconds since reference with decompressed times
-        decompressed_info['seconds_since_reference'] = np.array([
-            float((t - time_info['reference_date']) / np.timedelta64(1, 's')) 
-            for t in decompressed_time_values
-        ])
-        
+        decompressed_info['seconds_since_reference'] = np.array(
+            [float((t - time_info['reference_date']) / np.timedelta64(1, 's')) for t in decompressed_time_values]
+        )
+
         return decompressed_info
 
     def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
@@ -137,7 +134,7 @@ class FormatPlugin(BaseFormatPlugin):
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
-            Reading interval in seconds  
+            Reading interval in seconds
 
         Returns:
         --------
@@ -153,9 +150,7 @@ class FormatPlugin(BaseFormatPlugin):
         time_info = self._decompress_time(time_info)
 
         # Determine if we need to slice based on current_time and reading_interval
-        time_start_idx, time_end_idx = self._calculate_time_slice(
-            current_time, reading_interval, time_info
-        )
+        time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
 
         # Apply time slicing if needed
         if time_start_idx is not None or time_end_idx is not None:
@@ -213,6 +208,16 @@ class FormatPlugin(BaseFormatPlugin):
             'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
         }
 
+        # Create SedtrailsMetadata object
+        metadata = SedtrailsMetadata(
+            flowfield_domain={
+                'x_min': np.min(mapped_data['x']),
+                'x_max': np.max(mapped_data['x']),
+                'y_min': np.min(mapped_data['y']),
+                'y_max': np.max(mapped_data['y']),
+            }
+        )
+
         # Create SedtrailsData object
         sedtrails_data = SedtrailsData(
             times=seconds_since_ref,
@@ -229,36 +234,35 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
-            min_resolution=grid_metadata['min_resolution'],
-            outer_envelope=grid_metadata['outer_envelope'],
+            metadata=metadata,
         )
 
         return sedtrails_data
 
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
-        
+
         # If no chunking parameters provided, load entire file
         if current_time is None or reading_interval is None:
             return None, None
-            
+
         # If reading_interval is 0 or very large, load entire file
         if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
             return None, None
-            
+
         times_array = time_info['seconds_since_reference']
-        
+
         # Find current time index
         current_idx = np.searchsorted(times_array, current_time)
-        
+
         # Calculate chunk size based on reading interval and NetCDF timestep
         netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
         chunk_steps = max(10, int(reading_interval / netcdf_timestep))
-        
+
         # Calculate start and end indices with some buffer
         start_idx = max(0, current_idx - chunk_steps // 4)
         end_idx = min(len(times_array), current_idx + chunk_steps)
-        
+
         return start_idx, end_idx
 
     def load(self) -> Any:
@@ -344,7 +348,9 @@ class FormatPlugin(BaseFormatPlugin):
             'num_times': len(time_values),
         }
 
-    def _map_dfm_variables(self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None) -> Dict:
+    def _map_dfm_variables(
+        self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
+    ) -> Dict:
         """
         Map Delft3D Flexible Mesh variables to SedtrailsData structure.
 
@@ -367,7 +373,11 @@ class FormatPlugin(BaseFormatPlugin):
 
         # Get time information
         num_times = time_info['num_times']
-        time_slice = slice(time_start_idx, time_end_idx) if time_start_idx is not None or time_end_idx is not None else slice(None)
+        time_slice = (
+            slice(time_start_idx, time_end_idx)
+            if time_start_idx is not None or time_end_idx is not None
+            else slice(None)
+        )
 
         # Variable mapping for DFM files
         variable_map = {
