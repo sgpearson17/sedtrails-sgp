@@ -20,6 +20,8 @@ particles:
       vanwesten:
         beta: 0.3
     seeding:
+      burial_depth:
+        constant: 3.0  # constant burial depth in meters. When set to 0, no computations are done.
       release_start: 2025-06-18 13:00:00
       quantity: 1
       strategy: 
