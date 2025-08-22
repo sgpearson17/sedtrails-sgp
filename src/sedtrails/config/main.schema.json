@@ -454,10 +454,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "population": {
-          "$ref": "urn:sedtrails:config:population.schema.json"
+        "populations": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:sedtrails:config:population.schema.json"
+          },
+          "minItems": 1,
+          "description": "list of particle populations to simulate."
         }
-      }
+      },
+      "required": [
+        "populations"
+      ]
     },
     "pathways": {
       "type": "object",
@@ -499,10 +507,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "timestep": {
-          "type": "number",
-          "default": 3600.0,
-          "description": "time step duration in seconds. 3600 is default for sediment transport"
+        "interval": {
+          "type": "string",
+          "description": "save interval for output files, e.g., '1H' for 1 hour. The valure must be a multiple of time.timestep. If not provide the value of 'time.timestep' is used."
         },
         "store_tracks": {
           "type": "boolean",
