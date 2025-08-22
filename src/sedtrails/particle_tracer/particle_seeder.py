@@ -83,27 +83,24 @@ class PopulationConfig:
     strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
+        _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
-        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
+        self.strategy_settings = find_value(self.population_config, f'seeding.strategy.{self.strategy}', {})
         if not self.strategy_settings:
             raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
+        _quantity = find_value(self.population_config, 'seeding.quantity', {})
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
+        _release_start = find_value(self.population_config, 'seeding.release_start', {})
         if not _release_start:
             raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
         self.release_start = _release_start
-        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
+        self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
-        if not _strategy:
-            raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
 
 
 class SeedingStrategy(ABC):
