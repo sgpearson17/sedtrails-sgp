@@ -107,7 +107,7 @@ class SedtrailsData:
             
             # Optional: Add validation
             if timestep <= 0:
-                warnings.warn(f"Calculated timestep is non-positive: {timestep}")
+                warnings.warn(f"Calculated timestep is non-positive: {timestep}", stacklevel=1)
 
             # Check if we have timesteps deviating from the median
             tolerance = 1e-6
@@ -116,7 +116,8 @@ class SedtrailsData:
             
             if len(deviating_indices) > 0:
                 warnings.warn(
-                    f"Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)"
+                    f"Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)",
+                    stacklevel=2
                     )                
         
         self.metadata.add('timestep', timestep)
