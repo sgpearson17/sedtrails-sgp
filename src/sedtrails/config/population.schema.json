@@ -327,9 +327,14 @@
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
                                 },
+                                "nlocations": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "description": "number of random points to generate within the bounding box or polygon"
+                                },
                                 "seed": {
                                     "type": "number",
-                                    "default": 1,
+                                    "default": 42,
                                     "description": "seed for random number generator"
                                 },
                                 "show_check_plots": {
@@ -343,6 +348,9 @@
                                     "description": "Do you want to save cluster check plots?"
                                 }
                             },
+                            "required": [
+                                "nlocations"
+                            ],
                             "oneOf": [
                                 {
                                     "required": [
