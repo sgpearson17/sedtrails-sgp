@@ -1,7 +1,5 @@
-import time
 import os
 import sys
-import numpy as np
 from tqdm import tqdm
 
 from sedtrails.particle_tracer.particle_seeder import PopulationConfig
@@ -10,7 +8,6 @@ from sedtrails.transport_converter.format_converter import FormatConverter, Sedt
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
@@ -125,7 +122,6 @@ class Simulation:
             kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity', 1.36e-6),
             water_density=self._controller.get('physics.constants.rho_w', 1027.0),
             particle_density=self._controller.get('physics.constants.rho_s', 2650.0),
-            # TODO: These parameters are missing from json schema.
             porosity=self._controller.get('physics.porosity', 0.4),
             grain_diameter=self._controller.get('physics.grain_diameter', 2.5e-4),
             morfac=self._controller.get('physics.morfac', 1.0),
@@ -338,6 +334,7 @@ class Simulation:
 
             # Saving and plotting
             # TODO: enable saving and plotting again: addapt writer with structure issue 297
+            # TODO: remove default insertion on configuration retrieval
             interval_output = self._controller.get('output.interval_output', '1H')
             interval_plot = self._controller.get('output.interval_plot', '1D')
 
@@ -383,5 +380,7 @@ class Simulation:
 
 
 if __name__ == '__main__':
-    sim = Simulation(config_file='examples/config.example_bart.yaml')
+    sim = Simulation(config_file='examples/config.example.yaml')
     sim.run()
+
+    # NOTE: This will failed on the output saving. But that's success
