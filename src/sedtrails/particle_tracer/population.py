@@ -55,7 +55,11 @@ class ParticlePopulation:
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
-        self.particles = {'x': np.array([p.x for p in _particles]), 'y': np.array([p.y for p in _particles])}
+        self.particles = {
+            'x': np.array([p.x for p in _particles]),
+            'y': np.array([p.y for p in _particles]),
+            'release_time': np.array([p.release_time for p in _particles]),
+        }
 
         # store the outer envelope of the domain
         coords = np.column_stack((self.field_x, self.field_y))
