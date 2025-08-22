@@ -400,22 +400,9 @@ class FormatPlugin(BaseFormatPlugin):
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
 
-        # Get bed level (typically not time-dependent)
-        var_name = variable_map['bed_level']
-        if var_name in self.input_data:
-            bed_level_var = self.input_data[var_name]
-            if 'time' in bed_level_var.dims:
-                # If bed level has a time dimension, take the first time step
-                data['bed_level'] = bed_level_var.isel(time=0).values
-            else:
-                data['bed_level'] = bed_level_var.values
-        else:
-            # Default to zeros if not found
-            data['bed_level'] = np.zeros(grid_shape)
-            print(f"Warning: Variable '{var_name}' not found, using zeros")
-
         # Extract time-dependent variables
         time_dependent_vars = [
+            'bed_level',
             'water_depth',
             'mean_bed_shear_stress',
             'max_bed_shear_stress',
