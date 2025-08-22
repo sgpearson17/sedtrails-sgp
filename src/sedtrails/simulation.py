@@ -2,10 +2,13 @@ import time
 import os
 import sys
 import numpy as np
+from tqdm import tqdm
 
+from sedtrails.particle_tracer.particle_seeder import PopulationConfig
+from sedtrails.particle_tracer.population import ParticlePopulation
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
-from sedtrails.particle_tracer.data_retriever import FlowFieldDataRetriever
+from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.particle import Sand
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
@@ -14,6 +17,7 @@ from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.pathway_visualizer.visualization_utils import plot_particle_trajectory
 from typing import Any
 
 
@@ -55,6 +59,7 @@ class Simulation:
 
         self._start_time = None
         self._config_is_read = False
+        self._population_config = None
 
         # Validate config file exists early
         if not os.path.exists(config_file):
@@ -93,6 +98,7 @@ class Simulation:
             'input_file': self._controller.get('folder_settings.input_data'),
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
+            'morfac': self._controller.get('general.input_model.morfac', 1.0),
         }
 
         return format_config
@@ -110,15 +116,17 @@ class Simulation:
         from sedtrails.transport_converter.physics_converter import PhysicsConfig
 
         config = PhysicsConfig(
-            tracer_method=self._controller.get('physics.tracer_method'),
-            gravity=self._controller.get('physics.constants.g'),
-            von_karman_constant=self._controller.get('physics.constants.von_karman'),
-            kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity'),
-            water_density=self._controller.get('physics.constants.rho_w'),
-            particle_density=self._controller.get('physics.constants.rho_s'),
-            porosity=self._controller.get('physics.porosity'),
-            grain_diameter=self._controller.get('physics.grain_diameter'),
-            morfac=self._controller.get('physics.morfology_morfac'),
+            tracer_method=self._controller.get('physics.tracer_method', 'van_westen'),
+            gravity=self._controller.get('physics.constants.g', 9.81),
+            von_karman_constant=self._controller.get('physics.constants.von_karman', 0.40),
+            kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity', 1.36e-6),
+            water_density=self._controller.get('physics.constants.rho_w', 1027.0),
+            particle_density=self._controller.get('physics.constants.rho_s', 2650.0),
+            # TODO: These parameters are missing from json schema.
+            porosity=self._controller.get('physics.porosity', 0.4),
+            grain_diameter=self._controller.get('physics.grain_diameter', 2.5e-4),
+            morfac=self._controller.get('physics.morfac', 1.0),
+            # trapped_exposed_method=self._controller.get('physics.trapped_exposed_method', 'reduced_velocity'), # other option; 'probabilistic_exposure'
         )
 
         return config
@@ -131,6 +139,15 @@ class Simulation:
         if not self._config_is_read:
             self._controller.load_config(self._config_file)
         return self._controller.get_config()  # delagates to the controller
+
+    @property
+    def population_config(self):
+        """
+        Returns the particle population configuration.
+        """
+        if self._population_config is None:
+            self._population_config = self.config.get('particles', {}).get('population', {})
+        return self._population_config
 
     @property
     def start_time(self):
@@ -198,12 +215,13 @@ class Simulation:
             warnings.warn(f'Key "{key}" not found in configuration file', UserWarning, stacklevel=2)
         return value
 
+
     def run(self):
         """
-        Run the particle simulation using both original and Numba-optimized implementations.
+        Execute the complete particle simulation workflow.
         """
 
-        from tqdm import tqdm
+        # ------------- STEP 0: Loading configuration -----------------
 
         if not self._config_is_read:  # assure config is read only once
             self._controller.load_config(self._config_file)
@@ -224,20 +242,13 @@ class Simulation:
             }
         )
 
-        if not self._config_is_read:  # assure config is read only once
-            self.logger_manager.log_simulation_state(
-                {'status': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
-            )
-            self._controller.load_config(self._config_file)
-            self._config_is_read = True
+        # Extract population configuration once
+        pop_config = self.population_config
+        tracer_methods = pop_config.get('tracer_methods', {})
+        transport_prob_config = pop_config.get('transport_probability', {})
+        # seeding_strategy = pop_config.get('seeding', {}).get('strategy', {})
 
-        sedtrails_data = self.format_converter.convert_to_sedtrails()
-        # Add physics calculations to the SedtrailsData
-        self.physics_converter.convert_physics(sedtrails_data)
-        # Initialize flow field data retriever
-        retriever = FlowFieldDataRetriever(sedtrails_data)
-        # TODO: shouldn't this be read from config? https://github.com/sedtrails/sedtrails/issues/222
-        retriever.flow_field_name = 'suspended_velocity'
+        # ------------- STEP 1: Time configuration ----------------------
 
         start_time = self._controller.get('time.start', None)
         if start_time is None:
@@ -247,146 +258,168 @@ class Simulation:
             start_time,
             duration=Duration(self._controller.get('time.duration')),
             time_step=Duration(self._controller.get('time.timestep')),
+            read_input_timestep=Duration(self._controller.get('time.read_input_timestep')),
         )
 
-        self.logger_manager.log_simulation_state(
-            {
-                'state': 'data_conversion_completed',
-                'num_timesteps': len(sedtrails_data.times),
-                'flow_field_name': 'suspended_velocity',
-                'start_time': start_time,
-                'simulation_duration_seconds': simulation_time.duration.seconds,
-                'simulation_timestep_seconds': simulation_time.time_step.seconds,
-            }
-        )
-
-        # Particle seeding parameters
-        # TODO: this should be handle by the seeding tool.
-        # TODO: PARTICLE SEEDING
-        # particle_positions = {}
-        strategy = self._controller.get('particles.population.seeding.strategy')
-        if 'point' in strategy:
-            for point in strategy['point']['locations']:
-                _point = point.split(',')
-
-                sand = Sand()
-                sand.x = float(_point[0])
-                sand.y = float(_point[1])
-                # sand.release_time = simulation_time.start.seconds
-                sand.name = 'Sand Particle'  # Set release time to start of simulation
-                self.particles.append(sand)
-
-                self.logger_manager.log_simulation_state(
-                    {
-                        'state': 'particles_initialized',
-                        'num_particles': 1,
-                        'particle_positions': {},
-                        'seeding_strategy': strategy,
-                    }
-                )
-
-        # Store trajectory1
-        trajectory_numba_x = [self.particles[0].x]  # TODO: must handle multiple particles
-        trajectory_numba_y = [self.particles[0].y]
-
-        # First get the initial flow data to create calculator
-        flow_data = retriever.get_flow_field(simulation_time.start)
-
-        # Create and compile the numba calculator - this will include compilation time
-        self.logger_manager.log_simulation_state(
-            {
-                'state': 'numba_compilation_started',
-                'grid_size_x': len(flow_data['x']),
-                'grid_size_y': len(flow_data['y']),
-            }
-        )
-        compile_start = time.time()
-        numba_calc = create_numba_particle_calculator(grid_x=flow_data['x'], grid_y=flow_data['y'])
-        compile_time = time.time() - compile_start
-        self.logger_manager.log_simulation_state({'status': 'compilation_complete', 'time_sec': round(compile_time, 2)})
-
-        TIME_STEP_SECONDS = simulation_time.time_step.seconds
-        # Warm up with one calculation to trigger JIT compilation
-        self.logger_manager.log_simulation_state({'status': 'warming_up_jit'})
-
-        warmup_start = time.time()
-        _ = numba_calc['update_particles'](
-            np.array([self.particles[0].x]),
-            np.array([self.particles[0].y]),
-            flow_data['u'],
-            flow_data['v'],
-            TIME_STEP_SECONDS,
-        )
-        warmup_time = time.time() - warmup_start
-        self.logger_manager.log_simulation_state({'status': 'warmup_complete', 'time_sec': round(warmup_time, 2)})
-        # Start timer after compilation
+        read_input_seconds = simulation_time.read_input_timestep.seconds
         timer = Timer(simulation_time=simulation_time)
-        for _step in tqdm(range(1, timer.steps + 1), desc='Computing positions', unit='Steps'):
-            # Get flow field at current time
-            flow_data = retriever.get_flow_field(timer.current)
-            # Update particle position using Numba calculator
-            new_x, new_y = numba_calc['update_particles'](
-                np.array([self.particles[0].x]),
-                np.array([self.particles[0].y]),
-                flow_data['u'],
-                flow_data['v'],
-                TIME_STEP_SECONDS,
-            )
+        
+        # Get CFL condition from config
+        cfl_condition = self._controller.get('time.cfl_condition', 0.7)
 
-            # Update particle with new position
-            self.particles[0].x = new_x[0]
-            self.particles[0].y = new_y[0]
+        # ------------- STEP 2: Seeding -------------------
 
-            # Store trajectory
-            trajectory_numba_x.append(self.particles[0].x)
-            trajectory_numba_y.append(self.particles[0].y)
+        # FIXME: Link to Yaml configuration
+        # FIXME: Yaml configuration does not support multiple populations (?)
 
-            ## TEST data manager
-            self.data_manager.add_data(
-                particle_id=self.particles[0].id,
-                time=timer.current,
-                x=self.particles[0].x,
-                y=self.particles[0].y,
-            )
+        # Example usage of the ParticleFactory  to create population of particles
+        config_random = PopulationConfig(
+            {
+                'population': {
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'strategy': {'random': {'bbox': '70950,450200,71050,450300', 'nlocations': 10, 'seed': 42}},
+                        'quantity': 1,
+                        'release_start': 1,
+                    },
+                }
+            }
+        )
 
-            # Advance timer
+        # Load SedTRAILS data for 'x' and 'y'
+        sedtrails_data = self.format_converter.convert_to_sedtrails(
+            current_time=start_time, reading_interval=1)
+
+        populations = [ParticlePopulation(
+            field_x=sedtrails_data.x,
+            field_y=sedtrails_data.y,
+            population_config=config_random,
+        )]
+
+        trajectory_x = []
+        trajectory_y = []
+
+        # ------------- STEP 3: Main simulation loop ---------------------
+
+        # Calculate total simulation duration for progress bar
+        step_count = 0
+        sedtrails_data = None
+        total_duration = simulation_time.end - simulation_time.start
+        pbar = tqdm(total=100, desc='Computing positions', unit='%', bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]')
+        
+        # Main simulation loop with variable timestep
+        while not timer.stop:
+            step_count += 1
+            
+            # Check if current time is within loaded SedTRAILS data
+            current_time_seconds = timer.current
+            if (sedtrails_data is None or 
+                current_time_seconds < sedtrails_data.times[0] or 
+                current_time_seconds > sedtrails_data.times[-2]):
+
+                # Convert to SedTRAILS format
+                sedtrails_data = self.format_converter.convert_to_sedtrails(
+                    current_time=current_time_seconds, reading_interval=read_input_seconds)
+
+                # Convert physics fields with transport probability configuration
+                self.physics_converter.convert_physics(sedtrails_data, transport_prob_config)
+
+                # Create new FieldDataRetriever with updated data
+                retriever = FieldDataRetriever(sedtrails_data)
+
+
+            # Collect flow fields for CFL computation
+            flow_data_list = []
+            for method in tracer_methods:
+                for flow_field_name in tracer_methods[method]['flow_field_name']:
+                    flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
+
+            # Compute CFL-based timestep across all flow fields
+            if cfl_condition > 0:
+                timer.compute_cfl_timestep(flow_data_list, sedtrails_data, cfl_condition)
+
+            # ============== MAIN LOOP ===============
+            for population in populations:
+                for method in tracer_methods:
+                    for flow_field_name in tracer_methods[method]['flow_field_name']:
+
+                        # Obtain scalar field information
+                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                        bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                        transport_prob = retriever.get_scalar_field(timer.current, flow_field_name.replace('velocity', 'probability'))['magnitude']
+
+                        # Update information at particle positions
+                        population.update_information(
+                            current_time=timer.current,
+                            mixing_depth=mixing_depth,
+                            bed_level=bed_level,
+                            transport_probability=transport_prob
+                        )
+            
+                        # Update particle burial depth
+                        population.update_burial_depth()
+            
+                        # Determining status
+                        population.update_status()
+
+                        # Get flow field information
+                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+
+                        # Update particle position
+                        population.update_position(flow_field=flow_field, 
+                                                   current_timestep=timer.current_timestep)
+
             timer.advance()
 
-        simulation_end_time = time.time()
-        total_time = simulation_end_time - compile_start  # Total time including compilation
+            # TODO: Save to trajectory and Netcdf here...
+            # data_manager.add_positions(population)
+
+            # Store trajectory
+            trajectory_x.append(population.particles['x'].copy())
+            trajectory_y.append(population.particles['y'].copy())
+            
+            # TEMP: Visualize particle positions (only at user interval)
+            plot_interval = 864000  # seconds; adjust as needed
+            if step_count == 1 or (timer.current - simulation_time.start) // plot_interval > ((timer.current - simulation_time.start - timer.current_timestep) // plot_interval):
+                plot_particle_trajectory(
+                    flow_data=flow_field,
+                    trajectory_x=trajectory_x,
+                    trajectory_y=trajectory_y,
+                    title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {step_count} steps',
+                    save_path=f"{self.data_manager.output_dir}/trajectory_plot_{step_count:05d}.png",
+                )
+
+            # Calculate progress percentage based on simulation time
+            elapsed_time = timer.current - simulation_time.start
+            progress_percent = (elapsed_time / total_duration) * 100
+            
+            # Update progress bar
+            pbar.n = progress_percent
+            pbar.set_postfix({
+                'Step': step_count,
+                'Time': f'{timer.current:.0f}s',
+                'dt': f'{timer.current_timestep:.2f}s',
+                # 'Pos': f'({self.particles[0].x:.0f}, {self.particles[0].y:.0f})'
+            })
+            pbar.refresh()
+
+        # =====================
+        # End of Simulation
+
+        pbar.close()
 
         self.logger_manager.log_simulation_state(
             {
                 'status': 'simulation_complete',
-                'total_steps': timer.steps,
-                'total_time_sec': round(total_time, 2),
+                'total_steps': step_count,
+                'total_time_sec': round(time.time(), 2),
                 'final_position': f'({self.particles[0].x:.2f}, {self.particles[0].y:.2f})',
+                'cfl_condition': cfl_condition,
             }
         )
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
-
-        # Convert trajectory to numpy arrays
-        trajectory_numba_x = np.array(trajectory_numba_x)
-        trajectory_numba_y = np.array(trajectory_numba_y)
-
-        self.logger_manager.log_simulation_state(
-            {'status': 'creating_visualization', 'trajectory_points': len(trajectory_numba_x)}
-        )
-
-        # Plot flow field with particle trajectory using the function
-        final_flow = retriever.get_flow_field(timer.current)
-
-        from sedtrails.pathway_visualizer.visualization_utils import plot_particle_trajectory
-
-        plot_particle_trajectory(
-            flow_data=final_flow,
-            trajectory_x=trajectory_numba_x,
-            trajectory_y=trajectory_numba_y,
-            title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.steps} steps',
-            save_path=self.data_manager.output_dir + '/trajectory_plot.png',
-        )
 
         self.logger_manager.log_simulation_state(
             {
@@ -397,5 +430,5 @@ class Simulation:
 
 
 if __name__ == '__main__':
-    sim = Simulation(config_file='examples/config.example.yaml')
+    sim = Simulation(config_file='examples/config.example_bart.yaml')
     sim.run()
