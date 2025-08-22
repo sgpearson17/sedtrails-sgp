@@ -9,6 +9,7 @@ config_random = PopulationConfig(
         'characteristics': {'grain_size': 0.01, 'density': 2650.0},
         'tracer_methods': {'vanwesten': {'beta': 0.3}},
         'seeding': {
+            'burial_depth': {'constant': 3.0},  # constant burial depth in meters
             'release_start': '2025-06-18 13:00:00',
             'quantity': 1,
             'strategy': {'point': {'locations': ['40000,17000']}},

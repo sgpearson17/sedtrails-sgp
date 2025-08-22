@@ -59,6 +59,7 @@ class ParticlePopulation:
             'x': np.array([p.x for p in _particles]),
             'y': np.array([p.y for p in _particles]),
             'release_time': np.array([p.release_time for p in _particles]),
+            'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
 
         # store the outer envelope of the domain

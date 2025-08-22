@@ -75,11 +75,7 @@ class PopulationConfig:
     particle_type: str = field(init=False)
     release_start: str = field(init=False)  # particle for a given population are released at this time
     quantity: int = field(init=False)  # number of particles to release per release location
-    strategy_settings: Dict = field(init=False, default_factory=dict)
-    strategy: str = field(init=False)
-    particle_type: str = field(init=False)
-    release_start: str = field(init=False)  # particle for a given population are released at this time
-    quantity: int = field(init=False)  # number of particles to release per release location
+    burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
@@ -101,6 +97,9 @@ class PopulationConfig:
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
+        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
+        if not _burial_depth:
+            raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
 
 
 class SeedingStrategy(ABC):
@@ -331,6 +330,7 @@ class ParticleFactory:
         }
 
         # computes seeding positions using the strategy in config
+        burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
         particles = []
         for qty, x, y in positions:
@@ -338,7 +338,7 @@ class ParticleFactory:
                 p = ParticleClass()
                 p.x = x
                 p.y = y
-
+                p.burial_depth = burial_depth
                 p.release_time = getattr(config, 'release_start', None)
 
                 particles.append(p)

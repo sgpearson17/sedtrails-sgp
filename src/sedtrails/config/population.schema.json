@@ -194,6 +194,9 @@
                     "type": "object",
                     "additionalProperties": false,
                     "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
+                    "default": {
+                        "constant": 0
+                    },
                     "properties": {
                         "random": {
                             "type": "number",
