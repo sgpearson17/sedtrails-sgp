@@ -69,8 +69,15 @@ class Simulation:
         try:
             self._controller = ConfigurationController(self._config_file)
             self._controller.load_config(self._config_file)
-            self._config_is_read = True
             output_dir = self._controller.get('folder_settings.output_dir', 'results')
+
+            self.logger_manager = LoggerManager(output_dir)
+            self._controller = ConfigurationController(self._config_file, self.logger_manager)
+            self.logger_manager.setup_logger()
+            self._controller.log_after_load_config()
+
+            self._config_is_read = True
+            
 
         except Exception:
             # Global exception handler will catch and log this
@@ -82,9 +89,7 @@ class Simulation:
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()
         self.particles: list[Particle] = []  # List to hold particles
-
-        self.logger_manager = LoggerManager(output_dir)
-        self.logger_manager.setup_logger()
+        
 
         # Setup global exception handling
         setup_global_exception_logging(self.logger_manager)
@@ -221,56 +226,27 @@ class Simulation:
         Execute the complete particle simulation workflow.
         """
 
-        # ------------- STEP 0: Loading configuration -----------------
-
+        # Loading configuration 
         if not self._config_is_read:  # assure config is read only once
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
-            self.logger_manager.log_simulation_state(
-                {'state': 'config_loading', 'config_file_path': self._config_file, 'timestamp': time.time()}
-            )
-
-        # Log the command that started the simulation
-        self.logger_manager.log_simulation_state(
-            {
-                'status': 'simulation_started',
-                'command': ' '.join(sys.argv),
-                'config_file': self._config_file,
-                'working_directory': os.getcwd(),
-                'python_version': sys.version.split()[0],
-            }
-        )
-
-        # Extract population configuration once
-        pop_config = self.population_config
-        tracer_methods = pop_config.get('tracer_methods', {})
-        transport_prob_config = pop_config.get('transport_probability', {})
-        # seeding_strategy = pop_config.get('seeding', {}).get('strategy', {})
-
-        # ------------- STEP 1: Time configuration ----------------------
-
-        start_time = self._controller.get('time.start', None)
-        if start_time is None:
-            start_time = '1970-01-01 00:00:00'  # TODO: This should be the start of flow field time series
-
+        # Time configuration
         simulation_time = Time(
-            start_time,
+            _start=self._controller.get('time.start'),
             duration=Duration(self._controller.get('time.duration')),
             time_step=Duration(self._controller.get('time.timestep')),
             read_input_timestep=Duration(self._controller.get('time.read_input_timestep')),
+            cfl_condition=self._controller.get('time.cfl_condition'),
         )
 
-        read_input_seconds = simulation_time.read_input_timestep.seconds
         timer = Timer(simulation_time=simulation_time)
-        
-        # Get CFL condition from config
-        cfl_condition = self._controller.get('time.cfl_condition', 0.7)
 
-        # ------------- STEP 2: Seeding -------------------
+        # FIXME: SEEDING!
 
         # FIXME: Link to Yaml configuration
         # FIXME: Yaml configuration does not support multiple populations (?)
+        # INCLUDE READING POPULATION CONFIG HERE
 
         # Example usage of the ParticleFactory  to create population of particles
         config_random = PopulationConfig(
@@ -286,9 +262,10 @@ class Simulation:
             }
         )
 
-        # Load SedTRAILS data for 'x' and 'y'
+
+        # Load SedTRAILS data for 'x' and 'y' (needed for population seerder)
         sedtrails_data = self.format_converter.convert_to_sedtrails(
-            current_time=start_time, reading_interval=1)
+            current_time=simulation_time._start, reading_interval=1)
 
         populations = [ParticlePopulation(
             field_x=sedtrails_data.x,
@@ -296,20 +273,18 @@ class Simulation:
             population_config=config_random,
         )]
 
-        trajectory_x = []
-        trajectory_y = []
-
-        # ------------- STEP 3: Main simulation loop ---------------------
-
-        # Calculate total simulation duration for progress bar
-        step_count = 0
+        # Set initial values
         sedtrails_data = None
-        total_duration = simulation_time.end - simulation_time.start
-        pbar = tqdm(total=100, desc='Computing positions', unit='%', bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]')
+        output_written = False
+
+        # Initialize progress bar
+        pbar = tqdm(
+            total=100, desc='Computing positions', unit='%', 
+            bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]'
+            )
         
         # Main simulation loop with variable timestep
         while not timer.stop:
-            step_count += 1
             
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
@@ -319,29 +294,35 @@ class Simulation:
 
                 # Convert to SedTRAILS format
                 sedtrails_data = self.format_converter.convert_to_sedtrails(
-                    current_time=current_time_seconds, reading_interval=read_input_seconds)
+                    current_time=current_time_seconds, 
+                    reading_interval=simulation_time.read_input_timestep.seconds
+                    )
 
                 # Convert physics fields with transport probability configuration
-                self.physics_converter.convert_physics(sedtrails_data, transport_prob_config)
+                self.physics_converter.convert_physics(
+                    sedtrails_data=sedtrails_data, 
+                    transport_prob_config=self.population_config.get('transport_probability')
+                    )
 
                 # Create new FieldDataRetriever with updated data
                 retriever = FieldDataRetriever(sedtrails_data)
 
 
             # Collect flow fields for CFL computation
+            tracer_methods = self._controller.get('particles.population.tracer_methods', {})
+            flow_field_names = self._controller.get('particles.population.tracer_methods', {}).get('flow_field_name', [])
+
             flow_data_list = []
-            for method in tracer_methods:
-                for flow_field_name in tracer_methods[method]['flow_field_name']:
-                    flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
+            for flow_field_name in flow_field_names:
+                flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
 
             # Compute CFL-based timestep across all flow fields
-            if cfl_condition > 0:
-                timer.compute_cfl_timestep(flow_data_list, sedtrails_data, cfl_condition)
+            timer.compute_cfl_timestep(flow_data_list, sedtrails_data)
 
-            # ============== MAIN LOOP ===============
+            # Main loop
             for population in populations:
                 for method in tracer_methods:
-                    for flow_field_name in tracer_methods[method]['flow_field_name']:
+                    for flow_field_name in flow_field_names:
 
                         # Obtain scalar field information
                         mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
@@ -371,63 +352,42 @@ class Simulation:
 
             timer.advance()
 
-            # TODO: Save to trajectory and Netcdf here...
-            # data_manager.add_positions(population)
+            # Saving and plotting
+            interval_output = self._controller.get('output.interval_output', '1H')
+            interval_plot = self._controller.get('output.interval_plot', '1D')
 
-            # Store trajectory
-            trajectory_x.append(population.particles['x'].copy())
-            trajectory_y.append(population.particles['y'].copy())
+            # Data manager
+            if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > ((timer.current - simulation_time.start - timer.current_timestep) // interval_output):
+                self.data_manager.add_data(????)
             
-            # TEMP: Visualize particle positions (only at user interval)
-            plot_interval = 864000  # seconds; adjust as needed
-            if step_count == 1 or (timer.current - simulation_time.start) // plot_interval > ((timer.current - simulation_time.start - timer.current_timestep) // plot_interval):
+            # Plotting
+            if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_plot > ((timer.current - simulation_time.start - timer.current_timestep) // interval_plot):
                 plot_particle_trajectory(
                     flow_data=flow_field,
-                    trajectory_x=trajectory_x,
-                    trajectory_y=trajectory_y,
-                    title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {step_count} steps',
-                    save_path=f"{self.data_manager.output_dir}/trajectory_plot_{step_count:05d}.png",
+                    trajectory_x=self.data_manager.get_trajectory_x()???,
+                    trajectory_y=self.data_manager.get_trajectory_y()???,
+                    title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.step_count} steps',
+                    save_path=f"{self.data_manager.output_dir}/trajectory_plot_{timer.step_count:05d}.png",
                 )
 
             # Calculate progress percentage based on simulation time
             elapsed_time = timer.current - simulation_time.start
-            progress_percent = (elapsed_time / total_duration) * 100
+            progress_percent = (elapsed_time / simulation_time.duration) * 100
             
             # Update progress bar
             pbar.n = progress_percent
             pbar.set_postfix({
-                'Step': step_count,
+                'Step': timer.step_count,
                 'Time': f'{timer.current:.0f}s',
                 'dt': f'{timer.current_timestep:.2f}s',
-                # 'Pos': f'({self.particles[0].x:.0f}, {self.particles[0].y:.0f})'
             })
             pbar.refresh()
 
-        # =====================
         # End of Simulation
-
         pbar.close()
-
-        self.logger_manager.log_simulation_state(
-            {
-                'status': 'simulation_complete',
-                'total_steps': step_count,
-                'total_time_sec': round(time.time(), 2),
-                'final_position': f'({self.particles[0].x:.2f}, {self.particles[0].y:.2f})',
-                'cfl_condition': cfl_condition,
-            }
-        )
 
         # Finalize results
         self.data_manager.dump()  # Write remaining data to disk
-
-        self.logger_manager.log_simulation_state(
-            {
-                'status': 'visualization_complete',
-                'output_plot_path': self.data_manager.output_dir + '/trajectory_plot.png',
-            }
-        )
-
 
 if __name__ == '__main__':
     sim = Simulation(config_file='examples/config.example_bart.yaml')

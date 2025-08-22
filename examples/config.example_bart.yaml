@@ -35,3 +35,5 @@ particles:
             - "71000,450300"
 output:
   store_tracks: true
+  output_interval: 1H
+  plot_interval: 1D

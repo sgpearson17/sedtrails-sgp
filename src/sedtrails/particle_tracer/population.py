@@ -101,10 +101,9 @@ class ParticlePopulation:
         Currently, it does not perform any operations.
         """
 
-        # FIXME: 'z' (or vertical particle position) needs to be initialized by the seeder
-        # Placeholder: Initialize 'z' position based on bed level
+        # Initialize vertical position ('z') based on bed level and burial depth
         if 'z' not in self.particles:
-            self.particles['z'] = self.particles['bed_level'] - np.random.rand(len(self.particles['x'])) * 0.1
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
         # Make sure particles can never be higher than the bed level
         i_above_bed = self.particles['z'] > self.particles['bed_level']
