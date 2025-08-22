@@ -561,6 +561,7 @@
         }
     ],
     "required": [
+        "name",
         "particle_type",
         "characteristics",
         "tracer_methods",
