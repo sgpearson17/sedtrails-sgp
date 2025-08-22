@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict
 from dataclasses import dataclass
-
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 @dataclass
 class SedtrailsData:
@@ -48,6 +48,8 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    metadata: SedtrailsMetadata
+        Additional metadata for this dataset        
 
     # === PHYSICS FIELDS (added by PhysicsConverter) ===
     # Note: All physics fields match the structure of transport data
@@ -82,11 +84,25 @@ class SedtrailsData:
     max_bed_shear_stress: np.ndarray
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
+    metadata: SedtrailsMetadata
 
     def __post_init__(self):
-        """Initialize container for dynamic physics fields."""
+        """Initialize container for dynamic physics fields and validate metadata."""
+        # Validate metadata field
+        self._validate_metadata()
+        # TODO: do we also need to check that min max values are sensible? i.e. min <= max
+        
         # Create a container for physics data that can be added later
-        self._physics_fields = {}
+        self._physics_fields = {}    
+
+    def _validate_metadata(self):
+        """Validate that metadata field exists and is the correct type."""
+        # Only check that metadata is the right type
+        if not isinstance(self.metadata, SedtrailsMetadata):
+            raise TypeError(
+                f"metadata must be an instance of SedtrailsMetadata, "
+                f"got {type(self.metadata).__name__}"
+            )
 
     def add_physics_field(self, name: str, data):
         """
