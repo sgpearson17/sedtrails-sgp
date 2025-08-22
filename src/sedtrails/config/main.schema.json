@@ -507,9 +507,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "interval": {
+        "save_interval": {
           "type": "string",
-          "description": "save interval for output files, e.g., '1H' for 1 hour. The valure must be a multiple of time.timestep. If not provide the value of 'time.timestep' is used."
+          "default": "1H",
+          "description": "save interval for output files, e.g., '1H' for 1 hour."
+        },
+        "plot_interval": {
+          "type": "string",
+          "default": "1D",
+          "description": "interval for plotting, '1D' for 1 Day."
         },
         "store_tracks": {
           "type": "boolean",
