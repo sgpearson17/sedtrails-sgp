@@ -31,7 +31,6 @@ from typing import List, Tuple, Dict
 import random
 from dataclasses import dataclass, field
 from sedtrails.configuration_interface.find import find_value
-from sedtrails.configuration_interface.find import find_value
 
 
 @dataclass
@@ -105,21 +104,6 @@ class PopulationConfig:
         _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
-        self.strategy = next(iter(_strategy))
-        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
-        if not self.strategy_settings:
-            raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
-        if not _quantity:
-            raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
-        self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
-        if not _release_start:
-            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = _release_start
-        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
-        if not self.particle_type:
-            raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
 
 
 class SeedingStrategy(ABC):
