@@ -2,8 +2,9 @@ import numpy as np
 from typing import Dict
 from dataclasses import dataclass
 import warnings
+from scipy.spatial.distance import pdist
+from scipy.spatial import ConvexHull
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
-
 
 @dataclass
 class SedtrailsData:
@@ -94,6 +95,7 @@ class SedtrailsData:
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
         self._calculate_timestep()
+        self._compute_grid_metadata()        
         self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
 
     def _calculate_timestep(self):
@@ -122,6 +124,28 @@ class SedtrailsData:
         
         self.metadata.add('timestep', timestep)
 
+    def _compute_grid_metadata(self):
+        """
+        Compute grid metadata and add to metadata: minimum resolution and outer envelope.
+        
+        Computes:
+        - min_resolution: minimum distance between any two grid points
+        - outer_envelope: convex hull vertices of the grid points
+        """
+        # Stack coordinates for distance calculations
+        coords = np.column_stack((self.x.flatten(), self.y.flatten()))
+
+        # Compute minimum resolution (minimum distance between any two points)
+        distances = pdist(coords)
+        min_resolution = float(np.min(distances))
+
+        # Compute outer envelope using convex hull
+        hull = ConvexHull(coords)
+        outer_envelope = coords[hull.vertices].tolist()  # Convert to list for JSON serialization
+
+        # Add to metadata
+        self.metadata.add('min_resolution', min_resolution)
+        self.metadata.add('outer_envelope', outer_envelope)
 
     def _validate_metadata(self):
         """Validate that metadata field exists and is the correct type."""
