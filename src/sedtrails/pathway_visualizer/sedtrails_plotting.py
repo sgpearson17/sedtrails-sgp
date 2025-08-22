@@ -11,7 +11,7 @@ Design goals
     (1) trajectories colored by particle age (time since release)
     (2) trajectories colored by distance from a rotated baseline
     (3) an animation of (x, y) at timestep t
-- Export per-particle trajectory statistics 
+- Export per-particle trajectory statistics
 - Provide polygon-based selection helpers and an optional interactive
   polygon drawing tool (matplotlib.widgets.PolygonSelector).
 - Keep dependencies light: numpy + matplotlib only. (matplotlib.path is used
@@ -56,10 +56,11 @@ MIT (c) 2025 SedTRAILS contributors.
 from __future__ import annotations
 
 import csv
-import math
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass as _dataclass
+
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -83,12 +84,14 @@ except Exception:
 # Helper dataclass and utilities
 # -----------------------------------------------------------------------------
 
+
 @dataclass
 class TrajectoryArrays:
     """Container for required arrays to plot & analyze SedTRAILS trajectories."""
-    time: np.ndarray         # shape (N, T)
-    x: np.ndarray            # shape (N, T)
-    y: np.ndarray            # shape (N, T)
+
+    time: np.ndarray  # shape (N, T)
+    x: np.ndarray  # shape (N, T)
+    y: np.ndarray  # shape (N, T)
 
     # Optional status masks (0/1 or bool), all shape (N, T)
     status_alive: Optional[np.ndarray] = None
@@ -111,11 +114,11 @@ class TrajectoryArrays:
         """
         mask = np.isfinite(self.x) & np.isfinite(self.y)
         if self.status_alive is not None:
-            mask &= (self.status_alive.astype(bool))
+            mask &= self.status_alive.astype(bool)
         if self.status_domain is not None:
-            mask &= (self.status_domain.astype(bool))
+            mask &= self.status_domain.astype(bool)
         if self.status_released is not None:
-            mask &= (self.status_released.astype(bool))
+            mask &= self.status_released.astype(bool)
         return mask
 
     def release_time(self) -> np.ndarray:
@@ -157,11 +160,10 @@ class TrajectoryArrays:
 # Plotting primitives
 # -----------------------------------------------------------------------------
 
-def _flatten_valid(x: np.ndarray,
-                   y: np.ndarray,
-                   c: np.ndarray,
-                   mask: Optional[np.ndarray] = None
-                   ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+def _flatten_valid(
+    x: np.ndarray, y: np.ndarray, c: np.ndarray, mask: Optional[np.ndarray] = None
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Flatten arrays to 1D while removing nans and optionally a boolean mask."""
     if mask is None:
         mask = np.ones_like(x, dtype=bool)
@@ -172,14 +174,16 @@ def _flatten_valid(x: np.ndarray,
     return xf, yf, cf
 
 
-def plot_trajectories_by_age(tr: TrajectoryArrays,
-                             units_scale: float = 1.0,
-                             point_size: float = 8.0,
-                             cmap: str = "viridis",
-                             first_stable_index: int = 0,
-                             show_start: bool = True,
-                             show_end: bool = True,
-                             ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_trajectories_by_age(
+    tr: TrajectoryArrays,
+    units_scale: float = 1.0,
+    point_size: float = 8.0,
+    cmap: str = 'viridis',
+    first_stable_index: int = 0,
+    show_start: bool = True,
+    show_end: bool = True,
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
     """Plot all positions of all particles, colored by particle age."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -190,33 +194,42 @@ def plot_trajectories_by_age(tr: TrajectoryArrays,
 
     xf, yf, cf = _flatten_valid(tr.x * units_scale, tr.y * units_scale, age, mask)
 
-    sc = ax.scatter(xf, yf, s=point_size, c=cf, cmap=cmap, edgecolor="none")
+    sc = ax.scatter(xf, yf, s=point_size, c=cf, cmap=cmap, edgecolor='none')
     cb = plt.colorbar(sc, ax=ax)
-    cb.set_label("Time since release")
+    cb.set_label('Time since release')
 
     if show_start:
-        ax.scatter(tr.x[:, first_stable_index] * units_scale,
-                   tr.y[:, first_stable_index] * units_scale,
-                   s=point_size * 1.4, marker="o", facecolor="white",
-                   edgecolor="black", linewidths=0.6, zorder=3, label="start")
+        ax.scatter(
+            tr.x[:, first_stable_index] * units_scale,
+            tr.y[:, first_stable_index] * units_scale,
+            s=point_size * 1.4,
+            marker='o',
+            facecolor='white',
+            edgecolor='black',
+            linewidths=0.6,
+            zorder=3,
+            label='start',
+        )
 
     if show_end:
         last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
         end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
         end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-        ax.scatter(end_x, end_y, s=point_size * 1.4, marker="x",
-                   edgecolor="black", linewidths=0.8, zorder=3, label="end")
+        ax.scatter(
+            end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end'
+        )
 
-    ax.set_aspect("equal")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_title("Particle Trajectories — colored by age")
+    ax.set_aspect('equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Particle Trajectories — colored by age')
     ax.grid(True, alpha=0.3)
     return ax
 
 
-def _rotate_points(x: np.ndarray, y: np.ndarray, rotation_deg: float,
-                   origin_xy: Tuple[float, float]) -> Tuple[np.ndarray, np.ndarray]:
+def _rotate_points(
+    x: np.ndarray, y: np.ndarray, rotation_deg: float, origin_xy: Tuple[float, float]
+) -> Tuple[np.ndarray, np.ndarray]:
     """Rotate points by rotation_deg (CCW) around origin_xy."""
     theta = np.deg2rad(rotation_deg)
     ox, oy = origin_xy
@@ -227,14 +240,16 @@ def _rotate_points(x: np.ndarray, y: np.ndarray, rotation_deg: float,
     return xr2, yr2
 
 
-def plot_trajectories_by_baseline(tr: TrajectoryArrays,
-                                  rotation_deg: float = 0.0,
-                                  first_stable_index: int = 0,
-                                  origin_xy: Optional[Tuple[float, float]] = None,
-                                  units_scale: float = 1.0,
-                                  point_size: float = 8.0,
-                                  cmap: str = "viridis",
-                                  ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_trajectories_by_baseline(
+    tr: TrajectoryArrays,
+    rotation_deg: float = 0.0,
+    first_stable_index: int = 0,
+    origin_xy: Optional[Tuple[float, float]] = None,
+    units_scale: float = 1.0,
+    point_size: float = 8.0,
+    cmap: str = 'viridis',
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
     """Plot all positions colored by per-particle distance from a rotated baseline.
 
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
@@ -258,59 +273,67 @@ def plot_trajectories_by_baseline(tr: TrajectoryArrays,
     c_full = np.broadcast_to(c_particle[:, None], tr.x.shape)
 
     xf, yf, cf = _flatten_valid(tr.x * units_scale, tr.y * units_scale, c_full, mask)
-    sc = ax.scatter(xf, yf, s=point_size, c=cf, cmap=cmap, edgecolor="none")
+    sc = ax.scatter(xf, yf, s=point_size, c=cf, cmap=cmap, edgecolor='none')
     cb = plt.colorbar(sc, ax=ax)
-    cb.set_label("Source distance from baseline")
+    cb.set_label('Source distance from baseline')
 
-    ax.scatter(tr.x[:, first_stable_index] * units_scale,
-               tr.y[:, first_stable_index] * units_scale,
-               s=point_size * 1.4, marker="o", facecolor="white",
-               edgecolor="black", linewidths=0.6, zorder=3, label="start")
+    ax.scatter(
+        tr.x[:, first_stable_index] * units_scale,
+        tr.y[:, first_stable_index] * units_scale,
+        s=point_size * 1.4,
+        marker='o',
+        facecolor='white',
+        edgecolor='black',
+        linewidths=0.6,
+        zorder=3,
+        label='start',
+    )
     last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
     end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
     end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-    ax.scatter(end_x, end_y, s=point_size * 1.4, marker="x",
-               edgecolor="black", linewidths=0.8, zorder=3, label="end")
+    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end')
 
-    ax.set_aspect("equal")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_title("Particle Trajectories — colored by baseline distance")
+    ax.set_aspect('equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Particle Trajectories — colored by baseline distance')
     ax.grid(True, alpha=0.3)
     return ax
 
 
-def animate_particles(tr: TrajectoryArrays,
-                      rotation_deg: float = 0.0,
-                      first_stable_index: int = 0,
-                      origin_xy: Optional[Tuple[float, float]] = None,
-                      color_mode: str = "baseline",  # "baseline" or "age"
-                      units_scale: float = 1.0,
-                      point_size: float = 12.0,
-                      interval_ms: int = 80,
-                      t_indices: Optional[Sequence[int]] = None,
-                      save_path: Optional[str] = None,
-                      dpi: int = 150):
+def animate_particles(
+    tr: TrajectoryArrays,
+    rotation_deg: float = 0.0,
+    first_stable_index: int = 0,
+    origin_xy: Optional[Tuple[float, float]] = None,
+    color_mode: str = 'baseline',  # "baseline" or "age"
+    units_scale: float = 1.0,
+    point_size: float = 12.0,
+    interval_ms: int = 80,
+    t_indices: Optional[Sequence[int]] = None,
+    save_path: Optional[str] = None,
+    dpi: int = 150,
+):
     """Animate particle positions through time (scatter by timestep)."""
     N, T = tr.x.shape
     if t_indices is None:
         t_indices = list(range(max(first_stable_index, 0), T))
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.set_aspect("equal")
+    ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    title = ax.set_title("Particle motion")
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    title = ax.set_title('Particle motion')
 
     mask_all = tr.valid_mask()
 
     # Precompute colors
-    if color_mode == "age":
+    if color_mode == 'age':
         age = tr.age()
         color_arr = age
-        cbar_label = "Age"
-    elif color_mode == "baseline":
+        cbar_label = 'Age'
+    elif color_mode == 'baseline':
         x0 = tr.x[:, first_stable_index]
         y0 = tr.y[:, first_stable_index]
         if origin_xy is None:
@@ -318,42 +341,45 @@ def animate_particles(tr: TrajectoryArrays,
         rx0, _ = _rotate_points(x0, y0, rotation_deg, origin_xy)
         c_particle = rx0 - np.nanmin(rx0)
         color_arr = np.broadcast_to(c_particle[:, None], (N, T))
-        cbar_label = "Source distance from baseline"
+        cbar_label = 'Source distance from baseline'
     else:
         raise ValueError("color_mode must be 'baseline' or 'age'")
 
     t0 = t_indices[0]
     m0 = mask_all[:, t0]
-    scat = ax.scatter(tr.x[m0, t0] * units_scale,
-                      tr.y[m0, t0] * units_scale,
-                      s=point_size, c=color_arr[m0, t0],
-                      cmap="viridis", edgecolor="none")
+    scat = ax.scatter(
+        tr.x[m0, t0] * units_scale,
+        tr.y[m0, t0] * units_scale,
+        s=point_size,
+        c=color_arr[m0, t0],
+        cmap='viridis',
+        edgecolor='none',
+    )
     cb = plt.colorbar(scat, ax=ax)
     cb.set_label(cbar_label)
 
     def update(frame_idx: int):
         t = t_indices[frame_idx]
         m = mask_all[:, t]
-        offsets = np.column_stack([tr.x[m, t] * units_scale,
-                                   tr.y[m, t] * units_scale])
+        offsets = np.column_stack([tr.x[m, t] * units_scale, tr.y[m, t] * units_scale])
         scat.set_offsets(offsets)
         scat.set_array(color_arr[m, t])
-        title.set_text(f"Particle motion — t={t}")
+        title.set_text(f'Particle motion — t={t}')
         return scat, title
 
     anim = FuncAnimation(fig, update, frames=len(t_indices), interval=interval_ms, blit=False)
 
     if save_path is not None:
-        if save_path.lower().endswith(".gif"):
+        if save_path.lower().endswith('.gif'):
             try:
-                anim.save(save_path, writer=PillowWriter(fps=max(1, int(1000/interval_ms))), dpi=dpi)
+                anim.save(save_path, writer=PillowWriter(fps=max(1, int(1000 / interval_ms))), dpi=dpi)
             except Exception as e:
-                warnings.warn(f"Failed to save GIF: {e}")
-        elif save_path.lower().endswith(".mp4"):
+                warnings.warn(f'Failed to save GIF: {e}', stacklevel=1)
+        elif save_path.lower().endswith('.mp4'):
             try:
-                anim.save(save_path, writer="ffmpeg", dpi=dpi)
+                anim.save(save_path, writer='ffmpeg', dpi=dpi)
             except Exception as e:
-                warnings.warn(f"Failed to save MP4 (ffmpeg missing?): {e}")
+                warnings.warn(f'Failed to save MP4 (ffmpeg missing?): {e}', stacklevel=1)
 
     return fig, anim
 
@@ -361,6 +387,7 @@ def animate_particles(tr: TrajectoryArrays,
 # -----------------------------------------------------------------------------
 # Selection helpers (polygons)
 # -----------------------------------------------------------------------------
+
 
 def _points_in_poly(x: np.ndarray, y: np.ndarray, poly_xy: np.ndarray) -> np.ndarray:
     """Return a boolean mask (T,) or (N,T) for points contained in polygon."""
@@ -370,9 +397,9 @@ def _points_in_poly(x: np.ndarray, y: np.ndarray, poly_xy: np.ndarray) -> np.nda
     return inside.reshape(x.shape)
 
 
-def particles_originating_in_polygon(tr: TrajectoryArrays,
-                                     poly_xy: np.ndarray,
-                                     first_stable_index: int = 0) -> np.ndarray:
+def particles_originating_in_polygon(
+    tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
+) -> np.ndarray:
     """Mask (N,) for particles whose START point is inside polygon."""
     x0 = tr.x[:, first_stable_index]
     y0 = tr.y[:, first_stable_index]
@@ -380,20 +407,22 @@ def particles_originating_in_polygon(tr: TrajectoryArrays,
     return inside
 
 
-def particles_passing_through_polygon(tr: TrajectoryArrays,
-                                      poly_xy: np.ndarray,
-                                      first_stable_index: int = 0) -> np.ndarray:
+def particles_passing_through_polygon(
+    tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
+) -> np.ndarray:
     """Mask (N,) for particles that enter polygon at any timestep."""
     mask_valid = tr.valid_mask()
     inside = _points_in_poly(tr.x, tr.y, poly_xy) & mask_valid
     return inside.any(axis=1)
 
 
-def particles_between_two_polygons(tr: TrajectoryArrays,
-                                   poly_a: np.ndarray,
-                                   poly_b: np.ndarray,
-                                   order: Optional[str] = None,
-                                   first_stable_index: int = 0) -> np.ndarray:
+def particles_between_two_polygons(
+    tr: TrajectoryArrays,
+    poly_a: np.ndarray,
+    poly_b: np.ndarray,
+    order: Optional[str] = None,
+    first_stable_index: int = 0,
+) -> np.ndarray:
     """Particles that pass through both polygons (optionally in a given order)."""
     mask_valid = tr.valid_mask()
     in_a = _points_in_poly(tr.x, tr.y, poly_a) & mask_valid
@@ -411,17 +440,17 @@ def particles_between_two_polygons(tr: TrajectoryArrays,
     idx_a[~hit_a] = np.iinfo(np.int32).max
     idx_b[~hit_b] = np.iinfo(np.int32).max
 
-    if order == "A->B":
+    if order == 'A->B':
         return both & (idx_a < idx_b)
-    elif order == "B->A":
+    elif order == 'B->A':
         return both & (idx_b < idx_a)
     else:
         raise ValueError("order must be one of {'A->B','B->A', None}")
 
 
-def particles_include_exclude(tr: TrajectoryArrays,
-                              include_polys: List[np.ndarray],
-                              exclude_polys: Optional[List[np.ndarray]] = None) -> np.ndarray:
+def particles_include_exclude(
+    tr: TrajectoryArrays, include_polys: List[np.ndarray], exclude_polys: Optional[List[np.ndarray]] = None
+) -> np.ndarray:
     """Particles that pass through *any* include polygon and *none* of the exclude polygons."""
     mask_valid = tr.valid_mask()
     include_any = np.zeros(tr.x.shape[0], dtype=bool)
@@ -440,9 +469,10 @@ def particles_include_exclude(tr: TrajectoryArrays,
 
 class InteractivePolygonTool:
     """Interactive polygon drawing to build selection masks in a matplotlib figure."""
+
     def __init__(self, ax: plt.Axes, on_done):
         if PolygonSelector is None:
-            raise RuntimeError("matplotlib.widgets.PolygonSelector not available in this environment.")
+            raise RuntimeError('matplotlib.widgets.PolygonSelector not available in this environment.')
         self.ax = ax
         self.on_done = on_done
         self.selector = PolygonSelector(ax, self._onselect, useblit=True)
@@ -465,7 +495,6 @@ class InteractivePolygonTool:
 # Statistics (inspired by analyze_pathways.m)
 # -----------------------------------------------------------------------------
 
-from dataclasses import dataclass as _dataclass
 
 @_dataclass
 class ParticleStats:
@@ -482,8 +511,7 @@ class ParticleStats:
     ratio: float
 
 
-def compute_particle_stats(tr: TrajectoryArrays,
-                           first_stable_index: int = 0) -> List[ParticleStats]:
+def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) -> List[ParticleStats]:
     """Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}"""
     N, T = tr.x.shape
     stats: List[ParticleStats] = []
@@ -527,12 +555,21 @@ def compute_particle_stats(tr: TrajectoryArrays,
         gross = float(np.nansum(seg))
         ratio = gross / net_mag if (net_mag > 0 and np.isfinite(gross)) else np.nan
 
-        stats.append(ParticleStats(
-            srcx=float(x0), srcy=float(y0), srct=float(t0),
-            netDispX=net_dx, netDispY=net_dy, netDispMag=net_mag,
-            duration=dur, uLRV=float(u_res), vLRV=float(v_res),
-            grossDisp=gross, ratio=float(ratio)
-        ))
+        stats.append(
+            ParticleStats(
+                srcx=float(x0),
+                srcy=float(y0),
+                srct=float(t0),
+                netDispX=net_dx,
+                netDispY=net_dy,
+                netDispMag=net_mag,
+                duration=dur,
+                uLRV=float(u_res),
+                vLRV=float(v_res),
+                grossDisp=gross,
+                ratio=float(ratio),
+            )
+        )
 
     return stats
 
@@ -543,7 +580,7 @@ def stats_to_csv(stats: List[ParticleStats], path: str) -> None:
     if _pd is not None:
         _pd.DataFrame([{h: getattr(s, h) for h in header} for s in stats]).to_csv(path, index=False)
     else:
-        with open(path, "w", newline="") as f:
+        with open(path, 'w', newline='') as f:
             w = csv.writer(f)
             w.writerow(header)
             for s in stats:
@@ -554,14 +591,17 @@ def stats_to_csv(stats: List[ParticleStats], path: str) -> None:
 # Quick Explorer (slider + color-mode toggle)
 # -----------------------------------------------------------------------------
 
-def quick_explorer(tr: TrajectoryArrays,
-                   rotation_deg: float = 0.0,
-                   first_stable_index: int = 0,
-                   origin_xy: Optional[Tuple[float, float]] = None,
-                   units_scale: float = 1.0):
+
+def quick_explorer(
+    tr: TrajectoryArrays,
+    rotation_deg: float = 0.0,
+    first_stable_index: int = 0,
+    origin_xy: Optional[Tuple[float, float]] = None,
+    units_scale: float = 1.0,
+):
     """Quick interactive viewer with a time slider and color mode toggle."""
     if Slider is None or Button is None:
-        warnings.warn("matplotlib widgets not available; quick_explorer requires Slider and Button.")
+        warnings.warn('matplotlib widgets not available; quick_explorer requires Slider and Button.', stacklevel=1)
         return None
 
     N, T = tr.x.shape
@@ -577,51 +617,56 @@ def quick_explorer(tr: TrajectoryArrays,
 
     fig, ax = plt.subplots(figsize=(8, 6))
     plt.subplots_adjust(bottom=0.25)
-    ax.set_aspect("equal")
+    ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    title = ax.set_title("Quick Explorer — baseline colors")
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    title = ax.set_title('Quick Explorer — baseline colors')
     t0 = max(first_stable_index, 0)
 
     m0 = mask_all[:, t0]
-    scat = ax.scatter(tr.x[m0, t0] * units_scale,
-                      tr.y[m0, t0] * units_scale,
-                      s=12.0, c=c_particle[m0], cmap="viridis", edgecolor="none")
+    scat = ax.scatter(
+        tr.x[m0, t0] * units_scale,
+        tr.y[m0, t0] * units_scale,
+        s=12.0,
+        c=c_particle[m0],
+        cmap='viridis',
+        edgecolor='none',
+    )
     cb = plt.colorbar(scat, ax=ax)
-    cb.set_label("Source distance from baseline")
+    cb.set_label('Source distance from baseline')
 
     ax_sl = plt.axes([0.15, 0.1, 0.7, 0.03])
-    s_time = Slider(ax_sl, "t", valmin=0, valmax=T-1, valinit=t0, valstep=1)
+    s_time = Slider(ax_sl, 't', valmin=0, valmax=T - 1, valinit=t0, valstep=1)
 
     ax_b1 = plt.axes([0.15, 0.05, 0.15, 0.04])
     ax_b2 = plt.axes([0.32, 0.05, 0.15, 0.04])
-    b_baseline = Button(ax_b1, "Baseline")
-    b_age = Button(ax_b2, "Age")
+    b_baseline = Button(ax_b1, 'Baseline')
+    b_age = Button(ax_b2, 'Age')
 
-    state = {"mode": "baseline"}
+    state = {'mode': 'baseline'}
 
     def update_time(val):
         t = int(s_time.val)
         m = mask_all[:, t]
         offsets = np.column_stack([tr.x[m, t] * units_scale, tr.y[m, t] * units_scale])
         scat.set_offsets(offsets)
-        if state["mode"] == "baseline":
+        if state['mode'] == 'baseline':
             scat.set_array(c_particle[m])
-            cb.set_label("Source distance from baseline")
-            title.set_text(f"Quick Explorer — baseline colors (t={t})")
+            cb.set_label('Source distance from baseline')
+            title.set_text(f'Quick Explorer — baseline colors (t={t})')
         else:
             scat.set_array(age[m, t])
-            cb.set_label("Age")
-            title.set_text(f"Quick Explorer — age colors (t={t})")
+            cb.set_label('Age')
+            title.set_text(f'Quick Explorer — age colors (t={t})')
         fig.canvas.draw_idle()
 
     def set_baseline(event):
-        state["mode"] = "baseline"
+        state['mode'] = 'baseline'
         update_time(None)
 
     def set_age(event):
-        state["mode"] = "age"
+        state['mode'] = 'age'
         update_time(None)
 
     s_time.on_changed(update_time)
@@ -634,11 +679,14 @@ def quick_explorer(tr: TrajectoryArrays,
 # 2D density heatmap (bonus)
 # -----------------------------------------------------------------------------
 
-def plot_density_heatmap(tr: TrajectoryArrays,
-                         bins: int = 200,
-                         units_scale: float = 1.0,
-                         first_stable_index: int = 0,
-                         ax: Optional[plt.Axes] = None) -> plt.Axes:
+
+def plot_density_heatmap(
+    tr: TrajectoryArrays,
+    bins: int = 200,
+    units_scale: float = 1.0,
+    first_stable_index: int = 0,
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
     """Plot a 2D histogram of trajectory visitation density (spatial heatmap)."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -653,12 +701,12 @@ def plot_density_heatmap(tr: TrajectoryArrays,
     H, xedges, yedges = np.histogram2d(xf, yf, bins=bins)
     H = H.T
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    im = ax.imshow(H, origin="lower", extent=extent, aspect="equal")
+    im = ax.imshow(H, origin='lower', extent=extent, aspect='equal')
     cb = plt.colorbar(im, ax=ax)
-    cb.set_label("Counts per bin")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_title("Trajectory visitation heatmap")
+    cb.set_label('Counts per bin')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Trajectory visitation heatmap')
     return ax
 
 
@@ -666,17 +714,18 @@ def plot_density_heatmap(tr: TrajectoryArrays,
 # Minimal loader (optional), in case users want a helper to build TrajectoryArrays
 # -----------------------------------------------------------------------------
 
+
 def load_from_xarray(ds) -> TrajectoryArrays:
     """Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables."""
     tr = TrajectoryArrays(
-        time=np.asarray(ds["time"]),
-        x=np.asarray(ds["x"]),
-        y=np.asarray(ds["y"]),
-        status_alive=np.asarray(ds["status_alive"]) if "status_alive" in ds else None,
-        status_domain=np.asarray(ds["status_domain"]) if "status_domain" in ds else None,
-        status_released=np.asarray(ds["status_released"]) if "status_released" in ds else None,
-        status_mobile=np.asarray(ds["status_mobile"]) if "status_mobile" in ds else None,
-        population_id=np.asarray(ds["population_id"]) if "population_id" in ds else None,
-        trajectory_id=list(map(str, ds["trajectory_id"].values)) if "trajectory_id" in ds else None,
+        time=np.asarray(ds['time']),
+        x=np.asarray(ds['x']),
+        y=np.asarray(ds['y']),
+        status_alive=np.asarray(ds['status_alive']) if 'status_alive' in ds else None,
+        status_domain=np.asarray(ds['status_domain']) if 'status_domain' in ds else None,
+        status_released=np.asarray(ds['status_released']) if 'status_released' in ds else None,
+        status_mobile=np.asarray(ds['status_mobile']) if 'status_mobile' in ds else None,
+        population_id=np.asarray(ds['population_id']) if 'population_id' in ds else None,
+        trajectory_id=list(map(str, ds['trajectory_id'].values)) if 'trajectory_id' in ds else None,
     )
     return tr

@@ -21,14 +21,11 @@ Seeding strategies for positions include:
     constrained by a bounding box (xmin, xmax, ymin, ymax).
 """
 
+import random
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Dict
-from sedtrails.particle_tracer.particle import Particle
-from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Dict
-import random
 from dataclasses import dataclass, field
 from sedtrails.configuration_interface.find import find_value
 

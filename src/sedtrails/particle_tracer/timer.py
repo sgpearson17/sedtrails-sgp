@@ -153,7 +153,7 @@ class Time:
     duration : Duration
         The simulation duration as a Duration object. Defaults to Duration('3D 2H1M3S').
     read_input_timestep : Duration
-        The timestep for reading input data in chunks as a Duration object. 
+        The timestep for reading input data in chunks as a Duration object.
         Defaults to Duration('30D12H25M0S').
     cfl_condition : float
         The Courant-Friedrichs-Lewy (CFL) condition for the simulation.
@@ -278,6 +278,7 @@ class Timer:
     simulation_time: Time
     _current: int | float = field(init=False)  # in seconds
     _current_timestep: int | float = field(init=False)  # adaptive timestep in seconds
+    cfl_condition: float = field(default=0.7)
     stop: bool = False
 
     def __post_init__(self):
@@ -359,43 +360,6 @@ class Timer:
         """
         self._current_timestep = timestep
 
-    def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data) -> float:
-        """
-        Compute CFL-based timestep from multiple flow fields and update current timestep.
-        
-        Parameters
-        ----------
-        flow_data_list : list
-            List of flow field data dictionaries, each with 'magnitude' key
-        sedtrails_data : SedtrailsData
-            SedTRAILS data containing min_resolution
-            
-        Returns
-        -------
-        float
-            Computed timestep in seconds
-        """
-
-        if self.cfl_condition > 0:
-            # Find maximum velocity across all flow fields
-            max_velocity = 0.0
-            for flow_data in flow_data_list:
-                magnitude = flow_data['magnitude']
-    
-                # Handle NaNs by setting them to 0
-                magnitude_clean = np.nan_to_num(magnitude, nan=0.0)
-                max_velocity = max(max_velocity, np.max(magnitude_clean))
-                max_velocity = max(max_velocity, 1e-12)
-            
-            min_resolution = sedtrails_data.meta_data.min_resolution
-            cfl_timestep = self.cfl_condition * min_resolution / max_velocity
-            
-            # Ensure CFL timestep doesn't exceed sedtrails data timestep
-            cfl_timestep = min(cfl_timestep, sedtrails_data.meta_data.timestep)
-            
-            self.set_timestep(cfl_timestep)
-    
-
     def advance(self) -> None:
         """
         Advance the current time by current timestep.
@@ -417,3 +381,39 @@ class Timer:
             self.step_count += 1
         else:
             self.stop = True
+
+    def compute_cfl_timestep(self, flow_data_list: list, sedtrails_data) -> float:
+        """
+        Compute CFL-based timestep from multiple flow fields and update current timestep.
+
+        Parameters
+        ----------
+        flow_data_list : list
+            List of flow field data dictionaries, each with 'magnitude' key
+        sedtrails_data : SedtrailsData
+            SedTRAILS data containing min_resolution
+
+        Returns
+        -------
+        float
+            Computed timestep in seconds
+        """
+
+        if self.cfl_condition > 0:
+            # Find maximum velocity across all flow fields
+            max_velocity = 0.0
+            for flow_data in flow_data_list:
+                magnitude = flow_data['magnitude']
+
+                # Handle NaNs by setting them to 0
+                magnitude_clean = np.nan_to_num(magnitude, nan=0.0)
+                max_velocity = max(max_velocity, np.max(magnitude_clean))
+                max_velocity = max(max_velocity, 1e-12)
+
+            min_resolution = sedtrails_data.metadata.min_resolution
+            cfl_timestep = self.cfl_condition * min_resolution / max_velocity
+
+            # Ensure CFL timestep doesn't exceed sedtrails data timestep
+            cfl_timestep = min(cfl_timestep, sedtrails_data.metadata.timestep)
+
+            self.set_timestep(cfl_timestep)

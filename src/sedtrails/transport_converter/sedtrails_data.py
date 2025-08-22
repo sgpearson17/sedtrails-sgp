@@ -6,6 +6,7 @@ from scipy.spatial.distance import pdist
 from scipy.spatial import ConvexHull
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
+
 @dataclass
 class SedtrailsData:
     """
@@ -95,7 +96,7 @@ class SedtrailsData:
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
         self._calculate_timestep()
-        self._compute_grid_metadata()        
+        self._compute_grid_metadata()
         self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
 
     def _calculate_timestep(self):
@@ -106,28 +107,27 @@ class SedtrailsData:
         else:
             # Calculate median timestep, this helps ignore the weird startup timesteps
             timestep = float(np.median(np.diff(self.times)))
-            
+
             # Optional: Add validation
             if timestep <= 0:
-                warnings.warn(f"Calculated timestep is non-positive: {timestep}", stacklevel=1)
+                warnings.warn(f'Calculated timestep is non-positive: {timestep}', stacklevel=1)
 
             # Check if we have timesteps deviating from the median
             tolerance = 1e-6
             deviations = np.abs(self.times - timestep)
             deviating_indices = np.where(deviations > tolerance)[0]
-            
+
             if len(deviating_indices) > 0:
                 warnings.warn(
-                    f"Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)",
-                    stacklevel=2
-                    )                
-        
+                    f'Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)', stacklevel=2
+                )
+
         self.metadata.add('timestep', timestep)
 
     def _compute_grid_metadata(self):
         """
         Compute grid metadata and add to metadata: minimum resolution and outer envelope.
-        
+
         Computes:
         - min_resolution: minimum distance between any two grid points
         - outer_envelope: convex hull vertices of the grid points
@@ -207,8 +207,6 @@ class SedtrailsData:
             'y': self.y,
             'bed_level': self.bed_level,  # typically time-independent
             'fractions': self.fractions,
-            'min_resolution': self.min_resolution,
-            'outer_envelope': self.outer_envelope,
             'water_depth': self.water_depth[time_index],
             'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
             'max_bed_shear_stress': self.max_bed_shear_stress[time_index],
