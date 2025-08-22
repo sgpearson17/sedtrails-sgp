@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict
 from dataclasses import dataclass
+import warnings
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
@@ -92,8 +93,34 @@ class SedtrailsData:
         # Validate metadata field
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
-
+        self._calculate_timestep()
         self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
+
+    def _calculate_timestep(self):
+        """Calculate median timestep and add to metadata."""
+        if len(self.times) < 2:
+            # Cannot calculate timestep with fewer than 2 time points
+            timestep = None
+        else:
+            # Calculate median timestep, this helps ignore the weird startup timesteps
+            timestep = float(np.median(np.diff(self.times)))
+            
+            # Optional: Add validation
+            if timestep <= 0:
+                warnings.warn(f"Calculated timestep is non-positive: {timestep}")
+
+            # Check if we have timesteps deviating from the median
+            tolerance = 1e-6
+            deviations = np.abs(self.times - timestep)
+            deviating_indices = np.where(deviations > tolerance)[0]
+            
+            if len(deviating_indices) > 0:
+                warnings.warn(
+                    f"Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)"
+                    )                
+        
+        self.metadata.add('timestep', timestep)
+
 
     def _validate_metadata(self):
         """Validate that metadata field exists and is the correct type."""
