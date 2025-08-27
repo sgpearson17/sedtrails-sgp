@@ -38,8 +38,8 @@ class PopulationConfig:
 
     Attributes
     ----------
-    population_config : Dict
-        The configuration dictionary containing the seeding parameters.
+    population_config : List[Dict]
+        The configuration dictionary containing the seeding paraameters for one or more populations.
     particle_type : str
         The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
     release_start : str
@@ -52,19 +52,6 @@ class PopulationConfig:
     A class to represent the seeding parameters of a population of particle.
     A population is a group of particles that share the same type and seeding strategy.
 
-    Attributes
-    ----------
-    population_config : Dict
-        The configuration dictionary containing the seeding parameters.
-    particle_type : str
-        The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-    release_start : str
-        The time at which the particles for a given population are released.
-    quantity : int
-        The number of particles to release per release location.
-    strategy_settings : Dict
-        The settings for the seeding strategy, extracted from the configuration.
-        These are any key-value pairs defined under the specific strategy in the configuration.
     """
 
     population_config: Dict
