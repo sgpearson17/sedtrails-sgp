@@ -46,6 +46,9 @@ def point_config_basic():
                     'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
                     'quantity': 10,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -62,6 +65,9 @@ def point_config_simple():
                     'strategy': {'point': {'locations': ['0,0']}},
                     'quantity': 1,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -78,6 +84,9 @@ def point_config_dual():
                     'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
                     'quantity': 2,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -94,6 +103,9 @@ def random_config():
                     'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
                     'quantity': 5,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -115,6 +127,9 @@ def grid_config():
                     },
                     'quantity': 2,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -136,6 +151,9 @@ def grid_config_single():
                     },
                     'quantity': 1,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -157,6 +175,9 @@ def transect_config():
                     },
                     'quantity': 5,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -178,6 +199,9 @@ def transect_config_multi():
                     },
                     'quantity': 1,
                     'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
                 },
             }
         }
@@ -215,6 +239,9 @@ class TestPointStrategy:
                         'strategy': {'point': {'not_locations': 'invalid'}},
                         'quantity': 10,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -233,6 +260,9 @@ class TestPointStrategy:
                         'strategy': {'point': {'locations': ['invalid_format']}},
                         'quantity': 10,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -268,6 +298,9 @@ class TestRandomStrategy:
                         'strategy': {'random': {'not_bbox': 'invalid', 'nlocations': 1}},
                         'quantity': 5,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -305,6 +338,9 @@ class TestGridStrategy:
                         },
                         'quantity': 2,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -327,6 +363,9 @@ class TestGridStrategy:
                         },
                         'quantity': 2,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -372,6 +411,9 @@ class TestTransectStrategy:
                         'strategy': {'transect': {'k': 3}},
                         'quantity': 5,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -395,6 +437,9 @@ class TestTransectStrategy:
                         },
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -419,6 +464,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
                         'quantity': 2,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -454,6 +502,9 @@ class TestParticleFactory:
                         },
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -482,6 +533,9 @@ class TestParticleFactory:
                         'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
                         'quantity': 5,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -512,6 +566,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['0,0']}},
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -529,6 +586,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['0,0']}},
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -546,6 +606,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['0,0']}},
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -564,6 +627,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['0,0']}},
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
@@ -582,6 +648,9 @@ class TestParticleFactory:
                         'strategy': {'point': {'locations': ['0,0']}},
                         'quantity': 1,
                         'release_start': '2025-06-18 13:00:00',
+                        'burial_depth': {
+                            'constant': 1.0,
+                        },
                     },
                 }
             }
