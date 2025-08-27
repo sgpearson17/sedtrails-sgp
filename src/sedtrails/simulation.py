@@ -242,19 +242,6 @@ class Simulation:
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(sedtrails_data)  # seed particles for all populations using current sedtrails data
 
-        # TODO: integrate into ParticlePopulation class. SUBSTITUTE WITH NEW PARTICLE SEEDER CLASS
-        # populations_config = self._controller.get('particles.populations')
-        # for population_config in populations_config:
-        #     p_config = PopulationConfig(population_config)
-
-        #     populations.append(
-        #         ParticlePopulation(
-        #             field_x=sedtrails_data.x,
-        #             field_y=sedtrails_data.y,
-        #             population_config=p_config,
-        #         )
-        #     )
-
         # Set initial values
         sedtrails_data = None
 
