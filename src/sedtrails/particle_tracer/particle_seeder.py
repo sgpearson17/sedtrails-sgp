@@ -25,7 +25,7 @@ import random
 from abc import ABC, abstractmethod
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 from sedtrails.configuration_interface.find import find_value
 
@@ -38,8 +38,8 @@ class PopulationConfig:
 
     Attributes
     ----------
-    population_config : List[Dict]
-        The configuration dictionary containing the seeding paraameters for one or more populations.
+    population_config : Dict
+        The configuration dictionary containing the seeding paraameters for a population.
     particle_type : str
         The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
     release_start : str
@@ -54,7 +54,7 @@ class PopulationConfig:
 
     """
 
-    population_config: Dict
+    population_config: Dict  # configuration for a single population
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
     release_start: str = field(init=False)  # particle for a given population are released at this time
@@ -63,27 +63,29 @@ class PopulationConfig:
     strategy_settings: Dict = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
+        _strategy = find_value(self.population_config, 'population.seeding.strategy', {}).keys()
         if not _strategy:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
-        self.strategy_settings = find_value(self.population_config, f'seeding.strategy.{self.strategy}', {})
+        self.strategy_settings = find_value(self.population_config, f'population.seeding.strategy.{self.strategy}', {})
+        print(self.strategy_settings)
         if not self.strategy_settings:
             raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'seeding.quantity', {})
+        _quantity = find_value(self.population_config, 'population.seeding.quantity', {})
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'seeding.release_start', {})
+        _release_start = find_value(self.population_config, 'population.seeding.release_start', {})
         if not _release_start:
             raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
         self.release_start = _release_start
-        self.particle_type = find_value(self.population_config, 'particle_type', '')
+        self.particle_type = find_value(self.population_config, 'population.particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
+        _burial_depth = find_value(self.population_config, 'population.seeding.burial_depth', {})
         if not _burial_depth:
             raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
+        self.burial_depth = _burial_depth.get('constant', 0.0)  # TODO: support other types of burial depth
 
 
 class SeedingStrategy(ABC):
@@ -330,56 +332,59 @@ class ParticleFactory:
         return particles
 
 
-# TODO:  save the final positions of particles to a vector based files (e.g., shapefile?, GeoJSON?)
+class ParticleSeeder:
+    """
+    High-level interface for particle seeding operations.
+
+    This class provides a clean, modular interface for creating particles
+    from configuration dictionaries.
+    """
+
+    def seed(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]) -> List[Particle]:
+        """
+        Create particles from a list of population configuration dictionaries.
+
+        Parameters
+        ----------
+        population_configs : List[Dict[str, Any]] | Dict[str, Any]
+            A dictionary containing configuration for a single population,
+            or a
+            List of dictionaries, each containing configuration for one population.
+
+        Returns
+        -------
+        List[Particle]
+            List of all created particles from all populations.
+        """
+
+        if isinstance(population_configs, dict):
+            # If a single dictionary is provided, convert it to a list for uniform processing
+            population_configs = [population_configs]
+
+        all_particles = []
+        for pop_config in population_configs:
+            config = PopulationConfig(population_config=pop_config)
+            particles = ParticleFactory.create_particles(config)
+            all_particles.extend(particles)
+        return all_particles
 
 
 if __name__ == '__main__':
-    # Example usage
-    config_point = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                    'quantity': 1,
-                    'release_start': '2025-06-18 13:00:00',
+    config_random = {
+        'population': {
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+                'quantity': 500,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
                 },
-            }
+            },
         }
-    )
+    }
 
-    config_transect = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {
-                        'transect': {
-                            'segments': ['0,0 2,0'],
-                            'k': 3,
-                        }
-                    },
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                },
-            }
-        }
-    )
-
-    config_random = PopulationConfig(
-        {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                },
-            }
-        }
-    )
-
-    particles = ParticleFactory.create_particles(config_random)
-    print(
-        'Created particles:', len(particles)
-    )  # Should print the created particles with their positions and release times
+    seeder = ParticleSeeder()
+    particles = seeder.seed(config_random)
+    print(f'Created {len(particles)} particles using random strategy.')
+    print(particles[:5])  # Print first 5 particles for inspection
