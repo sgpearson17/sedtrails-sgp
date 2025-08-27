@@ -74,7 +74,6 @@ class PopulationConfig:
             raise MissingConfigurationParameter('"strategy" is not defined as seeding parameter.')
         self.strategy = next(iter(_strategy))
         self.strategy_settings = find_value(self.population_config, f'seeding.strategy.{self.strategy}', {})
-        print(self.strategy_settings)
         if not self.strategy_settings:
             raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
         _quantity = find_value(self.population_config, 'seeding.quantity', {})
@@ -188,41 +187,41 @@ class GridStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
-        bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
+        bbox = config.strategy_settings.get('bbox')
         if not bbox:
-            raise RuntimeError('Bounding box must be provided for GridStrategy.')
+            raise MissingConfigurationParameter('"bbox" must be provided for GridStrategy.')
 
-        grid = find_value(config.population_config, 'population.seeding.strategy.grid', {})
+        separation = config.strategy_settings.get('separation')
+        if not separation or 'dx' not in separation or 'dy' not in separation:
+            raise MissingConfigurationParameter('"separation" with "dx" and "dy" must be provided for GridStrategy.')
 
-        if not grid or not all(k in grid.get('separation', {}) for k in ['dx', 'dy']):
-            raise MissingConfigurationParameter('"grid" must be provided for GridStrategy.')
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for GridStrategy.')
+
         quantity = int(config.quantity)
+        dx = separation['dx']
+        dy = separation['dy']
+
+        # Handle both dict and string bbox formats
+        if isinstance(bbox, str):
+            _bbox = bbox.replace(',', ' ').split()
+            if len(_bbox) != 4:
+                raise ValueError(f"Invalid bbox format. Expected 'xmin,ymin xmax,ymax', got: {bbox}")
+            xmin, ymin, xmax, ymax = map(float, _bbox)
+        else:
+            xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+
         seed_locations = []
-        dx = find_value(grid, 'separation.dx')
-        dy = find_value(grid, 'separation.dy')
-        xvals = []
-        yvals = []
-        x = bbox['xmin']
-        while x <= bbox['xmax']:
-            if x > bbox['xmax']:
-                break
-            xvals.append(x)
-            x += dx
-        if xvals and xvals[-1] > bbox['xmax']:
-            xvals.pop()
-        y = bbox['ymin']
-        while y <= bbox['ymax']:
-            if y > bbox['ymax']:
-                break
-            yvals.append(y)
-            y += dy
-        if yvals and yvals[-1] > bbox['ymax']:
-            yvals.pop()
-        for x in xvals:
-            for y in yvals:
+
+        # Generate grid points
+        x = xmin
+        while x <= xmax:
+            y = ymin
+            while y <= ymax:
                 seed_locations.append((quantity, x, y))
+                y += dy
+            x += dx
+
         return seed_locations
 
 
