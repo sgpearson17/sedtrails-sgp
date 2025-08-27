@@ -258,12 +258,9 @@ class Simulation:
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
-            if (
-                sedtrails_data is None
-                or current_time_seconds > sedtrails_data.times[-2]
-            ):
+            if sedtrails_data is None or current_time_seconds > sedtrails_data.times[-2]:
                 # Avoid recreating SedTRAILS data if current time is before the first time step
-                if current_time_seconds < sedtrails_data.times[0]:
+                if sedtrails_data is not None and current_time_seconds < sedtrails_data.times[0]:
                     timer.advance()
                     continue
                 # Convert to SedTRAILS format
@@ -324,10 +321,9 @@ class Simulation:
                         # Update particle position
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
-
-           # Dashboard initialization
+            # Dashboard initialization
             if timer.step_count == 0:
-                enable_dashboard = True # self._controller.get('output.enable_dashboard', False)
+                enable_dashboard = True  # self._controller.get('output.enable_dashboard', False)
                 if enable_dashboard:
                     reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
                     self.dashboard = initialize_dashboard(reference_date)
@@ -336,37 +332,37 @@ class Simulation:
             if self.dashboard is not None:
                 # Get first population
                 first_population = populations[0]
-                
+
                 # Get bathymetry data
                 bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                
+
                 # Particle data including burial_depth and mixing_depth
                 particle_data = {
                     'x': first_population.particles['x'],
                     'y': first_population.particles['y'],
                     'burial_depth': first_population.particles['burial_depth'],
-                    'mixing_depth': first_population.particles['mixing_depth']
+                    'mixing_depth': first_population.particles['mixing_depth'],
                 }
-                
+
                 # Get simulation timing
                 # plot_interval_str = self._controller.get('output.plot_interval', '1H')
-                plot_interval_seconds = 3600 # self._parse_duration(plot_interval_str)
-                
+                plot_interval_seconds = 3600  # self._parse_duration(plot_interval_str)
+
                 # Update dashboard with timing info
                 update_dashboard(
-                    self.dashboard, 
-                    flow_field, 
-                    bathymetry, 
-                    particle_data, 
-                    timer.current, 
-                    timer.current_timestep, 
+                    self.dashboard,
+                    flow_field,
+                    bathymetry,
+                    particle_data,
+                    timer.current,
+                    timer.current_timestep,
                     plot_interval_seconds,
                     simulation_start_time=simulation_time.start,  # Add this
-                    simulation_end_time=simulation_time.end       # Add this
+                    simulation_end_time=simulation_time.end,  # Add this
                 )
-                
+
             timer.advance()
-                    
+
             # Saving and plotting
             # TODO: enable saving and plotting again: addapt writer with structure issue 297
             # TODO: remove default insertion on configuration retrieval
@@ -411,7 +407,7 @@ class Simulation:
         pbar.close()
 
         # Finalize results
-        self.data_manager.dump()  # Write remaining data to disk
+        # self.data_manager.dump()  # Write remaining data to disk
 
 
 if __name__ == '__main__':
