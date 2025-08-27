@@ -267,9 +267,12 @@ class Simulation:
             current_time_seconds = timer.current
             if (
                 sedtrails_data is None
-                or current_time_seconds < sedtrails_data.times[0]
                 or current_time_seconds > sedtrails_data.times[-2]
             ):
+                # Avoid recreating SedTRAILS data if current time is before the first time step
+                if current_time_seconds < sedtrails_data.times[0]:
+                    timer.advance()
+                    continue
                 # Convert to SedTRAILS format
                 sedtrails_data = self.format_converter.convert_to_sedtrails(
                     current_time=current_time_seconds, reading_interval=simulation_time.read_input_timestep.seconds
