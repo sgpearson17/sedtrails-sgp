@@ -10,8 +10,10 @@ from sedtrails.particle_tracer.particle_seeder import (
     GridStrategy,
     TransectStrategy,
     ParticleFactory,
+    ParticlePopulation,
 )
 from sedtrails.exceptions import MissingConfigurationParameter
+import numpy as np
 
 
 # Strategy fixtures
@@ -40,17 +42,16 @@ def transect_strategy():
 def point_config_basic():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                    'quantity': 10,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                'quantity': 10,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
                 },
-            }
+            },
         }
     )
 
@@ -59,17 +60,16 @@ def point_config_basic():
 def point_config_simple():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'point': {'locations': ['0,0']}},
-                    'quantity': 1,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0,0']}},
+                'quantity': 1,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
                 },
-            }
+            },
         }
     )
 
@@ -78,17 +78,16 @@ def point_config_simple():
 def point_config_dual():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                    'quantity': 2,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                'quantity': 2,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
                 },
-            }
+            },
         }
     )
 
@@ -97,17 +96,16 @@ def point_config_dual():
 def random_config():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+                'quantity': 5,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
                 },
-            }
+            },
         }
     )
 
@@ -116,22 +114,21 @@ def random_config():
 def grid_config():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {
-                        'grid': {
-                            'separation': {'dx': 1.0, 'dy': 1.0},
-                            'bbox': {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0},
-                        }
-                    },
-                    'quantity': 2,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Grid Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'grid': {
+                        'separation': {'dx': 1.0, 'dy': 1.0},
+                        'bbox': {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0},
+                    }
                 },
-            }
+                'quantity': 2,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
         }
     )
 
@@ -140,22 +137,21 @@ def grid_config():
 def grid_config_single():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'mud',
-                'seeding': {
-                    'strategy': {
-                        'grid': {
-                            'separation': {'dx': 1.0, 'dy': 1.0},
-                            'bbox': {'xmin': 0.0, 'xmax': 1.0, 'ymin': 0.0, 'ymax': 1.0},
-                        }
-                    },
-                    'quantity': 1,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Single Grid Config',
+            'particle_type': 'mud',
+            'seeding': {
+                'strategy': {
+                    'grid': {
+                        'separation': {'dx': 1.0, 'dy': 1.0},
+                        'bbox': {'xmin': 0.0, 'xmax': 1.0, 'ymin': 0.0, 'ymax': 1.0},
+                    }
                 },
-            }
+                'quantity': 1,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
         }
     )
 
@@ -164,22 +160,21 @@ def grid_config_single():
 def transect_config():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {
-                        'transect': {
-                            'segments': ['0,0 2,0'],
-                            'k': 3,
-                        }
-                    },
-                    'quantity': 5,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'transect': {
+                        'segments': ['0,0 2,0'],
+                        'k': 3,
+                    }
                 },
-            }
+                'quantity': 5,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
         }
     )
 
@@ -188,22 +183,21 @@ def transect_config():
 def transect_config_multi():
     return PopulationConfig(
         {
-            'population': {
-                'particle_type': 'sand',
-                'seeding': {
-                    'strategy': {
-                        'transect': {
-                            'segments': ['0,0 1,0', '1,0 1,1'],
-                            'k': 2,
-                        }
-                    },
-                    'quantity': 1,
-                    'release_start': '2025-06-18 13:00:00',
-                    'burial_depth': {
-                        'constant': 1.0,
-                    },
+            'name': 'Basic Point Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'transect': {
+                        'segments': ['0,0 1,0', '1,0 1,1'],
+                        'k': 2,
+                    }
                 },
-            }
+                'quantity': 1,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
         }
     )
 
@@ -233,17 +227,16 @@ class TestPointStrategy:
         # we need to create a config that passes validation but missing locations
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'point': {'not_locations': 'invalid'}},
-                        'quantity': 10,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'not_locations': 'invalid'}},
+                    'quantity': 10,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -254,17 +247,16 @@ class TestPointStrategy:
         """Test point strategy with invalid location format."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['invalid_format']}},
-                        'quantity': 10,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['invalid_format']}},
+                    'quantity': 10,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -292,17 +284,16 @@ class TestRandomStrategy:
         # we need to create a config that passes validation but missing bbox
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'random': {'not_bbox': 'invalid', 'nlocations': 1}},
-                        'quantity': 5,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'not_bbox': 'invalid', 'nlocations': 1}},
+                    'quantity': 5,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -317,62 +308,113 @@ class TestGridStrategy:
         """Test basic grid strategy functionality."""
         result = grid_strategy.seed(grid_config)
 
-        # Should generate a 3x3 grid (0,1,2 in both directions)
+        # Should generate a 3x3 grid (0, 1, 2 in both directions)
+        # Points: (0,0), (0,1), (0,2), (1,0), (1,1), (1,2), (2,0), (2,1), (2,2)
         assert len(result) == 9
-        # Check first and last points
-        assert (2, 0.0, 0.0) in result
-        assert (2, 2.0, 2.0) in result
+
+        # Check that all points have the correct quantity
+        for qty, _x, _y in result:
+            assert qty == 2
+
+        # Check specific points
+        positions = [(x, y) for qty, x, y in result]
+        assert (0.0, 0.0) in positions
+        assert (1.0, 1.0) in positions
+        assert (2.0, 2.0) in positions
+        assert (0.0, 2.0) in positions  # Top-left
+        assert (2.0, 0.0) in positions  # Bottom-right
+
+    def test_grid_strategy_single_point(self, grid_strategy, grid_config_single):
+        """Test grid strategy with a single grid point."""
+        result = grid_strategy.seed(grid_config_single)
+
+        # Should generate a 2x2 grid: (0,0), (0,1), (1,0), (1,1)
+        assert len(result) == 4
+
+        # Check positions
+        positions = [(x, y) for qty, x, y in result]
+        expected_positions = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
+        assert set(positions) == set(expected_positions)
 
     def test_grid_strategy_no_bbox(self, grid_strategy):
         """Test grid strategy without bounding box."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {
-                            'grid': {
-                                'separation': {'dx': 1.0, 'dy': 1.0},
-                                'not_bbox': 'invalid',  # Missing bbox
-                            }
-                        },
-                        'quantity': 2,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Grid Config No BBox',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 1.0, 'dy': 1.0},
+                            # Missing bbox
+                        }
                     },
-                }
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
             }
         )
-        with pytest.raises(RuntimeError, match='Bounding box must be provided'):
+        with pytest.raises(MissingConfigurationParameter, match='"bbox" must be provided'):
             grid_strategy.seed(config)
 
     def test_grid_strategy_missing_separation(self, grid_strategy):
         """Test grid strategy with missing separation parameters."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {
-                            'grid': {
-                                'bbox': {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0},
-                                'not_separation': 'invalid',
-                            }
-                        },
-                        'quantity': 2,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Grid Config Missing Separation',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'bbox': {'xmin': 0.0, 'xmax': 2.0, 'ymin': 0.0, 'ymax': 2.0},
+                            # Missing separation
+                        }
                     },
-                }
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
             }
         )
 
-        with pytest.raises(MissingConfigurationParameter, match='"grid" must be provided'):
+        with pytest.raises(MissingConfigurationParameter, match='"separation" with "dx" and "dy" must be provided'):
             grid_strategy.seed(config)
+
+    def test_grid_strategy_string_bbox(self, grid_strategy):
+        """Test grid strategy with string bbox format."""
+        config = PopulationConfig(
+            {
+                'name': 'Grid Config String BBox',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 0.5, 'dy': 0.5},
+                            'bbox': '0,0 1,1',  # String format
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
+            }
+        )
+
+        result = grid_strategy.seed(config)
+
+        # Should generate a 3x3 grid (0, 0.5, 1.0 in both directions)
+        assert len(result) == 9
+        positions = [(x, y) for qty, x, y in result]
+        assert (0.0, 0.0) in positions
+        assert (0.5, 0.5) in positions
+        assert (1.0, 1.0) in positions
 
 
 class TestTransectStrategy:
@@ -405,17 +447,16 @@ class TestTransectStrategy:
         """Test transect strategy with missing segments."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'transect': {'k': 3}},
-                        'quantity': 5,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'transect': {'k': 3}},
+                    'quantity': 5,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -426,22 +467,21 @@ class TestTransectStrategy:
         """Test transect strategy with invalid segment format."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {
-                            'transect': {
-                                'segments': ['invalid_format'],
-                                'k': 2,
-                            }
-                        },
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'transect': {
+                            'segments': ['invalid_format'],
+                            'k': 2,
+                        }
                     },
-                }
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
             }
         )
 
@@ -458,17 +498,16 @@ class TestParticleFactory:
 
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
-                        'quantity': 2,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['1.0,2.0', '3.0,4.0']}},
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -491,35 +530,35 @@ class TestParticleFactory:
 
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'mud',
-                    'seeding': {
-                        'strategy': {
-                            'grid': {
-                                'separation': {'dx': 1.0, 'dy': 1.0},
-                                'bbox': {'xmin': 0.0, 'xmax': 1.0, 'ymin': 0.0, 'ymax': 1.0},
-                            }
-                        },
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Grid Particle Creation Test',
+                'particle_type': 'mud',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'separation': {'dx': 1.0, 'dy': 1.0},
+                            'bbox': {'xmin': 0.0, 'xmax': 1.0, 'ymin': 0.0, 'ymax': 1.0},
+                        }
                     },
-                }
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
             }
         )
 
         particles = ParticleFactory.create_particles(config)
 
-        # Should create 4 particles (2x2 grid), each at corners of the bbox
+        # Should create 4 particles (2x2 grid): (0,0), (0,1), (1,0), (1,1)
+        # Each location gets 1 particle, so 4 total
         assert len(particles) == 4
         # Check all particles are Mud type
         assert all(isinstance(p, Mud) for p in particles)
-        # Check positions include corners
+        # Check positions include all corners
         positions = [(p.x, p.y) for p in particles]
-        assert (0.0, 0.0) in positions
-        assert (1.0, 1.0) in positions
+        expected_positions = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
+        assert set(positions) == set(expected_positions)
 
     def test_create_particles_random_strategy(self, particle_classes):
         """Test particle creation with RandomStrategy."""
@@ -527,17 +566,16 @@ class TestParticleFactory:
 
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
-                        'quantity': 5,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+                    'quantity': 5,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -560,17 +598,16 @@ class TestParticleFactory:
         # Test Sand particles
         sand_config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['0,0']}},
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
         sand_particles = ParticleFactory.create_particles(sand_config)
@@ -580,17 +617,16 @@ class TestParticleFactory:
         # Test Mud particles
         mud_config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'mud',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['0,0']}},
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'mud',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
         mud_particles = ParticleFactory.create_particles(mud_config)
@@ -600,17 +636,16 @@ class TestParticleFactory:
         # Test Passive particles
         passive_config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'passive',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['0,0']}},
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'passive',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
         passive_particles = ParticleFactory.create_particles(passive_config)
@@ -621,17 +656,16 @@ class TestParticleFactory:
         """Test error handling for invalid particle type."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'invalid_type',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['0,0']}},
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'invalid_type',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
 
@@ -642,20 +676,50 @@ class TestParticleFactory:
         """Test that release time is set correctly."""
         config = PopulationConfig(
             {
-                'population': {
-                    'particle_type': 'sand',
-                    'seeding': {
-                        'strategy': {'point': {'locations': ['0,0']}},
-                        'quantity': 1,
-                        'release_start': '2025-06-18 13:00:00',
-                        'burial_depth': {
-                            'constant': 1.0,
-                        },
+                'name': 'Basic Point Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0,0']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
                     },
-                }
+                },
             }
         )
         particles = ParticleFactory.create_particles(config)
 
         # Should have the correct release time
         assert particles[0].release_time == '2025-06-18 13:00:00'
+
+
+@pytest.fixture
+def population_config():
+    return PopulationConfig(
+        {
+            'name': 'Basic Random Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'bbox': '1.0,2.0, 3.0,4.0', 'nlocations': 2, 'seed': 42}},
+                'quantity': 5,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
+        }
+    )
+
+
+class TestParticlePopulation:
+    def test_create_population(self, population_config):
+        """Test creating a ParticlePopulation with a valid configuration."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 2.5, 5.0]),
+            field_y=np.array([0.0, 1.0, 2.0, 3.0]),
+            population_config=population_config,
+        )
+        assert population is not None
+        assert len(population.particles['x']) == 10  # 2 nlocations * 5 quantity
+        assert len(population.particles['y']) == 10  # 2 nlocations * 5 quantity
