@@ -13,6 +13,7 @@ from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.pathway_visualizer.simulation_dashboard import initialize_dashboard, update_dashboard
 from typing import Any
 
 
@@ -328,8 +329,49 @@ class Simulation:
                         # Update particle position
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
-            timer.advance()
 
+           # Dashboard initialization
+            if timer.step_count == 0:
+                enable_dashboard = True # self._controller.get('output.enable_dashboard', False)
+                if enable_dashboard:
+                    reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
+                    self.dashboard = initialize_dashboard(reference_date)
+
+            # Update dashboard if enabled
+            if self.dashboard is not None:
+                # Get first population
+                first_population = populations[0]
+                
+                # Get bathymetry data
+                bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                
+                # Particle data including burial_depth and mixing_depth
+                particle_data = {
+                    'x': first_population.particles['x'],
+                    'y': first_population.particles['y'],
+                    'burial_depth': first_population.particles['burial_depth'],
+                    'mixing_depth': first_population.particles['mixing_depth']
+                }
+                
+                # Get simulation timing
+                # plot_interval_str = self._controller.get('output.plot_interval', '1H')
+                plot_interval_seconds = 3600 # self._parse_duration(plot_interval_str)
+                
+                # Update dashboard with timing info
+                update_dashboard(
+                    self.dashboard, 
+                    flow_field, 
+                    bathymetry, 
+                    particle_data, 
+                    timer.current, 
+                    timer.current_timestep, 
+                    plot_interval_seconds,
+                    simulation_start_time=simulation_time.start,  # Add this
+                    simulation_end_time=simulation_time.end       # Add this
+                )
+                
+            timer.advance()
+                    
             # Saving and plotting
             # TODO: enable saving and plotting again: addapt writer with structure issue 297
             # TODO: remove default insertion on configuration retrieval
