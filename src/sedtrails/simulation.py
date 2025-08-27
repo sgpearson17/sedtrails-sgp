@@ -2,8 +2,8 @@ import os
 import sys
 from tqdm import tqdm
 
-from sedtrails.particle_tracer.particle_seeder import PopulationConfig
-from sedtrails.particle_tracer.population import ParticlePopulation
+# from sedtrails.particle_tracer.particle_seeder import PopulationConfig
+# from sedtrails.particle_tracer.population import ParticlePopulation
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
@@ -14,6 +14,7 @@ from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from typing import Any
+from sedtrails.particle_tracer import ParticleSeeder
 
 
 def setup_global_exception_logging(logger_manager):
@@ -237,18 +238,22 @@ class Simulation:
             current_time=simulation_time._start, reading_interval=1
         )
 
-        populations = []  # TODO: integrate into ParticlePopulation class
-        populations_config = self._controller.get('particles.populations')
-        for population_config in populations_config:
-            p_config = PopulationConfig(population_config)
+        populations_config = self._controller.get('particles.populations', [])
+        seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
+        populations = seeder.seed(sedtrails_data)  # seed particles for all populations using current sedtrails data
 
-            populations.append(
-                ParticlePopulation(
-                    field_x=sedtrails_data.x,
-                    field_y=sedtrails_data.y,
-                    population_config=p_config,
-                )
-            )
+        # TODO: integrate into ParticlePopulation class. SUBSTITUTE WITH NEW PARTICLE SEEDER CLASS
+        # populations_config = self._controller.get('particles.populations')
+        # for population_config in populations_config:
+        #     p_config = PopulationConfig(population_config)
+
+        #     populations.append(
+        #         ParticlePopulation(
+        #             field_x=sedtrails_data.x,
+        #             field_y=sedtrails_data.y,
+        #             population_config=p_config,
+        #         )
+        #     )
 
         # Set initial values
         sedtrails_data = None
