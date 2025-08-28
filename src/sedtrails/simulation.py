@@ -2,8 +2,7 @@ import os
 import sys
 from tqdm import tqdm
 
-# from sedtrails.particle_tracer.particle_seeder import PopulationConfig
-# from sedtrails.particle_tracer.population import ParticlePopulation
+
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
@@ -13,7 +12,8 @@ from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
-from sedtrails.pathway_visualizer.simulation_dashboard import initialize_dashboard, update_dashboard
+from sedtrails.pathway_visualizer import SimulationDashboard
+
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
 
@@ -85,9 +85,33 @@ class Simulation:
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()
         self.particles: list[Particle] = []  # List to hold particles
+        self.dashboard = self._create_dashboard()  # Dashboard instance, initialized later if needed
 
         # Setup global exception handling
         setup_global_exception_logging(self.logger_manager)
+
+    def _create_dashboard(self):
+        """Create and return a dashboard instance."""
+        if self._controller.get('visualization.dashboard.enable', False):
+            reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
+            figsize = (16, 10)
+            dashboard = SimulationDashboard(reference_date=reference_date)
+            dashboard.initialize_dashboard(figsize)
+            # Force initial display and bring window to front
+            dashboard.fig.show()
+            dashboard.fig.canvas.draw()
+            dashboard.fig.canvas.flush_events()
+
+            # Try to bring window to front (cross-platform)
+            try:
+                dashboard.fig.canvas.manager.window.raise_()
+                dashboard.fig.canvas.manager.window.activateWindow()
+            except AttributeError:
+                pass  # Some backends don't support this
+
+            return dashboard
+        else:
+            return None
 
     def _get_format_config(self):
         """
@@ -258,12 +282,9 @@ class Simulation:
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
-            if (
-                sedtrails_data is None
-                or current_time_seconds > sedtrails_data.times[-2]
-            ):
+            if sedtrails_data is None or current_time_seconds > sedtrails_data.times[-2]:
                 # Avoid recreating SedTRAILS data if current time is before the first time step
-                if current_time_seconds < sedtrails_data.times[0]:
+                if sedtrails_data is not None and current_time_seconds < sedtrails_data.times[0]:
                     timer.advance()
                     continue
                 # Convert to SedTRAILS format
@@ -295,7 +316,7 @@ class Simulation:
 
             # Main loop
             for population in populations:
-                for method in tracer_methods:
+                for _method in tracer_methods:
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
                         mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
@@ -324,49 +345,41 @@ class Simulation:
                         # Update particle position
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
+                # Update dashboard if enabled
+                if self.dashboard is not None:
+                    # Get first population
+                    first_population = populations[0]
 
-           # Dashboard initialization
-            if timer.step_count == 0:
-                enable_dashboard = True # self._controller.get('output.enable_dashboard', False)
-                if enable_dashboard:
-                    reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
-                    self.dashboard = initialize_dashboard(reference_date)
+                    # Get bathymetry data
+                    bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
 
-            # Update dashboard if enabled
-            if self.dashboard is not None:
-                # Get first population
-                first_population = populations[0]
-                
-                # Get bathymetry data
-                bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                
-                # Particle data including burial_depth and mixing_depth
-                particle_data = {
-                    'x': first_population.particles['x'],
-                    'y': first_population.particles['y'],
-                    'burial_depth': first_population.particles['burial_depth'],
-                    'mixing_depth': first_population.particles['mixing_depth']
-                }
-                
-                # Get simulation timing
-                # plot_interval_str = self._controller.get('output.plot_interval', '1H')
-                plot_interval_seconds = 3600 # self._parse_duration(plot_interval_str)
-                
-                # Update dashboard with timing info
-                update_dashboard(
-                    self.dashboard, 
-                    flow_field, 
-                    bathymetry, 
-                    particle_data, 
-                    timer.current, 
-                    timer.current_timestep, 
-                    plot_interval_seconds,
-                    simulation_start_time=simulation_time.start,  # Add this
-                    simulation_end_time=simulation_time.end       # Add this
-                )
-                
+                    # Particle data including burial_depth and mixing_depth
+                    particle_data = {
+                        'x': first_population.particles['x'],
+                        'y': first_population.particles['y'],
+                        'burial_depth': first_population.particles['burial_depth'],
+                        'mixing_depth': first_population.particles['mixing_depth'],
+                    }
+
+                    # Get simulation timing
+                    # plot_interval_str = self._controller.get('output.plot_interval', '1H')
+                    plot_interval_seconds = 3600  # self._parse_duration(plot_interval_str)
+
+                    # Update dashboard with timing info
+
+                    self.dashboard.update(
+                        flow_field,
+                        bathymetry,
+                        particle_data,
+                        timer.current,
+                        timer.current_timestep,
+                        plot_interval_seconds,
+                        simulation_start_time=simulation_time.start,  # Add this
+                        simulation_end_time=simulation_time.end,  # Add this
+                    )
+
             timer.advance()
-                    
+
             # Saving and plotting
             # TODO: enable saving and plotting again: addapt writer with structure issue 297
             # TODO: remove default insertion on configuration retrieval
@@ -410,8 +423,14 @@ class Simulation:
         # End of Simulation
         pbar.close()
 
+        # Keep dashboard open after simulation ends
+
+        if self.dashboard is not None:
+            print('\nSimulation completed successfully!')
+            self.dashboard.keep_window_open()
+
         # Finalize results
-        self.data_manager.dump()  # Write remaining data to disk
+        # self.data_manager.dump()  # Write remaining data to disk
 
 
 if __name__ == '__main__':
