@@ -12,7 +12,8 @@ from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
-from sedtrails.pathway_visualizer.simulation_dashboard import initialize_dashboard
+from sedtrails.pathway_visualizer import SimulationDashboard
+
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
 
@@ -93,7 +94,9 @@ class Simulation:
         """Create and return a dashboard instance."""
         if self._controller.get('visualization.dashboard.enable', False):
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
-            dashboard = initialize_dashboard(reference_date)
+            figsize = (16, 10)
+            dashboard = SimulationDashboard(reference_date=reference_date)
+            dashboard.initialize_dashboard(figsize)
             # Force initial display and bring window to front
             dashboard.fig.show()
             dashboard.fig.canvas.draw()

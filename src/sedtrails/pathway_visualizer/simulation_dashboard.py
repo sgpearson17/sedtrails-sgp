@@ -12,7 +12,6 @@ from collections import defaultdict
 from pathlib import Path
 import datetime
 from typing import Dict, Tuple
-import asyncio
 
 
 class SimulationDashboard:
@@ -162,7 +161,7 @@ class SimulationDashboard:
                             # Don't call app.exec_() as it would block everything
                             # Instead, just ensure the window stays visible
                             pass
-                    except:
+                    except Exception:
                         pass
 
                 # Keep matplotlib event loop alive
@@ -327,7 +326,7 @@ class SimulationDashboard:
         x, y, magnitude = flow_field['x'], flow_field['y'], flow_field['magnitude']
 
         # Contour plot of magnitude
-        contour = ax.tricontourf(x, y, magnitude, levels=15, cmap='viridis')
+        ax.tricontourf(x, y, magnitude, levels=15, cmap='viridis')
 
         # Add z=0 bathymetry contour
         ax.tricontour(x, y, bathymetry, levels=[0], colors='white', linewidths=2, linestyles='-')
@@ -361,7 +360,7 @@ class SimulationDashboard:
         x, y = flow_field['x'], flow_field['y']
 
         # Bathymetry contour plot
-        bathy_plot = ax.tricontourf(
+        ax.tricontourf(
             x, y, bathymetry, levels=20, cmap=self.bathymetry_cmap, vmin=self.bathymetry_vmin, vmax=self.bathymetry_vmax
         )
 
@@ -520,37 +519,3 @@ class SimulationDashboard:
         """Save current dashboard state."""
         if self.fig is not None:
             self.fig.savefig(save_path, dpi=300, bbox_inches='tight')
-
-
-# Convenience functions for simulation.py integration
-def initialize_dashboard(
-    reference_date: str = '1970-01-01', figsize: Tuple[float, float] = (16, 10)
-) -> SimulationDashboard:
-    """Initialize simulation dashboard."""
-    dashboard = SimulationDashboard(reference_date)
-    dashboard.initialize_dashboard(figsize)
-    return dashboard
-
-
-# def update_dashboard(
-#     dashboard: SimulationDashboard,
-#     flow_field: Dict[str, np.ndarray],
-#     bathymetry: np.ndarray,
-#     particles: Dict[str, np.ndarray],
-#     current_time: float,
-#     timestep: float,
-#     plot_interval: float,
-#     simulation_start_time: float = 0,
-#     simulation_end_time: float = None,
-# ) -> None:
-#     """Update dashboard with current simulation data."""
-#     dashboard.update(
-#         flow_field,
-#         bathymetry,
-#         particles,
-#         current_time,
-#         timestep,
-#         plot_interval,
-#         simulation_start_time,
-#         simulation_end_time,
-#     )
