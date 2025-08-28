@@ -7,7 +7,7 @@ folder_settings:
   input_data: ./sample-data/inlet_sedtrails.nc
   output_dir: ./results
 time:
-  start: 2011-08-01 00:00:00
+  start:  2016-09-21 19:20:00
   timestep: 60S
   read_input_timestep: 1D
   duration: 1D
