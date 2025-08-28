@@ -28,6 +28,7 @@ class SimulationDashboard:
         self.time_stamps = []
         self.plot_initialized = False
         self.last_update_time = 0
+        self.keep_open = True  # Control for keeping window open after simulation
 
         # Store reference date for time conversions
         self.reference_date = datetime.datetime.fromisoformat(reference_date)
@@ -65,10 +66,111 @@ class SimulationDashboard:
         # Fix overlapping text
         plt.tight_layout()
 
+        # Handle window closing event
+        self.fig.canvas.mpl_connect('close_event', self._on_close)
+
         self.plot_initialized = True
 
-        # Show the figure
-        plt.show(block=False)
+        # Force display and bring to front
+        self._show_and_raise_window()
+
+    def _show_and_raise_window(self):
+        """Show window and bring it to front (cross-platform)."""
+        try:
+            # Show the figure
+            self.fig.show()
+
+            # Draw and flush to ensure display
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+
+            # Try to position and raise window
+            backend = plt.get_backend().lower()
+
+            if 'qt' in backend:
+                # Qt backend (most common)
+                try:
+                    manager = self.fig.canvas.manager
+                    manager.window.show()
+                    manager.window.raise_()
+                    manager.window.activateWindow()
+
+                    # On macOS, also try to bring to front
+                    import sys
+
+                    if sys.platform == 'darwin':
+                        manager.window.raise_()
+                        # Additional macOS-specific activation
+                        try:
+                            import subprocess
+
+                            subprocess.run(
+                                ['osascript', '-e', 'tell application "Python" to activate'],
+                                check=False,
+                                capture_output=True,
+                            )
+                        except Exception:
+                            pass
+
+                except Exception:
+                    pass
+
+            elif 'tk' in backend:
+                # Tkinter backend
+                try:
+                    manager = self.fig.canvas.manager
+                    manager.window.lift()
+                    manager.window.attributes('-topmost', True)
+                    manager.window.after(100, lambda: manager.window.attributes('-topmost', False))
+                except Exception:
+                    pass
+
+            # Force a small pause to let the window system catch up
+            plt.pause(0.1)
+
+        except Exception as e:
+            print(f'Warning: Could not properly display dashboard window: {e}')
+
+    def _on_close(self, event):
+        """Handle window close event."""
+        self.keep_open = False
+        plt.ioff()  # Turn off interactive mode
+
+    def keep_window_open(self):
+        """Keep the window open after simulation ends."""
+        if self.fig is not None and self.keep_open:
+            print('Simulation complete. Dashboard window will remain open.')
+            print('Close the window manually when done viewing results.')
+
+            # Turn off interactive mode but keep window open
+            plt.ioff()
+
+            # Show blocking to keep window open
+            try:
+                # This will keep the window open until manually closed
+                self.fig.show()
+
+                # For different backends, we might need different approaches
+                backend = plt.get_backend().lower()
+                if 'qt' in backend:
+                    # Qt backend - keep event loop running
+                    try:
+                        from matplotlib.backends.qt_compat import QtWidgets
+
+                        app = QtWidgets.QApplication.instance()
+                        if app is not None:
+                            # Don't call app.exec_() as it would block everything
+                            # Instead, just ensure the window stays visible
+                            pass
+                    except:
+                        pass
+
+                # Keep matplotlib event loop alive
+                while self.keep_open and plt.fignum_exists(self.fig.number):
+                    plt.pause(0.1)
+
+            except Exception as e:
+                print(f'Could not keep window open: {e}')
 
     def _setup_time_series_plots(self) -> None:
         """Set up empty line plots for time series data."""
@@ -430,25 +532,25 @@ def initialize_dashboard(
     return dashboard
 
 
-def update_dashboard(
-    dashboard: SimulationDashboard,
-    flow_field: Dict[str, np.ndarray],
-    bathymetry: np.ndarray,
-    particles: Dict[str, np.ndarray],
-    current_time: float,
-    timestep: float,
-    plot_interval: float,
-    simulation_start_time: float = 0,
-    simulation_end_time: float = None,
-) -> None:
-    """Update dashboard with current simulation data."""
-    dashboard.update(
-        flow_field,
-        bathymetry,
-        particles,
-        current_time,
-        timestep,
-        plot_interval,
-        simulation_start_time,
-        simulation_end_time,
-    )
+# def update_dashboard(
+#     dashboard: SimulationDashboard,
+#     flow_field: Dict[str, np.ndarray],
+#     bathymetry: np.ndarray,
+#     particles: Dict[str, np.ndarray],
+#     current_time: float,
+#     timestep: float,
+#     plot_interval: float,
+#     simulation_start_time: float = 0,
+#     simulation_end_time: float = None,
+# ) -> None:
+#     """Update dashboard with current simulation data."""
+#     dashboard.update(
+#         flow_field,
+#         bathymetry,
+#         particles,
+#         current_time,
+#         timestep,
+#         plot_interval,
+#         simulation_start_time,
+#         simulation_end_time,
+#     )

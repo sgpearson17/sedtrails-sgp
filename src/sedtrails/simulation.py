@@ -2,8 +2,7 @@ import os
 import sys
 from tqdm import tqdm
 
-# from sedtrails.particle_tracer.particle_seeder import PopulationConfig
-# from sedtrails.particle_tracer.population import ParticlePopulation
+
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
@@ -13,7 +12,7 @@ from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
-from sedtrails.pathway_visualizer.simulation_dashboard import initialize_dashboard, update_dashboard
+from sedtrails.pathway_visualizer.simulation_dashboard import initialize_dashboard
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
 
@@ -94,7 +93,20 @@ class Simulation:
         """Create and return a dashboard instance."""
         if self._controller.get('visualization.dashboard.enable', False):
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
-            return initialize_dashboard(reference_date)
+            dashboard = initialize_dashboard(reference_date)
+            # Force initial display and bring window to front
+            dashboard.fig.show()
+            dashboard.fig.canvas.draw()
+            dashboard.fig.canvas.flush_events()
+
+            # Try to bring window to front (cross-platform)
+            try:
+                dashboard.fig.canvas.manager.window.raise_()
+                dashboard.fig.canvas.manager.window.activateWindow()
+            except AttributeError:
+                pass  # Some backends don't support this
+
+            return dashboard
         else:
             return None
 
@@ -407,6 +419,12 @@ class Simulation:
 
         # End of Simulation
         pbar.close()
+
+        # Keep dashboard open after simulation ends
+
+        if self.dashboard is not None:
+            print('\nSimulation completed successfully!')
+            self.dashboard.keep_window_open()
 
         # Finalize results
         # self.data_manager.dump()  # Write remaining data to disk
