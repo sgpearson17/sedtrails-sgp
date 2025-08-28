@@ -56,8 +56,10 @@ particles:
             bbox: "39400,16800 40600,17800"
             seed: 42
             nlocations: 5
-            
 output:
   store_tracks: true
   save_interval: 1H
   plot_interval: 1D
+visualization:
+  dashboard:
+    enable: true
