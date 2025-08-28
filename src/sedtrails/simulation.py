@@ -316,7 +316,7 @@ class Simulation:
 
             # Main loop
             for population in populations:
-                for method in tracer_methods:
+                for _method in tracer_methods:
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
                         mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
