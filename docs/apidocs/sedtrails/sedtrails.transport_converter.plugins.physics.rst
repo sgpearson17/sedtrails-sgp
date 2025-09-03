@@ -13,7 +13,7 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.transport_converter.plugins.physics.bertin
+   sedtrails.transport_converter.plugins.physics.plugin
    sedtrails.transport_converter.plugins.physics.soulsby
    sedtrails.transport_converter.plugins.physics.van_westen
-   sedtrails.transport_converter.plugins.physics.plugin
-   sedtrails.transport_converter.plugins.physics.bertin
