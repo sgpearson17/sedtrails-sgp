@@ -119,6 +119,11 @@
           "type": "string",
           "default": "1970-01-01",
           "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
+        },
+        "morfac": {
+          "type": "number",
+          "default": 1,
+          "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
         }
       }
     },
@@ -321,6 +326,16 @@
           "type": "string",
           "default": "30S",
           "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
+        },
+        "read_input_timestep": {
+          "type": "string",
+          "default": "30D12H25M0S",
+          "description": "timestep for reading the input data (*.nc) in chunks, e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "cfl_condition": {
+          "type": "number",
+          "default": 0.7,
+          "description": "CFL condition for adaptive timestep calculation. If 0, timestep is not adapted."
         }
       },
       "required": [
@@ -333,7 +348,23 @@
       "properties": {
         "constants": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
+            "grain_diameter": {
+              "type": "number",
+              "default": 2.5e-4,
+              "description": "grain diameter of sediment [m]"
+            },
+            "morphology_factor": {
+              "type": "number",
+              "default": 1.0,
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
+            },
+            "porosity": {
+              "type": "number",
+              "default": 0.4,
+              "description": "porosity of sediment (40% default)"
+            },
             "g": {
               "type": "number",
               "default": 9.81,
@@ -344,7 +375,7 @@
               "default": 0.4,
               "description": "von Karman's constant"
             },
-            "kinetic_viscosity": {
+            "kinematic_viscosity": {
               "type": "number",
               "default": 1.36e-06,
               "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
@@ -423,10 +454,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "population": {
-          "$ref": "urn:sedtrails:config:population.schema.json"
+        "populations": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:sedtrails:config:population.schema.json"
+          },
+          "minItems": 1,
+          "description": "list of particle populations to simulate."
         }
-      }
+      },
+      "required": [
+        "populations"
+      ]
     },
     "pathways": {
       "type": "object",
@@ -468,10 +507,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "timestep": {
-          "type": "number",
-          "default": 3600.0,
-          "description": "time step duration in seconds. 3600 is default for sediment transport"
+        "save_interval": {
+          "type": "string",
+          "default": "1H",
+          "description": "save interval for output files, e.g., '1H' for 1 hour."
+        },
+        "plot_interval": {
+          "type": "string",
+          "default": "1D",
+          "description": "interval for plotting, '1D' for 1 Day."
         },
         "store_tracks": {
           "type": "boolean",

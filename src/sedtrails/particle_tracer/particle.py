@@ -40,7 +40,8 @@ class Particle(ABC):
     id: int = field(init=False)  # Unique identifier for the particle
     _x: float = field(init=False)  # initial position
     _y: float = field(init=False)  # initial position
-    _release_time: int | float = field(init=False)  # release time of the particle
+    _release_time: str = field(init=False)  # release time of the particle
+    _burial_depth: float = field(init=False)  # release time of the particle
     _is_mobile: bool = field(default=True)  # whether the particle is mobile or not
     name: Optional[str] = field(default='')  # name of the particle
     trace: Dict = field(default_factory=dict)  # trace of the particle
@@ -79,6 +80,18 @@ class Particle(ABC):
         self._x = value
 
     @property
+    def burial_depth(self) -> float:
+        return self._burial_depth
+
+    @burial_depth.setter
+    def burial_depth(self, value: float) -> None:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Expected 'burial_depth' to be an integer or float, got {type(value).__name__}")
+        if value < 0:
+            raise ValueError('Burial depth must be non-negative')
+        self._burial_depth = value
+
+    @property
     def y(self) -> float:
         return self._y
 
@@ -89,19 +102,17 @@ class Particle(ABC):
         self._y = value
 
     @property
-    def release_time(self) -> int | float:
+    def release_time(self) -> str:
         return self._release_time
 
     @release_time.setter
-    def release_time(self, value: int) -> None:
-        if not isinstance(value, int):
-            raise TypeError(f"Expected 'release_time' to be an integer, got {type(value).__name__}")
-        if value < 0:
-            raise ValueError(f"Expected 'release_time' to be a non-negative integer, got {value}")
+    def release_time(self, value: str) -> None:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected 'release_time' to be a string, got {type(value).__name__}")
         self._release_time = value
 
     @release_time.getter
-    def release_time(self) -> int | float:
+    def release_time(self) -> str:
         return self._release_time
 
     @property

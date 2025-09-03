@@ -101,7 +101,8 @@ class PhysicsConverter:
                 self._physics_plugin = plugin_module.PhysicsPlugin(self.config)
         return self._physics_plugin
 
-    def convert_physics(self, sedtrails_data) -> None:
+
+    def convert_physics(self, sedtrails_data, transport_probability_method: str = None) -> None:
         """
         Converts and adds physics calculations to existing SedtrailsData object using the tracer method.
 
@@ -109,6 +110,8 @@ class PhysicsConverter:
         -----------
         sedtrails_data : SedtrailsData
             Existing SedtrailsData object to be enhanced with physics calculations.
+        transport_probability_method : str, optional
+            Method to use for transport probability effects
         """
 
         if self._physics_plugin is None:
@@ -116,6 +119,5 @@ class PhysicsConverter:
         else:
             plugin = self._physics_plugin
 
-        print(f'Using {plugin.__class__.__name__} to compute transport velocities and add to SedTRAILS data...')
-
-        plugin.add_physics(sedtrails_data, self.grain_properties)
+        # Use empty dict as default if no config provided
+        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or {})

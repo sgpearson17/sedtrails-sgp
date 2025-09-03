@@ -98,10 +98,12 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "alpha": {
-                    "type": "number",
-                    "default": 0.1,
-                    "description": "alpha parameter for van Westen method"
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "flow field name for van Westen method used in particle computation"
                 },
                 "beta": {
                     "type": "number",
@@ -111,23 +113,6 @@
             },
             "description": "van Westen method for particle tracking"
         },
-        "van_westen_bl_method": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "gamma": {
-                    "type": "number",
-                    "default": 0.5,
-                    "description": "gamma parameter for van Westen method"
-                },
-                "delta": {
-                    "type": "number",
-                    "default": 0.4,
-                    "description": "delta parameter for van Westen method"
-                }
-            },
-            "description": "van Westen BL method for particle tracking"
-        },
         "soulsby_method": {
             "type": "object",
             "additionalProperties": false,
@@ -135,12 +120,12 @@
                 "f": {
                     "type": "number",
                     "default": 0.1,
-                    "description": "f parameter for van Westen method"
+                    "description": "f parameter for Soulsby method"
                 },
                 "r": {
                     "type": "number",
                     "default": 0.8,
-                    "description": "r parameter for van Westen method"
+                    "description": "r parameter for Soulsby method"
                 }
             },
             "description": "Soulsby method for particle tracking"
@@ -191,10 +176,52 @@
             },
             "description": "At least one tracer method must be specified"
         },
+        "transport_probability": {
+            "type": "string",
+            "enum": [
+                "no_probability",
+                "stochastic_transport",
+                "reduced_velocity"
+            ],
+            "default": "no_probability",
+            "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
+        },
         "seeding": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "burial_depth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
+                    "default": {
+                        "constant": 0
+                    },
+                    "properties": {
+                        "random": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "maximum depth from bed level (surface) for random burial depth in meters."
+                        },
+                        "constant": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "constant burial depth in meters."
+                        }
+                    },
+                    "Oneof": [
+                        {
+                            "required": [
+                                "random"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "constant"
+                            ]
+                        }
+                    ]
+                },
                 "class": {
                     "type": "string",
                     "default": "clusters",
@@ -238,7 +265,7 @@
                             "properties": {
                                 "pol_file": {
                                     "type": "string",
-                                    "description": "path to Deltares '.pol; file with list of transects and points to release particles from"
+                                    "description": "path to Deltares '.pol; file with list of points to release particles from"
                                 },
                                 "locations": {
                                     "type": "array",
@@ -279,18 +306,17 @@
                                     "type": "string",
                                     "description": "path to Deltares '.pol; file with list of transects (line segments) to release particles from"
                                 },
-                                "lines": {
+                                "segments": {
                                     "type": "array",
                                     "items": {
                                         "type": "string"
                                     },
-                                    "default": [],
-                                    "description": "the enpoints (X,Y coordinates) of a list of line segments to where particles will be released, e.g., '1000,2000 3000,4000'"
+                                    "description": "a list of line segments along which particles are released, e.g., '1000,2000 3000,4000'"
                                 },
                                 "k": {
                                     "type": "number",
                                     "default": 100.0,
-                                    "description": "number of release points to create per transect"
+                                    "description": "number of release points to create per segment"
                                 },
                                 "show_check_plots": {
                                     "type": "boolean",
@@ -311,7 +337,56 @@
                                 },
                                 {
                                     "required": [
-                                        "lines"
+                                        "segments"
+                                    ]
+                                }
+                            ]
+                        },
+                        "random": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
+                                },
+                                "bbox": {
+                                    "type": "string",
+                                    "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "nlocations": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "description": "number of random points to generate within the bounding box or polygon"
+                                },
+                                "seed": {
+                                    "type": "number",
+                                    "default": 42,
+                                    "description": "seed for random number generator"
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots?"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots?"
+                                }
+                            },
+                            "required": [
+                                "nlocations"
+                            ],
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "bbox"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "pol_file"
                                     ]
                                 }
                             ]
@@ -323,7 +398,7 @@
                                     "type": "string",
                                     "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
                                 },
-                                "regular": {
+                                "separation": {
                                     "type": "object",
                                     "properties": {
                                         "dx": {
@@ -356,7 +431,19 @@
                                     "type": "boolean",
                                     "default": false,
                                     "description": "Do you want to save cluster check plots?"
-                                }
+                                },
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "pol_file"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "separation"
+                                        ]
+                                    }
+                                ]
                             }
                         }
                     },
@@ -369,6 +456,11 @@
                         {
                             "required": [
                                 "transect"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "random"
                             ]
                         },
                         {
@@ -477,6 +569,7 @@
         }
     ],
     "required": [
+        "name",
         "particle_type",
         "characteristics",
         "tracer_methods",

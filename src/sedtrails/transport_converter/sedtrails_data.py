@@ -1,6 +1,10 @@
 import numpy as np
 from typing import Dict
 from dataclasses import dataclass
+import warnings
+from scipy.spatial.distance import pdist
+from scipy.spatial import ConvexHull
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
 @dataclass
@@ -48,6 +52,8 @@ class SedtrailsData:
     nonlinear_wave_velocity: Dict[str, np.ndarray]
         Nonlinear wave velocity in m/s
         (keys: 'x', 'y', 'magnitude', each with time as first dimension)
+    metadata: SedtrailsMetadata
+        Additional metadata for this dataset
 
     # === PHYSICS FIELDS (added by PhysicsConverter) ===
     # Note: All physics fields match the structure of transport data
@@ -82,96 +88,130 @@ class SedtrailsData:
     max_bed_shear_stress: np.ndarray
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
+    metadata: SedtrailsMetadata
 
     def __post_init__(self):
-        """Initialize container for dynamic physics fields."""
-        # Create a container for physics data that can be added later
-        self._physics_fields = {}
+        """Initialize container for dynamic physics fields and validate metadata."""
+        # Validate metadata field
+        self._validate_metadata()
+        # TODO: do we also need to check that min max values are sensible? i.e. min <= max
+        self._calculate_timestep()
+        self._compute_grid_metadata()
+        self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
+
+    def _calculate_timestep(self):
+        """Calculate median timestep and add to metadata."""
+        if len(self.times) < 2:
+            # Cannot calculate timestep with fewer than 2 time points
+            timestep = None
+        else:
+            # Calculate median timestep, this helps ignore the weird startup timesteps
+            all_timesteps = np.diff(self.times)
+            timestep = float(np.median(np.diff(self.times)))
+
+            # Optional: Add validation
+            if timestep <= 0:
+                warnings.warn(f'Calculated timestep is non-positive: {timestep}', stacklevel=1)
+
+            # Check if we have timesteps deviating from the median
+            tolerance = 1e-6
+            deviations = np.abs(all_timesteps - timestep)
+            deviating_indices = np.where(deviations > tolerance)[0]
+
+            if len(deviating_indices) > 0:
+                warnings.warn(
+                    f'Found {len(deviating_indices)} timesteps deviating from median ({timestep:.6f}s)', stacklevel=2
+                )
+
+        self.metadata.add('timestep', timestep)
+
+    def _compute_grid_metadata(self):
+        """
+        Compute grid metadata and add to metadata: minimum resolution and outer envelope.
+
+        Computes:
+        - min_resolution: minimum distance between any two grid points
+        - outer_envelope: convex hull vertices of the grid points
+        """
+        # Stack coordinates for distance calculations
+        coords = np.column_stack((self.x.flatten(), self.y.flatten()))
+
+        # Compute minimum resolution (minimum distance between any two points)
+        distances = pdist(coords)
+        min_resolution = float(np.min(distances))
+
+        # Compute outer envelope using convex hull
+        hull = ConvexHull(coords)
+        outer_envelope = coords[hull.vertices].tolist()  # Convert to list for JSON serialization
+
+        # Add to metadata
+        self.metadata.add('min_resolution', min_resolution)
+        self.metadata.add('outer_envelope', outer_envelope)
+
+    def _validate_metadata(self):
+        """Validate that metadata field exists and is the correct type."""
+        # Only check that metadata is the right type
+        if not isinstance(self.metadata, SedtrailsMetadata):
+            raise TypeError(f'metadata must be an instance of SedtrailsMetadata, got {type(self.metadata).__name__}')
 
     def add_physics_field(self, name: str, data):
         """
         Add a physics field to the data structure.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         name : str
             Name of the physics field
         data : np.ndarray or dict
             Physics data (scalar array or dict with 'x', 'y', 'magnitude' for vectors)
         """
         self._physics_fields[name] = data
-        # Also set as attribute for direct access
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
-        """
-        Check if a specific physics field exists.
-
-        Parameters:
-        -----------
-        name : str
-            Name of the physics field to check
-
-        Returns:
-        --------
-        bool
-            True if the field exists. False otherwise.
-        """
+        """Check if a specific physics field exists."""
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
-        """
-        Get list of available physics field names.
-
-        Returns:
-        --------
-        list
-            List of physics field names
-        """
+        """Get list of available physics field names."""
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
-        """
-        Check if any physics fields have been added.
-
-        Returns:
-        --------
-        bool
-            True if any physics fields exist
-        """
+        """Check if any physics fields have been added."""
         return len(self._physics_fields) > 0
 
+    # ------------------------------------------------------------------
+    # Time slicing
+    # ------------------------------------------------------------------
     def __getitem__(self, time_index: int) -> Dict:
         """
         Get data for a specific time index.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         time_index : int
             Time index to extract
 
-        Returns:
-        --------
+        Returns
+        -------
         Dict
             Dictionary containing all data for the specified time index
         """
         if time_index < 0 or time_index >= len(self.times):
             raise IndexError(f'Time index {time_index} out of bounds (0-{len(self.times) - 1})')
 
-        # Create a dictionary with time-specific data
+        # Core fields
         data = {
             'time': self.times[time_index],
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'bed_level': self.bed_level,  # Bed level is typically time-independent
+            'bed_level': self.bed_level,  # typically time-independent
             'fractions': self.fractions,
-            # Extract time slice from time-dependent variables
             'water_depth': self.water_depth[time_index],
             'mean_bed_shear_stress': self.mean_bed_shear_stress[time_index],
             'max_bed_shear_stress': self.max_bed_shear_stress[time_index],
             'sediment_concentration': self.sediment_concentration[time_index],
-            # Extract time slice from vector quantities
             'depth_avg_flow_velocity': {
                 'x': self.depth_avg_flow_velocity['x'][time_index],
                 'y': self.depth_avg_flow_velocity['y'][time_index],
@@ -194,31 +234,15 @@ class SedtrailsData:
             },
         }
 
-        # DYNAMIC PHYSICS FIELDS: Add any physics fields that have been dynamically added
-        physics_scalar_fields = [
-            'shields_number',
-            'bed_load_layer_thickness',
-            'suspended_layer_thickness',
-            'mixing_layer_thickness',
-        ]
-        physics_vector_fields = ['bed_load_velocity', 'suspended_velocity']
-
-        # Add scalar physics fields if they exist
-        for field_name in physics_scalar_fields:
-            if hasattr(self, field_name):
-                field_value = getattr(self, field_name)
-                if field_value is not None:
-                    data[field_name] = field_value[time_index]
-
-        # Add vector physics fields if they exist
-        for field_name in physics_vector_fields:
-            if hasattr(self, field_name):
-                field_value = getattr(self, field_name)
-                if field_value is not None:
-                    data[field_name] = {
-                        'x': field_value['x'][time_index],
-                        'y': field_value['y'][time_index],
-                        'magnitude': field_value['magnitude'][time_index],
-                    }
+        # Dynamic physics fields
+        for name, value in self._physics_fields.items():
+            if isinstance(value, dict):  # vector field
+                data[name] = {
+                    'x': value['x'][time_index],
+                    'y': value['y'][time_index],
+                    'magnitude': value['magnitude'][time_index],
+                }
+            else:  # scalar field
+                data[name] = value[time_index]
 
         return data

@@ -1,9 +1,12 @@
+# Installation
 
-# SedTRAILS Installation
+::: warning
+Update this section
+:::
 
-## Installation for users
+ SedTRAILS is currently in an alpha stage. It is not recommended for production use.
 
-This is the step-by-step process to install SedTRAILS.
+This is the step-by-step guide on how to install SedTRAILS.
 
 1. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio) is installed.
 
@@ -19,6 +22,7 @@ cd sedtrails
 ```
 
 4. Install the dependencies: ([See this webpage](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md) for more details about installing as a developer)
+
 ```bash
 pip install .
 ```
