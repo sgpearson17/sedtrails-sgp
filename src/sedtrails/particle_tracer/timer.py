@@ -152,8 +152,8 @@ class Time:
         The simulation time step as a Duration object. Defaults to Duration('1H').
     duration : Duration
         The simulation duration as a Duration object. Defaults to Duration('3D 2H1M3S').
-    read_input_timestep : Duration
-        The timestep for reading input data in chunks as a Duration object.
+    read_input_interval : Duration
+        The interval for reading input data in chunks as a Duration object.
         Defaults to Duration('30D12H25M0S').
     cfl_condition : float
         The Courant-Friedrichs-Lewy (CFL) condition for the simulation.
@@ -170,7 +170,7 @@ class Time:
     _start: str
     time_step: Duration = field(default_factory=lambda: Duration('1H'), init=True)
     duration: Duration = field(default_factory=lambda: Duration('3D 2H1M3S'), init=True)
-    read_input_timestep: Duration = field(default_factory=lambda: Duration('30D12H25M0S'), init=True)
+    read_input_interval: Duration = field(default_factory=lambda: Duration('30D12H25M0S'), init=True)
     reference_date: str = field(default='1970-01-01 00:00:00')
     cfl_condition: float = field(default=0.7)
     _start_time_np: np.datetime64 = field(init=False)
@@ -190,7 +190,7 @@ class Time:
             raise ZeroDuration('time_step cannot be of length zero')
         if self.duration.seconds == 0:
             raise ZeroDuration('duration cannot be of length zero')
-        if self.read_input_timestep.seconds == 0:
+        if self.read_input_interval.seconds == 0:
             raise ZeroDuration('read_input_timestep cannot be of length zero')
 
         # Convert start time to numpy.datetime64
