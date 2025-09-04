@@ -174,18 +174,18 @@
         }
       }
     },
-    "folder_settings": {
+    "inputs": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "input_data": {
+        "data": {
           "type": "string",
           "description": "path to D-Flow data file"
         },
-        "output_dir": {
+        "read_interval": {
           "type": "string",
-          "default": "./output",
-          "description": "path to directory for storing the results of the simulation"
+          "default": "30D12H25M0S",
+          "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
         },
         "comp_dir": {
           "type": "string",
@@ -193,7 +193,7 @@
         }
       },
       "required": [
-        "input_data"
+        "data"
       ]
     },
     "domain": {
@@ -326,11 +326,6 @@
           "type": "string",
           "default": "30S",
           "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
-        },
-        "read_input_timestep": {
-          "type": "string",
-          "default": "30D12H25M0S",
-          "description": "timestep for reading the input data (*.nc) in chunks, e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
         },
         "cfl_condition": {
           "type": "number",
@@ -503,7 +498,7 @@
         }
       ]
     },
-    "output": {
+    "outputs": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -512,15 +507,15 @@
           "default": "1H",
           "description": "save interval for output files, e.g., '1H' for 1 hour."
         },
-        "plot_interval": {
-          "type": "string",
-          "default": "1D",
-          "description": "interval for plotting, '1D' for 1 Day."
-        },
         "store_tracks": {
           "type": "boolean",
           "default": true,
           "description": "store full particle tracks? (Y=true, N=false)"
+        },
+        "directory": {
+          "type": "string",
+          "default": "./output",
+          "description": "path to directory for storing the results of the simulation"
         },
         "store_end_positions": {
           "type": "boolean",
