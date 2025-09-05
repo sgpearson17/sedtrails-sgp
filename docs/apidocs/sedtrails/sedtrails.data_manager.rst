@@ -13,11 +13,11 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.data_manager.manager
    sedtrails.data_manager.memory_manager
+   sedtrails.data_manager.netcdf_reader
    sedtrails.data_manager.netcdf_writer
    sedtrails.data_manager.simulation_buffer
-   sedtrails.data_manager.netcdf_reader
-   sedtrails.data_manager.manager
 
 Package Contents
 ----------------

@@ -13,9 +13,9 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
-   sedtrails.pathway_visualizer.visualization_utils
-   sedtrails.pathway_visualizer.simulation_dashboard
    sedtrails.pathway_visualizer.sedtrails_plotting
+   sedtrails.pathway_visualizer.simulation_dashboard
+   sedtrails.pathway_visualizer.visualization_utils
 
 Package Contents
 ----------------
