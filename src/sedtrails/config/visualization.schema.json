@@ -191,7 +191,12 @@
                 "enable": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Enable real-time dashboard? true/false"
+                    "description": "enable real-time dashboard? true/false"
+                },
+                "update_interval": {
+                    "type": "string",
+                    "default": "1H",
+                    "description": "time interval at which the dashboard is updated in simulation time. It expects a duration string, e.g., '1H' for 1 hour."
                 }
             }
         }

@@ -3,13 +3,12 @@ general:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
-folder_settings:
-  input_data: ./sample-data/inlet_sedtrails.nc
-  output_dir: ./results
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
+  read_interval: 10D  # Time chunk size for reading input data
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S
-  read_input_timestep: 1D
   duration: 1D
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
@@ -56,10 +55,11 @@ particles:
             bbox: "39400,16800 40600,17800"
             seed: 42
             nlocations: 5
-output:
+outputs:
+  directory: ./results
   store_tracks: true
   save_interval: 1H
-  plot_interval: 1D
 visualization:
   dashboard:
     enable: true
+    update_interval: 1H

@@ -10,9 +10,11 @@ from sedtrails.particle_tracer.particle import Particle
 from sedtrails.configuration_interface.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
-from sedtrails.logger.logger import LoggerManager
+
+# from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
+# from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter
 
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
@@ -56,7 +58,7 @@ class Simulation:
 
         self._start_time = None
         self._config_is_read = False
-        self._population_config = None
+        self._populations_config = None
 
         # Validate config file exists early
         if not os.path.exists(config_file):
@@ -64,16 +66,20 @@ class Simulation:
 
         # Try to read config and update logger directory
         try:
+            # self._controller = ConfigurationController(self._config_file)
             self._controller = ConfigurationController(self._config_file)
             self._controller.load_config(self._config_file)
-            output_dir = self._controller.get('folder_settings.output_dir', 'results')
 
-            self.logger_manager = LoggerManager(output_dir)
-            self._controller = ConfigurationController(self._config_file, self.logger_manager)
-            self.logger_manager.setup_logger()
-            self._controller.log_after_load_config()
+            # TODO: logger has a circular dependency with controller. The logger needs refactoring.
+            # output_dir = self._controller.get('folder_settings.output_dir', 'results')
+            # self.logger_manager = LoggerManager(output_dir)
 
             self._config_is_read = True
+
+            # CONTINUE HERE: test and validate new yaml schema changess
+
+            # self.logger_manager.setup_logger()
+            # self._controller.log_after_load_config()
 
         except Exception:
             # Global exception handler will catch and log this
@@ -83,18 +89,19 @@ class Simulation:
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
-        self.data_manager.set_mesh()
+        self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
-        self.dashboard = self._create_dashboard()  # Dashboard instance, initialized later if needed
+        self.dashboard = self._create_dashboard()  #
+        self.writer = None  # TODO:
 
         # Setup global exception handling
-        setup_global_exception_logging(self.logger_manager)
+        # setup_global_exception_logging(self.logger_manager)
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
         if self._controller.get('visualization.dashboard.enable', False):
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
-            figsize = (16, 10)
+            figsize = (12, 8)
             dashboard = SimulationDashboard(reference_date=reference_date)
             dashboard.initialize_dashboard(figsize)
             # Force initial display and bring window to front
@@ -119,7 +126,7 @@ class Simulation:
         """
 
         format_config = {
-            'input_file': self._controller.get('folder_settings.input_data'),
+            'input_file': self._controller.get('inputs.data'),
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
@@ -131,7 +138,7 @@ class Simulation:
         """
         Returns the output directory for the simulation.
         """
-        return self._controller.get('folder_settings.output_dir')
+        return self._controller.get('outputs.directory')
 
     def _get_physics_config(self):
         """
@@ -164,18 +171,18 @@ class Simulation:
         return self._controller.get_config()  # delagates to the controller
 
     @property
-    def population_config(self):
+    def populations_config(self):
         """
-        Returns the particle population configuration.
+        Returns the configuration paramters for 'populations'.
         """
-        if self._population_config is None:
-            self._population_config = self.config.get('particles', {}).get('population', {})
-        return self._population_config
+        if self._populations_config is None:
+            self._populations_config = self.config.get('particles', {}).get('populations', {})
+        return self._populations_config
 
     @property
     def start_time(self):
         """
-        Get the start time for the simulation.
+        Get the start time parameter for the simulation.
         """
         if not self._start_time:
             self._start_time = self._controller.get('time.start_time')  # defaults to Unix epoch
@@ -189,7 +196,7 @@ class Simulation:
 
         return self.format_converter.convert_to_sedtrails()
 
-    def validate_config(self) -> bool:
+    def validate_config(self) -> bool:  # TODO: this is not used anywhere
         """
         Validates the configuration file.
 
@@ -208,7 +215,7 @@ class Simulation:
             # if config is already read, the file is already validated
             return True
 
-    def get_parameter(self, key: str) -> Any:
+    def get_parameter(self, key: str) -> Any:  # TODO: this is not used anywhere. Is it needed?
         """
         Returns the value of a specific parameter in the configuration file.
 
@@ -230,7 +237,7 @@ class Simulation:
 
         import warnings
 
-        if not self._config_is_read:
+        if not self._config_is_read:  # assure config is read only once
             self._controller.load_config(self._config_file)
 
         value = self._controller.get(key, None)
@@ -240,7 +247,7 @@ class Simulation:
 
     def run(self):
         """
-        Execute the complete particle simulation workflow.
+        Executes the particle simulation workflow.
         """
 
         # Loading configuration
@@ -253,7 +260,7 @@ class Simulation:
             _start=self._controller.get('time.start'),
             duration=Duration(self._controller.get('time.duration')),
             time_step=Duration(self._controller.get('time.timestep')),
-            read_input_timestep=Duration(self._controller.get('time.read_input_timestep')),
+            read_input_interval=Duration(self._controller.get('inputs.read_interval')),
         )
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
@@ -289,23 +296,27 @@ class Simulation:
                     continue
                 # Convert to SedTRAILS format
                 sedtrails_data = self.format_converter.convert_to_sedtrails(
-                    current_time=current_time_seconds, reading_interval=simulation_time.read_input_timestep.seconds
+                    current_time=current_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                 )
 
                 # Convert physics fields with transport probability configuration
-                self.physics_converter.convert_physics(
-                    sedtrails_data=sedtrails_data,
-                    transport_probability_method=self.population_config.get('transport_probability'),
-                )
+                for pop in self.populations_config:
+                    self.physics_converter.convert_physics(
+                        sedtrails_data=sedtrails_data,
+                        transport_probability_method=pop.get('transport_probability'),
+                    )
 
                 # Create new FieldDataRetriever with updated data
-                retriever = FieldDataRetriever(sedtrails_data)
+                retriever = FieldDataRetriever(sedtrails_data)  # TODO: should the retriever only be created once?
 
             # TODO: integrate loop over flow fields into CFL Condition
             # Collect flow fields for CFL computation
-            for population_config in populations_config:
-                tracer_methods = population_config['tracer_methods']
-                flow_field_names = population_config['tracer_methods']['vanwesten']['flow_field_name']
+            flow_field_names = []
+            tracer_methods = {}
+            # TODO: this loops over populations_config, but only the last one is used. Is that intended?
+            for population in populations_config:
+                tracer_methods = population['tracer_methods']
+                flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
@@ -431,6 +442,15 @@ class Simulation:
 
         # Finalize results
         # self.data_manager.dump()  # Write remaining data to disk
+
+        # Write final results to NetCDF
+        # writer = SimulationNetCDFWriter(self._get_output_dir())
+        # writer.write_simulation_results(
+        #     populations,
+        #     trajectory_data=self.data_manager.trajectory_data,
+        #     flow_field_names=flow_field_names,
+        #     filename='simulation_results.nc',
+        # )
 
 
 if __name__ == '__main__':
