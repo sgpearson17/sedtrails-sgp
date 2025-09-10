@@ -52,3 +52,66 @@ class NetCDFWriter:
         if not isinstance(ugrid_dataset, xu.UgridDataset):
             raise TypeError('Input must be a xu.UgridDataset.')
         ugrid_dataset.ugrid.to_netcdf(output_path)
+
+
+if __name__ == '__main__':
+    # Example usage - Create a dummy UGRID dataset for demonstration
+    import numpy as np
+    import xarray as xr
+
+    # Create a simple triangular mesh
+    # Define nodes (vertices)
+    node_x = np.array([0.0, 1.0, 2.0, 0.5, 1.5])
+    node_y = np.array([0.0, 0.0, 0.0, 1.0, 1.0])
+
+    # Define faces (triangles) - 0-based indexing
+    face_nodes = np.array(
+        [
+            [0, 1, 3],  # Triangle 1
+            [1, 2, 4],  # Triangle 2
+            [1, 3, 4],  # Triangle 3
+        ]
+    )
+
+    # Create a simple dataset with particle data
+    n_particles = 10
+    particle_x = np.random.uniform(0, 2, n_particles)
+    particle_y = np.random.uniform(0, 1, n_particles)
+    particle_depth = np.random.uniform(0, 5, n_particles)
+
+    # Create the dataset
+    ds = xr.Dataset(
+        {
+            'mesh2d_node_x': (['mesh2d_nNodes'], node_x),
+            'mesh2d_node_y': (['mesh2d_nNodes'], node_y),
+            'mesh2d_face_nodes': (['mesh2d_nFaces', 'mesh2d_nMax_face_nodes'], face_nodes),
+            'particle_x': (['nParticles'], particle_x),
+            'particle_y': (['nParticles'], particle_y),
+            'particle_depth': (['nParticles'], particle_depth),
+        },
+        coords={
+            'mesh2d_nNodes': range(len(node_x)),
+            'mesh2d_nFaces': range(len(face_nodes)),
+            'mesh2d_nMax_face_nodes': range(face_nodes.shape[1]),
+            'nParticles': range(n_particles),
+        },
+    )
+
+    # Add mesh topology variable
+    ds['mesh2d'] = xr.DataArray(
+        data=0,
+        attrs={
+            'cf_role': 'mesh_topology',
+            'topology_dimension': 2,
+            'node_coordinates': 'mesh2d_node_x mesh2d_node_y',
+            'face_node_connectivity': 'mesh2d_face_nodes',
+        },
+    )
+
+    # Convert to UgridDataset
+    ugrid_dataset = xu.UgridDataset(ds)
+
+    # Write the dataset
+    writer = NetCDFWriter(output_dir='output')
+    writer.write(ugrid_dataset, 'particles_output.nc')
+    print(f'Dummy UGRID dataset written to: {writer.output_dir}/particles_output.nc')
