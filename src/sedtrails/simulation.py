@@ -12,7 +12,7 @@ from sedtrails.configuration_interface.configuration_controller import Configura
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 
-from sedtrails.logger.logger import log_simulation_state
+from sedtrails.logger.logger import setup_logging, log_simulation_state
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
 # from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter
@@ -70,10 +70,11 @@ class Simulation:
         self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
         self.dashboard = self._create_dashboard()  #
-        self.writer = None  # TODO:
+        self.writer = self.data_manager.writer
 
-        # Setup global exception handling
-        # setup_global_exception_logging(self.logger_manager)
+        setup_logging(output_dir=self.writer.output_dir) # Initialize logging in the results directory
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Configuration loaded")
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
