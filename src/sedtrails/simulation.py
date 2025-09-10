@@ -2,7 +2,6 @@ import os
 import sys
 from tqdm import tqdm
 
-
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
@@ -14,8 +13,6 @@ from sedtrails.particle_tracer.timer import Time, Duration, Timer
 # from sedtrails.logger.logger import LoggerManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
-# from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter
-
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
 
@@ -75,8 +72,6 @@ class Simulation:
             # self.logger_manager = LoggerManager(output_dir)
 
             self._config_is_read = True
-
-            # CONTINUE HERE: test and validate new yaml schema changess
 
             # self.logger_manager.setup_logger()
             # self._controller.log_after_load_config()
@@ -285,6 +280,37 @@ class Simulation:
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
         )
 
+        # Determine flow field names from configuration
+        flow_field_names = []
+        for population in populations_config:
+            if 'tracer_methods' in population and 'vanwesten' in population['tracer_methods']:
+                flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
+                break  # Use the first population's flow fields for now
+
+        # collect output data for netcdf writing
+        from sedtrails.data_manager.x_array import (
+            create_sedtrails_dataset,
+            populate_population_metadata,
+            populate_flowfield_metadata,
+            collect_timestep_data,
+        )
+
+        # Create dataset with proper dimensions
+        total_particles = sum([len(pop.particles['x']) for pop in populations])
+        max_timesteps = (simulation_time.duration.seconds // simulation_time.time_step.seconds) + 1
+
+        xr_data = create_sedtrails_dataset(
+            N_particles=total_particles,
+            N_populations=len(populations),
+            N_timesteps=max_timesteps,
+            N_flowfields=len(flow_field_names) if flow_field_names else 1,
+        )
+
+        # Initialize metadata
+        populate_population_metadata(xr_data, populations)
+        if flow_field_names:
+            populate_flowfield_metadata(xr_data, flow_field_names)
+
         # Main simulation loop with variable timestep
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
@@ -311,12 +337,11 @@ class Simulation:
 
             # TODO: integrate loop over flow fields into CFL Condition
             # Collect flow fields for CFL computation
-            flow_field_names = []
             tracer_methods = {}
-            # TODO: this loops over populations_config, but only the last one is used. Is that intended?
+            # TODO: this loops over populations_config, but only the last one is used. This must be fixed
+            # to handle multiple populations with different tracer methods and flow fields
             for population in populations_config:
                 tracer_methods = population['tracer_methods']
-                flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
@@ -356,21 +381,26 @@ class Simulation:
                         # Update particle position
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
+                # Collect data from all populations for this timestep
+                collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
+
+                # For dashboard, use first population data
+                first_population = populations[0]
+                particle_data = {
+                    'x': first_population.particles['x'],
+                    'y': first_population.particles['y'],
+                    'burial_depth': first_population.particles['burial_depth'],
+                    'mixing_depth': first_population.particles['mixing_depth'],
+                }
+
                 # Update dashboard if enabled
                 if self.dashboard is not None:
                     # Get first population
-                    first_population = populations[0]
 
                     # Get bathymetry data
                     bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
 
                     # Particle data including burial_depth and mixing_depth
-                    particle_data = {
-                        'x': first_population.particles['x'],
-                        'y': first_population.particles['y'],
-                        'burial_depth': first_population.particles['burial_depth'],
-                        'mixing_depth': first_population.particles['mixing_depth'],
-                    }
 
                     # Get simulation timing
                     # plot_interval_str = self._controller.get('output.plot_interval', '1H')
@@ -417,18 +447,18 @@ class Simulation:
             #     )
 
             # Calculate progress percentage based on simulation time
-            elapsed_time = timer.current - simulation_time.start
-            progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
+            # elapsed_time = timer.current - simulation_time.start
+            # progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
 
-            # Update progress bar
-            pbar.n = progress_percent
-            pbar.set_postfix(
-                {
-                    'Step': timer.step_count,
-                    'Time': f'{timer.current:.0f}s',
-                    'dt': f'{timer.current_timestep:.2f}s',
-                }
-            )
+            # # Update progress bar
+            # pbar.n = progress_percent
+            # pbar.set_postfix(
+            #     {
+            #         'Step': timer.step_count,
+            #         'Time': f'{timer.current:.0f}s',
+            #         'dt': f'{timer.current_timestep:.2f}s',
+            #     }
+            # )
             pbar.refresh()
 
         # End of Simulation
@@ -441,14 +471,26 @@ class Simulation:
             self.dashboard.keep_window_open()
 
         # Finalize results
-        # self.data_manager.dump()  # Write remaining data to disk
+        # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
 
         # Write final results to NetCDF
+        output_file = os.path.join(self._get_output_dir(), 'sedtrails_results.nc')
+
+        # Trim dataset to actual number of timesteps used
+        actual_timesteps = timer.step_count + 1
+        xr_data_trimmed = xr_data.isel(n_timesteps=slice(0, actual_timesteps))
+
+        # Save to NetCDF file
+        xr_data_trimmed.to_netcdf(output_file)
+        print(f'Simulation results saved to: {output_file}')
+
+        # from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter
+
         # writer = SimulationNetCDFWriter(self._get_output_dir())
         # writer.write_simulation_results(
         #     populations,
         #     trajectory_data=self.data_manager.trajectory_data,
-        #     flow_field_names=flow_field_names,
+        #     flow_field_names=flow_field_names,  # TODO: check netcdf structure and Bar's pseudo code
         #     filename='simulation_results.nc',
         # )
 
