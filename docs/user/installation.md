@@ -59,7 +59,11 @@ cd .../<your runs folder>
 
 4. Run the model:
 ```bash
-sedtrails run -c .\config.example.yaml
+sedtrails run -c ./config.example.yaml
 ```
+
+::: note
+The model will take a few minutes to run. You can monitor the progress in the terminal.
+:::
 
 5. The results plots should pop up and should be saved in the ./results directory.
