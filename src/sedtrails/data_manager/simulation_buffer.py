@@ -1,5 +1,5 @@
 import os
-import xugrid as xu
+import xarray as xr
 import numpy as np
 from pathlib import Path
 
@@ -64,59 +64,50 @@ class SimulationDataBuffer:
         """
         return {k: np.array(v) for k, v in self.buffer.items()}
 
-    def to_ugrid_dataset(self, node_x, node_y, face_node_connectivity, fill_value=-1):
+    def to_xarray_dataset(self):
         """
-        Convert the buffer contents to a xu.UgridDataset for writing.
-
-        Parameters
-        ----------
-        node_x : np.ndarray
-            Mesh node x-coordinates.
-        node_y : np.ndarray
-            Mesh node y-coordinates.
-        face_node_connectivity : np.ndarray
-            Mesh face connectivity.
-        fill_value : int, optional
-            Fill value for unused nodes (default: -1).
+        Convert the buffer contents to an xr.Dataset for writing.
 
         Returns
         -------
-        xu.UgridDataset
-            UGRID-compliant dataset containing the buffered simulation data.
+        xr.Dataset
+            xarray dataset containing the buffered simulation data.
         """
-        mesh = xu.Ugrid2d(
-            node_x=node_x, node_y=node_y, face_node_connectivity=face_node_connectivity, fill_value=fill_value
-        )
-        ds = mesh.to_dataset()
         data = self.get_data()
-        # Use 'time' as the coordinate and dimension
-        ds = ds.assign_coords(time=('time', data['time']))
-        ds['particle_id'] = ('time', data['particle_id'])
-        ds['x'] = ('time', data['x'])
-        ds['y'] = ('time', data['y'])
-        return xu.UgridDataset(ds)
+
+        # Create simple xarray dataset with time dimension
+        ds = xr.Dataset(
+            {
+                'particle_id': (['time'], data['particle_id']),
+                'x': (['time'], data['x']),
+                'y': (['time'], data['y']),
+            },
+            coords={'time': data['time']},
+        )
+
+        return ds
 
     def write_to_disk(self, node_x, node_y, face_node_connectivity, fill_value, writer, filename):
         """
-        Write the current buffer to disk as a UGRID NetCDF file and clear the buffer.
+        Write the current buffer to disk as a NetCDF file and clear the buffer.
 
         Parameters
         ----------
         node_x : np.ndarray
-            Mesh node x-coordinates.
+            Mesh node x-coordinates (kept for backward compatibility).
         node_y : np.ndarray
-            Mesh node y-coordinates.
+            Mesh node y-coordinates (kept for backward compatibility).
         face_node_connectivity : np.ndarray
-            Mesh face connectivity.
+            Mesh face connectivity (kept for backward compatibility).
         fill_value : int
-            Fill value for unused nodes.
+            Fill value for unused nodes (kept for backward compatibility).
         writer : NetCDFWriter
             Writer instance to handle NetCDF output.
         filename : str
             Name of the output NetCDF file.
         """
-        ugrid_ds = self.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
-        writer.write(ugrid_ds, filename)
+        xr_ds = self.to_xarray_dataset()
+        writer.write(xr_ds, filename)
         self.clear()
 
     @staticmethod
@@ -143,5 +134,5 @@ class SimulationDataBuffer:
         )
         if not files:
             raise FileNotFoundError('No .sim_buffer_*.nc files found to merge.')
-        ds = xu.open_mfdataset(files, combine='by_coords')
-        ds.ugrid.to_netcdf(output_dir / merged_filename)
+        ds = xr.open_mfdataset(files, combine='by_coords')
+        ds.to_netcdf(output_dir / merged_filename)
