@@ -1,8 +1,6 @@
 import numpy as np
 import xarray as xr
 
-# TODO: refactor this into the DataManager class
-
 
 def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24):
     ds = xr.Dataset(
