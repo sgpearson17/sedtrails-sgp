@@ -7,12 +7,10 @@ and provides configurations to other components.
 """
 
 from abc import ABC, abstractmethod
-import sys
-import os
-
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from sedtrails.configuration_interface.find import find_value
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+
 
 class Controller(ABC):
     """
