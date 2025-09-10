@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from tqdm import tqdm
 
 
@@ -11,35 +12,13 @@ from sedtrails.configuration_interface.configuration_controller import Configura
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
 
-# from sedtrails.logger.logger import LoggerManager
+from sedtrails.logger.logger import log_simulation_state
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
 # from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter
 
 from typing import Any
 from sedtrails.particle_tracer import ParticleSeeder
-
-
-def setup_global_exception_logging(logger_manager):
-    """Setup global exception logging for unhandled exceptions."""
-    original_excepthook = sys.excepthook
-
-    def exception_handler(exc_type, exc_value, exc_traceback):
-        # Don't log KeyboardInterrupt (Ctrl+C)
-        if issubclass(exc_type, KeyboardInterrupt):
-            original_excepthook(exc_type, exc_value, exc_traceback)
-            return
-
-        # Log all other exceptions
-        logger_manager.log_exception(exc_value, 'Global Exception Handler')
-        logger_manager.log_simulation_state(
-            {'status': 'simulation_failed', 'error_type': exc_type.__name__, 'error_message': str(exc_value)}
-        )
-
-        # Call original handler
-        original_excepthook(exc_type, exc_value, exc_traceback)
-
-    sys.excepthook = exception_handler
 
 
 class Simulation:
@@ -71,8 +50,7 @@ class Simulation:
             self._controller.load_config(self._config_file)
 
             # TODO: logger has a circular dependency with controller. The logger needs refactoring.
-            # output_dir = self._controller.get('folder_settings.output_dir', 'results')
-            # self.logger_manager = LoggerManager(output_dir)
+            self.logger = logging.getLogger(__name__)
 
             self._config_is_read = True
 
@@ -283,6 +261,17 @@ class Simulation:
             desc='Computing positions',
             unit='%',
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
+        )
+
+        log_simulation_state(
+            self.logger,
+            {
+                'status': 'simulation_started',
+                'command': ' '.join(sys.argv),
+                'python_version': sys.version.split()[0],
+                'config_file': self._config_file,
+                'working_directory': os.getcwd(),
+            }
         )
 
         # Main simulation loop with variable timestep
