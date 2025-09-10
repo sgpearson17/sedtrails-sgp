@@ -277,29 +277,19 @@ class Simulation:
                 flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
                 break  # Use the first population's flow fields for now
 
-        # collect output data for netcdf writing
-        from sedtrails.data_manager.x_array import (
-            create_sedtrails_dataset,
-            populate_population_metadata,
-            populate_flowfield_metadata,
-            collect_timestep_data,
-        )
-
-        # Create dataset with proper dimensions
+        # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         max_timesteps = (simulation_time.duration.seconds // simulation_time.time_step.seconds) + 1
 
-        xr_data = create_sedtrails_dataset(
+        xr_data = self.data_manager.writer.create_dataset(
             N_particles=total_particles,
             N_populations=len(populations),
             N_timesteps=max_timesteps,
             N_flowfields=len(flow_field_names) if flow_field_names else 1,
         )
 
-        # Initialize metadata
-        populate_population_metadata(xr_data, populations)
-        if flow_field_names:
-            populate_flowfield_metadata(xr_data, flow_field_names)
+        # Initialize metadata using DataManager's writer (composition)
+        self.data_manager.writer.add_metadata(xr_data, populations, flow_field_names)
 
         # Main simulation loop with variable timestep
         while not timer.stop:
@@ -371,8 +361,8 @@ class Simulation:
                         # Update particle position
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
-                # Collect data from all populations for this timestep
-                collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
+                # Collect data from all populations for this timestep using DataManager
+                self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
 
                 # For dashboard, use first population data
                 first_population = populations[0]
@@ -463,15 +453,11 @@ class Simulation:
         # Finalize results
         # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
 
-        # Write final results to NetCDF
-        output_file = os.path.join(self._get_output_dir(), 'sedtrails_results.nc')
-
-        # Trim dataset to actual number of timesteps used
+        # Write final results to NetCDF using DataManager's writer (composition)
         actual_timesteps = timer.step_count + 1
-        xr_data_trimmed = xr_data.isel(n_timesteps=slice(0, actual_timesteps))
-
-        # Save to NetCDF file
-        xr_data_trimmed.to_netcdf(output_file)
+        output_file = self.data_manager.writer.write(
+            xr_data, filename='sedtrails_results.nc', trim_to_actual_timesteps=True, actual_timesteps=actual_timesteps
+        )
         print(f'Simulation results saved to: {output_file}')
 
         # from sedtrails.data_manager.simulation_netcdf_writer import SimulationNetCDFWriter

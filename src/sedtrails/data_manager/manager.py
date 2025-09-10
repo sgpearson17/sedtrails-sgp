@@ -1,6 +1,7 @@
 from sedtrails.data_manager.simulation_buffer import SimulationDataBuffer
 from sedtrails.data_manager.memory_manager import MemoryManager
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
+from sedtrails.data_manager.xarray_dataset import collect_timestep_data
 import logging
 import numpy as np
 
@@ -14,8 +15,32 @@ FILL_VALUE = -1
 
 class DataManager:
     """
-    A class to manage data and files produced by SedTrails, also simulation data buffering
-    and memory checks.
+    A class to manage data and files produced by SedTrails, including simulation data buffering,
+    memory checks, and SedTrails-specific NetCDF output.
+
+    This class provides a unified interface for:
+    - Traditional buffered data management for particle trajectories
+    - SedTrails xarray dataset creation and management
+    - NetCDF file writing with proper metadata and structure
+
+    Example Usage for SedTrails Output
+    ----------------------------------
+    # Initialize DataManager
+    data_manager = DataManager("output/")
+
+    # Create SedTrails dataset (using composition)
+    dataset = data_manager.writer.create_dataset(
+        N_particles=100, N_populations=2, N_timesteps=50, N_flowfields=1
+    )
+
+    # Add metadata (using composition)
+    data_manager.writer.add_metadata(dataset, populations, flow_field_names)
+
+    # During simulation loop (DataManager provides this convenience method)
+    data_manager.collect_timestep_data(dataset, populations, timestep, current_time)
+
+    # Write final results (using composition)
+    output_path = data_manager.writer.write(dataset, filename, trim_to_actual_timesteps=True)
     """
 
     def __init__(self, output_dir: str, max_bytes=512 * 1024 * 1024):
@@ -42,11 +67,11 @@ class DataManager:
         file_counter : int
             Counter for naming output files uniquely.
         """
-        
+
         self.data_buffer = SimulationDataBuffer()
         self.memory_manager = MemoryManager(max_bytes=max_bytes)
         self.writer = NetCDFWriter(output_dir)
-        self.output_dir = self.writer.output_dir # Make sure we are using the same results directory
+        self.output_dir = self.writer.output_dir  # Make sure we are using the same results directory
         self._mesh_info = None
         self.file_counter = 0
 
@@ -200,3 +225,20 @@ class DataManager:
                 final_output_path = self.writer.output_dir / last_file
 
         return str(final_output_path) if final_output_path else None
+
+    def collect_timestep_data(self, dataset, populations, timestep, current_time):
+        """
+        Collect data from all populations for a specific timestep into the dataset.
+
+        Parameters
+        ----------
+        dataset : xr.Dataset
+            The xarray dataset to populate
+        populations : list
+            List of population objects from the simulation
+        timestep : int
+            Current timestep index
+        current_time : float
+            Current simulation time
+        """
+        collect_timestep_data(dataset, populations, timestep, current_time)
