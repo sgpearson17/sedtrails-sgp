@@ -1,5 +1,5 @@
 import numpy as np
-import xugrid as xu
+import xarray as xr
 from sedtrails.data_manager.manager import DataManager
 
 
@@ -29,11 +29,12 @@ def test_add_data_and_write(tmp_path):
     output_dir = dm.writer.output_dir
     output_file = output_dir / 'test_manager_output.nc'
     assert output_file.exists()
-    ds = xu.open_dataset(output_file)
+    ds = xr.open_dataset(output_file)
     assert 'particle_id' in ds
     assert 'x' in ds
     assert 'y' in ds
     assert len(ds.time) == 2
+    ds.close()
 
 
 def test_buffer_limit_triggers_write(tmp_path):
@@ -73,5 +74,6 @@ def test_merge(tmp_path):
     dm.merge('merged_manager.nc')
     merged_file = output_dir / 'merged_manager.nc'
     assert merged_file.exists()
-    ds = xu.open_dataset(merged_file)
+    ds = xr.open_dataset(merged_file)
     assert len(ds.time) == 10
+    ds.close()
