@@ -14,5 +14,5 @@ Submodules
    :maxdepth: 1
 
    sedtrails.transport_converter.plugins.format.delft3d4_trim
-   sedtrails.transport_converter.plugins.format.plugin
    sedtrails.transport_converter.plugins.format.fm_netcdf
+   sedtrails.transport_converter.plugins.format.plugin

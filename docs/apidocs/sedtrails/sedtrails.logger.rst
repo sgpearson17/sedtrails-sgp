@@ -13,8 +13,8 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
-   sedtrails.logger.logger
    sedtrails.logger.example
+   sedtrails.logger.logger
    sedtrails.logger.log_buffer
 
 Package Contents

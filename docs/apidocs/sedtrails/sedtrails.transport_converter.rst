@@ -22,11 +22,11 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.transport_converter.format_converter
    sedtrails.transport_converter.physics_converter
+   sedtrails.transport_converter.physics_lib
    sedtrails.transport_converter.sedtrails_data
    sedtrails.transport_converter.sedtrails_metadata
-   sedtrails.transport_converter.format_converter
-   sedtrails.transport_converter.physics_lib
 
 Package Contents
 ----------------

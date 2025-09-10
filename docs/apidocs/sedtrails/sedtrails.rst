@@ -13,15 +13,15 @@ Subpackages
    :titlesonly:
    :maxdepth: 3
 
-   sedtrails.pathway_visualizer
+   sedtrails.cache_recovery
    sedtrails.configuration_interface
+   sedtrails.data_manager
+   sedtrails.exceptions
    sedtrails.logger
    sedtrails.particle_tracer
-   sedtrails.cache_recovery
-   sedtrails.exceptions
-   sedtrails.data_manager
-   sedtrails.transport_converter
+   sedtrails.pathway_visualizer
    sedtrails.simulation_analysis
+   sedtrails.transport_converter
 
 Submodules
 ----------
@@ -30,9 +30,9 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.mock_api
    sedtrails.simulation
    sedtrails.__version__
-   sedtrails.mock_api
 
 Package Contents
 ----------------
