@@ -1,15 +1,12 @@
 """
-Test suite for the SedTRAILS logging system.
+Test suite for the SedTRAILS logging system (new structure).
 
-This module contains comprehensive tests for:
-- Global exception logging and integration with the simulation class
-- Logger configuration, initialization, and directory management
-- Exception handling and stack trace logging
+Covers:
+- Global exception logging via installed excepthook
+- Logger configuration and idempotent initialization
 - Log file creation and content validation
-- Simulation state logging and error reporting
-- Test isolation and cleanup for reliable results
-
-Covers both direct logger usage and simulation-driven logging.
+- Simulation state logging helper
+- Test isolation and cleanup
 """
 
 import pytest
@@ -19,8 +16,10 @@ import shutil
 import sys
 import logging
 
-from sedtrails.simulation import setup_global_exception_logging
-from sedtrails.logger.logger import LoggerManager
+from sedtrails.logger.logger import setup_logging, log_simulation_state
+
+LOG_FILENAME = "log.txt"
+
 
 class LoggerTestBase:
     """Base class for logger tests with proper isolation."""
@@ -62,42 +61,46 @@ class LoggerTestBase:
             if hasattr(handler, 'close'):
                 handler.close()
 
+
 class TestLoggerBasicFunctionality(LoggerTestBase):
-    """Test basic logger functionality."""
+    """Test basic logger functionality with the new setup."""
 
     def test_log_exception_basic(self):
-        """Test that log_exception creates a log file with correct content."""
-        test_exception = ValueError("Test error message")
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        logger_manager.log_exception(test_exception, "Test Context")
-        
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        """Test that a logged exception creates a log file with correct content."""
+        setup_logging(self.test_results_dir)
+        logger = logging.getLogger(f"sedtrails.{__name__}")
+
+        try:
+            raise ValueError("Test error message")
+        except ValueError:
+            logger.exception("Test Context")
+
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file), f"Log file not created at {log_file}"
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
-        assert "=== ERROR: Test Context ===" in log_content
-        assert "Exception type: ValueError" in log_content
-        assert "Exception message: Test error message" in log_content
-        assert "Stack trace:" in log_content
+        assert "Test Context" in log_content
+        assert "ValueError" in log_content
+        assert "Test error message" in log_content
 
     def test_log_simulation_state(self):
         """Test that log_simulation_state works correctly."""
+        setup_logging(self.test_results_dir)
+        logger = logging.getLogger(f"sedtrails.{__name__}")
+
         state_data = {
             "status": "simulation_started",
             "config_file": "test.yaml",
             "python_version": "3.9.7"
         }
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        logger_manager.log_simulation_state(state_data)
+        log_simulation_state(logger, state_data)
         
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
         assert "=== SIMULATION START ===" in log_content
@@ -106,15 +109,23 @@ class TestLoggerBasicFunctionality(LoggerTestBase):
 
     def test_multiple_exceptions_logged(self):
         """Test that multiple exceptions are properly logged."""
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        logger_manager.log_exception(ValueError("First error"), "Context 1")
-        logger_manager.log_exception(TypeError("Second error"), "Context 2")
+        setup_logging(self.test_results_dir)
+        logger = logging.getLogger(f"sedtrails.{__name__}")
+
+        try:
+            raise ValueError("First error")
+        except ValueError:
+            logger.exception("Context 1")
+
+        try:
+            raise TypeError("Second error")
+        except TypeError:
+            logger.exception("Context 2")
         
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
         assert "First error" in log_content
@@ -124,96 +135,96 @@ class TestLoggerBasicFunctionality(LoggerTestBase):
 
     def test_exception_with_traceback(self):
         """Test that exceptions with tracebacks are properly logged."""
+        setup_logging(self.test_results_dir)
+        logger = logging.getLogger(f"sedtrails.{__name__}")
+
         def inner_function():
             raise ValueError("Inner error")
         
         def outer_function():
             inner_function()
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
+
         try:
             outer_function()
-        except ValueError as e:
-            logger_manager.log_exception(e, "Traceback Test")
+        except ValueError:
+            logger.exception("Traceback Test")
         
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
-        assert "Stack trace:" in log_content
+        assert "Traceback Test" in log_content
         assert "inner_function" in log_content
-        assert "outer_function" in log_content          
+        assert "outer_function" in log_content
+
 
 class TestGlobalExceptionHandling(LoggerTestBase):
     """Test global exception handling functionality."""
 
     def test_global_exception_hook_setup(self):
-        """Test that global exception hook is properly installed."""
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        setup_global_exception_logging(logger_manager)
+        """Test that global exception hook is properly installed by setup_logging."""
+        setup_logging(self.test_results_dir)
         assert sys.excepthook != self.original_excepthook
         assert callable(sys.excepthook)
 
     def test_global_exception_logging(self):
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        setup_global_exception_logging(logger_manager)
+        setup_logging(self.test_results_dir)
         # Simulate an unhandled exception
         sys.excepthook(RuntimeError, RuntimeError("Global test error"), None)
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
-        with open(log_file) as f:
+        with open(log_file, encoding='utf-8') as f:
             content = f.read()
-        assert "Global Exception Handler" in content
-        assert "Error type: RuntimeError" in content
-        assert "Error message: Global test error" in content
+
+        assert "Unhandled exception" in content
+        assert "RuntimeError" in content
+        assert "Global test error" in content
 
     def test_simulation_failure_state_logged(self):
-        """Test that simulation failure state is logged with global exception."""
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        setup_global_exception_logging(logger_manager)        
+        """Test that a simulated unhandled exception is logged as failure."""
+        setup_logging(self.test_results_dir)
         test_exception = RuntimeError("Simulation failed")
         sys.excepthook(RuntimeError, test_exception, None)
         
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
-        assert "=== SIMULATION FAILED ===" in log_content
-        assert "Error type: RuntimeError" in log_content
-        assert "Error message: Simulation failed" in log_content      
+        assert "Unhandled exception" in log_content
+        assert "RuntimeError" in log_content
+        assert "Simulation failed" in log_content
+
 
 class TestLoggerConfiguration(LoggerTestBase):
     """Test logger configuration and setup."""
 
     def test_logger_initialization_message(self):
-        """Test that logger initialization is properly logged."""
-        logger_manager = LoggerManager(self.test_results_dir)
-        logger_manager.setup_logger()
-        logger_manager.log_exception(RuntimeError("Test"), "Init Test")
+        """Test that logger initialization writes its startup messages."""
+        setup_logging(self.test_results_dir)
         
-        log_file = os.path.join(self.test_results_dir, 'log.txt')
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
         assert os.path.exists(log_file)
         
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
         
         assert "=== LOGGING INITIALIZED ===" in log_content
-        assert "Log file: log.txt" in log_content
-        assert "Location:" in log_content
+        assert "Log file:" in log_content  # setup_logging logs the file path
 
-    def test_logger_directory_error(self):
-        """Test that logger raises error if directory does not exist."""
+    def test_logger_directory_created(self):
+        """Test that setup_logging creates the directory if it does not exist."""
         non_existent_dir = os.path.join(self.temp_dir, 'does_not_exist')
         # Ensure the directory does not exist
         if os.path.exists(non_existent_dir):
             shutil.rmtree(non_existent_dir)
-        logger_manager = LoggerManager(non_existent_dir)
-        with pytest.raises(FileNotFoundError):
-            logger_manager.setup_logger()
+
+        # Should not raise; it should create the directory and log file
+        setup_logging(non_existent_dir)
+        log_file = os.path.join(non_existent_dir, LOG_FILENAME)
+        assert os.path.exists(non_existent_dir)
+        assert os.path.exists(log_file)

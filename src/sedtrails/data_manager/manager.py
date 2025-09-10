@@ -42,11 +42,11 @@ class DataManager:
         file_counter : int
             Counter for naming output files uniquely.
         """
-
-        self.output_dir = output_dir
+        
         self.data_buffer = SimulationDataBuffer()
         self.memory_manager = MemoryManager(max_bytes=max_bytes)
         self.writer = NetCDFWriter(output_dir)
+        self.output_dir = self.writer.output_dir # Make sure we are using the same results directory
         self._mesh_info = None
         self.file_counter = 0
 
