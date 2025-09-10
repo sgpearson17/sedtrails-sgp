@@ -9,11 +9,9 @@ and provides configurations to other components.
 from abc import ABC, abstractmethod
 import sys
 import os
-import logging
 
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from sedtrails.configuration_interface.find import find_value
-from sedtrails.logger.logger import setup_logging
 from typing import Dict, Any, Optional
 
 class Controller(ABC):
@@ -100,10 +98,6 @@ class ConfigurationController(Controller):
             validator = YAMLConfigValidator()
             self.config_data = validator.validate_yaml(config_file)
 
-            self.init_logging_from_config()
-            logger = logging.getLogger(__name__)
-            logger.info("Configuration loaded")
-
         return None
 
     def get_config(self) -> dict:
@@ -150,17 +144,3 @@ class ConfigurationController(Controller):
         config_data = deepcopy(self.get_config())
 
         return find_value(config_data, keys, default)
-
-    def init_logging_from_config(self) -> None:
-        """Initialize global logging using settings from config."""
-        output_dir = (
-            self.get('outputs.directory')
-            or self.get('folder_settings.output_dir')
-            or 'results'
-        )
-        log_level = (
-            self.get('outputs.log_level')
-            or self.get('folder_settings.log_level')
-            or 'INFO'
-        )
-        setup_logging(output_dir=output_dir, level=log_level)
