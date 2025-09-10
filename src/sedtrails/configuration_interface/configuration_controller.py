@@ -9,11 +9,12 @@ and provides configurations to other components.
 from abc import ABC, abstractmethod
 import sys
 import os
+import logging
 
 from sedtrails.configuration_interface.validator import YAMLConfigValidator
 from sedtrails.configuration_interface.find import find_value
+from sedtrails.logger.logger import setup_logging
 from typing import Dict, Any, Optional
-from sedtrails.logger.logger import LoggerManager
 
 class Controller(ABC):
     """
@@ -61,7 +62,7 @@ class ConfigurationController(Controller):
         The configuration data loaded from the file.
     """
 
-    def __init__(self, config_file: str, logger: Optional[LoggerManager] = None) -> None:
+    def __init__(self, config_file: str) -> None:
         """
         Initializes the ConfigurationController with a configuration file.
         Parameters
@@ -71,7 +72,6 @@ class ConfigurationController(Controller):
         """
         self.config: str = config_file
         self.config_data = {}
-        self.logger = logger
 
     def load_config(self, config_file: str) -> None:
         """
@@ -100,27 +100,11 @@ class ConfigurationController(Controller):
             validator = YAMLConfigValidator()
             self.config_data = validator.validate_yaml(config_file)
 
+            self.init_logging_from_config()
+            logger = logging.getLogger(__name__)
+            logger.info("Configuration loaded")
+
         return None
-
-    def log_after_load_config(self) -> None:
-        """
-        Perform actions after the configuration has been loaded.
-        """
-
-        # Log configuration loading
-        self.logger.log_simulation_state(
-            state={'state': 'config_loading', 'config_file_path': self.config})
-        
-        # Log the command that started the simulation
-        self.logger.log_simulation_state(
-            {
-                'status': 'simulation_started',
-                'command': ' '.join(sys.argv),
-                'config_file': self.config,
-                'working_directory': os.getcwd(),
-                'python_version': sys.version.split()[0],
-            }
-        )
 
     def get_config(self) -> dict:
         """
@@ -166,3 +150,17 @@ class ConfigurationController(Controller):
         config_data = deepcopy(self.get_config())
 
         return find_value(config_data, keys, default)
+
+    def init_logging_from_config(self) -> None:
+        """Initialize global logging using settings from config."""
+        output_dir = (
+            self.get('outputs.directory')
+            or self.get('folder_settings.output_dir')
+            or 'results'
+        )
+        log_level = (
+            self.get('outputs.log_level')
+            or self.get('folder_settings.log_level')
+            or 'INFO'
+        )
+        setup_logging(output_dir=output_dir, level=log_level)
