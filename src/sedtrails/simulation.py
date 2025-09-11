@@ -441,6 +441,21 @@ class Simulation:
             # )
             pbar.refresh()
 
+            # Update progress bar
+            if simulation_time.duration.seconds > 0: # Avoid undefined progress when duration is zero
+                elapsed_time = timer.current - simulation_time.start
+                progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
+                pbar.update(progress_percent - pbar.n)  # increment by delta
+            else:
+                pbar.update(0)  # avoid ZeroDivisionError if duration is 0
+            pbar.set_postfix(
+                {
+                    'Step': timer.step_count,
+                    'Time': f'{timer.current:.0f}s',
+                    'dt': f'{timer.current_timestep:.2f}s',
+                }
+            )
+
         # End of Simulation
         pbar.close()
 
