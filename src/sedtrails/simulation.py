@@ -439,8 +439,6 @@ class Simulation:
             #         'dt': f'{timer.current_timestep:.2f}s',
             #     }
             # )
-            pbar.refresh()
-
             # Update progress bar
             if simulation_time.duration.seconds > 0: # Avoid undefined progress when duration is zero
                 elapsed_time = timer.current - simulation_time.start
