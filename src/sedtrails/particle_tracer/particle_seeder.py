@@ -436,8 +436,9 @@ class ParticlePopulation:
         """
 
         # Initialize vertical position ('z') based on bed level and burial depth
-        if 'z' not in self.particles:
-            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+        self.particles['z'] = (
+            self.particles['bed_level'] - self.particles['burial_depth']
+        )  # TODO: add to top attributes. This must go to netcdf for every timestep.
 
         # Make sure particles can never be higher than the bed level
         i_above_bed = self.particles['z'] > self.particles['bed_level']
@@ -507,8 +508,10 @@ class ParticlePopulation:
             current_timestep,
         )
 
-        dx[ix] = new_x - self.particles['x'][ix]
+        dx[ix] = new_x - self.particles['x'][ix]  # TODO: this should be stored in the netcdf, as part of the flow field
         dy[ix] = new_y - self.particles['y'][ix]
+
+        # TODO: implement Bart's solution for gross/net values here. Add
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y

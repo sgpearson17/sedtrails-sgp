@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import xugrid as xu
+import xarray as xr
 from sedtrails.data_manager.simulation_buffer import SimulationDataBuffer
 from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 
@@ -31,23 +31,19 @@ def test_clear():
         assert arr.size == 0
 
 
-def test_to_ugrid_dataset():
+def test_to_xarray_dataset():
     """
-    Test converting the buffer to a xu.UgridDataset.
+    Test converting the buffer to an xr.Dataset.
     """
     buffer = SimulationDataBuffer()
     buffer.add(1, 0.0, 10.0, 20.0)
     buffer.add(2, 1.0, 11.0, 21.0)
-    node_x = np.array([0, 1])
-    node_y = np.array([0, 1])
-    face_node_connectivity = np.array([[0, 1]])
-    fill_value = -1
-    ugrid_ds = buffer.to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value)
-    assert isinstance(ugrid_ds, xu.UgridDataset)
-    assert 'particle_id' in ugrid_ds
-    assert 'x' in ugrid_ds
-    assert 'y' in ugrid_ds
-    assert 'time' in ugrid_ds
+    xr_ds = buffer.to_xarray_dataset()
+    assert isinstance(xr_ds, xr.Dataset)
+    assert 'particle_id' in xr_ds
+    assert 'x' in xr_ds
+    assert 'y' in xr_ds
+    assert 'time' in xr_ds
 
 
 def test_write_to_disk(tmp_path):
@@ -82,7 +78,7 @@ def test_write_to_disk(tmp_path):
     assert output_file.exists()
 
     # Check file contents
-    ds = xu.open_dataset(output_file)
+    ds = xr.open_dataset(output_file)
     assert 'particle_id' in ds
     assert 'x' in ds
     assert 'y' in ds
@@ -128,7 +124,7 @@ def test_merge_output_files(tmp_path):
     assert merged_file.exists()
 
     # Open merged file and verify data
-    ds = xu.open_dataset(merged_file)
+    ds = xr.open_dataset(merged_file)
     assert 'x' in ds
     assert 'y' in ds
     assert 'particle_id' in ds
