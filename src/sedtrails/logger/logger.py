@@ -23,6 +23,14 @@ def setup_logging(output_dir: str, level: str = "INFO") -> logging.Logger:
 
     logger = logging.getLogger("sedtrails")
 
+    # Remove handlers, so we do not append but overwrite the log file
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
+        try:
+            h.close()
+        except Exception:
+            pass
+
     # If our handlers are already present, skip reconfiguration
     if any(getattr(h, "is_sedtrails_handler", False) for h in logger.handlers):
         return logger
@@ -34,7 +42,7 @@ def setup_logging(output_dir: str, level: str = "INFO") -> logging.Logger:
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     # File handler
-    file_handler = logging.FileHandler(logfile)
+    file_handler = logging.FileHandler(logfile, mode='w') # Overwrite logs instead of appending
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
     file_handler.is_sedtrails_handler = True  # marker to prevent duplicates
