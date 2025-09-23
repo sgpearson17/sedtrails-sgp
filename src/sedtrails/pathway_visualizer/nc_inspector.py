@@ -3,13 +3,13 @@
 Functions to inspect metadata of SedTrails NetCDF results.
 """
 
-import argparse
-import sys
 from pathlib import Path
 import xarray as xr
 
 
-class Inspector:
+class NetCDFInspector:
+    """A class to inspect and print metadata from SedTRAILS NetCDF files."""
+
     def __init__(self, nc_file: str) -> None:
         """Initialize the Inspector with the path to a NetCDF file.
 
