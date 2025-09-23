@@ -72,7 +72,8 @@ class NetCDFInspector:
                 for attr_name, attr_value in var.attrs.items():
                     print(f'    {attr_name}: {attr_value}')
 
-        print('=' * 84, '\n')
+        print('')
+        print('=' * 84)
         return None
 
     def inspect_populations(self) -> None:
@@ -87,7 +88,8 @@ class NetCDFInspector:
         if self.data is None:
             raise RuntimeError('No data loaded. Unable to inspect populations.')
 
-        print('\nPARTICLE POPULATIONS:')
+        print('=' * 84)
+        print('PARTICLE POPULATIONS:')
         print('-' * 60)
 
         if 'population_name' in self.data.variables:
@@ -106,6 +108,6 @@ class NetCDFInspector:
                 print(f'    Particle type: {particle_type}')
                 print(f'    Start index: {start_idx}')
                 print(f'    Particle count: {count} \n')
-        print('=' * 84, '\n')
+        print('=' * 84)
 
         return None
