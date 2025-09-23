@@ -279,7 +279,41 @@ vizualizer_app = typer.Typer(
 )
 app.add_typer(vizualizer_app, name='viz')
 
-# TODO: Continnue implementing visualization commands
+
+@vizualizer_app.command('trajectories')
+def plot_trajectories(
+    results_file: str = typer.Option(
+        'sedtrails_results.nc',
+        '--file',
+        '-f',
+        help='Path to the SedTRAILS netCDF file to visualize. By default, it expects an "sedtrails_results.nc" file in the current directory.',
+    ),
+    save_fig: bool = typer.Option(
+        False,
+        '--save',
+        '-s',
+        help='Save plot as a PNG file. Creates a "particle_trajectories.png" file',
+    ),
+    output_dir: str = typer.Option(
+        '.',
+        '--output-dir',
+        '-o',
+        help='Directory to save plot if --save is used. Default is the current directory.',
+    ),
+):
+    """
+    Plot particle trajectories from a SedTRAILS netCDF results file.
+    """
+
+    from sedtrails.pathway_visualizer import plot_trajectories, read_netcdf
+
+    try:
+        ds = read_netcdf(results_file)
+        plot_trajectories(ds, save_plot=save_fig, output_dir=output_dir)
+    except Exception as e:
+        typer.echo(f'Error plotting trajectories: {e}')
+        raise typer.Exit(code=1) from e
+
 
 if __name__ == '__main__':
     app()
