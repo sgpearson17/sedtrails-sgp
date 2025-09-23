@@ -4,8 +4,6 @@ SedTRAILS CLI interface.
 
 import typer
 from pathlib import Path
-from sedtrails.configuration_interface.configuration_controller import ConfigurationController, YAMLConfigValidator
-from sedtrails.simulation import Simulation
 
 
 def version_callback(value: bool):
@@ -13,7 +11,7 @@ def version_callback(value: bool):
     import sedtrails.__version__ as version
 
     if value:
-        typer.echo(f'SedTRAILS {version}')  # You can import version from __version__.py
+        typer.echo(f'SedTRAILS {version}')  # import version from __version__.py
         raise typer.Exit()
 
 
@@ -22,14 +20,6 @@ app = typer.Typer(
     add_completion=False,  # Disable completion to avoid conflicts
     context_settings={'help_option_names': ['-h', '--help']},  # Enable -h for help
 )
-
-# separate Typer app for config subcommands
-config_app = typer.Typer(
-    help='Configuration file management commands.',
-    context_settings={'help_option_names': ['-h', '--help']},  # Enable -h for help in subcommands too
-)
-
-app.add_typer(config_app, name='config')
 
 
 @app.callback()
@@ -42,62 +32,6 @@ def main(
     SedTRAILS: Configure, run, and analyze sediment particle tracking.
     """
     pass
-
-
-# Subcommand to load and validate a YAML configuration file.
-@config_app.command('load')
-def load_config(
-    config_file: str = typer.Option(
-        'sedtrails.yml',
-        '--config',
-        '-c',
-        help='Path to the SedTRAILS configuration file.',
-    ),
-) -> dict:
-    """
-    Load and validate a YAML configuration file.
-    Returns a dictionary with the valid configuration settings.
-    """
-
-    controller = ConfigurationController(config_file)
-
-    try:
-        typer.echo(f"Loading and validating configuration from '{config_file}'...")
-        # loads file and validates it
-        controller.load_config(str(config_file))
-        config = controller.get_config()
-        # config = {'setting1': 'value1', 'setting2': 'value2'}
-        typer.echo('Configuration validated successfully:')
-        typer.echo(str(config))
-        return config
-    except Exception as e:
-        typer.echo(f'Error loading configuration: {e}')
-        raise typer.Exit(code=1) from e
-
-
-@config_app.command('create')
-def create_config_template(
-    output_file: str = typer.Option(
-        './sedtrails-template.yml',
-        '--output',
-        '-o',
-        help='Path to the output configuration template file.',
-    ),
-):
-    """
-    Create a configuration file for simulations in SedTRAILS.
-    The file contains most possible configurations items with default values.
-    """
-    try:
-        # Use importlib.resources to get the schema file from the installed package
-        from importlib import resources
-
-        with resources.as_file(resources.files('sedtrails.config').joinpath('main.schema.json')) as schema_path:
-            validator = YAMLConfigValidator(str(schema_path))
-            validator.create_config_template(output_file)
-    except Exception as e:
-        typer.echo(f'Error creating configuration template: {e}')
-        raise typer.Exit(code=1) from e
 
 
 # Subcommand to run a simulation; it also validates the configuration.
@@ -123,6 +57,7 @@ def run_simulation(
     Example: sedtrails run --config my_config.yml --output results.nc
 
     """
+    from sedtrails.simulation import Simulation
 
     # lazy initialization of the Simulation class
     simulation = Simulation(config_file)
@@ -147,8 +82,104 @@ def run_simulation(
         raise typer.Exit(code=1) from e
 
 
+@app.command('inspect')
+def inspect_metadata(
+    results_file: str = typer.Option(
+        'sedtrails_results.nc',
+        '--file',
+        '-f',
+        help='Path to the SedTRAILS netCDF file to inspect. By default, it expects an "sedtrails_results.nc" file in the current directory.',
+    ),
+):
+    """
+    Print metadata information about a SedTRAILS netCDF results file.
+    """
+    from sedtrails.pathway_visualizer import NetCDFInspector
+
+    try:
+        inspector = NetCDFInspector(results_file)
+        inspector.print_metadata()  # print general metadata
+        inspector.inspect_populations()  # print particle population info
+
+    except Exception as e:
+        typer.echo(f'Error inspecting metadata: {e}')
+        raise typer.Exit(code=1) from e
+
+
+######################################################################################################
+# CONFIG subcommands
+######################################################################################################
+config_app = typer.Typer(
+    help='Commands for managing Configuration files.',
+    context_settings={'help_option_names': ['-h', '--help']},
+)
+app.add_typer(config_app, name='config')
+
+
+# Subcommand to load and validate a YAML configuration file.
+@config_app.command('load')
+def load_config(
+    config_file: str = typer.Option(
+        'sedtrails.yml',
+        '--config',
+        '-c',
+        help='Path to the SedTRAILS configuration file.',
+    ),
+) -> dict:
+    """
+    Checks if a YAML configuration file is a valid SedTRAILS configuration.
+    Returns a dictionary with the valid configuration settings.
+    """
+    from sedtrails.configuration_interface.configuration_controller import ConfigurationController
+
+    controller = ConfigurationController(config_file)
+
+    try:
+        typer.echo(f"Loading and validating configuration from '{config_file}'...")
+        config = controller.get_config()  # loads file and validates it
+        typer.echo('Configuration validated successfully:')
+        typer.echo(str(config))
+        return config
+    except Exception as e:
+        typer.echo(f'Error loading configuration: {e}')
+        raise typer.Exit(code=1) from e
+
+
+@config_app.command('create')
+def create_config_template(
+    output_file: str = typer.Option(
+        './sedtrails-template.yml',
+        '--output',
+        '-o',
+        help='Path to the output configuration template file.',
+    ),
+):
+    """
+    Create a configuration file for simulations in SedTRAILS.
+    The file contains most possible configurations items with default values.
+    """
+    from sedtrails.configuration_interface.validator import YAMLConfigValidator
+
+    try:
+        validator = YAMLConfigValidator()
+        validator.create_config_template(output_file)
+    except Exception as e:
+        typer.echo(f'Error creating configuration template: {e}')
+        raise typer.Exit(code=1) from e
+
+
+######################################################################################################
+# ANALYZER subcommands
+######################################################################################################
+analyzer_app = typer.Typer(
+    help='Commands for analyzing simulation results. NOT IMPLEMENTED.',
+    context_settings={'help_option_names': ['-h', '--help']},
+)
+app.add_typer(analyzer_app, name='analyzer')
+
+
 # Subcommand to perform statistical analysis on the simulation results.
-@app.command('analyze')
+@analyzer_app.command('analyze')
 def analyze(
     input_file: Path = typer.Option(
         'sedtrails.nc',
@@ -178,14 +209,25 @@ def analyze(
         typer.echo(f"Performing statistical analysis on '{input_file}'...")
         pass
         typer.echo(f"Analysis complete. Results saved to '{output_file}'.")
+        typer.echo('THIS IS HAS NOT BEEN IMPLEMENTED YET.')
     except Exception as e:
         typer.echo(f'Error performing analysis: {e}')
         raise typer.Exit(code=1) from e
 
 
+######################################################################################################
+# NETWORK subcommands
+######################################################################################################
+network_app = typer.Typer(
+    help='Commands to perform network analysi on simulation results. NOT IMPLEMENTED.',
+    context_settings={'help_option_names': ['-h', '--help']},
+)
+app.add_typer(network_app, name='network')
+
+
 # Subcommand to perform network analysis on the simulation results.
-@app.command('network-analysis')
-def network_analysis(
+@network_app.command('analysis')
+def analysis(
     input_file: Path = typer.Option(
         'sedtrails.nc',
         '--input',
@@ -199,9 +241,6 @@ def network_analysis(
         help='Path to the output SedTRAILS netCDF file containing statistical and connectivity results.',
     ),
 ):
-    # [Aysun] The original script had the same file path (sedtrails.nc) for both the input
-    # and the output, based on the help text I assume the output should be the analysis.nc
-    # instead? Please check the function below to make sure it is correct
     """
     Perform a network analysis on the simulation results.
     The network analysis results are written to a netCDF file.
@@ -217,10 +256,23 @@ def network_analysis(
         typer.echo(f"Performing network analysis on '{input_file}'...")
         pass
         typer.echo(f"Network analysis complete. Results saved to '{output_file}'.")
+        typer.echo('THIS IS HAS NOT BEEN IMPLEMENTED YET.')
+
     except Exception as e:
         typer.echo(f'Error performing network analysis: {e}')
         raise typer.Exit(code=1) from e
 
+
+######################################################################################################
+# VIZ subcommands
+######################################################################################################
+vizualizer_app = typer.Typer(
+    help='Commands for visualizing simulation results.',
+    context_settings={'help_option_names': ['-h', '--help']},
+)
+app.add_typer(vizualizer_app, name='viz')
+
+# TODO: Continnue implementing visualization commands
 
 if __name__ == '__main__':
     app()
