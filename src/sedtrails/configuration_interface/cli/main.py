@@ -90,16 +90,23 @@ def inspect_metadata(
         '-f',
         help='Path to the SedTRAILS netCDF file to inspect. By default, it expects an "sedtrails_results.nc" file in the current directory.',
     ),
+    populations: bool = typer.Option(
+        False,
+        '--populations',
+        '-p',
+        help='Inspect and print detailed information about particle populations in the file.',
+    ),
 ):
     """
     Print metadata information about a SedTRAILS netCDF results file.
     """
-    from sedtrails.pathway_visualizer import NetCDFInspector
+    from sedtrails import NetCDFInspector
 
     try:
         inspector = NetCDFInspector(results_file)
         inspector.print_metadata()  # print general metadata
-        inspector.inspect_populations()  # print particle population info
+        if populations:
+            inspector.inspect_populations()  # print particle population info
 
     except Exception as e:
         typer.echo(f'Error inspecting metadata: {e}')
