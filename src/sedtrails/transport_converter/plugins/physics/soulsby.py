@@ -12,11 +12,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     This plugin implements the physics calculations as described in Soulsby et al. (2011).
     """
 
-    def __init__(self, config):
+    def __init__(self, config, tracer_config):
         super().__init__()
         self.config = config
+        self.tracer_config = tracer_config
 
-    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float]) -> None:
+    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
         Add physics using Soulsby et al. (2011) approach.
         '1. Focus on individual particle tracking velocities\n'
@@ -30,11 +31,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # === LOAD: Extract data ===
 
         # Extract constants
-        g = self.config.g
-        rho_s = self.config.row_s
-        rho_w = self.config.rho_w
+        g = self.config.gravity
+        rho_s = self.config.particle_density
+        rho_w = self.config.water_density
         kinematic_viscosity = self.config.kinematic_viscosity
-        von_karman = self.config.von_karman
+        von_karman = self.config.von_karman_constant
 
         # Extract shear stresses
         mean_bed_shear_stress = sedtrails_data.mean_bed_shear_stress
@@ -45,20 +46,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError('Missing required shear stress values in SedtrailsData.')
 
         # Extract particle properties
-        grain_size = self.config.grain_size
-        background_grain_size = self.config.background_grain_size
+        grain_size = self.config.grain_diameter
+        background_grain_size = self.tracer_config['soulsby']['background_grain_size']
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         if dimensionless_grain_size is None:
-            raise ValueError("Missing required 'dimensionless_grain_size' value in grain_prperties.")
+            raise ValueError("Missing required 'dimensionless_grain_size' value in grain_properties.")
         critical_shear_stress = grain_properties.get('critical_shear_stress')
         if critical_shear_stress is None:
-            raise ValueError("Missing required 'critical_shear_stress' value in grain_prperties.")
+            raise ValueError("Missing required 'critical_shear_stress' value in grain_properties.")
         critical_shields = grain_properties.get('critical_shields')
         if critical_shields is None:
-            raise ValueError("Missing required 'critical_shields' value in grain_prperties.")
+            raise ValueError("Missing required 'critical_shields' value in grain_properties.")
         settling_velocity = grain_properties.get('settling_velocity')
         if settling_velocity is None:
-            raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
+            raise ValueError("Missing required 'settling_velocity' value in grain_properties.")
 
         # Extract flow velocities (we should be able to change these based on configuration)
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
@@ -66,30 +67,30 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
 
         # Extract Soulsby et al. (2011) empirical parameters
-        soulsby_b_e = self.config.soulsby_b_e
-        soulsby_theta_s = self.config.soulsby_theta_s
-        # soulsby_gamma_e = self.config.soulsby_gamma_e
-        soulsby_mu_d = self.config.soulsby_mu_d
+        soulsby_b_e = self.tracer_config['soulsby']['soulsby_b_e']
+        soulsby_theta_s = self.tracer_config['soulsby']['soulsby_theta_s']
+        soulsby_gamma_e = self.tracer_config['soulsby']['soulsby_gamma_e']
+        soulsby_mu_d = self.tracer_config['soulsby']['soulsby_mu_d']
 
         # === COMPUTE ===
 
         # Compute shear velocities
         mean_shear_velocity = physics_lib.compute_shear_velocity(
             mean_bed_shear_stress,
-            self.config.rho_w,
+            rho_w,
         )
         max_shear_velocity = physics_lib.compute_shear_velocity(
             max_bed_shear_stress,
-            self.config.rho_w,
+            rho_w,
         )
 
         # Compute Shields number
         shields_number = physics_lib.compute_shields(
             max_bed_shear_stress,
-            self.config.g,
-            self.config.rho_s,
-            self.config.rho_w,
-            self.config.grain_size,
+            g,
+            rho_s,
+            rho_w,
+            grain_size,
         )
 
         # Compute bed load velocity
@@ -102,7 +103,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Compute additional particle properties
         nd_background_grain_diameter = (g * (rho_s / rho_w - 1) / (kinematic_viscosity**2)) ** (
             1 / 3
-        ) * background_grain_size  # nd = non-diamentional
+        ) * background_grain_size  # nd = non-dimentional
         grain_size_ratio = grain_size / background_grain_size
         rouse_number = settling_velocity / (von_karman * max_shear_velocity)
 
@@ -137,7 +138,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     soulsby_b[i][j] = 0
 
         # Compute the transition probability a [-] (Equation 5)
-        # soulby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
+        soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
 
         # Compute probability/proportion of time a particle is moving P [-] (Equation 6)
         soulsby_P = np.zeros(theta_max.shape)
@@ -160,7 +161,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):
                 if theta_max[i][j] > theta_cr_exp:
-                    print(bed_load_velocity[i][j] / flow_velocity_magnitude[i][j])
+                    # print(bed_load_velocity[i][j] / flow_velocity_magnitude[i][j])
                     Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
                     if Rb[i][j] > 1:
                         Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
@@ -174,10 +175,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     Rs[i][j] = 0
                 else:
                     Rs[i][j] = (
-                        Rb(1 - rouse_number)
-                        / (8 / 7 - rouse_number)
-                        * [(8 / 7 * Rb) ^ (8 - 7 * rouse_number) - 1]
-                        / [(8 / 7 * Rb) ^ (7 - 7 * rouse_number) - 1]
+                        Rb[i][j] * (1 - rouse_number[i][j])
+                        / (8 / 7 - rouse_number[i][j])
+                        * ((8 / 7 * Rb[i][j]) ** (8 - 7 * rouse_number[i][j]) - 1)
+                        / ((8 / 7 * Rb[i][j]) ** (7 - 7 * rouse_number[i][j]) - 1)
                     )
                     if Rs[i][j] > 1:
                         Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
@@ -197,6 +198,15 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
         grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
 
+        # Replace NaN values with zeros (occurs when flow velocity magnitude is zero) and inf to a huge
+        grain_velocity_magnitude = np.nan_to_num(grain_velocity_magnitude)
+        grain_velocity_x = np.nan_to_num(grain_velocity_x)
+        grain_velocity_y = np.nan_to_num(grain_velocity_y)
+
+        # Empty fields for Soulsby (only in van westen)
+        mixing_layer_thickness = np.zeros_like(grain_velocity_magnitude)
+        bed_level = np.zeros_like(grain_velocity_magnitude)
+
         # === STORE ===
 
         print('Adding physics fields to SedtrailsData...')
@@ -205,6 +215,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field(
             'grain_velocity',
             {'x': grain_velocity_x, 'y': grain_velocity_y, 'magnitude': grain_velocity_magnitude},
-            'soulsby_a',
-            'soulsby_b',
         )
+        # Soulsby et al. (2011) parameters (scalar fields)
+        sedtrails_data.add_physics_field('soulsby_a', soulsby_a)
+        sedtrails_data.add_physics_field('soulsby_b', soulsby_b)
+        sedtrails_data.add_physics_field('mixing_layer_thickness', mixing_layer_thickness)
