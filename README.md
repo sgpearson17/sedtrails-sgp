@@ -7,9 +7,30 @@
 # SedTRAILS
 **Sed**iment **TRA**nsport v**I**sualization and **L**agrangian **S**imulator.
 
+SedTRAILS is an open-source Python package for modeling sediment transport that uses Lagrangian particle tracking to simulate sediment pathways in coastal and estuarine environments. The current version is a **beta release**, bugs and issues are expected. Please report any problems you encounter on the [GitHub Issues page](https://github.com/sedtrails/sedtrails/issues)
+
+## Features
+- Lagrangian particle tracking for sediment transport simulation.
+- Visualization tools for sediment pathways.
+- Modular design for easy integration and extension.
+- Comprehensive documentation and examples.
+
+
 ## Installation
 
-SedTRAILS requires Python 3.12 and above, but it is likely to work with Python 3.10 and above.
+**Requirements:**
+- SedTRAILS is tested on Python 3.13 and above, but it is likely to work with Python 3.10 and above.
+
+
+### Using pip (recommended)
+You can install the latest beta version directly from PyPI using pip. Check the [releases page](https://pypi.org/project/sedtrails/#history) for the latest version (x).
+
+```bash
+pip install sedtrails=1.0.0-beta.x
+```
+
+### From Source
+To install SedTRAILS from source, follow these steps:
 
 1. Clone the repository:
 ```bash
@@ -17,54 +38,54 @@ SedTRAILS requires Python 3.12 and above, but it is likely to work with Python 3
 git clone https://github.com/sedtrails/sedtrails.git
 ```
 
-2. Change the directory:
+2. Change to the `sedtrails` directory:
 ```bash
 cd sedtrails
 ```
-3. Install the dependencies:
+
+3. Install the package using `pip` or `conda`:
+
 ```bash
+# For pip
 pip install .
 ```
 
-## Software Architecture
-The `diagrams/c4` directory was obtained from the [C4-PlantUML GitHub repository](https://github.com/plantuml-stdlib/C4-PlantUML). The directory contains some of the files required to run PlantUML, as well as a short [README.md](https://github.com/sedtrails/sedtrails/blob/main/diagrams/c4/README.md) that explains how to use the library.
+```bash
+# For conda
+# Create and activate the conda environment
+conda env create -f environment.yml
+conda activate sedtrails
+```
 
-**Requirements** 
-- Java
-- GraphViz
+4. Verify the installation by running:
+```bash
+sedtrails --version
 
-You can read more about the PlantUML syntax on the [PlantUML documentation](https://plantuml.com/command-line). They provide extensive support, which may be an overkill at the moment.
-- If you have the requirements already installed, you can simply clone the repository and get started. 
-- TL;DR: the basic command to save your diagram to a PNG file: 
-    ```shell
-    # Bash terminal
-    plantuml -tpng <file.puml>
-    ```
+# You should see the installed version number.
+# E.g.: SedTRAILS 1.0.0-beta.0
+```
 
 ## Contributing Guidelines
-
-Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take part in this project. 
+We welcome contributions from the community! Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take part in developing SedTRAILS. 
 
 ## License
-
 SetTRAILS is licensed under the [MIT License](LICENSE).
-
 &copy; (2025) SedTRAILS Team, Delft, The Netherlands. 
 
 ## Citation
 
-Pannozzo, N., Shafiei, H., van Westen, B., Pearson, S. G., Reyns, J., & Aguilera Chaves, M. SedTRAILS (Version 0.1) [Computer software]
+Pannozzo, N., Shafiei, H., van Westen, B., Pearson, S. G., Reyns, J., & Aguilera Chaves, M. SedTRAILS (Version 1.0.0-beta.0) [Computer software]
 
-### Author Contributions:
-| [Role](https://credit.niso.org/contributor-roles-defined/) | Author |
-|------|--------|
-| Conceptualization |  |
-| Funding acquisition | |
-| Project management |  |
-| Research |  |
-| Software |  |
-| Supervision |  |
-
+### Author Contributions
+| [Role](https://credit.niso.org/contributor-roles-defined/) | Author                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Conceptualization                                          | Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., Urhan, A., & van Westen, B.                       |
+| Project management                                         | Garcia Alvarez, M., & Pearson, S. G.                                                                                      |
+| Investigation                                              | Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., & van Westen, B.                                                      |
+| Software                                                   | Aguilera Chaves, M. Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J.,  Shafiei, H., Urhan, A., &  van Westen, B. |
+| Visualization                                              | Pearson, S. G., & van Westen, B.                                                                                          |
+| Supervision                                                | Garcia Alvarez, M., Pearson, S., & Reyns, J.                                                                              |
+| Funding acquisition                                        | Pearson, S. G., & Reyns J.                                                                                                |
 ## Acknowlegdements
 
-> The development of *SedTRAILS Software* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology. 
+> The design and development of *SedTRAILS Software* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology. 
