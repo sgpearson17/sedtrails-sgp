@@ -41,7 +41,7 @@ class PhysicsConverter:
     Each method (van Westen, Soulsby, etc.) has its own complete workflow.
     """
 
-    def __init__(self, config: Optional[PhysicsConfig] = None):
+    def __init__(self, config: Optional[PhysicsConfig] = None, tracer_config: Optional[dict] = None):
         """
         Initialize the physics converter.
 
@@ -53,6 +53,7 @@ class PhysicsConverter:
         self.config = config or PhysicsConfig()
         self._grain_properties: dict = {}
         self._physics_plugin = None
+        self.tracer_config = tracer_config
 
     @property
     def grain_properties(self):
@@ -98,7 +99,7 @@ class PhysicsConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                self._physics_plugin = plugin_module.PhysicsPlugin(self.config)
+                self._physics_plugin = plugin_module.PhysicsPlugin(self.config, self.tracer_config)  # all classes should be called the PhysicsPlugin
         return self._physics_plugin
 
 
