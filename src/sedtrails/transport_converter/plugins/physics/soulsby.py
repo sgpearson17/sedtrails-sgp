@@ -205,7 +205,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Empty fields for Soulsby (only in van westen)
         mixing_layer_thickness = np.zeros_like(grain_velocity_magnitude)
-        bed_level = np.zeros_like(grain_velocity_magnitude)
 
         # === STORE ===
 
