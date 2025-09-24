@@ -83,16 +83,6 @@ class ConfigurationController(Controller):
             raise ValueError('Configuration file path must be provided to the ConfigurationController.')
         else:
             self.config = config_file
-
-            # with pkg_resources.as_file(
-            #     pkg_resources.files('sedtrails.config').joinpath('main.schema.json')
-            # ) as config_schema:
-            #     if not os.path.exists(config_schema):
-            #         raise FileNotFoundError(
-            #             f'SedTRAILS validation schema file not found: {config_schema}. \
-            #             Input cannot be parsed.'
-            #         )
-
             validator = YAMLConfigValidator()
             self.config_data = validator.validate_yaml(config_file)
 

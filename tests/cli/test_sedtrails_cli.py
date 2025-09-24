@@ -34,7 +34,7 @@ class TestSedtrailsCLI:
     @pytest.fixture
     def mock_simulation(self):
         """Mock Simulation class."""
-        with patch('sedtrails.configuration_interface.cli.main.Simulation') as mock:
+        with patch('sedtrails.simulation.Simulation') as mock:
             mock_instance = Mock()
             mock.return_value = mock_instance
             yield mock_instance
@@ -180,7 +180,7 @@ class TestSedtrailsCLI:
             mock_simulation.validate_config.assert_called_once()
             mock_simulation.run.assert_called_once()
 
-    @patch('sedtrails.configuration_interface.cli.main.Simulation')
+    @patch('sedtrails.simulation.Simulation')
     def test_run_simulation_constructor_called_correctly(self, mock_simulation_class, runner, sample_config_data):
         """Test that Simulation constructor is called with correct config file."""
         with runner.isolated_filesystem():

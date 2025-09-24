@@ -66,8 +66,8 @@ def test_netcdf_writer_adds_metadata(tmp_output_dir):
     writer.add_metadata(dataset, populations, flow_field_names, metadata)
 
     # Check that metadata was added
-    assert dataset.attrs['title'] == 'SedTrails Particle Simulation Results'
-    assert dataset.attrs['institution'] == 'SedTrails Particle Tracer System'
+    assert dataset.attrs['title'] == 'SedTRAILS Particle Simulation Results'
+    assert dataset.attrs['institution'] == 'SedTRAILS Particle Tracer System'
     assert dataset.attrs['test_attr'] == 'test_value'
     assert 'created_on' in dataset.attrs
 

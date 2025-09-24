@@ -184,8 +184,8 @@ class NetCDFWriter:
             dataset.attrs.update(simulation_metadata)
 
         # Add standard metadata
-        dataset.attrs['title'] = 'SedTrails Particle Simulation Results'
-        dataset.attrs['institution'] = 'SedTrails Particle Tracer System'
+        dataset.attrs['title'] = 'SedTRAILS Particle Simulation Results'
+        dataset.attrs['institution'] = 'SedTRAILS Particle Tracer System'
         dataset.attrs['created_on'] = datetime.now().isoformat()
 
         return dataset
