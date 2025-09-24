@@ -35,8 +35,14 @@ license = "MIT"
 license-files = ["LICEN[CS]E.*"]
 keywords = ["sediment", "analysis"]
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python",
+  "License :: Freely Distributable",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Documentation :: Sphinx",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research",
 ]
 
 [project.optional-dependencies]
