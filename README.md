@@ -74,18 +74,19 @@ SetTRAILS is licensed under the [MIT License](LICENSE).
 
 ## Citation
 
-Pannozzo, N., Shafiei, H., van Westen, B., Pearson, S. G., Reyns, J., & Aguilera Chaves, M. SedTRAILS (Version 1.0.0-beta.0) [Computer software]
+Pearson, S. G., Reyns, J., Garcia Alvarez, M. G., Urhan, A., van Westen, B., Pannozzo, N., & Shafiei, H. SedTRAILS (Version 1.0.0-beta.0) [Computer software]
 
 ### Author Contributions
-| [Role](https://credit.niso.org/contributor-roles-defined/) | Author                                                                                                                    |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Conceptualization                                          | Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., Urhan, A., & van Westen, B.                       |
-| Project management                                         | Garcia Alvarez, M., & Pearson, S. G.                                                                                      |
-| Investigation                                              | Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., & van Westen, B.                                                      |
-| Software                                                   | Aguilera Chaves, M. Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J.,  Shafiei, H., Urhan, A., &  van Westen, B. |
-| Visualization                                              | Pearson, S. G., & van Westen, B.                                                                                          |
-| Supervision                                                | Garcia Alvarez, M., Pearson, S., & Reyns, J.                                                                              |
-| Funding acquisition                                        | Pearson, S. G., & Reyns J.                                                                                                |
+| [Role](https://credit.niso.org/contributor-roles-defined/) | Author                                                                                                |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Conceptualization                                          | Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., Urhan, A., & van Westen, B.   |
+| Project management                                         | Garcia Alvarez, M., & Pearson, S. G.                                                                  |
+| Investigation                                              | Pannozzo N., Pearson, S. G., Reyns J., Shafiei, H., & van Westen, B.                                  |
+| Software                                                   | Garcia Alvarez, M., Pannozzo N., Pearson, S. G., Reyns J.,  Shafiei, H., Urhan, A., &  van Westen, B. |
+| Visualization                                              | Pearson, S. G., & van Westen, B.                                                                      |
+| Supervision                                                | Garcia Alvarez, M., Pearson, S., & Reyns, J.                                                          |
+| Funding acquisition                                        | Pearson, S. G., & Reyns J.                                                                            |
 ## Acknowlegdements
 
 > The design and development of *SedTRAILS Software* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology. 
+
