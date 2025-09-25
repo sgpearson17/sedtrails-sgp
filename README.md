@@ -22,7 +22,7 @@ SedTRAILS is an open-source Python package for modeling sediment transport that 
 - SedTRAILS is tested on Python 3.13 and above, but it is likely to work with Python 3.10 and above.
 
 
-### Using pip (recommended)
+### Using pip 
 You can install the latest beta version directly from PyPI using pip. Check the [releases page](https://pypi.org/project/sedtrails/#history) for the latest version (x).
 
 ```bash
