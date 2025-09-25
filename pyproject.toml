@@ -22,9 +22,12 @@ dependencies = [
 requires-python = ">=3.10, <3.14"
 authors = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
-  { name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl" },
   { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
-  # Add more authors as needed
+  { name = "Manuel Garcia Alvarez", email = "m.garciaalvarez@tudelft.nl" },
+  { name = "Aysun Urhan" },
+  { name = "Bart van Westen" },
+  { name = "Natascia Pannozzo" },
+  { name = "Hassan Shafiei" },
 ]
 maintainers = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
