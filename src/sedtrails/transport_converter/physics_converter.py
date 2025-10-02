@@ -5,7 +5,7 @@ This module adds physics-based calculations to existing SedtrailsData objects
 using the physics library functions and allowing method selection.
 """
 
-from typing import Optional
+from typing import Optional, Any, Dict
 from dataclasses import dataclass
 
 # Import physics library
