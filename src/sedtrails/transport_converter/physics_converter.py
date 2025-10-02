@@ -6,7 +6,7 @@ using the physics library functions and allowing method selection.
 """
 
 from typing import Optional, Any, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 # Import physics library
 from sedtrails.transport_converter import physics_lib
@@ -27,7 +27,7 @@ MORFAC = 1.0
 class PhysicsConfig:
     """Configuration parameters for physics calculations."""
     # Physics methods
-    tracer_method: str = 'van_westen'  # name of method for
+    tracer_method: str = 'vanwesten'  # name of method for
     gravity: float = GRAVITY
     von_karman_constant: float = VON_KARMAN_CONSTANT
     kinematic_viscosity: float = KINEMATIC_VISCOSITY
@@ -50,11 +50,17 @@ class PhysicsConfig:
         obj = cls()
         # Apply base config
         if config:
-            for k, v in config.items():
+            if isinstance(config, cls):
+                base = asdict(config)          # deep copy dataclass fields
+            elif isinstance(config, dict):
+                base = config
+            else:
+                base = {k: v for k, v in vars(config).items() if not k.startswith("_")}
+            for k, v in base.items():
                 setattr(obj, k, v)
         # Apply method-specific (flatten) from tracer_config
         if tracer_config:
-            method = getattr(obj, "tracer_method", "van_westen")
+            method = getattr(config, "tracer_method", "vanwesten")
             # If tracer_config is nested like {"soulsby": {...}}, pick the active method
             if isinstance(tracer_config.get(method, None), dict):
                 method_params = tracer_config[method]
