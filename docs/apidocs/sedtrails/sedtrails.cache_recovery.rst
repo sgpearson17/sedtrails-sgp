@@ -13,5 +13,5 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
-   sedtrails.cache_recovery.caching
    sedtrails.cache_recovery.recovery
+   sedtrails.cache_recovery.caching

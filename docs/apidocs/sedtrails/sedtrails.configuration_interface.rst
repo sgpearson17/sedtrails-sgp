@@ -22,7 +22,7 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.configuration_interface.validator
    sedtrails.configuration_interface.configuration_controller
    sedtrails.configuration_interface.find
-   sedtrails.configuration_interface.validator
    sedtrails.configuration_interface.yaml_loader

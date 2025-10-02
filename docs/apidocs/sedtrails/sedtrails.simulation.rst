@@ -20,24 +20,8 @@ Classes
      - .. autodoc2-docstring:: sedtrails.simulation.Simulation
           :summary:
 
-Functions
-~~~~~~~~~
-
-.. list-table::
-   :class: autosummary longtable
-   :align: left
-
-   * - :py:obj:`setup_global_exception_logging <sedtrails.simulation.setup_global_exception_logging>`
-     - .. autodoc2-docstring:: sedtrails.simulation.setup_global_exception_logging
-          :summary:
-
 API
 ~~~
-
-.. py:function:: setup_global_exception_logging(logger_manager)
-   :canonical: sedtrails.simulation.setup_global_exception_logging
-
-   .. autodoc2-docstring:: sedtrails.simulation.setup_global_exception_logging
 
 .. py:class:: Simulation(config_file: str)
    :canonical: sedtrails.simulation.Simulation
@@ -73,10 +57,10 @@ API
 
       .. autodoc2-docstring:: sedtrails.simulation.Simulation.config
 
-   .. py:property:: population_config
-      :canonical: sedtrails.simulation.Simulation.population_config
+   .. py:property:: populations_config
+      :canonical: sedtrails.simulation.Simulation.populations_config
 
-      .. autodoc2-docstring:: sedtrails.simulation.Simulation.population_config
+      .. autodoc2-docstring:: sedtrails.simulation.Simulation.populations_config
 
    .. py:property:: start_time
       :canonical: sedtrails.simulation.Simulation.start_time

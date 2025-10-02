@@ -13,19 +13,19 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
+   sedtrails.particle_tracer.state_checker
    sedtrails.particle_tracer.data_retriever
+   sedtrails.particle_tracer.status_library
+   sedtrails.particle_tracer.position_calculator
+   sedtrails.particle_tracer.pathway_interface
+   sedtrails.particle_tracer.timer
    sedtrails.particle_tracer.diffusion_library
-   sedtrails.particle_tracer.flow_field_buffer
+   sedtrails.particle_tracer.particle_seeder
    sedtrails.particle_tracer.orchestrator
    sedtrails.particle_tracer.particle
-   sedtrails.particle_tracer.particle_seeder
-   sedtrails.particle_tracer.pathway_interface
-   sedtrails.particle_tracer.position_calculator
    sedtrails.particle_tracer.position_calculator_numba
+   sedtrails.particle_tracer.flow_field_buffer
    sedtrails.particle_tracer.property_interpolator
-   sedtrails.particle_tracer.state_checker
-   sedtrails.particle_tracer.status_library
-   sedtrails.particle_tracer.timer
 
 Package Contents
 ----------------

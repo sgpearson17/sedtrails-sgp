@@ -9,45 +9,61 @@
 Module Contents
 ---------------
 
-Classes
-~~~~~~~
+Functions
+~~~~~~~~~
 
 .. list-table::
    :class: autosummary longtable
    :align: left
 
-   * - :py:obj:`LoggerManager <sedtrails.logger.logger.LoggerManager>`
-     - .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager
+   * - :py:obj:`setup_logging <sedtrails.logger.logger.setup_logging>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger.setup_logging
+          :summary:
+   * - :py:obj:`install_global_excepthook <sedtrails.logger.logger.install_global_excepthook>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger.install_global_excepthook
+          :summary:
+   * - :py:obj:`get_logger <sedtrails.logger.logger.get_logger>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger.get_logger
+          :summary:
+   * - :py:obj:`log_simulation_state <sedtrails.logger.logger.log_simulation_state>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger.log_simulation_state
+          :summary:
+   * - :py:obj:`log_exception <sedtrails.logger.logger.log_exception>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger.log_exception
+          :summary:
+   * - :py:obj:`_format_seeding_strategy <sedtrails.logger.logger._format_seeding_strategy>`
+     - .. autodoc2-docstring:: sedtrails.logger.logger._format_seeding_strategy
           :summary:
 
 API
 ~~~
 
-.. py:class:: LoggerManager(log_dir: str = 'logs')
-   :canonical: sedtrails.logger.logger.LoggerManager
+.. py:function:: setup_logging(output_dir: str, level: str = 'INFO') -> logging.Logger
+   :canonical: sedtrails.logger.logger.setup_logging
 
-   .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager
+   .. autodoc2-docstring:: sedtrails.logger.logger.setup_logging
 
-   .. rubric:: Initialization
+.. py:function:: install_global_excepthook(logger: logging.Logger) -> None
+   :canonical: sedtrails.logger.logger.install_global_excepthook
 
-   .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager.__init__
+   .. autodoc2-docstring:: sedtrails.logger.logger.install_global_excepthook
 
-   .. py:method:: setup_logger()
-      :canonical: sedtrails.logger.logger.LoggerManager.setup_logger
+.. py:function:: get_logger(name: str | None = None) -> logging.Logger
+   :canonical: sedtrails.logger.logger.get_logger
 
-      .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager.setup_logger
+   .. autodoc2-docstring:: sedtrails.logger.logger.get_logger
 
-   .. py:method:: log_simulation_state(state: dict, level=logging.INFO) -> None
-      :canonical: sedtrails.logger.logger.LoggerManager.log_simulation_state
+.. py:function:: log_simulation_state(logger: logging.Logger, state: dict, level=logging.INFO) -> None
+   :canonical: sedtrails.logger.logger.log_simulation_state
 
-      .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager.log_simulation_state
+   .. autodoc2-docstring:: sedtrails.logger.logger.log_simulation_state
 
-   .. py:method:: log_exception(e: Exception, context: str = None) -> None
-      :canonical: sedtrails.logger.logger.LoggerManager.log_exception
+.. py:function:: log_exception(logger: logging.Logger, e: Exception, context: str = None) -> None
+   :canonical: sedtrails.logger.logger.log_exception
 
-      .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager.log_exception
+   .. autodoc2-docstring:: sedtrails.logger.logger.log_exception
 
-   .. py:method:: _format_seeding_strategy(strategy)
-      :canonical: sedtrails.logger.logger.LoggerManager._format_seeding_strategy
+.. py:function:: _format_seeding_strategy(strategy)
+   :canonical: sedtrails.logger.logger._format_seeding_strategy
 
-      .. autodoc2-docstring:: sedtrails.logger.logger.LoggerManager._format_seeding_strategy
+   .. autodoc2-docstring:: sedtrails.logger.logger._format_seeding_strategy

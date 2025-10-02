@@ -37,7 +37,22 @@ API
 
       .. autodoc2-docstring:: sedtrails.data_manager.netcdf_writer.NetCDFWriter._validate_filename
 
-   .. py:method:: write(ugrid_dataset, filename)
+   .. py:method:: write(xr_dataset, filename, trim_to_actual_timesteps=False, actual_timesteps=None)
       :canonical: sedtrails.data_manager.netcdf_writer.NetCDFWriter.write
 
       .. autodoc2-docstring:: sedtrails.data_manager.netcdf_writer.NetCDFWriter.write
+
+   .. py:method:: create_dataset(N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24)
+      :canonical: sedtrails.data_manager.netcdf_writer.NetCDFWriter.create_dataset
+
+      .. autodoc2-docstring:: sedtrails.data_manager.netcdf_writer.NetCDFWriter.create_dataset
+
+   .. py:method:: add_metadata(dataset, populations, flow_field_names, simulation_metadata=None)
+      :canonical: sedtrails.data_manager.netcdf_writer.NetCDFWriter.add_metadata
+
+      .. autodoc2-docstring:: sedtrails.data_manager.netcdf_writer.NetCDFWriter.add_metadata
+
+   .. py:method:: create_and_write_simulation_results(populations, flow_field_names, N_timesteps, filename='simulation_results.nc', simulation_metadata=None, name_strlen=24)
+      :canonical: sedtrails.data_manager.netcdf_writer.NetCDFWriter.create_and_write_simulation_results
+
+      .. autodoc2-docstring:: sedtrails.data_manager.netcdf_writer.NetCDFWriter.create_and_write_simulation_results

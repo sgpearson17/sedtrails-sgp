@@ -13,9 +13,10 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
-   sedtrails.pathway_visualizer.sedtrails_plotting
-   sedtrails.pathway_visualizer.simulation_dashboard
    sedtrails.pathway_visualizer.visualization_utils
+   sedtrails.pathway_visualizer.simulation_dashboard
+   sedtrails.pathway_visualizer.trajectories
+   sedtrails.pathway_visualizer.sedtrails_plotting
 
 Package Contents
 ----------------
@@ -36,6 +37,6 @@ API
 
 .. py:data:: __all__
    :canonical: sedtrails.pathway_visualizer.__all__
-   :value: ['SimulationDashboard']
+   :value: ['SimulationDashboard', 'plot_trajectories', 'read_netcdf']
 
    .. autodoc2-docstring:: sedtrails.pathway_visualizer.__all__

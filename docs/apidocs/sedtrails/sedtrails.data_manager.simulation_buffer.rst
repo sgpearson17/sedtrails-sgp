@@ -47,10 +47,10 @@ API
 
       .. autodoc2-docstring:: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.get_data
 
-   .. py:method:: to_ugrid_dataset(node_x, node_y, face_node_connectivity, fill_value=-1)
-      :canonical: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.to_ugrid_dataset
+   .. py:method:: to_xarray_dataset()
+      :canonical: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.to_xarray_dataset
 
-      .. autodoc2-docstring:: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.to_ugrid_dataset
+      .. autodoc2-docstring:: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.to_xarray_dataset
 
    .. py:method:: write_to_disk(node_x, node_y, face_node_connectivity, fill_value, writer, filename)
       :canonical: sedtrails.data_manager.simulation_buffer.SimulationDataBuffer.write_to_disk

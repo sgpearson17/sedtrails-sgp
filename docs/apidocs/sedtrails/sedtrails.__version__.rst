@@ -25,6 +25,6 @@ API
 
 .. py:data:: __version__
    :canonical: sedtrails.__version__.__version__
-   :value: '1.0.0-alpha.3'
+   :value: '1.0.0-beta.0'
 
    .. autodoc2-docstring:: sedtrails.__version__.__version__

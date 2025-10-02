@@ -13,15 +13,15 @@ Subpackages
    :titlesonly:
    :maxdepth: 3
 
-   sedtrails.cache_recovery
+   sedtrails.pathway_visualizer
    sedtrails.configuration_interface
-   sedtrails.data_manager
-   sedtrails.exceptions
    sedtrails.logger
    sedtrails.particle_tracer
-   sedtrails.pathway_visualizer
-   sedtrails.simulation_analysis
+   sedtrails.cache_recovery
+   sedtrails.exceptions
+   sedtrails.data_manager
    sedtrails.transport_converter
+   sedtrails.simulation_analysis
 
 Submodules
 ----------
@@ -30,9 +30,9 @@ Submodules
    :titlesonly:
    :maxdepth: 1
 
-   sedtrails.mock_api
    sedtrails.simulation
    sedtrails.__version__
+   sedtrails.nc_inspector
 
 Package Contents
 ----------------
@@ -53,6 +53,6 @@ API
 
 .. py:data:: __all__
    :canonical: sedtrails.__all__
-   :value: ['__version__']
+   :value: ['__version__', 'NetCDFInspector']
 
    .. autodoc2-docstring:: sedtrails.__all__

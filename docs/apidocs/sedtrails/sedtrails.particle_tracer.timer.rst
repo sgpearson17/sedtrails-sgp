@@ -106,12 +106,12 @@ API
 
       .. autodoc2-docstring:: sedtrails.particle_tracer.timer.Time.duration
 
-   .. py:attribute:: read_input_timestep
-      :canonical: sedtrails.particle_tracer.timer.Time.read_input_timestep
+   .. py:attribute:: read_input_interval
+      :canonical: sedtrails.particle_tracer.timer.Time.read_input_interval
       :type: sedtrails.particle_tracer.timer.Duration
       :value: 'field(...)'
 
-      .. autodoc2-docstring:: sedtrails.particle_tracer.timer.Time.read_input_timestep
+      .. autodoc2-docstring:: sedtrails.particle_tracer.timer.Time.read_input_interval
 
    .. py:attribute:: reference_date
       :canonical: sedtrails.particle_tracer.timer.Time.reference_date

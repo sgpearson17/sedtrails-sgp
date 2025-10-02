@@ -51,7 +51,7 @@ API
 
       .. autodoc2-docstring:: sedtrails.configuration_interface.configuration_controller.Controller.get
 
-.. py:class:: ConfigurationController(config_file: str, logger: typing.Optional[sedtrails.logger.logger.LoggerManager] = None)
+.. py:class:: ConfigurationController(config_file: str)
    :canonical: sedtrails.configuration_interface.configuration_controller.ConfigurationController
 
    Bases: :py:obj:`sedtrails.configuration_interface.configuration_controller.Controller`
@@ -66,11 +66,6 @@ API
       :canonical: sedtrails.configuration_interface.configuration_controller.ConfigurationController.load_config
 
       .. autodoc2-docstring:: sedtrails.configuration_interface.configuration_controller.ConfigurationController.load_config
-
-   .. py:method:: log_after_load_config() -> None
-      :canonical: sedtrails.configuration_interface.configuration_controller.ConfigurationController.log_after_load_config
-
-      .. autodoc2-docstring:: sedtrails.configuration_interface.configuration_controller.ConfigurationController.log_after_load_config
 
    .. py:method:: get_config() -> dict
       :canonical: sedtrails.configuration_interface.configuration_controller.ConfigurationController.get_config

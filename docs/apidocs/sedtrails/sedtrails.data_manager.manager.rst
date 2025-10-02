@@ -105,3 +105,8 @@ API
       :canonical: sedtrails.data_manager.manager.DataManager.dump
 
       .. autodoc2-docstring:: sedtrails.data_manager.manager.DataManager.dump
+
+   .. py:method:: collect_timestep_data(dataset, populations, timestep, current_time)
+      :canonical: sedtrails.data_manager.manager.DataManager.collect_timestep_data
+
+      .. autodoc2-docstring:: sedtrails.data_manager.manager.DataManager.collect_timestep_data
