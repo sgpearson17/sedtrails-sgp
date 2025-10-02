@@ -15,7 +15,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     def __init__(self, config, tracer_config):
         super().__init__()
         self.config = config
-        self.tracer_config = tracer_config
 
     def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
@@ -47,7 +46,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Extract particle properties
         grain_size = self.config.grain_diameter
-        background_grain_size = self.tracer_config['soulsby']['background_grain_size']
+        background_grain_size = self.config.background_grain_size
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         if dimensionless_grain_size is None:
             raise ValueError("Missing required 'dimensionless_grain_size' value in grain_properties.")
@@ -67,10 +66,10 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
 
         # Extract Soulsby et al. (2011) empirical parameters
-        soulsby_b_e = self.tracer_config['soulsby']['soulsby_b_e']
-        soulsby_theta_s = self.tracer_config['soulsby']['soulsby_theta_s']
-        soulsby_gamma_e = self.tracer_config['soulsby']['soulsby_gamma_e']
-        soulsby_mu_d = self.tracer_config['soulsby']['soulsby_mu_d']
+        soulsby_b_e = self.config.soulsby_b_e
+        soulsby_theta_s = self.config.soulsby_theta_s
+        soulsby_gamma_e = self.config.soulsby_gamma_e
+        soulsby_mu_d = self.config.soulsby_mu_d
 
         # === COMPUTE ===
 
