@@ -11,7 +11,10 @@ SedTRAILS is an open-source Python package for modeling sediment transport that 
 
 ## Features
 - Lagrangian particle tracking for sediment transport simulation.
-- Visualization tools for sediment pathways.
+- Dashboard for interactive visualization of simulation results in real-time.
+- Support for Delft3D Flexible Mesh (D3D-FM) hydrodynamic model outputs.
+- Support for various physics convertion methods.
+- Terminal user interface (CLI) for easy setup and execution of simulations.
 - Modular design for easy integration and extension.
 - Comprehensive documentation and examples.
 
@@ -86,7 +89,10 @@ Pearson, S. G., Reyns, J., Garcia Alvarez, M. G., Urhan, A., van Westen, B., Pan
 | Visualization                                              | Pearson, S. G., & van Westen, B.                                                                      |
 | Supervision                                                | Garcia Alvarez, M., Pearson, S., & Reyns, J.                                                          |
 | Funding acquisition                                        | Pearson, S. G., & Reyns J.                                                                            |
+
+
 ## Acknowlegdements
 
-> The design and development of *SedTRAILS Software* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology. 
+> - The design and development of *SedTRAILS Software* was supported by the [Digital Competence Centre](https://dcc.tudelft.nl/), Delft University of Technology.
+> - We want to thank **Monica Aguilera Chaves** from [Deltares](https://www.deltares.nl/en/) for partcipating in the initial design discussions of SedTRAILS.
 
