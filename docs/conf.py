@@ -9,7 +9,7 @@
 project = 'SedTRAILS'
 copyright = '2025, SedTRAILS Team'
 author = 'SedTRAILS Team'
-release = '0.0.1'
+release = '0.1.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
