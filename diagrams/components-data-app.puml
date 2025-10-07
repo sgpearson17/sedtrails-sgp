@@ -30,12 +30,9 @@ Container_Boundary(dataManager, "Data Management Module", "Python", "An applicat
 
 Rel(fileReader, fileSystem, "Reads files from", "NETCDF")
 Rel(fileWriter, fileSystem, "Writes files to", "NETCDF")
-
 Rel(transportConverter, simulBuffer, "provides converted flow-field data to", "XArray")
 Rel(particleTracer, simulBuffer, "provides output pathway data to", "XArray")
-
 Rel(fileReader, cache, "provides simulation cached data to", "XArray")
-
 Rel(fileReader, pathwayVisualizer, "provides particle pathway data to", "NETCDF, XArray")
 Rel(analyst, pathwayVisualizer, "Creates visualizations of particles pathways using", "Terminal")
 
