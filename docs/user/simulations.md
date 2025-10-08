@@ -1,16 +1,88 @@
 # Simulations
 
 ::: warning
-Explain how a user condigures and runs a simulation
+Explain how a user configures and runs a simulation
 Outputs are explain ina separate section
 :::
 
 ## Configuring a Simulation
 
-::: Provide a how to guide for setting up a simulation. Use the current example to briefly explain the structure of a configuraiton file. Refrence the simulation parameters section in the apendices 
-:::
+Simulations are configured using YAML files. These files define the parameters and settings for running SedTRAILS simulations, including input data, particle properties, and output options.
 
-This is how you refer to an appendix: [appendix](#apendix-parameters)
+For a detailed reference of all available parameters, please refer to the [Simulation Parameters Reference](../references/simulation-params.md).
+
+
+### Example Configuration File
+
+```yaml
+
+general:
+  input_model: 
+    format: fm_netcdf
+    reference_date: 1970-01-01  # Default reference date for the input model
+    morfac: 1  # Morphological acceleration factor for time decompression
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
+  read_interval: 10D  # Time chunk size for reading input data
+time:
+  start:  2016-09-21 19:20:00
+  timestep: 60S
+  duration: 1D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+particles:
+  populations:
+    - name: populaton_1
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00025 
+        density: 2650.0  
+      tracer_methods:
+        vanwesten:
+          flow_field_name: 
+            - bed_load_velocity
+            - suspended_velocity
+      transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        burial_depth: 
+          constant: 0
+        release_start: 2016-09-21 19:30:00
+        quantity: 1
+        strategy: 
+          random:
+            bbox: "39400,16800 40600,17800"
+            seed: 42
+            nlocations: 10
+    - name: population_2
+      particle_type: sand
+      characteristics:
+        grain_size: 0.00035 
+        density: 2650.0  
+      tracer_methods:
+        vanwesten:
+          flow_field_name: 
+            - bed_load_velocity
+            - suspended_velocity
+      transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
+      seeding:
+        burial_depth: 
+          constant: 0
+        release_start: 2016-09-21 19:30:00
+        quantity: 1
+        strategy: 
+          random:
+            bbox: "39400,16800 40600,17800"
+            seed: 42
+            nlocations: 5
+outputs:
+  directory: ./results
+  store_tracks: true
+  save_interval: 1H
+visualization:
+  dashboard:
+    enable: true
+    update_interval: 1H
+```
+
 
 ## Running a Simulation
 
