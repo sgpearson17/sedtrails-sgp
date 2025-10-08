@@ -337,13 +337,12 @@ The Cache and Recovery system provides checkpoint/restart capabilities, making t
 ## Technology Stack
 
 - **Primary Language**: Python 3.10-3.13
-- **Performance-Critical Code**: Fortran (Position Calculator)
 - **GUI Framework**: Qt (Simulation Dashboard)
 - **Data Formats**: NetCDF (primary), CSV, TXT
 - **Configuration**: YAML with JSON schema validation
 - **CLI Framework**: Typer
 - **Parallel Processing**: Python multiprocessing
-- **Scientific Computing**: NumPy, likely with Numba acceleration
+- **Scientific Computing**: NumPy, with Numba acceleration
 
 ---
 
@@ -353,6 +352,5 @@ SedTRAILS can be used in multiple ways:
 
 1. **Command Line**: Using the CLI for batch simulations and analysis
 2. **Python API**: Programmatic access for integration with other tools
-3. **Interactive**: Real-time visualization through the Simulation Dashboard
 
 The system integrates with various Eulerian flow modeling systems (Delft3D, FM NetCDF, etc.) and provides standardized outputs for analysis and visualization.
