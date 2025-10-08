@@ -1,5 +1,5 @@
 
-# Development Environment
+# Development Setup
 
 Developers and contributors can set up a local development environment to work on the SedTRAILS codebase. Follow the steps below to get started.
 

@@ -1,6 +1,6 @@
 # Installation
 
- SedTRAILS is currently in on is **beta** version. I can be tested and used, but it not yet fully ready for research use.
+SedTRAILS is currently on its **beta** version. It can be tested and used, but it not yet fully ready for research use.
 
 **Requirements:**
 SedTRAILS is tested on Python 3.13 and above, but it is likely to work with Python 3.10 and above.

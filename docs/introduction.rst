@@ -5,7 +5,8 @@ SedTRAILS (Sediment TRAnsport vIsualization & Lagrangian Simulator) is a sedimen
 
 
 Why SedTRAILS?
-^^^^^^^^^^^^^^
+---------------
+
 Estuaries and coasts can be conceptualized as connected networks of water and sediment fluxes. These dynamic geomorphic systems are governed by waves, tides, wind, and river input, and evolve according to complex nonlinear transport processes. To predict their evolution, we need to better understand the pathways that sediment takes from source through temporary storage areas to sink. Knowledge of these pathways is essential for predicting the response of such systems to climate change impacts or human interventions (e.g., dredging and nourishment). The conceptual framework of sediment connectivity has the potential to expand our system understanding and address practical coastal management problems (Pearson, 2020).
 
 Connectivity provides a structured framework for analyzing these sediment pathways, schematizing the system as a series of geomorphic cells or nodes, and the sediment fluxes between those nodes as links (Heckmann, 2015). Once organized in this fashion, the resulting network can be expressed algebraically as an adjacency matrix: sediment moving from a given source to different receptors. There is a wealth of pre-existing statistical tools and techniques that can be used to interpret the data once it is in this form, drawing on developments in other scientific disciplines (Newman, 2018; Rubinov, 2010). Lagrangian flow networks have been increasingly used to analyze flow and transport pathways in oceanographic and geophysical applications (Ser-Giacomi, 2015; Padberg-Gehle, 2017; Reijnders, 2021). However, this approach has not yet been adopted to analyze coastal or estuarine sediment transport, and requires a multitude of field measurements or numerical model simulations.
