@@ -29,7 +29,6 @@ SedTRAILS documentation
    :caption: Tutorials
 
    tutorials/tutorial1
-   tutorials/tutorial2
 
 .. toctree::
    :maxdepth: 2

@@ -18,6 +18,7 @@ This document describes the software architecture of SedTRAILS (Sediment Transpo
 
 ---
 
+(system-context)=
 ## System Context
 
 The System Context diagram provides the highest-level view of SedTRAILS, showing how it fits within its environment and interacts with external systems and users.
@@ -42,6 +43,7 @@ The system reads flow field data in various formats (NetCDF, Delft3D binaries) a
 
 ---
 
+(container-view)=
 ## Container View
 
 The Container diagram shows the major applications and data stores that make up SedTRAILS, along with their relationships and communication patterns.
@@ -86,8 +88,10 @@ The containers communicate primarily through Python objects and data arrays. The
 
 ---
 
+(component-details)=
 ## Component Details
 
+(application-interface)=
 ### Application Interface
 
 The Application Interface provides user access to SedTRAILS functionality through multiple channels.
@@ -119,6 +123,7 @@ The CLI and Python API both interact with the Configuration Controller to manage
 
 ---
 
+(simulation-orchestrator)=
 ### Simulation Orchestrator
 
 The Simulation Orchestrator manages the overall simulation workflow.
@@ -141,6 +146,7 @@ The orchestrator receives configurations from the Application Interface and coor
 
 ---
 
+(transport-converter)=
 ### Transport Converter
 
 The Transport Converter transforms flow field data from various Eulerian modeling systems into SedTRAILS-compatible formats.
@@ -177,6 +183,7 @@ The converter reads data from external flow modeling systems, processes it throu
 
 ---
 
+(lagrangian-particle-tracer)=
 ### Lagrangian Particle Tracer
 
 The Particle Tracer is the computational heart of SedTRAILS, calculating particle positions and states.
@@ -227,9 +234,11 @@ The tracer orchestrates particle initialization through the seeder, manages time
 
 ---
 
+
+(data-management-module)=
 ### Data Management Module
 
-The Data Management Module handles all data I/O and temporary storage operations.
+The Data Management Module handles input/output operations, data storage, and result management.
 
 ![Data Management Components](../_static/img/architecture/SedtrailComponentsDataManagement.png)
 
@@ -257,6 +266,7 @@ The data manager receives particle pathway data from the tracer and converted fl
 
 ---
 
+(simulation-analysis-application)=
 ### Simulation Analysis Application
 
 The Analysis Application provides post-processing capabilities for simulation outputs.
@@ -290,9 +300,10 @@ Users access analysis functionality through the Application Interface, which com
 
 ---
 
+(simulation-cache-and-recovery)=
 ### Simulation Cache and Recovery
 
-The Cache and Recovery system enables simulation resilience and efficiency.
+The Cache and Recovery system ensures resilience and efficient resource utilization.
 
 ![Cache and Recovery Components](../_static/img/architecture/SedtrailComponentsCache.png)
 
