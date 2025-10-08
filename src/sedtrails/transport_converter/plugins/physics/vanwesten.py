@@ -12,7 +12,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     This plugin implements the physics calculations as described in van Westen et al. (2025).
     """
 
-    def __init__(self, config):
+    def __init__(self, config, tracer_methods: None):
         super().__init__()
         self.config = config
 
