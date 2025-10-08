@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import numpy as np
 from tqdm import tqdm
 
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
@@ -58,9 +59,12 @@ class Simulation:
             # Global exception handler will catch and log this
             raise
 
+        for population in self.populations_config:
+            tracer_config = population['tracer_methods']
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
-        self.physics_converter = PhysicsConverter(self._get_physics_config())
+        # Added population_config for the soulsby method
+        self.physics_converter = PhysicsConverter(self._get_physics_config(), tracer_config)
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
@@ -119,17 +123,21 @@ class Simulation:
         Returns configuration parameters required for the physics converter.
         """
         from sedtrails.transport_converter.physics_converter import PhysicsConfig
-
+        # TODO implement configuration controller for multiple populations in a robust way
+        # TODO make sure the tracer_methods in config file match exactly with the plugin file name
+        tracer_method = self._controller.get('particles.populations')[0].get('tracer_methods', 'vanwesten')
+        if isinstance(tracer_method, dict):
+            tracer_method = list(tracer_method.keys())[0]
         config = PhysicsConfig(
-            tracer_method=self._controller.get('physics.tracer_method', 'van_westen'),
+            tracer_method=tracer_method,
             gravity=self._controller.get('physics.constants.g', 9.81),
             von_karman_constant=self._controller.get('physics.constants.von_karman', 0.40),
             kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity', 1.36e-6),
             water_density=self._controller.get('physics.constants.rho_w', 1027.0),
             particle_density=self._controller.get('physics.constants.rho_s', 2650.0),
-            porosity=self._controller.get('physics.porosity', 0.4),
-            grain_diameter=self._controller.get('physics.grain_diameter', 2.5e-4),
-            morfac=self._controller.get('physics.morfac', 1.0),
+            porosity=self._controller.get('physics.constants.porosity', 0.4),
+            grain_diameter=self._controller.get('physics.constants.grain_diameter', 2.5e-4),
+            morfac=self._controller.get('physics.constants.morphology_factor', 1.0),
             # trapped_exposed_method=self._controller.get('physics.trapped_exposed_method', 'reduced_velocity'), # other option; 'probabilistic_exposure'
         )
 
@@ -273,8 +281,11 @@ class Simulation:
         # Determine flow field names from configuration
         flow_field_names = []
         for population in populations_config:
-            if 'tracer_methods' in population and 'vanwesten' in population['tracer_methods']:
-                flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
+            if 'tracer_methods' in population and ('vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']):
+                if 'vanwesten' in population['tracer_methods']:
+                    flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
+                elif 'soulsby' in population['tracer_methods']:
+                    flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
                 break  # Use the first population's flow fields for now
 
         # Create SedTrails dataset using DataManager's writer (composition)
@@ -335,11 +346,15 @@ class Simulation:
                 for _method in tracer_methods:
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
+                        # TODO: Consider moving van westen specific fields to the plugin itself
                         mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
                         bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                        transport_prob = retriever.get_scalar_field(
-                            timer.current, flow_field_name.replace('velocity', 'probability')
-                        )['magnitude']
+                        if self.physics_converter.config.tracer_method == 'vanwesten':
+                            transport_prob = retriever.get_scalar_field(
+                                timer.current, flow_field_name.replace('velocity', 'probability')
+                            )['magnitude']
+                        else: # soulsby
+                            transport_prob = np.ones_like(bed_level)
 
                         # Update information at particle positions
                         population.update_information(
@@ -350,7 +365,8 @@ class Simulation:
                         )
 
                         # Update particle burial depth
-                        population.update_burial_depth()
+                        if self.physics_converter.config.tracer_method == 'vanwesten':
+                            population.update_burial_depth()
 
                         # Determining status
                         population.update_status()
@@ -485,7 +501,7 @@ class Simulation:
 
 
 if __name__ == '__main__':
-    sim = Simulation(config_file='examples/config.example.yaml')
+    sim = Simulation(config_file='examples/config.example_natascia.yaml')
     sim.run()
 
     # NOTE: This will failed on the output saving. But that's success
