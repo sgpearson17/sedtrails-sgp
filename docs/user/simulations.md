@@ -83,7 +83,6 @@ visualization:
     update_interval: 1H
 ```
 
-
 ## Running a Simulation
 
 The  following steps will guide you through running a simple SedTRAILS simulation using the example configuration file. Configuration files are files describing the parameters and settings for running the SedTRAILS simulations.
@@ -94,10 +93,10 @@ Make sure you have SedTRAILS installed. If you haven't installed it yet, please 
 <a href="../_static/downloads/config-example.yaml" download>Download the example configuration file</a> to your computer and save it in a directory where you want to run the simulation. For example `./examples/config-example.yaml`.
 :::
 
-1. Download the dataset file named `inlet_sedtrails.n` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm), and save it to your directory.
+1. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm), and save it to your directory.
 
 
-2. Update the `input_data` parameter in configuration file and save the changes. You can use any text-editor to open and update the file. This parameter must pint to the location of the `inlet_sedtrails.nz` dataset you downloaded earlier.
+2. Update the `input_data` parameter in configuration file and save the changes. You can use any text-editor to open and update the file. This parameter must pint to the location of the `inlet_sedtrails.nc` dataset you downloaded earlier.
 For example: 
 ```yaml
 input_data: ./inlet_sedtrails.nc
