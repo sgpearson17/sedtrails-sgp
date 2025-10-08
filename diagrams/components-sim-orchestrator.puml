@@ -8,7 +8,7 @@ scale 1.5
 
 Container(simulationDashboard, "Simulation Dashboard", "Python, Qt", "A GUI to visualize simulation results in real-time")
 Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "A parallel processing application that computes the current and future position of sand particles (x,y,t) in a coastal system")
-Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interuptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
+Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interruptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
 

@@ -10,7 +10,7 @@ Person(analyst, "Analyst", "Processes and visualizes simulation outputs")
 
 System(sedtrails, "SedTRAILS Particle Tracking System", "Simulates the position of particles (x,y,z) in a coastal system over time", $type="Python application")
 
-System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates and produces flows fileds (water and wind) data", $type="Any")
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates and produces flow fields (water and wind) data", $type="Any")
 
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 

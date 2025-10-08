@@ -7,7 +7,7 @@ scale 1.5
 Container(simOrchestrator, "Simulation Orchestrator", "Python", "Coordinates and manages the execution of SedTRAILS simulation tasks, including initialization, time-stepping, and termination procedures.")
 
 Container_Boundary(transportConverter, "Transport Converter"){ 
-    Component(formatConverter, "Format Converter", "Python", "An application that interprete flow-field data from a specific Eulerian flow modeling system and convert it to the SedTRAILS standard data structure")
+    Component(formatConverter, "Format Converter", "Python", "An application that interprets flow-field data from a specific Eulerian flow modeling system and converts it to the SedTRAILS standard data structure")
     Component(physicsConverter, "Physics Converter", "Python", "Converts flow-field physical units using user-preferred conversion methods")
     Component(physicsLibrary, "Physics Conversion Library", "Python", "A library of 'tracer methods' for converting flow-field physical units")
     Component(flowDataRetriever, "Flow Field Data Retriever", "Python", "Retrieves flow-field data batches and manages data convertions in the transport converter, using a batch processing strategy")
@@ -30,7 +30,7 @@ System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates flows of wate
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
 Rel(flowDataRetriever, dataManager, "Provides converted flow-field data to", "SedTRAILS data structure")
-Rel(flowDataRetriever, sedtrailsLogger, "logs conversion states and perfomance metrics to", "Python")
+Rel(flowDataRetriever, sedtrailsLogger, "logs conversion states and performance metrics to", "Python")
 Rel(flowDataRetriever, particleTracer, "Provides converted transport flow-field data to", "SedTRAILS data structure")
 Rel(dataManager, fileSystem, "Reads/writes converted flow-field data to", "NETCDF")
 Rel(flowDataRetriever, flowSystem, "reads flow-field input data from", "NETCDF")

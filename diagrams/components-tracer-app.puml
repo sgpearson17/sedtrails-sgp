@@ -6,16 +6,16 @@
 title SedTRAILS: Component Diagram for Lagrangian Particle Tracer
 scale 1.5
 
-' terminilogy:
+' terminology:
 ' pathway: a collection of particle positions and properties at different time steps    
 
 AddElementTag("review", $bgColor="lightred", $fontColor="red", $borderColor="red")
 
 Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 
-Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interuptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
+Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interruptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
 
-Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Particle Tracer System")
+Container(dataManager, "Data Management Module", "Python", "An application that manages data and files produced by the SedTRAILS Particle Tracer System")
 
 Container(simOrchestrator, "Simulation Orchestrator", "Python", "Coordinates and manages the execution of SedTRAILS simulation tasks, including initialization, time-stepping, and termination procedures.")
 
@@ -32,7 +32,7 @@ Container_Boundary(sedtrailsTracer, "Parallel Lagrangian Particle Tracer"){
     Rel(simOrchestrator, tracingOrchestrator, "provides simulation configuration to", "Python object")
     Rel(tracingOrchestrator, timer, "initializes simulation time", "Python object")
     Rel(timer, positionCalculator, "provides current and next time-steps to", "Python object")
-    Rel(tracingOrchestrator, positionCalculator, "provides initilized particles to", "Python object")
+    Rel(tracingOrchestrator, positionCalculator, "provides initialized particles to", "Python object")
     Rel(tracingOrchestrator, seedingTool, "computes particles initial positions using", "Python object")
     Rel(positionCalculator, dataManager, "provides particles' positions and  interpolated properties to", "Data array")
     Rel(seedingTool, cache,  "caches particles initial positions to", "Python object")

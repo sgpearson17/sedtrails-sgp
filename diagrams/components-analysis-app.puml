@@ -24,7 +24,7 @@ Container_Boundary(analystApp, "Simulation Analysis Application", "Python", "An 
 }
 
 Rel(fileReader, fileSystem, "Reads simulation output files from", "NETCDF")
-Rel(fileWriter, fileSystem , "Write analysis results to", "NETCDF")
+Rel(fileWriter, fileSystem , "Writes analysis results to", "NETCDF")
 Rel(sedtrailsInterface, analysisManager, "access functionality to post-process and analyze simulation results", "Python")
 Rel(analysisManager, statistics, "access functionality",)
 Rel(analysisManager, connectivity, "access functionality",)

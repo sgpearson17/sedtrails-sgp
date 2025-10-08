@@ -16,12 +16,12 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
     Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
     Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
     Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of  simulated particle pathways.")
-    Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interuptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
+    Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interruptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
     Container(dataManager, "Data Management Module", "Python", "An application that manages data and files produced by the SedTRAILS Particle Tracer System")
     Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
-    Rel(sedtrailsInterface, simOrchestrator, "provides configuratiions to execute simulations", "Python object")
+    Rel(sedtrailsInterface, simOrchestrator, "provides configurations to execute simulations", "Python object")
     
-    Rel(simOrchestrator, cache, "caches simulation configuations to", "Python ocject")
+    Rel(simOrchestrator, cache, "caches simulation configurations to", "Python object")
     Rel(sedtrailsInterface, analystApp, "access functionality to analyze simulation results", "Python")
     Rel(sedtrailsInterface, pathwayVisualizer, "access functionality to visualize simulation inputs and outputs", "Python")
     Rel(simOrchestrator, simulationDashboard, "provides input and simulated data to", "Python object")
@@ -36,11 +36,11 @@ System_Boundary(sedtrailsSystem, "SedTRAILS Particle Tracking System"){
     Rel(dataManager, pathwayVisualizer, "provides particle pathway data to", "NETCDF, Python")
 }
 
-System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates and produces flows fileds (water and wind) data", $type="Any")
+System_Ext(flowSystem, "Eulerian Flow Modeling System", "Simulates and produces flow fields (water and wind) data", $type="Any")
 SystemDb_Ext(fileSystem, "Local File System", "OS file system", $type="Windows, Linux, MacOS")
 
-Rel(dataManager, fileSystem, "read/writes simulation results and chache-files to", "NETCDF, Pickle files")
-Rel(modeler, sedtrailsInterface, "performs simulation, visualizaiton and data analysis tasks using", "YAML, Configuration file, Python, Terminal")
+Rel(dataManager, fileSystem, "reads/writes simulation results and cache files to", "NETCDF, Pickle files")
+Rel(modeler, sedtrailsInterface, "performs simulation, visualization and data analysis tasks using", "YAML, Configuration file, Python, Terminal")
 Rel(cache, fileSystem, "reads simulation log files from", "Python object")
 Rel(analyst, sedtrailsInterface, "post-process and analyze simulation outputs in", "Python, Terminal")
 Rel(analystApp, fileSystem, "reads simulation outputs and writes analysis results", "Any")
