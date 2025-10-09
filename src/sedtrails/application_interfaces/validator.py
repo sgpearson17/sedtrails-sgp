@@ -4,7 +4,6 @@ import json
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 from pathlib import Path
-from sedtrails.application_interfaces.yaml_loader import SedtrailsYamlLoader
 from importlib.resources import files
 
 
@@ -15,6 +14,25 @@ REF_SCHEMAS = [
     'population.schema.json',
     'visualization.schema.json',
 ]
+
+
+class SedtrailsYamlLoader(yaml.SafeLoader):
+    """
+    Custom YAML loader that avoids converting datetime strings to datetime objects.
+    A custom YAML loader is necessary because default loader always converts datetime strings to datetime objects
+    We want to keey datetime as strings, for convenience convertions are handled internally
+    by the SedTRAILS configuration interface"""
+
+    pass
+
+
+# Add a constructor that treats timestamps as strings instead of datetime objects
+def construct_timestamp_as_string(loader, node):
+    """Construct timestamp nodes as strings instead of datetime objects."""
+    return loader.construct_scalar(node)
+
+
+SedtrailsYamlLoader.add_constructor('tag:yaml.org,2002:timestamp', construct_timestamp_as_string)
 
 
 class YAMLConfigValidator:
@@ -401,7 +419,3 @@ if __name__ == '__main__':
     data = validator.validate_yaml('examples/config.example.yaml')
 
     print(f'Validated data: {data}')
-
-    # conf = validator.export_config()
-
-    # print(conf)s
