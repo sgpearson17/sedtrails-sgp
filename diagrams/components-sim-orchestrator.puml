@@ -1,4 +1,4 @@
-@startuml SedtrailComponentsConfigurationInterface
+@startuml SedtrailComponentsSimulationOrchestrator
 !include ./c4/C4_Component.puml
 
 ' LAYOUT_LANDSCAPE()

@@ -96,7 +96,7 @@ The containers communicate primarily through Python objects and data arrays. The
 
 The Application Interface provides user access to SedTRAILS functionality through multiple channels.
 
-![Application Interface Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
+![Application Interface Components](../_static/img/architecture/SedtrailComponentsSimulationInterface.png)
 
 **Components:**
 
@@ -128,7 +128,7 @@ The CLI and Python API both interact with the Configuration Controller to manage
 
 The Simulation Orchestrator manages the overall simulation workflow.
 
-![Simulation Orchestrator Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
+![Simulation Orchestrator Components](../_static/img/architecture/SedtrailsComponentsSimulatonOrchestrator.png)
 
 **Components:**
 
