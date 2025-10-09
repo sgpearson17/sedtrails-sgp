@@ -1,7 +1,9 @@
 """
 NetCDF Writer
 =============
+
 Writes NetCDF files produced by the SedTrails Particle Tracer System.
+
 """
 
 import numpy as np
@@ -20,18 +22,19 @@ class NetCDFWriter:
     - Add metadata to datasets (populations, flow fields, simulation info)
     - Write xarray datasets to NetCDF files with optional timestep trimming
 
-    Example Usage
-    -------------
+    Examples
+    --------
+
     # Method 1: Step-by-step approach
     output_dir = "some/path"
     writer = NetCDFWriter(output_dir)
 
     # Create the xarray dataset
     dataset = writer.create_dataset(
-        N_particles=total_particles,
-        N_populations=n_populations,
-        N_timesteps=n_timesteps,
-        N_flowfields=n_flowfields
+    N_particles=total_particles,
+    N_populations=n_populations,
+    N_timesteps=n_timesteps,
+    N_flowfields=n_flowfields
     )
 
     # Populate metadata to the dataset
@@ -45,13 +48,14 @@ class NetCDFWriter:
 
     # Method 2: All-in-one approach
     writer.create_and_write_simulation_results(
-        populations, flow_field_names, n_timesteps, filename
+    populations, flow_field_names, n_timesteps, filename
     )
 
     Attributes
     ----------
     output_dir : pathlib.Path
         The directory where output files (NetCDF, images, etc.) are stored.
+
     """
 
     def __init__(self, output_dir):
@@ -89,6 +93,7 @@ class NetCDFWriter:
         -------
         pathlib.Path
             Path to the written file
+
         """
         self._validate_filename(filename)
         output_path = self.output_dir / filename
@@ -221,6 +226,7 @@ class NetCDFWriter:
         -------
         pathlib.Path
             Path to the written file
+
         """
         # Calculate dimensions
         total_particles = sum([len(pop.particles['x']) for pop in populations])

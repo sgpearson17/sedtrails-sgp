@@ -1,37 +1,47 @@
 # Installation
 
-::: warning
-Update this section
+:::warning
+SedTRAILS is currently on its **beta** version. Users are welcome to test it, but compatibility might brake in future versions.  Its use in research requires discration.
 :::
 
- SedTRAILS is currently in an alpha stage. It is not recommended for production use.
+**Requirements:**
 
-This is the step-by-step guide on how to install SedTRAILS. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio) is installed.
+SedTRAILS is tested on Python 3.13 and above, but it is likely to work with Python 3.10 and above.
 
 
-## Installation via PIP:
+## Using pip 
+You can install the latest beta version directly from PyPI using pip. Check the [releases page](https://pypi.org/project/sedtrails/#history) for the latest version (x).
 
-Simply type the following command in terminal:
 ```bash
-pip install sedtrails
+pip install sedtrails=1.0.0-beta.x
 ```
 
-## Installation via Github repository:
+## From source
+To install SedTRAILS from source, follow these steps:
 
-1. Clone the SedTRAILS repository from github in your desired directory:
+1. Clone the repository:
 ```bash
-cd <your desired directory>
+
 git clone https://github.com/sedtrails/sedtrails.git
 ```
 
-2. Go to the directory in which the SedTRAILS repository is cloned into:
+2. Change to the `sedtrails` directory:
 ```bash
 cd sedtrails
 ```
 
-3. Install the dependencies: ([See this webpage](https://github.com/sedtrails/sedtrails/blob/dev/CONTRIBUTING.md) for more details about installing as a developer)
+3. Install the package using `pip` or `conda`:
+
 ```bash
+# For pip
 pip install .
+```
+
+```bash
+# For conda
+# Create and activate the conda environment
+conda env create -f environment.yml
+conda activate sedtrails
 ```
 
 ## Confirming the installation
@@ -39,38 +49,14 @@ pip install .
 Writing the following command in the terminal will show the installed SedTRAILS version:
 ```bash
 sedtrails -v
+# E.g.: SedTRAILS 1.0.0-beta.0
 ```
 
-The following command provides help about SedTRAILS installation:
+The following command provides help about the SedTRAILS commands:
 ```bash
 sedtrails -h
 
 ```
-## Running an example model
 
-1. copy/paste the exmaples folder (i.e., /sedtrails/examples) in a directory where you want to run the model.
-```bash
-cp -r ./examples <your runs folder>
-```
+Check the [Simulations Guide](./simulations.md) to learn how to set up and run a simulation.
 
-2. Download the dataset file named "inlet_sedtrails.nc" from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
-
-2. Go to the directory in which you want to run the model:
-```bash
-cd .../<your runs folder>
-```
-
-3. In the file config.example.yaml, update the directory for "input_data" to read the data-set you doanloaded in the first step: 
-  input_data: ./sample-data/inlet_sedtrails.nc
-
-
-4. Run the model:
-```bash
-sedtrails run -c ./config.example.yaml
-```
-
-::: note
-The model will take a few minutes to run. You can monitor the progress in the terminal.
-:::
-
-5. The results plots should pop up and should be saved in the ./results directory.

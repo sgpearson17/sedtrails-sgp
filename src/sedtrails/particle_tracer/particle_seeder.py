@@ -1,23 +1,16 @@
 """
 Particle Seeding Tool
 =====================
-Manage the creation of particles, their positions (x,y) and distribution.
+
 Manage the creation of particles, their positions (x,y) and distribution.
 using various release strategies.
 Seeding strategies for positions include:
-- Point: Release particles at a specific locations (x,y).
-- Regular Grid: Release particles in a regular grid pattern based
+Point: Release particles at a specific locations (x,y).
+Regular Grid: Release particles in a regular grid pattern based
     on distances between particles in x and y directions, and the
     simulation. A mask can be applied to restrict the area of seeding.
-- Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
-- Random: Release particles at random locations (x,y) within an area
-    constrained by a bounding box (xmin, xmax, ymin, ymax).
-- Point: Release particles at a specific locations (x,y).
-- Regular Grid: Release particles in a regular grid pattern based
-    on distances between particles in x and y directions, and the
-    simulation. A mask can be applied to restrict the area of seeding.
-- Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
-- Random: Release particles at random locations (x,y) within an area
+Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
+Random: Release particles at random locations (x,y) within an area
     constrained by a bounding box (xmin, xmax, ymin, ymax).
 """
 
@@ -39,24 +32,24 @@ from scipy.spatial import ConvexHull
 @dataclass
 class PopulationConfig:
     """
-    A class to represent the seeding parameters of a population of particle.
-    A population is a group of particles that share the same type and seeding strategy.
+        A class to represent the seeding parameters of a population of particle.
+        A population is a group of particles that share the same type and seeding strategy.
 
-    Attributes
-    ----------
-    population_config : Dict
-        The configuration dictionary containing the seeding paraameters for a population.
-    particle_type : str
-        The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-    release_start : str
-        The time at which the particles for a given population are released.
-    quantity : int
-        The number of particles to release per release location.
-    strategy_settings : Dict
-        The settings for the seeding strategy, extracted from the configuration.
-        These are any key-value pairs defined under the specific strategy in the configuration.
-    A class to represent the seeding parameters of a population of particle.
-    A population is a group of particles that share the same type and seeding strategy.
+        Attributes
+        ----------
+        population_config : Dict
+            The configuration dictionary containing the seeding paraameters for a population.
+        particle_type : str
+            The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
+        release_start : str
+            The time at which the particles for a given population are released.
+        quantity : int
+            The number of particles to release per release location.
+    s    strategy_settings : Dict
+            The settings for the seeding strategy, extracted from the configuration.
+            These are any key-value pairs defined under the specific strategy in the configuration.
+        A class to represent the seeding parameters of a population of particle.
+        A population is a group of particles that share the same type and seeding strategy.
 
     """
 
@@ -103,7 +96,6 @@ class SeedingStrategy(ABC):
         """
         Asociates quantity of particles to a seeding locations for a given strategy.
 
-
         Parameters
         ----------
         config : PopulationConfig
@@ -116,6 +108,7 @@ class SeedingStrategy(ABC):
             - int: The quantity of particles to  be releases at a location.
             - float: The x-coordinate of the release location.
             - float: The y-coordinate of the release location.
+
         """
         pass
 
@@ -148,6 +141,7 @@ class RandomStrategy(SeedingStrategy):
     """
     Seeding strategy to release particles at at random locations (x,y) within an area constraint by a
     bounding box 'xmin,ymin xmax,ymax'.
+
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
@@ -401,6 +395,7 @@ class ParticlePopulation:
     ) -> None:
         """
         Updates field data information for particles in the population.
+
         Parameters
         ----------
         current_time : ndarray
@@ -492,6 +487,7 @@ class ParticlePopulation:
             A dictionary containing the flow field information.
         current_timestep : float
             The current time step in the simulation in seconds.
+
         """
 
         ix = self.particles['is_mobile']  # Get indices of mobile particles
@@ -523,19 +519,17 @@ class ParticleSeeder:
 
     This class provides a clean, modular interface for creating particles
     from configuration dictionaries.
+
+    Attributes
+    ----------
+    population_configs : List[Dict[str, Any]] | Dict[str, Any]
+        A dictionary containing configuration for a single population,
+        or a
+        List of dictionaries, each containing configuration for one population.
+
     """
 
     def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]):
-        """
-        Attributes
-        ----------
-        population_configs : List[Dict[str, Any]] | Dict[str, Any]
-            A dictionary containing configuration for a single population,
-            or a
-            List of dictionaries, each containing configuration for one population.
-
-        """
-
         self.population_configs = population_configs
 
     def seed(self, sedtrails_data: SedtrailsData) -> List[ParticlePopulation]:
@@ -552,6 +546,7 @@ class ParticleSeeder:
         List[ParticlePopulation]
             A list of ParticlePopulation objects, each containing the particles
             created for a specific population configuration.
+
         """
 
         if isinstance(self.population_configs, dict):

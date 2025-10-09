@@ -1,0 +1,31 @@
+@startuml SedtrailComponentsConfigurationInterface
+!include ./c4/C4_Component.puml
+
+' LAYOUT_LANDSCAPE()
+
+title SedTRAILS: Component Diagram for Simulation Orchestrator
+scale 1.5
+
+Container(simulationDashboard, "Simulation Dashboard", "Python, Qt", "A GUI to visualize simulation results in real-time")
+Container(sedtrailsTracer, "Lagrangian Particle Tracer", "Python", "A parallel processing application that computes the current and future position of sand particles (x,y,t) in a coastal system")
+Container(cache, "Simulation Cache and Recovery", "Python", "Provides functionality to recover simulation interruptions, allow restarts, and reuse simulation inputs and outputs to avoid redundant computations.")
+Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
+Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
+
+Container_Boundary(simOrchestrator, "Simulation Orchestrator", "Python", "Coordinates and manages the execution of SedTRAILS simulation tasks, including initialization, time-stepping, and termination procedures."){    
+    Component(simulationManager, "Simulation Manager", "Python", "Manages the overall simulation workflow, including initialization, time-stepping, and termination procedures.")
+    Component(globalLogger, "Global Logger", "Python", "A global logger for the SedTRAILS Particle Tracer System.")
+
+    Rel(simulationManager, globalLogger, "logs simulation states, outputs, errors and computational performance metrics to", "Python")
+    Rel(globalLogger, sedtrailsLogger, "writes log entries to", "Plain text")
+}
+
+Rel(simulationManager, sedtrailsTracer, "provides configurations for initializing", "Python object")
+Rel(simulationManager, simulationDashboard, "displays simulation results in real-time on", "Python object")
+Rel(simulationManager, cache, "initializes simulation caching", "Python")
+Rel(simulationManager, transportConverter, "provides configurations for initializing", "Python object")
+
+
+SHOW_LEGEND()
+@enduml
+

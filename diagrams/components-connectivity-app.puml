@@ -3,7 +3,7 @@
 ' !theme C4_sandstone from ./c4/themes
 
 
-' LAYOUT_LANDSCAPE()
+' TODO: Complete this diagram
 
 title SedTRAILS: Component Diagram for Connectivity Network Application
 scale 1.5

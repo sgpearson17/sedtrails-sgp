@@ -3,25 +3,32 @@
 
 ' LAYOUT_LANDSCAPE()
 
-title SedTRAILS: Component Diagram for Simulation Configuration Interface
+title SedTRAILS: Component Diagram for SedTRAILS  Application Interface
 scale 1.5
 
 Person(modeler, "Modeler", "wants to track sand particles in a coastal system")
-Container(particleTracer, "Lagrangian Particle Tracer", "Python", "A desktop application that computes the position of sand particles (x,y,t) in a coastal system")
-Container(transportConverter, "Transport Converter", "Python", "An application that provides custom interfaces and methods for reading and converting 'transport flow-field data' to SedTRAILS compatible formats and physical units.")
 
-Container_Boundary(configInterface, "Simulation Configuration Interface", "Python", "An application that reads and interprets simulation configuration files"){
-    Component(simulCli, "Simulation CLI", "Python, Typer", "Exposes commands to configure simulations via command line interface")
+Container(simOrchestrator, "Simulation Orchestrator", "Python", "Coordinates and manages the execution of SedTRAILS simulation tasks, including initialization, time-stepping, and termination procedures.")
+Container(pathwayVisualizer, "Pathway Visualizer", "Python", "An application to generate plots and animations of  simulated particle pathways.")
+Container(analystApp, "Simulation Analysis Application", "Python", "An application to post-process simulation outputs and conduct statistical and connectivity network analyses")
+
+Container_Boundary(configInterface, "SedTRAILS Application Interface", "Python", "An application that enables users to access SedTRAILS functionality to run, visualize and analyze simulation"){
+    Component(simulCli, "Command Line Interface", "Python, Typer", "Exposes commands to configure simulations via the terminal.")
+    Component(simulPython, "Application Interface", "Python", "An API that exposes functions and classes to configure and run SedTRAILS simulations programmatically. It also provides access to visualization and data analysis functionalities.")
     Component(configController, "Configuration Controller", "Python", "Reads simulation configuration files, applies default configuration values, and provides configurations to other components")
     Component(configValidator, "Validator", "YAML", "Validates simulation configuration files against SedTRAILS configuration schema")
     Rel(configController, configValidator, "provides file content to", "Python object")
-    Rel(simulCli, configController, "provides configurations and instructions to", "Python object")
+    Rel(simulCli, simulPython, "access exposed functionality", "Python")
+    Rel(simulPython, configController, "provides simulation configurations to", "Python")
 }
 
-Rel(modeler, simulCli, "Provides simulation configurations via", "Terminal, YAML file")
-Rel(configController, particleTracer, "provides configurations to", "Python object")
-Rel(configController, transportConverter, "provides configurations to", "Python object")
-
+Rel(modeler, simulCli, "performs simulation, visualization and data analysis tasks using", "YAML files, Terminal")
+Rel(modeler, simulPython, "performs simulation, visualization and data analysis tasks using", "YAML files, Python")
+Rel(configController, simOrchestrator, "provides configurations to execute simulations", "Python object")
+Rel(simulPython, simOrchestrator, "access core functionality to run simulations", "Python")
+Rel(simulPython, analystApp, "access functionality to analyze simulation results", "Python")
+Rel(simulPython, pathwayVisualizer, "access functionality to visualize simulation inputs and outputs", "Python", "Python")
+ 
 SHOW_LEGEND()
 @enduml
 

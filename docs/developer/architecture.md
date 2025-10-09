@@ -1,325 +1,367 @@
-# SedTRAILS Architecture
+# Software Architecture
 
-## Component Diagrams
+SedTRAILS was designed with a modular architecture to facilitate maintenance, scalability, and extensibility.
+This document describes the software architecture of SedTRAILS (Sediment Transport and Lagrangian Simulator), a particle tracking system for coastal environments. The architecture follows the C4 model, presenting the system at multiple levels of detail from high-level context to detailed component diagrams.
 
-.. tip:: General format to describe components
-  Each component has the following attributes
-  - Purpose: what role the component plays
-  - Function: what the component actually does
+## Table of Contents
 
-
-## Component Diagram For the Simulation Configuration Interface
-
-### User Interaction
-
-#### Modeler
-- **Role**: End user who aims to track sand particles in a coastal system.
-- **Function**: Provides simulation configurations via:
-  - Terminal commands (CLI)
-  - YAML configuration files
+1. [System Context](#system-context)
+2. [Container View](#container-view)
+3. [Component Details](#component-details)
+   - [Application Interface](#application-interface)
+   - [Simulation Orchestrator](#simulation-orchestrator)
+   - [Transport Converter](#transport-converter)
+   - [Lagrangian Particle Tracer](#lagrangian-particle-tracer)
+   - [Data Management Module](#data-management-module)
+   - [Simulation Analysis Application](#simulation-analysis-application)
+   - [Simulation Cache and Recovery](#simulation-cache-and-recovery)
 
 ---
 
-### Simulation Configuration Interface (container)
-This container abstracts the workflow needed to prepare simulation configurations for SedTRAILS. It contains the following components:
+(system-context)=
+## System Context
 
-#### Simulation CLI (component)
-- **Technology**: `Python`, `Typer`
-- **Purpose**: Presents the commands to the user via a Command Line Interface.
-- **Function**:
-  - Collects user input for simulation setup.
-  - Passes configuration data and instructions to the **Configuration Controller**.
+The System Context diagram provides the highest-level view of SedTRAILS, showing how it fits within its environment and interacts with external systems and users.
 
-#### Configuration Controller (component)
-- **Technology**: `Python`
-- **Purpose**: Central logic handler for configuration (i.e., model input parameters) management.
-- **Function**:
-  - Reads and interprets YAML configuration files.
-  - Applies default configuration values when needed.
-  - Distributes complete configuration data to downstream components.
+![System Context Diagram](../_static/img/architecture/SedtrailContext.png)
 
-#### Validator (component)
-- **Technology**: `YAML`
-- **Purpose**: Validates input configuration files against the SedTRAILS schema.
-- **Interaction**: Operates on file content provided by the **Configuration Controller**.
+### Key Elements
 
----
+**Users:**
+- **Modeler**: Defines simulation parameters and configures the system to track particle movement in coastal environments
+- **Analyst**: Processes and visualizes simulation outputs for analysis and interpretation
 
-### External Components
+**SedTRAILS System:**
+- The core particle tracking system that simulates particle positions (x, y, z) in coastal environments over time
+- Implemented as a Python application
 
-These components receive configuration data from the Simulation Configuration Interface and are responsible for simulation execution and data transformation.
+**External Systems:**
+- **Eulerian Flow Modeling System**: Provides flow field data (water and wind) from various modeling systems
+- **Local File System**: Handles input/output operations for configuration files, flow data, and simulation results
 
-#### Lagrangian Particle Tracer (component)
-- **Technology**: `Python`
-- **Description**: Core simulation engine.
-- **Function**: Computes particle positions \((x, y, t)\) in a coastal system using provided configuration.
-- **Input**: Receives validated configurations from the **Configuration Controller**.
-
-#### Transport Converter (component)
-- **Technology**: `Python`
-- **Description**: Data adapter for external flow-field datasets.
-- **Function**:
-  - Reads and converts 'transport flow–field data' into SedTRAILS-compatible formats and physical units.
-  - Interfaces with the **Configuration Controller** to ensure compatibility with the rest of the pipeline.
+The system reads flow field data in various formats (NetCDF, Delft3D binaries) and produces outputs in standard formats (NetCDF, CSV, TXT).
 
 ---
 
-### Data Flow Summary
+(container-view)=
+## Container View
 
-1. **Modeler** initiates the simulation via CLI or configuration file.
-2. **Simulation CLI** exposes commands and forwards user inputs.
-3. **Configuration Controller**:
-   - Reads and interprets configuration files.
-   - Sends content to **Validator** for schema validation.
-   - Distributes validated configurations (i.e., model parameter settings) to **Lagrangian Particle Tracer** and **Transport Converter**.
-4. **Lagrangian Particle Tracer** and **Transport Converter** execute tasks based on configurations (i.e., model parameter settings).
+The Container diagram shows the major applications and data stores that make up SedTRAILS, along with their relationships and communication patterns.
 
-## Component Diagram for Transport Converter
+![Container Diagram](../_static/img/architecture/SedtrailContainer.png)
 
-The **Transport Converter** is a core component of the SedTRAILS architecture that enables the use of external Eulerian flow modeling systems by transforming their output into SedTRAILS-compatible formats and physical units. It acts as an adapter layer that standardizes, configures, and converts transport flow–field data for use in sediment particle simulations.
+### Core Containers
 
----
+#### 1. **SedTRAILS Application Interface**
+A Python-based interface that provides access to SedTRAILS functionality through both CLI and programmatic APIs. Enables users to run simulations, visualize results, and analyze data.
 
-### User Interaction
+#### 2. **Simulation Orchestrator**
+Coordinates and manages the execution of simulation tasks, including initialization, time-stepping, and termination procedures. Acts as the central coordinator for all simulation activities.
 
-#### Modeler
-- **Role**: End user who defines the simulation parameters and output configuration.
-- **Function**: Provides a YAML configuration file that specifies source data and conversion preferences.
+#### 3. **Lagrangian Particle Tracer**
+A parallel processing application that computes current and future positions of particles (x, y, t) in coastal systems. This is the computational core of SedTRAILS.
 
----
+#### 4. **Transport Converter**
+Provides custom interfaces and methods for reading and converting transport flow-field data to SedTRAILS-compatible formats and physical units. Supports multiple input formats through a plugin architecture.
 
-### Transport Converter (container)
-This container provides the functionality for importing and converting external flow–field data. It includes the following components:
+#### 5. **Data Management Module**
+Manages data and files produced by the particle tracer system, including reading/writing simulation results and handling cache files in NetCDF format.
 
-#### Format Converter Interface (component)
-- **Technology**: `Python`
-- **Purpose**: Reads flow–field data from external Eulerian modeling systems.
-- **Function**:
-  - Reads flow–field input (e.g., in `NetCDF` format).
-  - Converts the custom format to the internal **SedTRAILS** standard data structure.
-  - Provides data to the **Physics Converter**.
+#### 6. **Simulation Dashboard**
+A GUI (Python/Qt) for visualizing simulation results in real-time during execution.
 
-#### Physics Converter (component)
-- **Technology**: `Python`
-- **Purpose**: Transforms flow–field data into physically consistent units as configured by the user.
-- **Function**:
-  - Accesses user-specified conversion methods from the **Simulation Configuration Interface**.
-  - Converts flow-field physical units using methods available in the **Physics Conversion Library**.
-  - Provides converted transport flow-field data to **Lagrangian Particle Tracer** and **Data Management Module**.
+#### 7. **Pathway Visualizer**
+Generates plots and animations of simulated particle pathways for post-processing analysis.
 
-#### Physics Conversion Library (component)
-- **Technology**: `Python`
-- **Purpose**: Provides a suite of conversion methods.
-- **Function**:
-  - Defines reusable functions for physical unit conversion.
-  - Provides conversion methods to the **Physics Converter**.
+#### 8. **Simulation Analysis Application**
+Provides tools for post-processing simulation outputs, conducting statistical analysis, and performing connectivity network analyses.
+
+#### 9. **Simulation Cache and Recovery**
+Handles simulation interruption recovery, allows restarts, and reuses simulation inputs/outputs to avoid redundant computations.
+
+#### 10. **SedTRAILS Logger**
+Logs simulation states, outputs, errors, and computational performance metrics.
+
+### Data Flow
+
+The containers communicate primarily through Python objects and data arrays. The Simulation Orchestrator acts as the central hub, coordinating between the particle tracer, transport converter, cache system, and data manager. Results flow from the particle tracer through the data manager to visualization and analysis tools.
 
 ---
 
-### Connected Components
+(component-details)=
+## Component Details
 
-These components work alongside or consume output from the Transport Converter:
+(application-interface)=
+### Application Interface
 
-#### Simulation Configuration Interface (component)
-- **Technology**: `Python`
-- **Purpose**: Reads the user’s configuration file and provides setup parameters.
-- **Function**: Provides configuration details to the **Physics Converter**.
+The Application Interface provides user access to SedTRAILS functionality through multiple channels.
 
-#### Lagrangian Particle Tracer (component)
-- **Technology**: `Python`
-- **Purpose**: Executes the core simulation to compute particle trajectories.
-- **Input**: Converted flow–field data for particle transport simulation from the **Physics Converter**.
+![Application Interface Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
 
-#### Data Management Module (component)
-- **Technology**: `Python`
-- **Purpose**: Handles data and file I/O.
-- **Function**:
-  - Receives converted flow–field data.
-  - Writes data to disk using the local file system in formats like `NetCDF`.
+**Components:**
 
-#### SedTRAILS Logger (component)
-- **Technology**: `Python`
-- **Purpose**: Logs simulation states, intermediate outputs, errors and performance metrics.
-- **Function**: Tracks execution start/end times of routines used in the **Physics Converter**.
+1. **Command Line Interface (CLI)**
+   - Built with Python and Typer
+   - Exposes terminal commands for configuring and running simulations
+   - Provides direct access to core functionality
 
----
+2. **Application Interface (API)**
+   - Python API exposing functions and classes for programmatic access
+   - Enables configuration and execution of simulations through code
+   - Provides access to visualization and analysis functionalities
 
-### External Systems
+3. **Configuration Controller**
+   - Reads simulation configuration files (YAML)
+   - Applies default values where needed
+   - Distributes configuration to other components
 
-#### Eulerian Flow Modeling System (external system)
-- **Technology**: `[Any]`
-- **Description**: External system that simulates water/wind dynamics and outputs results in a custom structure.
-- **Interaction**: Source of the flow–field input data to the **Format Converter Interface**.
+4. **Validator**
+   - Validates configuration files against SedTRAILS schema
+   - Ensures configuration correctness before simulation execution
 
-#### Local File System (external system)
-- **Technology**: `Windows`, `Linux`, `MacOS`
-- **Purpose**: Stores converted flow–field data.
-- **Interaction**: Used by the **Data Management Module** for reading/writing data in `NetCDF` or other supported formats.
+The CLI and Python API both interact with the Configuration Controller to manage simulation parameters, which are then passed to the Simulation Orchestrator for execution.
 
 ---
 
-### Data Flow Summary
+(simulation-orchestrator)=
+### Simulation Orchestrator
 
-1. **Modeler** defines simulation and conversion preferences via a YAML file.
-2. **Simulation Configuration Interface** parses configuration and passes relevant parameters to the **Physics Converter**.
-3. **Format Converter Interface** reads flow–field input data from an external Eulerian model (e.g., in NetCDF).
-4. **Physics Converter**:
-   - Receives the standard-formatted data.
-   - Converts units using methods defined in the **Physics Conversion Library**.
-   - Produces SedTRAILS-compatible transport flow–field data.
-5. Converted data is used by:
-   - **Lagrangian Particle Tracer** for simulation,
-   - **Data Management Module** for storage,
-   - **SedTRAILS Logger** for tracking computation metrics.
+The Simulation Orchestrator manages the overall simulation workflow.
 
-## Component Diagram for Lagrangian Particle Tracer
+![Simulation Orchestrator Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
 
-The **Lagrangian Particle Tracer** is the core engine of the SedTRAILS system. It computes particle trajectories in coastal environments based on time-varying flow fields and user-defined release conditions. It is built to support parallel particle tracing, modular physics, and comprehensive state tracking and logging.
+**Components:**
 
----
+1. **Simulation Manager**
+   - Manages overall simulation workflow
+   - Handles initialization, time-stepping, and termination procedures
+   - Coordinates between all simulation components
 
-### User Interaction
+2. **Global Logger**
+   - Central logging facility for the entire system
+   - Captures simulation states, outputs, errors, and performance metrics
+   - Writes entries to the SedTRAILS Logger
 
-#### Modeler
-- **Role**: End user who tracks particles in a coastal system.
-- **Function**: Provides seeding configuration (e.g., time, location, number of particles) via a YAML configuration file.
+The orchestrator receives configurations from the Application Interface and coordinates the Transport Converter, Particle Tracer, Dashboard, and Cache systems to execute simulations.
 
 ---
 
-### Parallel Lagrangian Particle Tracer (container)
+(transport-converter)=
+### Transport Converter
 
-This container handles particle release, position calculation, status updates, and property interpolation during the simulation. It supports parallel execution through modular orchestration and shared data buffers.
+The Transport Converter transforms flow field data from various Eulerian modeling systems into SedTRAILS-compatible formats.
 
----
+![Transport Converter Components](../_static/img/architecture/SedtrailComponentsTransportConverter.png)
 
-### Components
+**Components:**
 
-#### Particle Seeding Tool
-- **Technology**: `Python`
-- **Purpose**: Defines particle release strategies and initial conditions.
-- **Function**:
-  - Computes initial particle positions.
-  - Applies various particle release strategies based on user configuration.
+1. **Format Converter**
+   - Interprets flow-field data from specific Eulerian modeling systems
+   - Converts data to SedTRAILS standard data structure
+   - Supports multiple input formats through plugins
 
-#### Flow Field Data Retriever
-- **Technology**: `Python`
-- **Purpose**: Loads flow–field input data required for particle tracing.
-- **Function**:
-  - Retrieves converted flow–field data from the **Transport Converter** or the **Simulation Cache and Recovery** module.
+2. **Physics Converter**
+   - Converts flow-field physical units
+   - Applies user-preferred conversion methods
+   - Interfaces with the Physics Conversion Library
 
-#### Processing Time Interface
-- **Technology**: `Python`
-- **Purpose**: Controls simulation time loop and scheduling.
-- **Function**: Provides access to current time step and manages time iteration during the simulation.
+3. **Physics Conversion Library**
+   - Library of tracer methods for converting flow-field physical units
+   - Includes methods like Soulsby, Van Westen, and Bertin formulations
 
-#### Particle Result Collector
-- **Technology**: `Python`
-- **Purpose**: Stores final particle positions and states.
-- **Function**: Collects final outputs at the end of the simulation run.
+4. **Flow Field Data Retriever**
+   - Retrieves flow-field data in batches
+   - Manages data conversions using batch processing strategy
+   - Coordinates between file system and converters
 
-#### Particle Tracing Orchestrator
-- **Technology**: `Python`
-- **Purpose**: Manages parallel execution of particle tracing processes.
-- **Function**:
-  - Assigns a worker to each particle set.
-  - Coordinates execution using multiprocessing.
+5. **Flow Field Data Buffer**
+   - Stores flow-field data in memory
+   - Enables fast access during particle tracing
+   - Optimized for current time step operations
 
-#### Flow Field Data Buffer
-- **Technology**: `Python`
-- **Purpose**: Provides fast access to time-sliced flow–field data.
-- **Function**:
-  - Stores flow–field input for each tracer during a time step.
-  - Interfaces with the **Flow Field Data Retriever**.
-
-#### Particle Status Checker
-- **Technology**: `Python`
-- **Purpose**: Updates particle status and applies rules to determine end-of-life or availability for transport.
-- **Function**:
-  - Uses velocity or domain thresholds to identify particles that are inactive or buried.
-  - Retrieves methods from the **Particle Status Library**.
-
-#### Particle Status Library
-- **Technology**: `Python`
-- **Purpose**: Houses logic for particle termination or changes in availability for transport.
-- **Function**: Provides reusable methods to check depth, burial, and exit conditions.
-
-#### Particle Position Calculator
-- **Technology**: `Numba`, `Python`
-- **Purpose**: Computes new particle positions at each time step.
-- **Function**:
-  - Uses numerical solvers like Runge-Kutta 4.
-  - Accesses interpolated velocity from the **Flow Field Data Buffer**.
-
-#### Particle Property Interpolator
-- **Technology**: `Python`
-- **Purpose**: Interpolates scalar environmental properties (e.g., salinity, depth, bed level).
-- **Function**: Updates each particle with values of scalar fields based on position.
-
-#### Diffusion Library
-- **Technology**: `Python`
-- **Purpose**: Implements diffusion behavior in particle tracking.
-- **Function**: Provides diffusion calculations based on stochastic or deterministic rules (e.g., random walk).
-
-#### Particle Pathway Interface
-- **Technology**: `Python`
-- **Purpose**: Gives access to particle histories.
-- **Function**: Collects positions, properties, and (if requested) full time series.
+The converter reads data from external flow modeling systems, processes it through format and physics conversions, and provides standardized data to the particle tracer.
 
 ---
 
-### Connected Components
+(lagrangian-particle-tracer)=
+### Lagrangian Particle Tracer
 
-#### Simulation Configuration Interface
-- **Technology**: `Python`
-- **Purpose**: Provides model parameter settings.
-- **Function**: Supplies physical parameters, seeding information, numerical methods, and time settings.
+The Particle Tracer is the computational heart of SedTRAILS, calculating particle positions and states.
 
-#### Transport Converter
-- **Technology**: `Python`
-- **Purpose**: Supplies processed flow–field data (e.g., sediment particle velocities).
-- **Function**: Feeds converted transport field data into the **Flow Field Data Retriever**.
+![Particle Tracer Components](../_static/img/architecture/SedtrailComponentsTracer.png)
 
-#### Simulation Cache and Recovery
-- **Technology**: `Python`
-- **Purpose**: Supports recovery and resume of simulations.
-- **Function**: Provides previously cached seeding and simulation inputs when restarting.
+**Components:**
 
-#### SedTRAILS Logger
-- **Technology**: `Python`
-- **Purpose**: Logs simulation events and timings.
-- **Function**: Tracks start/end time of all major simulation components and subprocesses.
+1. **Particle Seeder**
+   - Creates simulation particles with initial positions (x, y)
+   - Assigns particle release times (t)
+   - Supports various seeding strategies
 
-#### Data Management Module
-- **Technology**: `Python`
-- **Purpose**: Handles simulation output persistence.
-- **Function**: Stores output files (e.g., final particle positions) to the local file system.
+2. **Particle Tracing Orchestrator**
+   - Manages parallel execution of particle tracing
+   - Uses multi-processing strategy
+   - Assigns processes to particle groups
+
+3. **Timer**
+   - Manages simulation and execution times
+   - Provides time-stepping control
+   - Coordinates temporal aspects of particle tracking
+
+4. **Particle Position Calculator**
+   - Implemented in Fortran/Python for performance
+   - Calculates particle positions for each time step
+   - Uses Runge-Kutta 4 solver
+   - Incorporates flow-field values and diffusion
+
+5. **Particle Status Calculator**
+   - Determines particle status (active, dead, alive, stuck, etc.)
+   - Calculates burial state for each time step
+   - Uses status methods from the Status Library
+
+6. **Particle Status Library**
+   - Collection of methods for determining particle status types
+   - Handles burial state calculations
+
+7. **Particle Property Interpolator**
+   - Interpolates particle properties at new positions
+   - Works with scalar fields (depth, concentration, etc.)
+
+8. **Diffusion Library**
+   - Provides methods for diffusion calculations
+   - Supports various diffusion models
+
+The tracer orchestrates particle initialization through the seeder, manages time-stepping with the timer, and calculates positions and states using specialized calculators. Results are passed to the data manager for storage and analysis.
 
 ---
 
-### External Systems
 
-#### Local File System
-- **Technology**: `Windows`, `Linux`, `MacOS`
-- **Purpose**: Storage backend.
-- **Function**: Used by the **Data Management Module** to write simulation output and intermediate files (e.g., `NetCDF`, `.csv`).
+(data-management-module)=
+### Data Management Module
+
+The Data Management Module handles input/output operations, data storage, and result management.
+
+![Data Management Components](../_static/img/architecture/SedtrailComponentsDataManagement.png)
+
+**Components:**
+
+1. **NetCDF Reader**
+   - Reads NetCDF files produced by SedTRAILS
+   - Provides data to visualization and analysis tools
+   - Supports cache data retrieval
+
+2. **NetCDF Writer**
+   - Writes simulation results to NetCDF format
+   - Handles standardized output formatting
+
+3. **Simulation Data Buffer**
+   - Temporarily stores simulation data chunks in memory
+   - Manages data waiting to be written to disk
+   - Optimizes I/O operations
+
+4. **Memory Manager**
+   - Manages memory allocation and deallocation for buffers
+   - Ensures efficient memory usage during simulation
+
+The data manager receives particle pathway data from the tracer and converted flow-field data from the transport converter, buffers it in memory, and writes it to persistent storage. It also provides data access to visualization and analysis tools.
 
 ---
 
-### Data Flow Summary
+(simulation-analysis-application)=
+### Simulation Analysis Application
 
-1. **Modeler** defines particle seeding strategy and model configuration via YAML.
-2. **Simulation Configuration Interface** parses settings and passes them to the Lagrangian Particle Tracer.
-3. **Flow Field Data Retriever** loads processed flow–field input from the **Transport Converter**.
-4. **Particle Seeding Tool** releases particles using specified strategy.
-5. **Particle Tracing Orchestrator** distributes the simulation task across processors.
-6. At each time step:
-   - **Flow Field Data Buffer** provides velocity input.
-   - **Particle Position Calculator** updates particle locations.
-   - **Particle Status Checker** evaluates burial/death criteria.
-   - **Particle Property Interpolator** enriches particles with field values.
-   - **Diffusion Library** applies diffusion if configured.
-7. **Particle Result Collector** aggregates final results.
-8. **Data Management Module** stores simulation outputs.
-9. **SedTRAILS Logger** records runtime information and diagnostics.
-10. Optionally, **Simulation Cache and Recovery** enables resuming interrupted runs.
+The Analysis Application provides post-processing capabilities for simulation outputs.
 
+![Analysis Application Components](../_static/img/architecture/SedtrailComponentsAnalysis.png)
+
+**Components:**
+
+1. **NetCDF Reader**
+   - Reads SedTRAILS simulation output files
+   - Provides data to analysis modules
+
+2. **Results Writer**
+   - Writes analysis results to files
+   - Supports various output formats
+
+3. **Statistics Module**
+   - Tools for statistical analysis of simulation data
+   - Calculates relevant metrics and distributions
+
+4. **Connectivity Network Module**
+   - Tools for connectivity network analysis
+   - Analyzes particle pathway networks
+
+5. **Analysis Manager**
+   - Coordinates analysis tasks
+   - Manages data flow between components
+   - Provides unified interface to application API
+
+Users access analysis functionality through the Application Interface, which communicates with the Analysis Manager. The manager coordinates between the reader, analysis modules (statistics and connectivity), and the writer to produce analysis results.
+
+---
+
+(simulation-cache-and-recovery)=
+### Simulation Cache and Recovery
+
+The Cache and Recovery system ensures resilience and efficient resource utilization.
+
+![Cache and Recovery Components](../_static/img/architecture/SedtrailComponentsCache.png)
+
+**Components:**
+
+1. **Caching**
+   - Implements checkpoint strategy
+   - Records processing routines for recovery
+   - Stores intermediate simulation states
+
+2. **Recovery**
+   - Recovers simulation state after crashes or restarts
+   - Requests cached data from Data Manager when needed
+   - Reads simulation checkpoints from log files
+
+The cache system works closely with the SedTRAILS Logger to store checkpoints and with the Data Manager to cache and retrieve simulation data. This enables interruption recovery and restart capabilities, avoiding redundant computations.
+
+---
+
+## Architecture Principles
+
+### 1. **Modularity**
+The system is organized into distinct containers and components, each with clear responsibilities. This enables independent development, testing, and maintenance of different parts.
+
+### 2. **Plugin Architecture**
+The Transport Converter uses a plugin system for format and physics converters, allowing easy extension to support new data formats and transport formulations without modifying core code.
+
+### 3. **Performance Optimization**
+Critical computational components (Position Calculator) use Fortran for performance, while Python provides flexibility for orchestration and I/O operations. Parallel processing is employed for particle tracking.
+
+### 4. **Configuration-Driven**
+All simulation parameters are defined in YAML configuration files with schema validation, enabling reproducible simulations and easy parameter management.
+
+### 5. **Data Flow Optimization**
+Buffering strategies in both the Transport Converter and Data Manager optimize I/O operations and memory usage during large-scale simulations.
+
+### 6. **Resilience**
+The Cache and Recovery system provides checkpoint/restart capabilities, making the system resilient to interruptions and enabling efficient reruns.
+
+---
+
+## Technology Stack
+
+- **Primary Language**: Python 3.10-3.13
+- **GUI Framework**: Qt (Simulation Dashboard)
+- **Data Formats**: NetCDF (primary), CSV, TXT
+- **Configuration**: YAML with JSON schema validation
+- **CLI Framework**: Typer
+- **Parallel Processing**: Python multiprocessing
+- **Scientific Computing**: NumPy, with Numba acceleration
+
+---
+
+## Deployment and Usage
+
+SedTRAILS can be used in multiple ways:
+
+1. **Command Line**: Using the CLI for batch simulations and analysis
+2. **Python API**: Programmatic access for integration with other tools
+
+The system integrates with various Eulerian flow modeling systems (Delft3D, FM NetCDF, etc.) and provides standardized outputs for analysis and visualization.

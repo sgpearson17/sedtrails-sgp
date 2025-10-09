@@ -1,4 +1,4 @@
-# Tutorial 1: Running a Basic Simulation
+# Running a Basic Simulation
 
 
 1. From the installation directory, copy/paste the exmaples folder (i.e., .../sedtrails/examples) in a directory where you want to run the model.
