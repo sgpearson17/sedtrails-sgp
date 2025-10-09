@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, Optional
 from sedtrails.exceptions import YamlParsingError, YamlOutputError, YamlValidationError
 from pathlib import Path
-from sedtrails.configuration_interface.yaml_loader import SedtrailsYamlLoader
+from sedtrails.application_interfaces.yaml_loader import SedtrailsYamlLoader
 from importlib.resources import files
 
 
