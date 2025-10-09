@@ -1,5 +1,5 @@
 """
-A convenience function to find a value in the configuration data using a dot-separated key.
+A convenience function to find a value in the configuration data using a dot-separated pattern.
 """
 
 from typing import Any, Dict, Union
