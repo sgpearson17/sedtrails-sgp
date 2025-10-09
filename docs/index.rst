@@ -70,6 +70,7 @@ Features
 
    developer/contribution
    developer/dev-environment
+   developer/plugins
    developer/architecture
 
 .. toctree::
