@@ -16,14 +16,14 @@ from sedtrails.simulation_orchestrator.global_logger import setup_logging, log_s
 
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
-from typing import Any
+from typing import Any, Optional
 from sedtrails.particle_tracer import ParticleSeeder
 
 
 class Simulation:
     """Class to encapsulate the particle simulation process."""
 
-    def __init__(self, config_file: str):
+    def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
         """
         Initialize the simulation with the given configuration.
 
@@ -31,8 +31,11 @@ class Simulation:
         ----------
         config_file : str
             Path to the configuration file.
+        enable_dashboard : bool, optional
+            Override the dashboard setting from configuration. If None, uses config value.
         """
         self._config_file = config_file
+        self._enable_dashboard_override = enable_dashboard
 
         self._start_time = None
         self._config_is_read = False
@@ -78,7 +81,14 @@ class Simulation:
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
-        if self._controller.get('visualization.dashboard.enable', False):
+        # Use override if provided, otherwise fall back to config setting
+        dashboard_enabled = (
+            self._enable_dashboard_override
+            if self._enable_dashboard_override is not None
+            else self._controller.get('visualization.dashboard.enable', False)
+        )
+
+        if dashboard_enabled:
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
             figsize = (12, 8)
             dashboard = SimulationDashboard(reference_date=reference_date)
