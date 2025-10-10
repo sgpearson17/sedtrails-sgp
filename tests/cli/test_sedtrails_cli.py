@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import Mock, patch
-from sedtrails.configuration_interface.cli import app
+from sedtrails.application_interfaces.cli import app
 
 
 class TestSedtrailsCLI:
