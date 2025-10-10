@@ -1,7 +1,11 @@
 # Software Architecture
 
 SedTRAILS was designed with a modular architecture to facilitate maintenance, scalability, and extensibility.
-This document describes the software architecture of SedTRAILS (Sediment Transport and Lagrangian Simulator), a particle tracking system for coastal environments. The architecture follows the C4 model, presenting the system at multiple levels of detail from high-level context to detailed component diagrams.
+This document describes the software architecture of SedTRAILS (Sediment Transport and Lagrangian Simulator), a particle tracking system for coastal environments. The architecture follows the [C4 model](https://c4model.com/), presenting the system at multiple levels of detail from high-level context to detailed component diagrams.
+:::important
+SedTRAILS is still under active development. Some architectural details may be missing form the implementation and others may evolve as new features are added and improvements are made.
+:::
+
 
 ## Table of Contents
 
@@ -96,7 +100,7 @@ The containers communicate primarily through Python objects and data arrays. The
 
 The Application Interface provides user access to SedTRAILS functionality through multiple channels.
 
-![Application Interface Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
+![Application Interface Components](../_static/img/architecture/SedtrailComponentsSimulationInterface.png)
 
 **Components:**
 
@@ -128,7 +132,7 @@ The CLI and Python API both interact with the Configuration Controller to manage
 
 The Simulation Orchestrator manages the overall simulation workflow.
 
-![Simulation Orchestrator Components](../_static/img/architecture/SedtrailComponentsConfigurationInterface.png)
+![Simulation Orchestrator Components](../_static/img/architecture/SedtrailComponentsSimulationOrchestrator.png)
 
 **Components:**
 
@@ -362,6 +366,7 @@ The Cache and Recovery system provides checkpoint/restart capabilities, making t
 SedTRAILS can be used in multiple ways:
 
 1. **Command Line**: Using the CLI for batch simulations and analysis
-2. **Python API**: Programmatic access for integration with other tools
+2. **Python API**: Primary interface for Python users who want to use SedTRAILS
+programmatically.
 
 The system integrates with various Eulerian flow modeling systems (Delft3D, FM NetCDF, etc.) and provides standardized outputs for analysis and visualization.

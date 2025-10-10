@@ -1,1 +1,0 @@
-"""A directory for the Simulation Analysis Interface"""

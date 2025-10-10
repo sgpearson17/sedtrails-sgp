@@ -7,8 +7,8 @@ and provides configurations to other components.
 """
 
 from abc import ABC, abstractmethod
-from sedtrails.configuration_interface.validator import YAMLConfigValidator
-from sedtrails.configuration_interface.find import find_value
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
+from sedtrails.application_interfaces.find import find_value
 from typing import Dict, Any
 
 

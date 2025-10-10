@@ -6,7 +6,7 @@ import tempfile
 import pytest
 import yaml
 import json
-from sedtrails.configuration_interface.validator import YAMLConfigValidator
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 from sedtrails.exceptions import YamlValidationError, YamlOutputError
 
 

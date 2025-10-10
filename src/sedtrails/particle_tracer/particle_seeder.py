@@ -21,7 +21,7 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.exceptions import MissingConfigurationParameter
 from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
-from sedtrails.configuration_interface.find import find_value
+from sedtrails.application_interfaces.find import find_value
 from numpy import ndarray
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 import numpy as np

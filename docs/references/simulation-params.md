@@ -716,4 +716,4 @@ SedTRAILS automatically validates your configuration file against the schemas be
 3. Ensure data types match (string vs. number vs. boolean)
 4. Check that enum values match exactly (case-sensitive)
 
-Refer to the [Simulation Fuide](../user/simulations.md) for an example  of a YAML file with correct syntax and structure.
+Refer to the [Simulation Guide](../user/simulations.md) for an example  of a YAML file with correct syntax and structure.

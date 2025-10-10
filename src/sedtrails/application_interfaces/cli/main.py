@@ -36,47 +36,28 @@ def main(
 
 # Subcommand to run a simulation; it also validates the configuration.
 @app.command('run')
-def run_simulation(
+def run_simulation_cmd(
     config_file: str = typer.Option(
         'sedtrails.yml',
         '--config',
         '-c',
         help='Path to the SedTRAILS configuration file.',
     ),
-    output_file: str = typer.Option(
-        'sedtrails.nc',
-        '--output',
-        '-o',
-        help='Path to the output SedTRAILS netCDF file.',
-    ),
 ):
     """
     Run a simulation based on a configuration file.
     The simulation results are written to a netCDF file.
+    The output location is determined by the configuration file.
 
-    Example: sedtrails run --config my_config.yml --output results.nc
+    Example: sedtrails run --config my_config.yml
 
     """
-    from sedtrails.simulation import Simulation
+    from sedtrails.application_interfaces.api import run_simulation
 
-    # lazy initialization of the Simulation class
-    simulation = Simulation(config_file)
-
-    # First, load and validate the configuration.
     try:
-        typer.echo(f"Validating configuration from '{config_file}'...")
-        # from config_validator import ConfigValidator
-        simulation.validate_config()  # This will trigger the validation
-        typer.echo('Configuration validated successfully.')
-    except Exception as e:
-        typer.echo(f'Error validating configuration: {e}')
-        raise typer.Exit(code=1) from e
-
-    # Run the simulation with the validated configuration.
-    try:
-        typer.echo('Running simulation...')
-        simulation.run()
-        typer.echo(f"Simulation complete. Output saved to '{output_file}'.")
+        typer.echo(f"Starting simulation from '{config_file}'...")
+        output_dir = run_simulation(config_file=config_file, verbose=True)
+        typer.echo(f"Simulation complete. Results saved to '{output_dir}'.")
     except Exception as e:
         typer.echo(f'Error running simulation: {e}')
         raise typer.Exit(code=1) from e
@@ -100,10 +81,10 @@ def inspect_metadata(
     """
     Print metadata information about a SedTRAILS netCDF results file.
     """
-    from sedtrails import NetCDFInspector
+    from sedtrails.application_interfaces.api import inspect_netcdf
 
     try:
-        inspector = NetCDFInspector(results_file)
+        inspector = inspect_netcdf(results_file)
         inspector.print_metadata()  # print general metadata
         if populations:
             inspector.inspect_populations()  # print particle population info
@@ -137,13 +118,11 @@ def load_config(
     Checks if a YAML configuration file is a valid SedTRAILS configuration.
     Returns a dictionary with the valid configuration settings.
     """
-    from sedtrails.configuration_interface.configuration_controller import ConfigurationController
-
-    controller = ConfigurationController(config_file)
+    from sedtrails.application_interfaces.api import load_configuration
 
     try:
         typer.echo(f"Loading and validating configuration from '{config_file}'...")
-        config = controller.get_config()  # loads file and validates it
+        config = load_configuration(config_file)
         typer.echo('Configuration validated successfully:')
         typer.echo(str(config))
         return config
@@ -153,7 +132,7 @@ def load_config(
 
 
 @config_app.command('create')
-def create_config_template(
+def create_config_template_cmd(
     output_file: str = typer.Option(
         './sedtrails-template.yml',
         '--output',
@@ -165,11 +144,11 @@ def create_config_template(
     Create a configuration file for simulations in SedTRAILS.
     The file contains most possible configurations items with default values.
     """
-    from sedtrails.configuration_interface.validator import YAMLConfigValidator
+    from sedtrails.application_interfaces.api import create_config_template
 
     try:
-        validator = YAMLConfigValidator()
-        validator.create_config_template(output_file)
+        create_config_template(output_file)
+        typer.echo(f"Configuration template created at '{output_file}'")
     except Exception as e:
         typer.echo(f'Error creating configuration template: {e}')
         raise typer.Exit(code=1) from e
@@ -281,7 +260,7 @@ app.add_typer(vizualizer_app, name='viz')
 
 
 @vizualizer_app.command('trajectories')
-def plot_trajectories(
+def plot_trajectories_cmd(
     results_file: str = typer.Option(
         'sedtrails_results.nc',
         '--file',
@@ -304,12 +283,14 @@ def plot_trajectories(
     """
     Plot particle trajectories from a SedTRAILS netCDF results file.
     """
-
-    from sedtrails.pathway_visualizer import plot_trajectories, read_netcdf
+    from sedtrails.application_interfaces.api import plot_trajectories
 
     try:
-        ds = read_netcdf(results_file)
-        plot_trajectories(ds, save_plot=save_fig, output_dir=output_dir)
+        plot_trajectories(results_file, save=save_fig, output_dir=output_dir)
+        if save_fig:
+            typer.echo(f"Plot saved to '{output_dir}/particle_trajectories.png'")
+        else:
+            typer.echo('Plot displayed successfully')
     except Exception as e:
         typer.echo(f'Error plotting trajectories: {e}')
         raise typer.Exit(code=1) from e

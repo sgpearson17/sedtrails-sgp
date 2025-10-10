@@ -8,21 +8,22 @@ from sedtrails.transport_converter.format_converter import FormatConverter, Sedt
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.configuration_interface.configuration_controller import ConfigurationController
+from sedtrails.application_interfaces.configuration_controller import ConfigurationController
 from sedtrails.data_manager import DataManager
 from sedtrails.particle_tracer.timer import Time, Duration, Timer
+from sedtrails.simulation_orchestrator.global_logger import setup_logging, log_simulation_state
 
-from sedtrails.logger.logger import setup_logging, log_simulation_state
+
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.pathway_visualizer import SimulationDashboard
-from typing import Any
+from typing import Any, Optional
 from sedtrails.particle_tracer import ParticleSeeder
 
 
 class Simulation:
     """Class to encapsulate the particle simulation process."""
 
-    def __init__(self, config_file: str):
+    def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
         """
         Initialize the simulation with the given configuration.
 
@@ -30,8 +31,11 @@ class Simulation:
         ----------
         config_file : str
             Path to the configuration file.
+        enable_dashboard : bool, optional
+            Override the dashboard setting from configuration. If None, uses config value.
         """
         self._config_file = config_file
+        self._enable_dashboard_override = enable_dashboard
 
         self._start_time = None
         self._config_is_read = False
@@ -77,7 +81,14 @@ class Simulation:
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
-        if self._controller.get('visualization.dashboard.enable', False):
+        # Use override if provided, otherwise fall back to config setting
+        dashboard_enabled = (
+            self._enable_dashboard_override
+            if self._enable_dashboard_override is not None
+            else self._controller.get('visualization.dashboard.enable', False)
+        )
+
+        if dashboard_enabled:
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
             figsize = (12, 8)
             dashboard = SimulationDashboard(reference_date=reference_date)
@@ -123,6 +134,7 @@ class Simulation:
         Returns configuration parameters required for the physics converter.
         """
         from sedtrails.transport_converter.physics_converter import PhysicsConfig
+
         # TODO implement configuration controller for multiple populations in a robust way
         # TODO make sure the tracer_methods in config file match exactly with the plugin file name
         tracer_method = self._controller.get('particles.populations')[0].get('tracer_methods', 'vanwesten')
@@ -281,7 +293,9 @@ class Simulation:
         # Determine flow field names from configuration
         flow_field_names = []
         for population in populations_config:
-            if 'tracer_methods' in population and ('vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']):
+            if 'tracer_methods' in population and (
+                'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
+            ):
                 if 'vanwesten' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
                 elif 'soulsby' in population['tracer_methods']:
@@ -353,7 +367,7 @@ class Simulation:
                             transport_prob = retriever.get_scalar_field(
                                 timer.current, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
-                        else: # soulsby
+                        else:  # soulsby
                             transport_prob = np.ones_like(bed_level)
 
                         # Update information at particle positions
@@ -456,7 +470,7 @@ class Simulation:
             #     }
             # )
             # Update progress bar
-            if simulation_time.duration.seconds > 0: # Avoid undefined progress when duration is zero
+            if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
                 elapsed_time = timer.current - simulation_time.start
                 progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
                 pbar.update(progress_percent - pbar.n)  # increment by delta
