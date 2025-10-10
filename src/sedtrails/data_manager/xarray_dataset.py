@@ -6,12 +6,12 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
     ds = xr.Dataset(
         {
             # Population metadata - initialize with empty/default values
-            'population_name': (('n_populations', 'name_strlen'), np.chararray((N_populations, name_strlen))),
+            'population_name': (('n_populations', 'name_strlen'), np.empty((N_populations, name_strlen), dtype='S1')),
             'population_particle_type': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_start_idx': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_count': ('n_populations', np.zeros(N_populations, dtype=int)),
             # Trajectory metadata
-            'trajectory_id': (('n_particles', 'name_strlen'), np.chararray((N_particles, name_strlen))),
+            'trajectory_id': (('n_particles', 'name_strlen'), np.empty((N_particles, name_strlen), dtype='S1')),
             'population_id': ('n_particles', np.zeros(N_particles, dtype=int)),
             # Core trajectory variables - initialize with NaN to indicate unset values
             'time': (('n_particles', 'n_timesteps'), np.full((N_particles, N_timesteps), np.nan)),
@@ -32,7 +32,7 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
                 ('n_flowfields', 'n_particles', 'n_timesteps'),
                 np.zeros((N_flowfields, N_particles, N_timesteps)),
             ),
-            'flowfield_name': (('n_flowfields', 'name_strlen'), np.chararray((N_flowfields, name_strlen))),
+            'flowfield_name': (('n_flowfields', 'name_strlen'), np.empty((N_flowfields, name_strlen), dtype='S1')),
         },
         coords={
             'n_particles': np.arange(N_particles),
@@ -62,7 +62,7 @@ def populate_population_metadata(ds, populations):
     for pop_idx, population in enumerate(populations):
         # Population metadata
         pop_name = getattr(population, 'name', f'population_{pop_idx}')
-        max_len = ds.dims['name_strlen']
+        max_len = ds.sizes['name_strlen']
         truncated_name = pop_name[:max_len].ljust(max_len)
         name_array = np.array(list(truncated_name), dtype='S1')
         ds['population_name'][pop_idx, :] = name_array
@@ -78,7 +78,7 @@ def populate_population_metadata(ds, populations):
         # Generate trajectory IDs
         for i in range(num_particles):
             traj_id = f'traj_{particle_offset + i}'
-            max_len = ds.dims['name_strlen']
+            max_len = ds.sizes['name_strlen']
             truncated_traj_id = traj_id[:max_len].ljust(max_len)
             traj_array = np.array(list(truncated_traj_id), dtype='S1')
             ds['trajectory_id'][particle_offset + i, :] = traj_array
@@ -99,7 +99,7 @@ def populate_flowfield_metadata(ds, flow_field_names):
     """
     for ff_idx, ff_name in enumerate(flow_field_names):
         # Truncate name if it's longer than name_strlen, or pad if shorter
-        max_len = ds.dims['name_strlen']
+        max_len = ds.sizes['name_strlen']
         truncated_name = ff_name[:max_len].ljust(max_len)
         name_array = np.array(list(truncated_name), dtype='S1')
         ds['flowfield_name'][ff_idx, :] = name_array
