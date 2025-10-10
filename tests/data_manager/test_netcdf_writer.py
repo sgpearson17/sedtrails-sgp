@@ -42,10 +42,10 @@ def test_netcdf_writer_creates_dataset(tmp_output_dir):
     assert 'time' in dataset.variables
     assert 'population_name' in dataset.variables
     assert 'flowfield_name' in dataset.variables
-    assert dataset.dims['n_particles'] == 10
-    assert dataset.dims['n_populations'] == 2
-    assert dataset.dims['n_timesteps'] == 5
-    assert dataset.dims['n_flowfields'] == 1
+    assert dataset.sizes['n_particles'] == 10
+    assert dataset.sizes['n_populations'] == 2
+    assert dataset.sizes['n_timesteps'] == 5
+    assert dataset.sizes['n_flowfields'] == 1
 
 
 def test_netcdf_writer_adds_metadata(tmp_output_dir):
@@ -124,7 +124,7 @@ def test_netcdf_writer_writes_with_trimming(tmp_output_dir):
 
     # Verify trimming worked
     loaded_dataset = xr.open_dataset(output_path)
-    assert loaded_dataset.dims['n_timesteps'] == 2  # Should be trimmed from 5 to 2
+    assert loaded_dataset.sizes['n_timesteps'] == 2  # Should be trimmed from 5 to 2
     loaded_dataset.close()
 
 
@@ -149,7 +149,7 @@ def test_netcdf_writer_create_and_write_simulation_results(tmp_output_dir):
 
     # Verify the content
     loaded_dataset = xr.open_dataset(output_path)
-    assert loaded_dataset.dims['n_particles'] == 6  # 3 particles per population * 2 populations
-    assert loaded_dataset.dims['n_populations'] == 2
-    assert loaded_dataset.dims['n_flowfields'] == 1
+    assert loaded_dataset.sizes['n_particles'] == 6  # 3 particles per population * 2 populations
+    assert loaded_dataset.sizes['n_populations'] == 2
+    assert loaded_dataset.sizes['n_flowfields'] == 1
     loaded_dataset.close()
