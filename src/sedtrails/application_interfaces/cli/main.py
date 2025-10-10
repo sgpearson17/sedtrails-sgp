@@ -43,26 +43,21 @@ def run_simulation_cmd(
         '-c',
         help='Path to the SedTRAILS configuration file.',
     ),
-    output_file: str = typer.Option(
-        'sedtrails.nc',
-        '--output',
-        '-o',
-        help='Path to the output SedTRAILS netCDF file.',
-    ),
 ):
     """
     Run a simulation based on a configuration file.
     The simulation results are written to a netCDF file.
+    The output location is determined by the configuration file.
 
-    Example: sedtrails run --config my_config.yml --output results.nc
+    Example: sedtrails run --config my_config.yml
 
     """
     from sedtrails.application_interfaces.api import run_simulation
 
     try:
         typer.echo(f"Starting simulation from '{config_file}'...")
-        run_simulation(config_file=config_file, output_file=output_file, validate=True, verbose=True)
-        typer.echo(f"Simulation complete. Output saved to '{output_file}'.")
+        output_dir = run_simulation(config_file=config_file, verbose=True)
+        typer.echo(f"Simulation complete. Results saved to '{output_dir}'.")
     except Exception as e:
         typer.echo(f'Error running simulation: {e}')
         raise typer.Exit(code=1) from e
