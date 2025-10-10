@@ -13,6 +13,7 @@ programmatically rather than through the CLI.
 
 from typing import Any, Dict, Optional
 import logging
+from .nc_inspector import NetCDFInspector
 
 
 # ============================================================================
@@ -22,9 +23,8 @@ import logging
 
 def run_simulation(
     config_file: str,
-    output_file: str = 'sedtrails.nc',
-    validate: bool = True,
     verbose: bool = False,
+    enable_dashboard: Optional[bool] = None,
 ) -> str:
     """
     Run a SedTRAILS simulation from a configuration file.
@@ -36,61 +36,48 @@ def run_simulation(
     ----------
     config_file : str
         Path to the SedTRAILS configuration YAML file.
-    output_file : str, optional
-        Path to the output NetCDF file. Default is 'sedtrails.nc'.
-    validate : bool, optional
-        Whether to validate the configuration before running. Default is True.
     verbose : bool, optional
         Enable verbose logging output. Default is False.
+    enable_dashboard : bool, optional
+        Override the dashboard setting from configuration. If None, uses config value.
 
     Returns
     -------
     str
-        Path to the generated output file.
+        Path to the output results directory.
 
     Raises
     ------
-    ConfigurationError
-        If the configuration file is invalid.
     FileNotFoundError
         If the configuration file does not exist.
 
     Examples
     --------
     >>> import sedtrails
-    >>> output = sedtrails.run_simulation('config.yml', output='results.nc')
+    >>> output = sedtrails.run_simulation('config.yml')
     >>> print(f"Results saved to: {output}")
 
-    >>> # Run with validation disabled
-    >>> sedtrails.run_simulation('config.yml', validate=False)
+    >>> # Run with dashboard enabled regardless of config
+    >>> sedtrails.run_simulation('config.yml', enable_dashboard=True)
     """
-    from sedtrails.simulation import Simulation
+    from sedtrails.simulation_orchestrator.simulation_manager import Simulation
     from sedtrails.exceptions.exceptions import ConfigurationError
 
     # Set up logging if verbose
     if verbose:
         logging.basicConfig(level=logging.INFO)
 
-    # Create simulation instance
+    # Create simulation instance with dashboard override
     try:
-        simulation = Simulation(config_file)
+        simulation = Simulation(config_file, enable_dashboard=enable_dashboard)
     except Exception as e:
         raise ConfigurationError(f'Failed to initialize simulation: {e}') from e
-
-    # Validate configuration if requested
-    if validate:
-        try:
-            simulation.validate_config()
-        except Exception as e:
-            raise ConfigurationError(f'Configuration validation failed: {e}') from e
 
     # Run the simulation
     simulation.run()
 
-    # Return the output file path
-    # Note: The actual output path is determined by the simulation
-    # This will need adjustment based on how simulation.run() handles output
-    return output_file
+    output_dir = str(simulation.data_manager.output_dir)
+    return output_dir
 
 
 def create_simulation_runner(config_file: str) -> 'SimulationRunner':
@@ -116,7 +103,7 @@ def create_simulation_runner(config_file: str) -> 'SimulationRunner':
     >>> import sedtrails
     >>> runner = sedtrails.create_simulation_runner('config.yml')
     >>> runner.validate()
-    >>> runner.run(enable_dashboard=True)
+    >>> runner.run(enable_dashboard=True)  # Override config dashboard setting
     >>> runner.save_results('output.nc')
     """
     return SimulationRunner(config_file)
@@ -170,7 +157,7 @@ def load_configuration(config_file: str) -> Dict[str, Any]:
 
 def validate_configuration(config_file: str) -> bool:
     """
-    Validate a SedTRAILS configuration file without loading the full simulation.
+    Validate a SedTRAILS configuration file without returning the configuration data.
 
     Parameters
     ----------
@@ -279,7 +266,7 @@ def inspect_netcdf(results_file: str) -> 'NetCDFInspector':
     >>> inspector.print_metadata()
     >>> inspector.inspect_populations()
     """
-    from sedtrails.nc_inspector import NetCDFInspector
+    from sedtrails.application_interfaces.nc_inspector import NetCDFInspector
 
     return NetCDFInspector(results_file)
 
@@ -410,10 +397,11 @@ class SimulationRunner:
         ConfigurationError
             If validation fails.
         """
-        from sedtrails.simulation import Simulation
+        from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
         try:
-            self.simulation = Simulation(self.config_file)
+            # Create simulation without dashboard for validation
+            self.simulation = Simulation(self.config_file, enable_dashboard=False)
             self.simulation.validate_config()
             return True
         except Exception as e:
@@ -444,10 +432,10 @@ class SimulationRunner:
         if verbose:
             logging.basicConfig(level=logging.INFO)
 
-        # TODO: Implement dashboard override when supported by Simulation class
-        if enable_dashboard is not None:
-            logging.warning('Dashboard override not yet implemented, using config value')
+        # Create new simulation instance with dashboard override
+        from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
+        self.simulation = Simulation(self.config_file, enable_dashboard=enable_dashboard)
         self.simulation.run()
 
     def get_config(self) -> Dict[str, Any]:
