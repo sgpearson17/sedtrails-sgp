@@ -1,0 +1,204 @@
+{
+    "$id": "urn:sedtrails:config:visualization.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema#",
+    "type": "object",
+    "additionalProperties": false,
+    "title": "Visualization Configuration",
+    "$defs": {
+        "velocity_component_types": {
+            "type": "string",
+            "enum": [
+                "E",
+                "N"
+            ],
+            "description": "'E' for X-component, 'N' for Y-component"
+        },
+        "monitorin_point_signal_types": {
+            "type": "string",
+            "enum": [
+                "velocity",
+                "waterlevel"
+            ],
+            "description": "'velocity' or 'waterlevel' but water level not yet enabled"
+        }
+    },
+    "properties": {
+        "plotting": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "general_settings": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "animation": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "animate particles? true/false"
+                        },
+                        "overview_age": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "plot by particle age? true/false"
+                        },
+                        "overview_origin": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                                "plot": {
+                                    "type": "boolean",
+                                    "default": true,
+                                    "description": "enable plotting from origin? true/false"
+                                },
+                                "rotationtheta": {
+                                    "type": "number",
+                                    "default": -90.0,
+                                    "description": "rotation angle for plotting origin colour"
+                                }
+                            },
+                            "description": "plot by distance from origin"
+                        },
+                        "static_mask": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "random_mask": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "plot random fraction of particles? true/false"
+                        },
+                        "random_threshold": {
+                            "type": "number",
+                            "default": 0,
+                            "description": "threshold for random mask"
+                        },
+                        "elevation_mask": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "plot elevation mask? true/false"
+                        },
+                        "elevation_threshold": {
+                            "type": "number",
+                            "default": 2.0,
+                            "description": "elvation threshold below which to plot particles in meters (i.e., don't plot particles on land)"
+                        },
+                        "point_size": {
+                            "type": "number",
+                            "default": 8.0,
+                            "description": "size of points in scatter plots"
+                        },
+                        "print_scaling": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "how much to scale plots when saving figures"
+                        },
+                        "print_dimensions": {
+                            "type": "string",
+                            "default": "[29.7 21.0]",
+                            "description": "dimensions of plot in centimeters, as '[length width]'. Default = A4 paper"
+                        },
+                        "dx": {
+                            "type": "number",
+                            "default": 100.0,
+                            "description": "dx for interpolating bed"
+                        },
+                        "mlw": {
+                            "type": "number",
+                            "default": -1.0,
+                            "description": "mean low water [m]"
+                        },
+                        "mhw": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "mean high water [m]"
+                        },
+                        "depth_contours": {
+                            "type": "array",
+                            "default": [
+                                2.5,
+                                5,
+                                10,
+                                15,
+                                20,
+                                25
+                            ],
+                            "description": "list of depth contours to plot [m] (positive up)"
+                        },
+                        "land_pol_file": {
+                            "type": "string",
+                            "description": "path to Deltares '.pol' file with land and island polygons"
+                        },
+                        "xlim": {
+                            "type": "string",
+                            "description": "x limits of plot as '[left right]'"
+                        },
+                        "ylim": {
+                            "type": "string",
+                            "description": "y limits of plot as '[bottom top]'"
+                        },
+                        "monitoring_point": {
+                            "type": "number",
+                            "default": 0,
+                            "description": "monitoring point for checking e.g. tidal signal"
+                        },
+                        "monitoring_point_vel_component": {
+                            "$ref": "#/$defs/velocity_component_types",
+                            "default": "E",
+                            "description": "'E' for X-component, 'N' for Y-component"
+                        },
+                        "monitoring_point_signal": {
+                            "$ref": "#/$defs/monitorin_point_signal_types",
+                            "default": "velocity",
+                            "description": "'velocity' or 'waterlevel' but water level not yet enabled"
+                        },
+                        "timeseries_ylim": {
+                            "type": "string",
+                            "description": "y-limit for plotting timeseries as '[bottom top]'"
+                        },
+                        "pathways": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "plot pathways? true/false"
+                        }
+                    }
+                },
+                "validation": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "tracer_validation_data": {
+                            "type": "string",
+                            "description": "filepath to tracer validation data. If omitted, no tracer validation will be plotted"
+                        },
+                        "drifter_validation_data_path": {
+                            "type": "string",
+                            "description": "filepath to drifter validation data. If omitted, no drifter validation will be plotted"
+                        },
+                        "drifter_track_comparison": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "plot drifter track comparison? true/false"
+                        }
+                    },
+                    "description": "settings for validation plots"
+                }
+            }
+        },
+        "dashboard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enable": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "enable real-time dashboard? true/false"
+                },
+                "update_interval": {
+                    "type": "string",
+                    "default": "1H",
+                    "description": "time interval at which the dashboard is updated in simulation time. It expects a duration string, e.g., '1H' for 1 hour."
+                }
+            }
+        }
+    }
+}

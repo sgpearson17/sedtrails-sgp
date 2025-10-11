@@ -4,6 +4,8 @@ Plugins must inherit from this class and implement the convert method.
 """
 
 from abc import ABC, abstractmethod
+from sedtrails.transport_converter import SedtrailsData
+
 
 class BasePhysicsPlugin(ABC):
     """
@@ -14,7 +16,7 @@ class BasePhysicsPlugin(ABC):
         return None
 
     @abstractmethod
-    def convert(self, *args, **kwargs):
+    def add_physics(self, sedtrails_data: SedtrailsData, *args, **kwargs):
         """
         Computes the physics of particles in the simulation based on particle types.
         """

@@ -1,0 +1,578 @@
+{
+    "$id": "urn:sedtrails:config:population.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema#",
+    "type": "object",
+    "title": "Sediment Trails Population Configuration",
+    "description": "Configuration for particle populations in Sediment Trails",
+    "unevaluatedProperties": false,
+    "$defs": {
+        "passive_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "diffusion_coefficient": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "random walk diffusion coefficient for passive particles"
+                }
+            },
+            "required": [
+                "diffusion_coefficient"
+            ]
+        },
+        "sand_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2650.0,
+                    "description": "density of sand particles [kg/m3]"
+                },
+                "grain_size": {
+                    "type": "number",
+                    "default": 0.0005,
+                    "description": "grain size of sand particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "grain_size"
+            ]
+        },
+        "mud_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2000.0,
+                    "description": "density of mud particles [kg/m3]"
+                },
+                "size": {
+                    "type": "number",
+                    "default": 0.00005,
+                    "description": "grain size of mud particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "size"
+            ]
+        },
+        "bio_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "buoyancy": {
+                    "type": "number",
+                    "default": 0.95,
+                    "description": "buoyancy factor for biological particles (relative to water)"
+                }
+            },
+            "required": [
+                "buoyancy"
+            ]
+        },
+        "gravel_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "density": {
+                    "type": "number",
+                    "default": 2800.0,
+                    "description": "density of gravel particles [kg/m3]"
+                },
+                "grain_size": {
+                    "type": "number",
+                    "default": 0.01,
+                    "description": "grain size of gravel particles [m]"
+                }
+            },
+            "required": [
+                "density",
+                "grain_size"
+            ]
+        },
+        "van_westen_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "flow field name for van Westen method used in particle computation"
+                },
+                "beta": {
+                    "type": "number",
+                    "default": 0.2,
+                    "description": "beta parameter for van Westen method"
+                }
+            },
+            "description": "van Westen method for particle tracking"
+        },
+        "soulsby_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "f": {
+                    "type": "number",
+                    "default": 0.1,
+                    "description": "f parameter for Soulsby method"
+                },
+                "r": {
+                    "type": "number",
+                    "default": 0.8,
+                    "description": "r parameter for Soulsby method"
+                }
+            },
+            "description": "Soulsby method for particle tracking"
+        }
+    },
+    "properties": {
+        "name": {
+            "type": "string",
+            "default": "particle",
+            "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
+        },
+        "particle_type": {
+            "type": "string",
+            "enum": [
+                "passive",
+                "sand",
+                "mud",
+                "bio",
+                "gravel"
+            ],
+            "default": "passive",
+            "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'gravel')"
+        },
+        "characteristics": {
+            "type": "object",
+            "description": "characteristics specific to the particle type"
+        },
+        "tracer_methods": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "vanwesten": {
+                    "$ref": "#/$defs/van_westen_method"
+                },
+                "vanwesten_bl": {
+                    "$ref": "#/$defs/van_westen_bl_method"
+                },
+                "soulsby": {
+                    "$ref": "#/$defs/soulsby_method"
+                }
+            },
+            "minProperties": 1,
+            "default": {
+                "soulsby": {
+                    "f": 0.1,
+                    "r": 0.8
+                }
+            },
+            "description": "At least one tracer method must be specified"
+        },
+        "transport_probability": {
+            "type": "string",
+            "enum": [
+                "no_probability",
+                "stochastic_transport",
+                "reduced_velocity"
+            ],
+            "default": "no_probability",
+            "description": "Method for applying transport probability: 'no_probability' (passive/always transport), 'stochastic_transport' (probabilistic transport per timestep), 'reduced_velocity' (velocity field reduced by probability)"
+        },
+        "seeding": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "burial_depth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
+                    "default": {
+                        "constant": 0
+                    },
+                    "properties": {
+                        "random": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "maximum depth from bed level (surface) for random burial depth in meters."
+                        },
+                        "constant": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "constant burial depth in meters."
+                        }
+                    },
+                    "Oneof": [
+                        {
+                            "required": [
+                                "random"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "constant"
+                            ]
+                        }
+                    ]
+                },
+                "class": {
+                    "type": "string",
+                    "default": "clusters",
+                    "description": "specify class of source to be used (choose from 'clusters','pointSource','lineSource','regularGrid','densePatch')"
+                },
+                "quantity": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "number of particles to release per release location. Release locations are determined by the release strategy."
+                },
+                "per_timestep": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "release particles per timestep? true/false"
+                },
+                "release_type": {
+                    "type": "string",
+                    "default": "instantaneous",
+                    "description": "type of release: 'instantaneous' or 'continuous'"
+                },
+                "lifespan": {
+                    "type": "number",
+                    "default": 9e+99,
+                    "description": "life span of particles in seconds. Not applicable for biologial particles"
+                },
+                "release_start": {
+                    "type": "string",
+                    "description": "release start time, e.g., '2020-01-01 00:00:00'. If empty, then release starts at the beginning of the simulation."
+                },
+                "release_stop": {
+                    "type": "string",
+                    "description": "release stop time, e.g., '2020-01-01 01:00:00'. If empty, then release stops immediately after the first particles are released."
+                },
+                "strategy": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "point": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol; file with list of points to release particles from"
+                                },
+                                "locations": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "a list of X,Y coordinates reprsenting points where particles will be released, e.g., 1000,2000 "
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots? TODO: move to validation section"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots? TODO: move to validation section"
+                                }
+                            },
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "pol_file"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "locations"
+                                    ]
+                                }
+                            ]
+                        },
+                        "transect": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol; file with list of transects (line segments) to release particles from"
+                                },
+                                "segments": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "a list of line segments along which particles are released, e.g., '1000,2000 3000,4000'"
+                                },
+                                "k": {
+                                    "type": "number",
+                                    "default": 100.0,
+                                    "description": "number of release points to create per segment"
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots?"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots?"
+                                }
+                            },
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "pol_file"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "segments"
+                                    ]
+                                }
+                            ]
+                        },
+                        "random": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
+                                },
+                                "bbox": {
+                                    "type": "string",
+                                    "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "nlocations": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "description": "number of random points to generate within the bounding box or polygon"
+                                },
+                                "seed": {
+                                    "type": "number",
+                                    "default": 42,
+                                    "description": "seed for random number generator"
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots?"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots?"
+                                }
+                            },
+                            "required": [
+                                "nlocations"
+                            ],
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "bbox"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "pol_file"
+                                    ]
+                                }
+                            ]
+                        },
+                        "grid": {
+                            "type": "object",
+                            "properties": {
+                                "pol_file": {
+                                    "type": "string",
+                                    "description": "path to Deltares '.pol' file with bounding polygon for cluster analysis"
+                                },
+                                "separation": {
+                                    "type": "object",
+                                    "properties": {
+                                        "dx": {
+                                            "type": "number",
+                                            "default": 100.0,
+                                            "description": "square grid cells where dx=dy"
+                                        },
+                                        "dy": {
+                                            "type": "number",
+                                            "default": 100.0,
+                                            "description": "square grid cells where dx=dy"
+                                        },
+                                        "jitter_pct": {
+                                            "type": "number",
+                                            "default": 0.1,
+                                            "description": "fraction of grid cell size to jitter by"
+                                        }
+                                    },
+                                    "required": [
+                                        "dx",
+                                        "dy"
+                                    ]
+                                },
+                                "show_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to show cluster check plots?"
+                                },
+                                "save_check_plots": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Do you want to save cluster check plots?"
+                                },
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "pol_file"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "separation"
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "oneOf": [
+                        {
+                            "required": [
+                                "point"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "transect"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "random"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "grid"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "quantity"
+            ]
+        },
+        "barriers": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "po_file": {
+                    "type": "string",
+                    "description": "path to Deltares '.pol' file containing thin dams/permeable strucures"
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "passive"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/passive_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "sand"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/sand_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "mud"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/mud_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "bio"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/bio_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "gravel"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/gravel_characteristics"
+                    }
+                }
+            }
+        }
+    ],
+    "required": [
+        "name",
+        "particle_type",
+        "characteristics",
+        "tracer_methods",
+        "seeding"
+    ]
+}

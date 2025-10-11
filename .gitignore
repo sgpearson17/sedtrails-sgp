@@ -6,9 +6,17 @@ __pycache__/
 # Data files
 *.nc
 *.dat
+*.def
 
 # C extensions
 *.so
+
+# Code Agents
+CLAUDE.md
+
+# AutoDocs
+docs/apidocs/sedtrails/*
+
 
 # Mac OS X metadata files
 **/.DS_Store
@@ -170,12 +178,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
 
 # Ruff stuff:
 .ruff_cache/

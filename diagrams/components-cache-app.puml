@@ -6,19 +6,17 @@
 title SedTRAILS: Component Diagram for Simulation Cache and Recovery Application
 scale 1.5
 
-Container(dataManager, "Data Management Module", "Python", "An application that manage data and files produced by the SedTRAILS Particle Tracer System")
-
+Container(dataManager, "Data Management Module", "Python", "An application that manages data and files produced by the SedTRAILS Particle Tracer System")
 Container(sedtrailsLogger, "SedTRAILS  Logger", "Python", "An application that logs simulation states, outputs, errors and computational performance metrics")
-
 Container_Boundary(cache, "Simulation Caching and Recovery", "Python", "Provides functionality to recover simulation output, allow restarts, and reusing simulation inputs and outputs"){
     Component(caching, "Caching", "Python", "Implements a checkpoint strategy to record processing routines in the SedTRAILS Particle Tracer System")
     Component(recovery, "Recovery", "Python", "Recovers the state of a simulation after a crash or restart")
 }
 
 Rel(recovery, dataManager , "request, if required, cached data to", "Python object")
+Rel(caching, sedtrailsLogger, "stores log files via", "Plain text")
+Rel(recovery, sedtrailsLogger, "reads simulation checkpoints from", "Plain text")
 
-
-Rel(caching, sedtrailsLogger, "stores log files via", "Python object")
 
 SHOW_LEGEND()
 @enduml

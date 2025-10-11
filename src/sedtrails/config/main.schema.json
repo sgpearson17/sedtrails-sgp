@@ -1,0 +1,543 @@
+{
+  "$id": "urn:sedtrails:config:main.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "title": "Schema for Sedtrails Configuration",
+  "$defs": {
+    "soulsby_bed_interaction_type": {
+      "type": "string",
+      "enum": [
+        "concrete bed",
+        "bed interaction"
+      ]
+    },
+    "near_bed_velocity_type": {
+      "type": "string",
+      "enum": [
+        "soulsby",
+        "lewis",
+        "depth_averaged"
+      ],
+      "description": "'soulsby' = Soulsby 2011 formulation, 'lewis' = Lewis 2017 formulation, 'depth_averaged' = depth-averaged velocity"
+    },
+    "formulation_type": {
+      "type": "object",
+      "properties": {
+        "soulsby": {
+          "type": "object",
+          "properties": {
+            "bed_interaction": {
+              "$ref": "#/$defs/soulsby_bed_interaction_type",
+              "description": "bed interaction module"
+            },
+            "background_grain_size": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "d_background": {
+              "type": "number",
+              "description": "grain size of background sediment [m]"
+            },
+            "freedom_factor": {
+              "type": "integer",
+              "default": 1,
+              "description": "initial state of Freedom Factor (0 = trapped, 1 = free)"
+            },
+            "gamma_e": {
+              "type": "number",
+              "default": 0.1,
+              "description": "long-term equilibrium proportion of free particles"
+            },
+            "theta_s": {
+              "type": "number",
+              "default": 0.1,
+              "description": "transition scale value"
+            },
+            "b_e": {
+              "type": "number",
+              "default": 1.7e-07,
+              "description": "maximum free-to-trapped transition probability per second [1/s]"
+            },
+            "mu_d": {
+              "type": "number",
+              "default": 0.5,
+              "description": "dynamic friction coefficient (0.5-1.0)"
+            }
+          }
+        },
+        "pannozzo": {
+          "type": "object",
+          "properties": {}
+        },
+        "vanwesten": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    "particle_state_type": {
+      "type": "string",
+      "enum": [
+        "trapped",
+        "free"
+      ],
+      "default": "free",
+      "description": "'trapped' = particle is trapped, 'free' = particle is free"
+    },
+    "delft3d4_vertical_layer_type": {
+      "type": "string",
+      "enum": [
+        "lowest",
+        "max"
+      ],
+      "default": "lowest",
+      "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
+    },
+    "numerical_scheme_type": {
+      "type": "string",
+      "enum": [
+        "rk4",
+        "euler"
+      ],
+      "default": "rk4",
+      "description": "'rk4' = Runge Kutta 4, 'euler' = Euler method"
+    },
+    "input_model_type": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "fm_netcdf",
+            "d3d4",
+            "xbeach",
+            "aeolis"
+          ],
+          "default": "fm_netcdf",
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis"
+        },
+        "reference_date": {
+          "type": "string",
+          "default": "1970-01-01",
+          "description": "reference date used by the timeseries in the input data model, e.g., '2020-01-01 00'. If empty, then the reference is set to Unix epoch (1970-01-01 00:00:00)"
+        },
+        "morfac": {
+          "type": "number",
+          "default": 1,
+          "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
+        }
+      }
+    },
+    "fm_format_type": {
+      "type": "string",
+      "enum": [
+        "sedtrails_nc",
+        "merged_nc"
+      ],
+      "default": "sedtrails_nc",
+      "description": "Format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "general": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preprocess": {
+          "type": "boolean",
+          "default": true,
+          "description": "true: pre-process; false: use existing files with default names"
+        },
+        "compute_pathways": {
+          "type": "boolean",
+          "default": true,
+          "description": "true: (re)run everything; false: load existing pathways"
+        },
+        "input_model": {
+          "$ref": "#/$defs/input_model_type",
+          "description": "input model for the simulations (e.g., fm_netcdf, d3d4, xbeach, aeolis)"
+        },
+        "n_runs": {
+          "type": "integer",
+          "default": 1
+        },
+        "display_input_metadata": {
+          "type": "boolean",
+          "default": false,
+          "description": "display all metadata"
+        },
+        "numerical_scheme": {
+          "$ref": "#/$defs/numerical_scheme_type",
+          "default": "rk4",
+          "description": "numerical scheme ('rk4' = Runge Kutta 4)"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "string",
+          "description": "path to D-Flow data file"
+        },
+        "read_interval": {
+          "type": "string",
+          "default": "30D12H25M0S",
+          "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "comp_dir": {
+          "type": "string",
+          "description": "path to directory where complementary validation data is stored"
+        }
+      },
+      "required": [
+        "data"
+      ]
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subset_x": {
+          "type": "string",
+          "description": "X coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 35000:52000"
+        },
+        "subset_y": {
+          "type": "string",
+          "description": "Y coordinates to limit the extent of the domain. Given as minimum:maximum, e.g. 12000:150000"
+        },
+        "pol_file": {
+          "type": "string",
+          "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
+        },
+        "subset_m": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in m-direction (0=all)"
+        },
+        "subset_n": {
+          "type": "integer",
+          "default": 0,
+          "description": "limits of d3d4 model domain in n-direction (0=all)"
+        },
+        "subset_t": {
+          "type": "string",
+          "description": "limits of d3d4 model domain in t-direction (time). Given as minimum:maximum, e.g. 49:124"
+        },
+        "flow_field_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fm": {
+              "$ref": "#/$defs/fm_format_type",
+              "default": "sedtrails_nc",
+              "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
+            },
+            "delft3d4": {
+              "type": "object",
+              "properties": {
+                "nested": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "is Delft3D model nested? (Y=true, N=false)"
+                },
+                "nested_pol_file": {
+                  "type": "string",
+                  "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
+                },
+                "depth_average_flow": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
+                },
+                "vertical_layer": {
+                  "$ref": "#/$defs/delft3d4_vertical_layer_type",
+                  "default": "lowest",
+                  "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
+                }
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "fm"
+              ]
+            },
+            {
+              "required": [
+                "delft3d4"
+              ]
+            }
+          ],
+          "not": {
+            "required": [
+              "fm",
+              "delft3d4"
+            ]
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "pol_file"
+          ]
+        },
+        {
+          "required": [
+            "subset_x",
+            "subset_y"
+          ]
+        },
+        {
+          "required": [
+            "subset_m",
+            "subset_n"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "pol_file",
+          "subset_x",
+          "subset_y",
+          "subset_m",
+          "subset_n"
+        ]
+      }
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "string",
+          "description": "initial starttime for sedtrails simulation, e.g., datetime with format 'YYYY-MM-DD hh:mm:ss'. If omitted, then simulation starts at the beginning of the Flow-filed time series."
+        },
+        "duration": {
+          "type": "string",
+          "default": "0D12H25M0S",
+          "description": "total duration for the simulation, e.g., '0D12H25M0S' for 12 hours and 25 minutes. If omitted, then simulation runs until the end of the Flow-field time series."
+        },
+        "timestep": {
+          "type": "string",
+          "default": "30S",
+          "description": "timestep for the simulation, e.g., '30S' for 30 seconds."
+        },
+        "cfl_condition": {
+          "type": "number",
+          "default": 0.7,
+          "description": "CFL condition for adaptive timestep calculation. If 0, timestep is not adapted."
+        }
+      },
+      "required": [
+        "timestep"
+      ]
+    },
+    "physics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "constants": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "grain_diameter": {
+              "type": "number",
+              "default": 2.5e-4,
+              "description": "grain diameter of sediment [m]"
+            },
+            "morphology_factor": {
+              "type": "number",
+              "default": 1.0,
+              "description": "morphological acceleration factor (Roelvink, 2006) (1.0 = no effect)"
+            },
+            "porosity": {
+              "type": "number",
+              "default": 0.4,
+              "description": "porosity of sediment (40% default)"
+            },
+            "g": {
+              "type": "number",
+              "default": 9.81,
+              "description": "gravity [m/s^2]"
+            },
+            "von_karman": {
+              "type": "number",
+              "default": 0.4,
+              "description": "von Karman's constant"
+            },
+            "kinematic_viscosity": {
+              "type": "number",
+              "default": 1.36e-06,
+              "description": "kinematic viscosity [m2/s]; (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rho_w": {
+              "type": "number",
+              "default": 1027.0,
+              "description": "water density [kg/m3] (valid for Temp = 10 degC and salinity = 35 ppt, p. 26-27)"
+            },
+            "rho_s": {
+              "type": "number",
+              "default": 2650.0,
+              "description": "particle density [kg/m3] (quartz)"
+            },
+            "friction_angle": {
+              "type": "number",
+              "default": 30.0,
+              "description": "friction angle of sediment (30 deg default)"
+            },
+            "diffusion_coefficient": {
+              "type": "number",
+              "default": 0.1,
+              "description": "random walk diffusion coefficient"
+            }
+          }
+        },
+        "bed_shear_stress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mod_file": {
+              "type": "string",
+              "description": "file containing bed shear stress time series to add to data (in a spatially constant, time-varying manner). If empty, then no bed shear stress is added."
+            }
+          }
+        },
+        "bed_slope": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "calculate": {
+              "type": "boolean",
+              "default": false,
+              "description": "Controls if local bedslope in x and y directions should be calculated"
+            },
+            "resolution": {
+              "type": "number",
+              "default": 100.0,
+              "description": "resolution to which bedslope should be reinterpolated"
+            },
+            "bedslope_check_plot": {
+              "type": "boolean",
+              "default": false,
+              "description": "if true, it creates a check plot to make sure bedslopes are in the right direction"
+            },
+            "bedslope_caxis_factor": {
+              "type": "number",
+              "default": 100.0,
+              "description": "factor for tuning colour axis in check plot (i.e., 1/caxisFactor =1/100 => shows slopes of 1/100)"
+            },
+            "bedslope_alpha_bs": {
+              "type": "number",
+              "default": 1.0,
+              "description": "longitudinal bedslope transport effect tuning factor"
+            },
+            "bedslope_alpha_bn": {
+              "type": "number",
+              "default": 1.5,
+              "description": "transverse bedslope transport effect tuning factor"
+            }
+          }
+        }
+      }
+    },
+    "particles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "populations": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:sedtrails:config:population.schema.json"
+          },
+          "minItems": 1,
+          "description": "list of particle populations to simulate."
+        }
+      },
+      "required": [
+        "populations"
+      ]
+    },
+    "pathways": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "polygon_query": {
+          "type": "boolean",
+          "default": true,
+          "description": "query pathways to/from a given polygon?"
+        },
+        "polygon_name": {
+          "type": "string",
+          "description": "name of polygon to query"
+        },
+        "analyze": {
+          "type": "boolean",
+          "default": false,
+          "description": "analyze pathways? (Y=true, N=false)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "polygon_query": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "polygon_name"
+            ]
+          }
+        }
+      ]
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "save_interval": {
+          "type": "string",
+          "default": "1H",
+          "description": "save interval for output files, e.g., '1H' for 1 hour."
+        },
+        "store_tracks": {
+          "type": "boolean",
+          "default": true,
+          "description": "store full particle tracks? (Y=true, N=false)"
+        },
+        "directory": {
+          "type": "string",
+          "default": "./output",
+          "description": "path to directory for storing the results of the simulation"
+        },
+        "store_end_positions": {
+          "type": "boolean",
+          "default": false,
+          "description": "store end only positions? (Y=true, N=false), Will store only the last position of each particle at the end of the simulation."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "store_tracks"
+          ]
+        },
+        {
+          "required": [
+            "store_end_positions"
+          ]
+        }
+      ]
+    },
+    "visualization": {
+      "$ref": "urn:sedtrails:config:visualization.schema.json"
+    }
+  }
+}

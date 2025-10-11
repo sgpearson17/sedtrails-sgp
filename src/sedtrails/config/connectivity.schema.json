@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "type": "object",
+  "title": "Connectivity Configuration",
+  "properties": {
+    "plotting": {
+      "type": "object",
+      "properties": {
+        "connectivity_plot": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_plot_network": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_plot_top_fraction_links": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do you want to plot the links in the network?"
+        },
+        "connectivity_plot_adj_mat": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_plot_netgross": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to plot the net gross connectivity?"
+        },
+        "connectivity_plot_node_metrics": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_plot_modules": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_plot_module_borders": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        },
+        "connectivity_adjmat": {
+          "type": "boolean",
+          "default": false,
+          "description": "TODO"
+        }
+      }
+    },
+    "connectivity_auto_define": {
+      "type": "object",
+      "properties": {
+        "setup_use_alpha_shape": {
+          "type": "integer",
+          "default": 0,
+          "description": "by default, use convex hull to compute outer polygon (0 or []), otherwise use AlphaShape (1)"
+        },
+        "setup_hole_threshold": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Maximum area or volume of interior holes or voids to fill in, specified as a finite, nonnegative scalar."
+        },
+        "setup_buffer_dist": {
+          "type": "number",
+          "default": 0.0,
+          "description": "buffer distance [m] by which to offset boundaries of polyshape for auto-defining connectivity"
+        },
+        "setup_cluster_k": {
+          "type": "number",
+          "default": 5.0,
+          "description": "number of clusters to create"
+        },
+        "setup_cluster_iter": {
+          "type": "number",
+          "default": 40.0,
+          "description": "number of iterations to complete in cluster analysis"
+        },
+        "setup_show_check_plots": {
+          "type": "integer",
+          "default": 0,
+          "description": "0 = do not show cluster check plots, 1 = show them"
+        },
+        "setup_save_check_plots": {
+          "type": "integer",
+          "default": 0,
+          "description": "0 = do not save cluster check plots, 1 = save them"
+        },
+        "setup_perimeter_pol_file": {
+          "type": "string",
+          "description": ".pol file containing perimeter polygon to manually limit extents"
+        },
+        "setup_islands_pol_file": {
+          "type": "string",
+          "description": ".pol file containing island polygons"
+        },
+        "connectivity_pol_file": {
+          "type": "string",
+          "description": ".pol file containing polygons for connectivity analysis"
+        },
+        "plot_mgmtPolygons_pol_file": {
+          "type": "string",
+          "description": "polygons for comparing management cells to connectivity modules"
+        },
+        "merge_polygon_mode": {
+          "type": "integer",
+          "default": 1,
+          "description": "merge polygons via: 1 = default mode (counting pixels) or 2 = merging nearby polygons"
+        },
+        "polygon_merging_dist_threshold": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Threshold for grouping polygons [plot units]. MatLab specific, cosider removing it"
+        },
+        "polygon_creator_show_check_plots": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do you wnant to show check plots?"
+        }
+      }
+    }
+  }
+}

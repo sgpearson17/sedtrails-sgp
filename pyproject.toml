@@ -4,46 +4,68 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sedtrails"
-version = "0.0.1"
+dynamic = ["version"]
+description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
 dependencies = [
   "jsonschema",
-  "numpy",
+  "numpy<2.2,>=1.24",
   "pyyaml",
   "pandas",
   "matplotlib",
   "xarray",
-  "typer",
+  "typer >=0.15.0,<1.0",
+  "xugrid",
+  "numba",
+  "tqdm",
+  "referencing>=0.36.2",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.10, <3.14"
 authors = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
-  { name = "Natascia Pannozzo", email = "n.pannozzo@tudelft.nl" },
   { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
-  # Add more authors as needed
+  { name = "Manuel Garcia Alvarez", email = "m.garciaalvarez@tudelft.nl" },
+  { name = "Aysun Urhan" },
+  { name = "Bart van Westen" },
+  { name = "Natascia Pannozzo" },
+  { name = "Hassan Shafiei" },
 ]
 maintainers = [
   { name = "Stuart Pearson", email = "s.g.pearson@tudelft.nl" },
   { name = "Johan Reyns", email = "johan.reyns@deltares.nl" },
 ]
-description = "Sediment TRAnsport vIsualization and Lagrangian Simulator"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICEN[CS]E.*"]
 keywords = ["sediment", "analysis"]
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python",
+  "License :: Freely Distributable",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Documentation :: Sphinx",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research",
 ]
 
 [project.optional-dependencies]
-cli = ["typer"]
+cli = ["typer>=0.15.0,<1.0"]
 dev = [
   "pytest",
   "ruff",
   "sphinx==8.2.0",
   "myst-parser==4.0.1",
   "sphinx-rtd-theme",
+  "sphinx-autodoc2>=0.5.0",
 ]
+
+[tool.hatch.version]
+path = "src/sedtrails/__version__.py"
+[tool.hatch.build]
+include = ["src/sedtrails/config/schema.json"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sedtrails"]
 
 [project.urls]
 Homepage = "https://github.com/sedtrails/sedtrails"
@@ -53,8 +75,9 @@ Repository = "https://github.com/sedtrails/sedtrails.git"
 Changelog = "https://github.com/sedtrails/sedtrails/blob/main/CHANGELOG.md"
 
 [project.scripts]
-sedtrails = "sedtrails.configuration_interface.cli:app"
+sedtrails = "sedtrails.application_interfaces.cli:app"
 
 [tool.pytest.ini_options]
 pythonpath = "src"
 addopts = ["--import-mode=importlib"]
+markers = ["integration: mark a test as an integration test."]

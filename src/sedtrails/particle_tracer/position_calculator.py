@@ -2,328 +2,417 @@
 ParticlePositionCalculator Class
 
 This class performs particle advection over an unstructured grid using a
-4-stage Runge�Kutta integration scheme. It supports barycentric interpolation
+4-stage Runge-Kutta integration scheme. It supports barycentric interpolation
 of grid fields (e.g., velocities) via a matplotlib Triangulation, with an option
 to use multiprocessing for very large particle sets.
 
 Usage:
     1. Initialize with grid nodes, velocities, and face-node connectivity.
-    2. Call update_particles() with particle positions, time step, and diffusion.
+    2. Call update_particles() with particle positions, and time step.
 
-Dependencies: numpy, matplotlib, multiprocessing, typing, math
+Dependencies: numpy, numba, scipy
 """
 
-import multiprocessing as mp
-from typing import Callable, Tuple
+from typing import Optional, Tuple
 
-import matplotlib.tri as mtri
+import numba
 import numpy as np
+from numba import njit, prange
 from numpy.typing import NDArray
+from scipy.spatial import Delaunay
+
+# ------------------------------------------------------------------------------
+# Numba‐compiled core routines
+# ------------------------------------------------------------------------------
+
+
+@njit
+def _update_particles_rk4(
+    x0: NDArray,
+    y0: NDArray,
+    grid_u: NDArray,
+    grid_v: NDArray,
+    grid_x: NDArray,
+    grid_y: NDArray,
+    triangles: NDArray,
+    dt: np.float32,
+    igeo: int,
+    geofac: np.float32,
+) -> tuple[NDArray, NDArray]:
+    """
+    Update particle positions using 4th-order Runge-Kutta (RK4) integration.
+
+    This function integrates particle positions over a single time step using
+    barycentric interpolation of velocity fields defined on an unstructured grid.
+
+    Parameters
+    ----------
+    x0 : array_like, shape (n_particles,)
+        Initial x-coordinates of particles.
+    y0 : array_like, shape (n_particles,)
+        Initial y-coordinates of particles.
+    grid_u : array_like, shape (n_nodes,)
+        X-component (u) of velocity field defined at grid nodes.
+    grid_v : array_like, shape (n_nodes,)
+        Y-component (v) of velocity field defined at grid nodes.
+    grid_x : array_like, shape (n_nodes,)
+        X-coordinates of the grid nodes.
+    grid_y : array_like, shape (n_nodes,)
+        Y-coordinates of the grid nodes.
+    triangles : array_like, shape (n_triangles, 3)
+        Triangle connectivity (indices into grid_x/grid_y).
+    dt : np.float32
+        Time step for RK4 integration.
+    igeo : int
+        If 1, apply geographic coordinate correction to velocity components.
+    geofac : np.float32
+        Geographic scaling factor (e.g., Earth's radius in meters).
+
+    Returns
+    -------
+    x_new : ndarray, shape (n_particles,)
+        Updated x-coordinates of particles after one RK4 time step.
+    y_new : ndarray, shape (n_particles,)
+        Updated y-coordinates of particles after one RK4 time step.
+    """
+    x0 = np.asarray(x0, dtype=np.float64)
+    y0 = np.asarray(y0, dtype=np.float64)
+    grid_u = np.asarray(grid_u, dtype=np.float64)
+    grid_v = np.asarray(grid_v, dtype=np.float64)
+
+    n = x0.shape[0]
+    x_new = np.empty(n, dtype=np.float64)
+    y_new = np.empty(n, dtype=np.float64)
+
+    # adjust for geographic coords?
+    u_adj = grid_u.copy()
+    v_adj = grid_v.copy()
+    if igeo == 1:
+        for k in range(grid_v.shape[0]):
+            coslat = np.cos(np.deg2rad(grid_y[k]))
+            u_adj[k] = grid_u[k] / (geofac * coslat)
+            v_adj[k] = grid_v[k] / geofac
+
+    for i in range(n):
+        xi, yi = x0[i], y0[i]
+        # four RK stages
+        ups = np.zeros(4, dtype=np.float64)
+        vps = np.zeros(4, dtype=np.float64)
+        xs = np.zeros(4, dtype=np.float64)
+        ys = np.zeros(4, dtype=np.float64)
+
+        xs[0], ys[0] = xi, yi
+
+        for stage in range(4):
+            # pick input position
+            xa = xs[stage]
+            ya = ys[stage]
+
+            # interpolate velocity at (xa,ya)
+            up = 0.0
+            vp = 0.0
+            for j in range(triangles.shape[0]):
+                v0, v1, v2 = triangles[j]
+                x0t, y0t = grid_x[v0], grid_y[v0]
+                x1t, y1t = grid_x[v1], grid_y[v1]
+                x2t, y2t = grid_x[v2], grid_y[v2]
+
+                denom = (y1t - y2t) * (x0t - x2t) + (x2t - x1t) * (y0t - y2t)
+                if abs(denom) < 1e-10:
+                    continue
+
+                w1 = ((y1t - y2t) * (xa - x2t) + (x2t - x1t) * (ya - y2t)) / denom
+                w2 = ((y2t - y0t) * (xa - x2t) + (x0t - x2t) * (ya - y2t)) / denom
+                w3 = 1.0 - w1 - w2
+                if w1 >= -1e-10 and w2 >= -1e-10 and w3 >= -1e-10:
+                    up = w1 * u_adj[v0] + w2 * u_adj[v1] + w3 * u_adj[v2]
+                    vp = w1 * v_adj[v0] + w2 * v_adj[v1] + w3 * v_adj[v2]
+                    break
+
+            ups[stage] = up
+            vps[stage] = vp
+
+            if stage == 0:
+                xs[1] = xi + 0.5 * up * dt
+                ys[1] = yi + 0.5 * vp * dt
+                xs[2] = xi + 0.5 * up * dt
+                ys[2] = yi + 0.5 * vp * dt
+                xs[3] = xi + up * dt
+                ys[3] = yi + vp * dt
+            elif stage == 1:
+                xs[2] = xi + 0.5 * ups[1] * dt
+                ys[2] = yi + 0.5 * vps[1] * dt
+            # stage 2 and 3 already set by above logic
+
+        # combine
+        x_new[i] = xi + dt / 6.0 * (ups[0] + 2 * ups[1] + 2 * ups[2] + ups[3])
+        y_new[i] = yi + dt / 6.0 * (vps[0] + 2 * vps[1] + 2 * vps[2] + vps[3])
+
+    return x_new, y_new
+
+
+@njit(parallel=True)
+def _update_particles_rk4_parallel(
+    x0: NDArray,
+    y0: NDArray,
+    grid_u: NDArray,
+    grid_v: NDArray,
+    grid_x: NDArray,
+    grid_y: NDArray,
+    triangles: NDArray,
+    dt: np.float32,
+    igeo: int,
+    geofac: np.float32,
+) -> tuple[NDArray, NDArray]:
+    """
+    Update particle positions using 4th-order Runge-Kutta (RK4) integration in parallel.
+
+    This function integrates particle positions over a single time step using
+    barycentric interpolation of velocity fields defined on an unstructured grid.
+
+    Parameters
+    ----------
+    x0 : array_like, shape (n_particles,)
+        Initial x-coordinates of particles.
+    y0 : array_like, shape (n_particles,)
+        Initial y-coordinates of particles.
+    grid_u : array_like, shape (n_nodes,)
+        X-component (u) of velocity field defined at grid nodes.
+    grid_v : array_like, shape (n_nodes,)
+        Y-component (v) of velocity field defined at grid nodes.
+    grid_x : array_like, shape (n_nodes,)
+        X-coordinates of the grid nodes.
+    grid_y : array_like, shape (n_nodes,)
+        Y-coordinates of the grid nodes.
+    triangles : array_like, shape (n_triangles, 3)
+        Triangle connectivity (indices into grid_x/grid_y).
+    dt : np.float32
+        Time step for RK4 integration.
+    igeo : int
+        If 1, apply geographic coordinate correction to velocity components.
+    geofac : np.float32
+        Geographic scaling factor (e.g., Earth's radius in meters).
+
+    Returns
+    -------
+    x_new : ndarray, shape (n_particles,)
+        Updated x-coordinates of particles after one RK4 time step.
+    y_new : ndarray, shape (n_particles,)
+        Updated y-coordinates of particles after one RK4 time step.
+    """
+    x0 = np.asarray(x0, dtype=np.float64)
+    y0 = np.asarray(y0, dtype=np.float64)
+    grid_u = np.asarray(grid_u, dtype=np.float64)
+    grid_v = np.asarray(grid_v, dtype=np.float64)
+
+    n = x0.shape[0]
+    x_new = np.empty(n, dtype=np.float64)
+    y_new = np.empty(n, dtype=np.float64)
+
+    u_adj = grid_u.copy()
+    v_adj = grid_v.copy()
+    if igeo == 1:
+        for k in range(grid_v.shape[0]):
+            coslat = np.cos(np.deg2rad(grid_y[k]))
+            u_adj[k] = grid_u[k] / (geofac * coslat)
+            v_adj[k] = grid_v[k] / geofac
+
+    for i in prange(n):
+        xi, yi = x0[i], y0[i]
+        # do the same four‐stage RK4 as above
+        ups = np.zeros(4, dtype=np.float64)
+        vps = np.zeros(4, dtype=np.float64)
+        xs = np.zeros(4, dtype=np.float64)
+        ys = np.zeros(4, dtype=np.float64)
+
+        xs[0], ys[0] = xi, yi
+        for stage in range(4):
+            xa = xs[stage]
+            ya = ys[stage]
+            up = 0.0
+            vp = 0.0
+            for j in range(triangles.shape[0]):
+                v0, v1, v2 = triangles[j]
+                x0t, y0t = grid_x[v0], grid_y[v0]
+                x1t, y1t = grid_x[v1], grid_y[v1]
+                x2t, y2t = grid_x[v2], grid_y[v2]
+
+                denom = (y1t - y2t) * (x0t - x2t) + (x2t - x1t) * (y0t - y2t)
+                if abs(denom) < 1e-10:
+                    continue
+
+                w1 = ((y1t - y2t) * (xa - x2t) + (x2t - x1t) * (ya - y2t)) / denom
+                w2 = ((y2t - y0t) * (xa - x2t) + (x0t - x2t) * (ya - y2t)) / denom
+                w3 = 1.0 - w1 - w2
+                if w1 >= -1e-10 and w2 >= -1e-10 and w3 >= -1e-10:
+                    up = w1 * u_adj[v0] + w2 * u_adj[v1] + w3 * u_adj[v2]
+                    vp = w1 * v_adj[v0] + w2 * v_adj[v1] + w3 * v_adj[v2]
+                    break
+
+            ups[stage] = up
+            vps[stage] = vp
+
+            if stage == 0:
+                xs[1] = xi + 0.5 * up * dt
+                ys[1] = yi + 0.5 * vp * dt
+                xs[2] = xi + 0.5 * up * dt
+                ys[2] = yi + 0.5 * vp * dt
+                xs[3] = xi + up * dt
+                ys[3] = yi + vp * dt
+            elif stage == 1:
+                xs[2] = xi + 0.5 * ups[1] * dt
+                ys[2] = yi + 0.5 * vps[1] * dt
+
+        x_new[i] = xi + dt / 6.0 * (ups[0] + 2 * ups[1] + 2 * ups[2] + ups[3])
+        y_new[i] = yi + dt / 6.0 * (vps[0] + 2 * vps[1] + 2 * vps[2] + vps[3])
+
+    return x_new, y_new
+
+
+@njit(parallel=True)
+def _interpolate_field(
+    field: NDArray, x_points: NDArray, y_points: NDArray, grid_x: NDArray, grid_y: NDArray, triangles: NDArray
+) -> NDArray:
+    n = x_points.shape[0]
+    out = np.empty(n, dtype=np.float64)
+
+    for i in prange(n):
+        x, y = x_points[i], y_points[i]
+        val = np.nan  # Default to NaN
+        for j in range(triangles.shape[0]):
+            v0, v1, v2 = triangles[j]
+            x0, y0 = grid_x[v0], grid_y[v0]
+            x1, y1 = grid_x[v1], grid_y[v1]
+            x2, y2 = grid_x[v2], grid_y[v2]
+
+            # Compute barycentric weights using full determinant formula
+            detT = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if abs(detT) < 1e-12:
+                continue  # Skip degenerate triangle
+
+            w1 = ((x1 - x) * (y2 - y) - (x2 - x) * (y1 - y)) / detT
+            w2 = ((x2 - x) * (y0 - y) - (x0 - x) * (y2 - y)) / detT
+            w3 = 1.0 - w1 - w2
+
+            if w1 >= -1e-10 and w2 >= -1e-10 and w3 >= -1e-10:
+                val = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
+                break
+        out[i] = val
+    return out
+
+
+# ------------------------------------------------------------------------------
+# Public API class ParticlePositionCalculator
+# ------------------------------------------------------------------------------
 
 
 class ParticlePositionCalculator:
+    """
+    Numba‐optimized particle tracer with RK4 integration on an unstructured grid.
+    """
+
     def __init__(
         self,
-        grid_x: NDArray[np.float64],
-        grid_y: NDArray[np.float64],
-        grid_u: NDArray[np.float64],
-        grid_v: NDArray[np.float64],
+        grid_x: NDArray,
+        grid_y: NDArray,
+        grid_u: NDArray,
+        grid_v: NDArray,
+        triangles: Optional[NDArray] = None,
         igeo: int = 0,
-    ):
+    ) -> None:
         """
-        Initialize the ParticleInterpolator.
+        Initialize the particle position calculator.
 
         Parameters
         ----------
-        grid_x, grid_y : array_like, shape (N,)
-            Coordinates of grid nodes.
-        grid_u, grid_v : array_like, shape (N,)
-            Velocity components at the grid nodes.
-        igeo : int, optional
-            Option flag. If igeo==1, grid velocities are adjusted for geographic
-            coordinates (i.e. scaled by cosine(latitude) and a geofactor).
+        grid_x : ndarray of shape (M,)
+            X-coordinates of the velocity field grid.
+        grid_y : ndarray of shape (M,)
+            Y-coordinates of the velocity field grid.
+        grid_u : ndarray of shape (M,)
+            X-component (u) of the velocity field.
+        grid_v : ndarray of shape (M,)
+            Y-component (v) of the velocity field.
+        triangles : ndarray of shape (K, 3), optional
+            Triangle connectivity array for the grid. If None, it is computed via Delaunay triangulation.
+        igeo : int, default=0
+            If 1, assumes geographic coordinates (degrees), scaled using Earth's radius.
         """
-        self.grid_x = grid_x
-        self.grid_y = grid_y
-        self.grid_u = grid_u
-        self.grid_v = grid_v
-        self.igeo = igeo
-        self.geofac = np.float64(
-            6378137
-        )  # conversion factor for geographic coordinates
+        self.grid_x = np.asarray(grid_x, dtype=np.float64)
+        self.grid_y = np.asarray(grid_y, dtype=np.float64)
+        self.grid_u = np.asarray(grid_u, dtype=np.float64)
+        self.grid_v = np.asarray(grid_v, dtype=np.float64)
+        self.igeo = int(igeo)
+        self.geofac = 6378137.0
 
-        # Build the triangulation used for interpolation uisng Delaunay
-        self.tri, self.trifinder = self.build_triangulation()
-
-    def build_triangulation(
-        self,
-    ) -> Tuple[mtri.Triangulation, Callable[[float, float], int]]:
-        """
-        Build a matplotlib Triangulation and its trifinder using the grid nodes and triangles.
-
-        Returns
-        -------
-        tri : matplotlib.tri.Triangulation
-            The triangulation object.
-        trifinder : callable
-            A function that maps (x,y) points to a triangle index (or -1 if outside).
-        """
-        tri = mtri.Triangulation(self.grid_x, self.grid_y)  # Delaunay
-        trifinder = tri.get_trifinder()
-        return tri, trifinder
-
-    def _interpolate_field(
-        self, field: NDArray, part_x: NDArray, part_y: NDArray
-    ) -> NDArray:
-        """
-        Interpolate a scalar field at particle positions using barycentric coordinates.
-
-        Parameters
-        ----------
-        field : array_like, shape (N,)
-            Field defined at grid nodes (e.g., grid_u or grid_v).
-        part_x, part_y : array_like, shape (P,)
-            Particle positions.
-
-        Returns
-        -------
-        interp_vals : ndarray, shape (P,)
-            Interpolated field values at the particle positions.
-        """
-        # Use the trifinder to determine which triangle contains each particle.
-        tri_idx = self.trifinder(part_x, part_y)
-        interp_vals = np.zeros_like(part_x)
-        valid = tri_idx >= 0
-        if not np.any(valid):
-            return interp_vals
-
-        # Get vertex indices for the containing triangle for valid particles.
-        v1 = self.tri.triangles[tri_idx[valid], 1]
-        v2 = self.tri.triangles[tri_idx[valid], 2]
-        v0 = self.tri.triangles[tri_idx[valid], 0]
-
-        # Coordinates for triangle vertices.
-        x0 = self.grid_x[v0]
-        y0 = self.grid_y[v0]
-        x1 = self.grid_x[v1]
-        y1 = self.grid_y[v1]
-        x2 = self.grid_x[v2]
-        y2 = self.grid_y[v2]
-
-        # Compute barycentric coordinates.
-        den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            w1 = (
-                (y1 - y2) * (part_x[valid] - x2) + (x2 - x1) * (part_y[valid] - y2)
-            ) / den
-            w2 = (
-                (y2 - y0) * (part_x[valid] - x2) + (x0 - x2) * (part_y[valid] - y2)
-            ) / den
-        w3 = 1.0 - w1 - w2
-
-        # Weighted sum of field values.
-        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
-        return interp_vals
-
-    @staticmethod
-    def _interpolate_field_worker(
-        args: Tuple[NDArray, NDArray, NDArray, NDArray, NDArray, NDArray],
-    ) -> NDArray:
-        """
-        Static helper function for parallel field interpolation.
-
-        Parameters
-        ----------
-        args : tuple
-            Contains (grid_x, grid_y, field, triangles, part_x_chunk, part_y_chunk).
-
-        Returns
-        -------
-        interp_vals : ndarray
-            Interpolated field values for the chunk of particles.
-        """
-        (grid_x, grid_y, field, triangles, part_x_chunk, part_y_chunk) = args
-        # Build a temporary triangulation and trifinder.
-        tri = mtri.Triangulation(grid_x, grid_y)
-        trifinder = tri.get_trifinder()
-
-        part_x_chunk = np.asarray(part_x_chunk, dtype=np.float64)
-        part_y_chunk = np.asarray(part_y_chunk, dtype=np.float64)
-
-        tri_idx = trifinder(part_x_chunk, part_y_chunk)
-        interp_vals = np.zeros_like(part_x_chunk)
-        valid = tri_idx >= 0
-        if not np.any(valid):
-            return interp_vals
-
-        v0 = triangles[tri_idx[valid], 0]
-        v1 = triangles[tri_idx[valid], 1]
-        v2 = triangles[tri_idx[valid], 2]
-        x0 = grid_x[v0]
-        y0 = grid_y[v0]
-        x1 = grid_x[v1]
-        y1 = grid_y[v1]
-        x2 = grid_x[v2]
-        y2 = grid_y[v2]
-        den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            w1 = (
-                (y1 - y2) * (part_x_chunk[valid] - x2)
-                + (x2 - x1) * (part_y_chunk[valid] - y2)
-            ) / den
-            w2 = (
-                (y2 - y0) * (part_x_chunk[valid] - x2)
-                + (x0 - x2) * (part_y_chunk[valid] - y2)
-            ) / den
-        w3 = 1.0 - w1 - w2
-        interp_vals[valid] = w1 * field[v0] + w2 * field[v1] + w3 * field[v2]
-        return interp_vals
-
-    def parallel_interpolate_field(
-        self, field: NDArray, part_x: NDArray, part_y: NDArray, num_workers: int
-    ) -> NDArray:
-        """
-        Parallel version of _interpolate_field using multiprocessing.
-
-        Parameters
-        ----------
-        field : ndarray, shape (N,)
-            Field defined on the grid.
-        part_x, part_y : ndarray, shape (P,)
-            Particle positions.
-        num_workers : int
-            Number of processes to use.
-
-        Returns
-        -------
-        interp_vals : ndarray, shape (P,)
-            Interpolated field values at particle positions.
-        """
-        P = len(part_x)
-        indices = np.array_split(np.arange(P), num_workers)
-        args_list = []
-        for idx in indices:
-            args = (
-                self.grid_x,
-                self.grid_y,
-                field,
-                self.tri.triangles,
-                part_x[idx],
-                part_y[idx],
-            )
-            args_list.append(args)
-        with mp.Pool(num_workers) as pool:
-            results = pool.map(
-                ParticlePositionCalculator._interpolate_field_worker, args_list
-            )
-        return np.concatenate(results)
-
-    def interpolate_field(
-        self,
-        field: NDArray,
-        part_x: NDArray,
-        part_y: NDArray,
-        parallel: bool = False,
-        num_workers: int = None,
-    ) -> NDArray:
-        """
-        Public method to interpolate a grid field at given particle positions.
-
-        Parameters
-        ----------
-        field : array_like, shape (N,)
-            Grid field (e.g., grid_u or grid_v).
-        part_x, part_y : array_like, shape (P,)
-            Particle positions.
-        parallel : bool, optional
-            If True, use multiprocessing.
-        num_workers : int, optional
-            Number of processes for parallel interpolation (defaults to all CPUs).
-
-        Returns
-        -------
-        interp_vals : ndarray, shape (P,)
-            Interpolated field values.
-        """
-        if parallel:
-            if num_workers is None:
-                num_workers = mp.cpu_count()
-            return self.parallel_interpolate_field(field, part_x, part_y, num_workers)
+        if triangles is None:
+            pts = np.column_stack((self.grid_x, self.grid_y))
+            tri = Delaunay(pts)
+            tris = tri.simplices
         else:
-            return self._interpolate_field(field, part_x, part_y)
+            tris = triangles
+
+        self.triangles = np.asarray(tris, dtype=np.int64)
+
+    def interpolate_field(self, field: NDArray, x_pts: NDArray, y_pts: NDArray) -> NDArray:
+        """
+        Barycentric interpolation of a scalar field at given (x, y) points.
+
+        Parameters
+        ----------
+        field : ndarray of shape (M,)
+            Field values defined at grid points.
+        x_pts : ndarray of shape (N,)
+            X-coordinates of the interpolation points.
+        y_pts : ndarray of shape (N,)
+            Y-coordinates of the interpolation points.
+
+        Returns
+        -------
+        ndarray of shape (N,)
+            Interpolated field values at the specified coordinates.
+        """
+        fld = np.asarray(field, dtype=np.float64)
+        xs = np.asarray(x_pts, dtype=np.float64)
+        ys = np.asarray(y_pts, dtype=np.float64)
+
+        return _interpolate_field(fld, xs, ys, self.grid_x, self.grid_y, self.triangles)
 
     def update_particles(
-        self,
-        x0: NDArray,
-        y0: NDArray,
-        dt: np.float64,
-        parallel: bool = False,
-        num_workers: int = None,
-    ) -> Tuple[NDArray, NDArray, NDArray, NDArray]:
+        self, x0: NDArray, y0: NDArray, dt: np.float32, parallel: bool = False, num_workers: Optional[int] = None
+    ) -> Tuple[NDArray, NDArray]:
         """
-        Update particle positions using a 4-stage Runge�Kutta integration on the grid.
+        Perform one Runge-Kutta 4th order (RK4) time step to update particle positions.
 
         Parameters
         ----------
-        x0, y0 : array_like, shape (P,)
-            Particle positions at the current time.
-        dt : float
-            Time step.
-        rndfac : float
-            Diffusion coefficient. If > 0, random diffusion is added.
-        parallel : bool, optional
-            If True, use parallel interpolation.
+        x0 : ndarray of shape (N,)
+            Initial x-positions of the particles.
+        y0 : ndarray of shape (N,)
+            Initial y-positions of the particles.
+        dt : np.float32
+            Time step size.
+        parallel : bool, default=False
+            If True, use parallelized Numba version with `prange`.
         num_workers : int, optional
-            Number of processes to use for parallel interpolation.
+            Number of threads for parallel execution. Ignored if `parallel=False`.
 
         Returns
         -------
-        x_new, y_new : ndarray, shape (P,)
-            Updated particle positions.
-        xdiff, ydiff : ndarray, shape (P,)
-            Diffusion increments (zero if rndfac <= 0).
+        Tuple of (ndarray, ndarray)
+            Updated x and y particle positions after one RK4 step.
         """
-        geofac = self.geofac
+        xs = np.asarray(x0, dtype=np.float64)
+        ys = np.asarray(y0, dtype=np.float64)
+        dt = np.float32(dt)
 
-        # Adjust grid velocities if using geographic coordinates.
-        if self.igeo == 1:
-            grid_u_adj = self.grid_u / (self.geofac * np.cos(np.deg2rad(self.grid_y)))
-            grid_v_adj = self.grid_v / geofac
-        else:
-            grid_u_adj = self.grid_u
-            grid_v_adj = self.grid_v
-
-        # Helper to choose the interpolation method.
-        def get_interp(field, part_x, part_y):
-            return self.interpolate_field(
-                field, part_x, part_y, parallel=parallel, num_workers=num_workers
+        if parallel:
+            if num_workers is not None:
+                numba.set_num_threads(num_workers)
+            return _update_particles_rk4_parallel(
+                xs, ys, self.grid_u, self.grid_v, self.grid_x, self.grid_y, self.triangles, dt, self.igeo, self.geofac
             )
-
-        # 4-stage Runge�Kutta integration.
-        # Stage 1.
-        up1 = get_interp(grid_u_adj, x0, y0)
-        vp1 = get_interp(grid_v_adj, x0, y0)
-        x1a = x0 + 0.5 * up1 * dt
-        y1a = y0 + 0.5 * vp1 * dt
-
-        # Stage 2.
-        up2 = get_interp(grid_u_adj, x1a, y1a)
-        vp2 = get_interp(grid_v_adj, x1a, y1a)
-        x1b = x0 + 0.5 * up2 * dt
-        y1b = y0 + 0.5 * vp2 * dt
-
-        # Stage 3.
-        up3 = get_interp(grid_u_adj, x1b, y1b)
-        vp3 = get_interp(grid_v_adj, x1b, y1b)
-        x1c = x0 + up3 * dt
-        y1c = y0 + vp3 * dt
-
-        # Stage 4.
-        up4 = get_interp(grid_u_adj, x1c, y1c)
-        vp4 = get_interp(grid_v_adj, x1c, y1c)
-
-        # Combine stages (RK4 integration).
-        x_new = x0 + dt / 6.0 * (up1 + 2.0 * up2 + 2.0 * up3 + up4)
-        y_new = y0 + dt / 6.0 * (vp1 + 2.0 * vp2 + 2.0 * vp3 + vp4)
-
-        return x_new, y_new
+        else:
+            return _update_particles_rk4(
+                xs, ys, self.grid_u, self.grid_v, self.grid_x, self.grid_y, self.triangles, dt, self.igeo, self.geofac
+            )
