@@ -8,6 +8,7 @@ simulations with spatial and temporal visualizations.
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+import matplotlib.dates as mdates
 from collections import defaultdict
 from pathlib import Path
 import datetime
@@ -173,11 +174,17 @@ class SimulationDashboard:
 
     def _setup_time_series_plots(self) -> None:
         """Set up empty line plots for time series data."""
+        # Set up date formatter for all time series plots
+        # Use a compact format to fit better in the available space
+        date_fmt = mdates.DateFormatter('%m-%d %H:%M')
+        
         # Longshore velocity
         (self.lines['longshore_avg'],) = self.axes['longshore_vel'].plot([], [], 'b-', label='Average', linewidth=2)
         (self.lines['longshore_max'],) = self.axes['longshore_vel'].plot([], [], 'r-', label='Maximum', linewidth=2)
         self.axes['longshore_vel'].legend()
         self.axes['longshore_vel'].set_ylabel('Velocity (m/s)')
+        self.axes['longshore_vel'].xaxis.set_major_formatter(date_fmt)
+        self.axes['longshore_vel'].xaxis.set_major_locator(mdates.HourLocator(interval=6))
         self.axes['longshore_vel'].grid(True, alpha=0.3)
 
         # Cross-shore velocity
@@ -185,11 +192,15 @@ class SimulationDashboard:
         (self.lines['crossshore_max'],) = self.axes['crossshore_vel'].plot([], [], 'r-', label='Maximum', linewidth=2)
         self.axes['crossshore_vel'].legend()
         self.axes['crossshore_vel'].set_ylabel('Velocity (m/s)')
+        self.axes['crossshore_vel'].xaxis.set_major_formatter(date_fmt)
+        self.axes['crossshore_vel'].xaxis.set_major_locator(mdates.HourLocator(interval=6))
         self.axes['crossshore_vel'].grid(True, alpha=0.3)
 
         # Distance
         (self.lines['distance'],) = self.axes['distance'].plot([], [], 'g-', linewidth=2)
         self.axes['distance'].set_ylabel('Distance (m)')
+        self.axes['distance'].xaxis.set_major_formatter(date_fmt)
+        self.axes['distance'].xaxis.set_major_locator(mdates.HourLocator(interval=6))
         self.axes['distance'].grid(True, alpha=0.3)
 
         # Burial depth
@@ -200,7 +211,9 @@ class SimulationDashboard:
         )
         self.axes['burial_depth'].legend()
         self.axes['burial_depth'].set_ylabel('Burial Depth (m)')
-        self.axes['burial_depth'].set_xlabel('Simulation Time (hours)')
+        self.axes['burial_depth'].set_xlabel('Date and Time')
+        self.axes['burial_depth'].xaxis.set_major_formatter(date_fmt)
+        self.axes['burial_depth'].xaxis.set_major_locator(mdates.HourLocator(interval=6))
         self.axes['burial_depth'].grid(True, alpha=0.3)
 
     def _setup_progress_bar(self) -> None:
@@ -348,7 +361,7 @@ class SimulationDashboard:
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         ax.set_aspect('equal')
-        ax.set_title('Flow Field (Latest)', fontsize=12, fontweight='bold')
+        ax.set_title('(a) Flow Field (Latest)', fontsize=12, fontweight='bold')
 
     def _update_bathymetry_plot(
         self, flow_field: Dict[str, np.ndarray], bathymetry: np.ndarray, particles: Dict[str, np.ndarray]
@@ -411,7 +424,7 @@ class SimulationDashboard:
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         ax.set_aspect('equal')
-        ax.set_title('Bathymetry + Particles', fontsize=12, fontweight='bold')
+        ax.set_title('(b) Bathymetry + Particles', fontsize=12, fontweight='bold')
 
     def _update_time_series_plots(self) -> None:
         """Update all time series plots."""
@@ -420,22 +433,55 @@ class SimulationDashboard:
 
         times = self.time_stamps  # Already datetime objects
 
+        # Dynamically adjust date format based on time span
+        time_span = times[-1] - times[0]
+        if time_span.days > 7:
+            # For longer simulations, use date without time
+            date_fmt = mdates.DateFormatter('%m-%d')
+            locator = mdates.DayLocator(interval=1)
+        elif time_span.days > 1:
+            # For multi-day simulations, use date and time
+            date_fmt = mdates.DateFormatter('%m-%d %H:%M')
+            locator = mdates.HourLocator(interval=12)
+        else:
+            # For short simulations, use time only
+            date_fmt = mdates.DateFormatter('%H:%M')
+            locator = mdates.HourLocator(interval=2)
+
         # Longshore velocity
         self.lines['longshore_avg'].set_data(times, self.data_store['longshore_avg'])
         self.lines['longshore_max'].set_data(times, self.data_store['longshore_max'])
         self.axes['longshore_vel'].relim()
         self.axes['longshore_vel'].autoscale_view()
+        self.axes['longshore_vel'].xaxis.set_major_formatter(date_fmt)
+        self.axes['longshore_vel'].xaxis.set_major_locator(locator)
+        # Rotate x-axis labels for better readability
+        for label in self.axes['longshore_vel'].get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
 
         # Cross-shore velocity
         self.lines['crossshore_avg'].set_data(times, self.data_store['crossshore_avg'])
         self.lines['crossshore_max'].set_data(times, self.data_store['crossshore_max'])
         self.axes['crossshore_vel'].relim()
         self.axes['crossshore_vel'].autoscale_view()
+        self.axes['crossshore_vel'].xaxis.set_major_formatter(date_fmt)
+        self.axes['crossshore_vel'].xaxis.set_major_locator(locator)
+        # Rotate x-axis labels for better readability
+        for label in self.axes['crossshore_vel'].get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
 
         # Distance
         self.lines['distance'].set_data(times, self.data_store['distance'])
         self.axes['distance'].relim()
         self.axes['distance'].autoscale_view()
+        self.axes['distance'].xaxis.set_major_formatter(date_fmt)
+        self.axes['distance'].xaxis.set_major_locator(locator)
+        # Rotate x-axis labels for better readability
+        for label in self.axes['distance'].get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
 
         # Burial depth
         self.lines['burial_avg'].set_data(times, self.data_store['burial_avg'])
@@ -443,6 +489,12 @@ class SimulationDashboard:
         self.lines['mixing_depth'].set_data(times, self.data_store['mixing_depth'])
         self.axes['burial_depth'].relim()
         self.axes['burial_depth'].autoscale_view()
+        self.axes['burial_depth'].xaxis.set_major_formatter(date_fmt)
+        self.axes['burial_depth'].xaxis.set_major_locator(locator)
+        # Rotate x-axis labels for better readability
+        for label in self.axes['burial_depth'].get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
 
         # Apply tight layout again after data updates
         plt.tight_layout()

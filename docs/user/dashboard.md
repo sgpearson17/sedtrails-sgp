@@ -10,13 +10,21 @@ There is a [known issue](https://github.com/sedtrails/sedtrails/issues/355) wher
 
 ## Navigating the Dashboard
 
-- (a) In the top left panel we see the latest flow field timestep. The colour scale corresponds to the magnitude of the flow field and vectors indicating direction are displayed on top.
-- (b) In the bottom left panel, we see the bathymetry and particle positions overlaid. Initial positions are marked with Xs, and the position at the current timestep is indicated with a circle.
-- (c) The top right panel shows the average and maximum magnitude (?) of the alongshore velocity of all particles. For now it is assumed that the alongshore velocity is in the X direction.
-- (d) The next panel shows the average and maximum magnitude (?) of the cross-shore velocity of all particles. For now it is assumed that the cross-shore velocity is in the Y direction.
-- (e) The next panel average distance per timestep indicates the average distance travelled by all particles in each timestep. This is perhaps the most important diagnostic tool: if the travel distance of your particles is zero and you expect them to move (given your particle characteristics and flow conditions), something may be wrong!
-- (f) The bottom right panel indicates the average and maximum depths at which particles are buried ($\delta_{burial}$) and the mixing depth ($\delta_{mix}$ in [van Westen et al (2025)](https://doi.org/10.1038/s41598-025-92910-z))
+- **(a) Flow Field (Latest)**: we see the latest flow field timestep. The colour scale corresponds to the magnitude of the flow field and vectors indicating direction are displayed on top.
+- **(b) Bathymetry + Particles**: the bathymetry and particle positions overlaid. Initial positions are marked with Xs, and the position at the current timestep is indicated with a circle. 
+- **(c) Longshore Velocity**: the average and maximum magnitude (?) of the alongshore velocity of all particles. For now it is assumed that the alongshore velocity is in the X direction.
+- **(d) Cross-shore Velocity**: the average and maximum magnitude (?) of the cross-shore velocity of all particles. For now it is assumed that the cross-shore velocity is in the Y direction.
+- **(e) Average Distance per Timestep**: the average distance travelled by all particles in each output (not computational!) timestep. This is perhaps the most important diagnostic tool: if the travel distance of your particles is zero and you expect them to move (given your particle characteristics and flow conditions), something may be wrong!
+- **(f) Burial Depth**: the average and maximum depths at which particles are buried ($\delta_{burial}$) and the mixing depth ($\delta_{mix}$ in [van Westen et al (2025)](https://doi.org/10.1038/s41598-025-92910-z))
 - The progress bar at the bottom indicates the current simulation timestep and the relative percentage of your total run that is complete.
+
+Note that it is possible to zoom and pan using the buttons in the bottom right corner. Pressing the "home" icon will return the default view. Clicking the "save" button gives the option to save the view as a ``*.png`` file.
+
+The dashboard uses adaptive date formatting, automatically adjusting based on simulation duration:
+  - **Short simulations** (< 1 day): Shows time only in HH:MM format
+  - **Multi-day simulations** (1-7 days): Shows date and time in MM-DD HH:MM format  
+  - **Long simulations** (> 7 days): Shows date only in MM-DD format
+
 
 Future implementations will allow for more customization of the dashboard and optimize it for speed. However, it is primarily intended as an "is my model actually running as I intend it?" diagnostic, so users are advised to use the model output files and other visualization utilities to plot their results.
 
