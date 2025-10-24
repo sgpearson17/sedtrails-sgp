@@ -1,6 +1,6 @@
 # Simulation Outputs
 
 :::warning
-Explaint the output file and its content
+Explain the output file and its content
 :::
 
