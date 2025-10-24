@@ -1,10 +1,11 @@
 # Simulation Output
 
+At the end of the simulation, an output file ``sedtrails_results.nc`` is written in [netcdf](https://www.unidata.ucar.edu/software/netcdf) (``*.nc``) format. The files have generally been written in the spirit of [CF conventions for multidimensional arrays of trajectories](https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#_multidimensional_array_representation_of_trajectories).
+
 :::warning
-Explain the output file and its content
+Some metadata is still missing from the output files!
 :::
 
-At the end of the simulation, an output file ``sedtrails_results.nc`` is written in [netcdf](https://www.unidata.ucar.edu/software/netcdf) (``*.nc``) format. The files have generally been written in the spirit of [CF conventions for multidimensional arrays of trajectories](https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#_multidimensional_array_representation_of_trajectories).
 
 ## Output File Inspection
 
@@ -144,3 +145,19 @@ These are the main output variables that will be of primary interest for users w
     - The name of each flowfield specified in the config file (e.g., ``bed_load_velocity`` or ``suspended_velocity``)
 
  For example, we can see from this that the ``covered_distance`` variable is stored as a ``float64`` number for 15 ``'n_particles'`` transported by 2 ``'n_flowfields'`` at 880 ``'n_timesteps'``.
+
+ ## Output Visualization
+
+By entering the command ``sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc``, you can plot the trajectories of your particles and information about their distance travelled plus differences in population:
+
+![sedtrails trajectory example](../_static\img\example-trajectory-plots.png)
+
+The following commands can be used to save and customize output:
+- ``--file`` or ``-f``: Path to the SedTRAILS netCDF file to visualize. By default, it expects a ``sedtrails_results.nc`` file in the current directory. [default: ``sedtrails_results.nc``]
+- ``--save`` or ``-s``: Save plot as a PNG file. Creates a ``particle_trajectories.png`` file 
+- ``--output-dir`` or ``-o``:Directory to save plot if ``--save`` is used. Default is the current directory. [default: ``.``] 
+- ``--help`` or ``-h``: Show this message and exit.   
+
+:::warning
+More advanced visualization functions will be added in future releases, but for now we encourage users to get creative with their own visualizations directly from the output data.
+:::
