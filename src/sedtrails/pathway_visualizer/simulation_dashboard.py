@@ -225,12 +225,12 @@ class SimulationDashboard:
 
     def _set_titles(self) -> None:
         """Set plot titles."""
-        self.axes['flowfield'].set_title('Flow Field (Latest)', fontsize=12, fontweight='bold')
-        self.axes['bathymetry'].set_title('Bathymetry + Particles', fontsize=12, fontweight='bold')
-        self.axes['longshore_vel'].set_title('Longshore Velocity', fontsize=12, fontweight='bold')
-        self.axes['crossshore_vel'].set_title('Cross-shore Velocity', fontsize=12, fontweight='bold')
-        self.axes['distance'].set_title('Average Distance per Timestep', fontsize=12, fontweight='bold')
-        self.axes['burial_depth'].set_title('Burial Depth', fontsize=12, fontweight='bold')
+        self.axes['flowfield'].set_title('(a) Flow Field (Latest)', fontsize=12, fontweight='bold')
+        self.axes['bathymetry'].set_title('(b) Bathymetry + Particles', fontsize=12, fontweight='bold')
+        self.axes['longshore_vel'].set_title('(c) Longshore Velocity', fontsize=12, fontweight='bold')
+        self.axes['crossshore_vel'].set_title('(d) Cross-shore Velocity', fontsize=12, fontweight='bold')
+        self.axes['distance'].set_title('(e) Average Distance per Timestep', fontsize=12, fontweight='bold')
+        self.axes['burial_depth'].set_title('(f) Burial Depth', fontsize=12, fontweight='bold')
 
     def update(
         self,
