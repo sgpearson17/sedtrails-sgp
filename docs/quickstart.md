@@ -2,7 +2,7 @@
 
 
 :::warning
-SedTRAILS is currently on its **beta** version. Users are welcome to test it, but compatibility might break in future versions.  Its use in research requires discration. We aim for an official release by February 2026.
+SedTRAILS is currently on its **beta** version. Users are welcome to test it, but compatibility might break in future versions.  Its use in research requires discretion. We aim for an official release by February 2026.
 :::
 
 **Requirements:**
