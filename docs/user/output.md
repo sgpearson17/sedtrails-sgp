@@ -88,7 +88,7 @@ Dimensions are the fundamental "units" of netcdf files and can be thought of as 
     - The total number of particles in the simulation (across all populations)
  - ``n_timesteps: 880`` 
     - The total number of timesteps simulated.
- - ``n_flowfields: 24`` 
+ - ``n_flowfields: 2`` 
     - The number of different flow fields simulated (e.g., bedload and suspended load)
 
 ### Coordinates:
