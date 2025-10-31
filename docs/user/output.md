@@ -1,4 +1,4 @@
-# Simulation Output
+# Output
 
 At the end of the simulation, an output file ``sedtrails_results.nc`` is written in [netcdf](https://www.unidata.ucar.edu/software/netcdf) (``*.nc``) format. The files have generally been written in the spirit of [CF conventions for multidimensional arrays of trajectories](https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#_multidimensional_array_representation_of_trajectories).
 
