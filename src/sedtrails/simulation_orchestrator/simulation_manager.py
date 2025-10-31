@@ -389,7 +389,7 @@ class Simulation:
                         flow_field = retriever.get_flow_field(timer.current, flow_field_name)
 
                         # Update particle position
-                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep, transport_probability_method=population.population_config.population_config['transport_probability'])
 
                 # Collect data from all populations for this timestep using DataManager
                 self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
