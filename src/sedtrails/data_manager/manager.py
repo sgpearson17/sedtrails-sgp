@@ -25,6 +25,7 @@ class DataManager:
 
     Example Usage for SedTrails Output
     ----------------------------------
+    
     # Initialize DataManager
     data_manager = DataManager("output/")
 
@@ -54,6 +55,7 @@ class DataManager:
 
         Attributes
         ----------
+        
         output_dir : str
             Path to the output directory where data will be stored.
         data_buffer : SimulationDataBuffer
@@ -81,6 +83,7 @@ class DataManager:
 
         This is called automatically by finalize() when cleanup_chunks=True.
         """
+        
         import os
         from pathlib import Path
 
@@ -108,6 +111,7 @@ class DataManager:
         """
         Set or update the mesh information for output.
         """
+        
         self._mesh_info = (node_x, node_y, face_node_connectivity, fill_value)
 
     def add_data(self, particle_id, time, x, y):
@@ -117,6 +121,7 @@ class DataManager:
 
         Parameters
         ----------
+        
         particle_id : int
             Unique identifier for the particle.
         time : float or int
@@ -126,6 +131,7 @@ class DataManager:
         y : float
             Y-coordinate of the particle.
         """
+        
         self.data_buffer.add(particle_id, time, x, y)
         if self._mesh_info is not None:
             node_x, node_y, face_node_connectivity, fill_value = self._mesh_info
@@ -142,9 +148,11 @@ class DataManager:
 
         Parameters
         ----------
+        
         filename : str or None
             Name of the output NetCDF file. If None, uses a default naming scheme.
         """
+        
         if self._mesh_info is None:
             raise ValueError('Mesh information must be set before writing data.')
         node_x, node_y, face_node_connectivity, fill_value = self._mesh_info
@@ -159,9 +167,11 @@ class DataManager:
 
         Parameters
         ----------
+        
         merged_filename : str
             Name of the merged output file.
         """
+        
         SimulationDataBuffer.merge_output_files(self.writer.output_dir, merged_filename)
 
     def dump(self, merge=True, merged_filename='final_output.nc', cleanup_chunks=True):
@@ -174,6 +184,7 @@ class DataManager:
 
         Parameters
         ----------
+        
         merge : bool, default=True
             Whether to merge all chunk files into a single output file.
         merged_filename : str, default="final_output.nc"
@@ -184,11 +195,13 @@ class DataManager:
 
         Returns
         -------
+        
         str
             Path to the final output file (merged file if merge=True, otherwise the last chunk file).
 
         Examples
         --------
+        
         >>> dm = DataManager("output/")
         >>> dm.set_mesh(node_x, node_y, face_connectivity)
         >>> # ... add simulation data ...
@@ -200,6 +213,7 @@ class DataManager:
         >>> # Or just write without merging
         >>> final_file = dm.dump(merge=False)
         """
+        
         if self._mesh_info is None:
             raise ValueError('Mesh information must be set before finalizing data.')
 
@@ -232,6 +246,7 @@ class DataManager:
 
         Parameters
         ----------
+        
         dataset : xr.Dataset
             The xarray dataset to populate
         populations : list
@@ -241,4 +256,5 @@ class DataManager:
         current_time : float
             Current simulation time
         """
+        
         collect_timestep_data(dataset, populations, timestep, current_time)

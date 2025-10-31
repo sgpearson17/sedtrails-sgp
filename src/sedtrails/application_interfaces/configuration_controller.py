@@ -27,6 +27,7 @@ class Controller(ABC):
         """
         Reads the configuration file and applies default values.
         """
+        
         pass
 
     @abstractmethod
@@ -34,13 +35,13 @@ class Controller(ABC):
         """
         Returns the current configuration.
         """
+        
         pass
 
     @abstractmethod
     def get(self, keys: str, default=None) -> Any:
         """
         Retrieves a value from the configuration data using a dot-separated key.
-
         """
 
         pass
@@ -52,6 +53,7 @@ class ConfigurationController(Controller):
 
     Attributes
     ----------
+    
     config : str
         The path to the configuration file.
     config_data : dict
@@ -63,9 +65,11 @@ class ConfigurationController(Controller):
         Initializes the ConfigurationController with a configuration file.
         Parameters
         ----------
+        
         config_file : str
             The path to the configuration file to read.
         """
+        
         self.config: str = config_file
         self.config_data = {}
 
@@ -75,6 +79,7 @@ class ConfigurationController(Controller):
 
         Parameters
         ----------
+        
         config_file : str
             The path to the configuration file to read.
         """
@@ -94,9 +99,11 @@ class ConfigurationController(Controller):
 
         Returns
         -------
+        
         dict
             The current configuration.
         """
+        
         if not self.config_data:
             self.load_config(self.config)
 
@@ -108,6 +115,7 @@ class ConfigurationController(Controller):
 
         Parameters
         ----------
+        
         key : str
             The dot-separated key to retrieve from the configuration.
         default : any, optional
@@ -115,16 +123,17 @@ class ConfigurationController(Controller):
 
         Returns
         -------
+        
         any
             The value associated with the key or the default value. None if the key is not found.
 
         Example
         --------
+        
         >>> controller = ConfigurationController()
         >>> controller.read_config('path/to/config.yaml')
         >>> value = controller.get('some.nested.key')
         >>> print(value)  # Outputs the value for 'some.nested.key'
-
         """
 
         from copy import deepcopy  # Lazy import

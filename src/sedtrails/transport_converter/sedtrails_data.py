@@ -17,6 +17,7 @@ class SedtrailsData:
 
     Attributes:
     -----------
+    
     times: np.ndarray
         Array of time values in seconds since reference_date
     reference_date: np.datetime64
@@ -92,6 +93,7 @@ class SedtrailsData:
 
     def __post_init__(self):
         """Initialize container for dynamic physics fields and validate metadata."""
+        
         # Validate metadata field
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
@@ -101,6 +103,7 @@ class SedtrailsData:
 
     def _calculate_timestep(self):
         """Calculate median timestep and add to metadata."""
+        
         if len(self.times) < 2:
             # Cannot calculate timestep with fewer than 2 time points
             timestep = None
@@ -133,6 +136,7 @@ class SedtrailsData:
         - min_resolution: minimum distance between any two grid points
         - outer_envelope: convex hull vertices of the grid points
         """
+        
         # Stack coordinates for distance calculations
         coords = np.column_stack((self.x.flatten(), self.y.flatten()))
 
@@ -150,6 +154,7 @@ class SedtrailsData:
 
     def _validate_metadata(self):
         """Validate that metadata field exists and is the correct type."""
+        
         # Only check that metadata is the right type
         if not isinstance(self.metadata, SedtrailsMetadata):
             raise TypeError(f'metadata must be an instance of SedtrailsMetadata, got {type(self.metadata).__name__}')
@@ -160,24 +165,29 @@ class SedtrailsData:
 
         Parameters
         ----------
+        
         name : str
             Name of the physics field
         data : np.ndarray or dict
             Physics data (scalar array or dict with 'x', 'y', 'magnitude' for vectors)
         """
+        
         self._physics_fields[name] = data
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
         """Check if a specific physics field exists."""
+        
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
         """Get list of available physics field names."""
+        
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
         """Check if any physics fields have been added."""
+        
         return len(self._physics_fields) > 0
 
     # ------------------------------------------------------------------
@@ -189,14 +199,17 @@ class SedtrailsData:
 
         Parameters
         ----------
+        
         time_index : int
             Time index to extract
 
         Returns
         -------
+        
         Dict
             Dictionary containing all data for the specified time index
         """
+        
         if time_index < 0 or time_index >= len(self.times):
             raise IndexError(f'Time index {time_index} out of bounds (0-{len(self.times) - 1})')
 
