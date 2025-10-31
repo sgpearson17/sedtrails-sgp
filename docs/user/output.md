@@ -116,7 +116,7 @@ These are the main output variables that will be of primary interest for users w
  - ``population_id: ('n_particles',) int64 (15,)``
     - The ID indicating which population each particle belongs to (e.g., ``[0 0 0 0 0 0 0 0 0 0 1 1 1 1 1]`` here)
  - ``time: ('n_particles', 'n_timesteps') float64 (15, 880)``
-    - The time for each particle at each timestep (e.g., ``1.47448560e+09`` which is )
+    - The time for each particle at each timestep (e.g., ``1.47448560e+09``, which is the number of seconds since 1970-01-01 00:00:00 UTC, i.e., the Unix epoch)
  - ``x: ('n_particles', 'n_timesteps') float64 (15, 880)``
     - The x-coordinate of each particle at each timestep.
  - ``y: ('n_particles', 'n_timesteps') float64 (15, 880)``
