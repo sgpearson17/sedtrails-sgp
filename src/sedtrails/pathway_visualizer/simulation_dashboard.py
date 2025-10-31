@@ -242,7 +242,7 @@ class SimulationDashboard:
         self.axes['bathymetry'].set_title('(b) Bathymetry + Particles', fontsize=12, fontweight='bold')
         self.axes['longshore_vel'].set_title('(c) Longshore Velocity', fontsize=12, fontweight='bold')
         self.axes['crossshore_vel'].set_title('(d) Cross-shore Velocity', fontsize=12, fontweight='bold')
-        self.axes['distance'].set_title('(e) Average Distance per Timestep', fontsize=12, fontweight='bold')
+        self.axes['distance'].set_title('(e) Average Distance per Output Timestep', fontsize=12, fontweight='bold')
         self.axes['burial_depth'].set_title('(f) Burial Depth', fontsize=12, fontweight='bold')
 
     def update(
@@ -306,7 +306,7 @@ class SimulationDashboard:
         self.data_store['crossshore_avg'].append(np.mean(np.abs(particle_v)))
         self.data_store['crossshore_max'].append(np.max(np.abs(particle_v)))
 
-        # Calculate average distance covered per timestep
+        # Calculate average distance covered per output timestep
         if len(self.data_store['prev_positions']) > 0:
             prev_x, prev_y = self.data_store['prev_positions'][-1]
             distances = np.sqrt((particles['x'] - prev_x) ** 2 + (particles['y'] - prev_y) ** 2)
