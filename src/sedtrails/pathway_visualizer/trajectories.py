@@ -62,9 +62,9 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     pop_colors = plt.cm.Set1(np.linspace(0, 1, n_populations))
 
     # Plot 1: All trajectories on spatial map (individual particle colors)
-    ax1.set_title(f'Particle Trajectories - Individual Colors (n={n_particles})')
-    ax1.set_xlabel('X (m)')
-    ax1.set_ylabel('Y (m)')
+    ax1.set_title(f'(a) Particle Trajectories - Individual Colors (n={n_particles})')
+    ax1.set_xlabel('X [m]')
+    ax1.set_ylabel('Y [m]')
 
     # Plot each particle trajectory
     try:
@@ -85,9 +85,9 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
         pop_colors = [base_colors[i % len(base_colors)] for i in range(n_populations)]
 
     # Plot 1: All trajectories on spatial map (individual particle colors)
-    ax1.set_title(f'Particle Trajectories - Individual Colors (n={n_particles})')
-    ax1.set_xlabel('X (m)')
-    ax1.set_ylabel('Y (m)')
+    ax1.set_title(f'(a) Particle Trajectories - Individual Colors (n={n_particles})')
+    ax1.set_xlabel('X [m]')
+    ax1.set_ylabel('Y [m]')
 
     # Plot each particle trajectory
     try:
@@ -131,9 +131,9 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     ax1.set_aspect('equal', adjustable='box')
 
     # Plot 2: Time series of distances from initial position
-    ax2.set_title('Distance from Initial Position vs Time')
-    ax2.set_xlabel('Time (hours)')
-    ax2.set_ylabel('Distance from Initial Position (m)')
+    ax2.set_title('(b) Distance from Initial Position vs Time')
+    ax2.set_xlabel('Time [hours]')
+    ax2.set_ylabel('Distance from Initial Position [m]')
 
     # Find the minimum time across all particles to use as reference
     min_time = np.nanmin(time_data)
@@ -160,9 +160,9 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     ax2.grid(True, alpha=0.3)
 
     # Plot 3: Trajectories colored by population
-    ax3.set_title('Particle Trajectories - Colored by Population')
-    ax3.set_xlabel('X (m)')
-    ax3.set_ylabel('Y (m)')
+    ax3.set_title('(c) Particle Trajectories - Colored by Population')
+    ax3.set_xlabel('X [m]')
+    ax3.set_ylabel('Y [m]')
 
     # Plot trajectories grouped by population
     for pop_idx in range(n_populations):
@@ -216,9 +216,9 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     ax3.set_aspect('equal', adjustable='box')
 
     # Plot 4: Distance from initial position by population with statistics
-    ax4.set_title('Distance from Initial Position by Population')
-    ax4.set_xlabel('Time (hours)')
-    ax4.set_ylabel('Distance from Initial Position (m)')
+    ax4.set_title('(d) Distance from Initial Position by Population')
+    ax4.set_xlabel('Time [hours]')
+    ax4.set_ylabel('Distance from Initial Position [m]')
 
     # Create containers for population statistics
     population_stats = {}
