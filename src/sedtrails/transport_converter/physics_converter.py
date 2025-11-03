@@ -109,13 +109,23 @@ class PhysicsConverter:
 
     def _calculate_grain_properties(self) -> None:
         """Calculate time-independent grain properties using physics library."""
-        self._grain_properties = physics_lib.compute_grain_properties(
-            self.config.grain_diameter,
-            self.config.gravity,
-            self.config.particle_density,
-            self.config.water_density,
-            self.config.kinematic_viscosity,
-        )
+        if self.config.tracer_method == 'soulsby':
+            # Soulsby method uses tracer grain size
+            self._grain_properties = physics_lib.compute_grain_properties(
+                self.config.tracer_grain_size,
+                self.config.gravity,
+                self.config.particle_density,
+                self.config.water_density,
+                self.config.kinematic_viscosity,
+            )
+        else:
+            self._grain_properties = physics_lib.compute_grain_properties(
+                self.config.grain_diameter,
+                self.config.gravity,
+                self.config.particle_density,
+                self.config.water_density,
+                self.config.kinematic_viscosity,
+            )
 
     @property
     def physics_plugin(self, tracer_method: Optional[str] = None):

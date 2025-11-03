@@ -457,8 +457,16 @@ class ParticlePopulation:
             np.column_stack((self.particles['x'], self.particles['y']))
         )
 
-        # Compute whether particles are exposed (or buried)
-        self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+        # # Compute whether particles are exposed (or buried)
+        # self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+                
+        # New conditional logic based on transport_probability_method
+        if self.population_config.population_config['transport_probability'] == 'no_probability':
+            # For no_probability method, all particles are considered exposed (always mobile)
+            self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
+        else:
+            # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
+            self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
 
         # Compute whether particles are released (or retained)
         # FIXME: Temporary implementation
@@ -477,7 +485,7 @@ class ParticlePopulation:
             & self.particles['is_picked_up']
         )
 
-    def update_position(self, flow_field: Dict, current_timestep: float) -> None:
+    def update_position(self, flow_field: Dict, current_timestep: float, transport_probability_method: str = None) -> None:
         """
         Update the position of particles in the population based on the flow field.
 

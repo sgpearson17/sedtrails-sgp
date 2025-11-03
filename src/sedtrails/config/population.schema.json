@@ -117,15 +117,47 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "f": {
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of flow field names to use for Soulsby method (e.g., ['grain_velocity', 'soulsby_a', 'soulsby_b'])"
+                },
+                "tracer_grain_size": {
+                    "type": "number",
+                    "default": 0.0002,
+                    "description": "Grain size of tracer sediment [m]"
+                },
+                "background_grain_size": {
+                    "type": "number",
+                    "default": 0.0002,
+                    "description": "Grain size of background sediment [m]"
+                },
+                "soulsby_b_e": {
+                    "type": "number",
+                    "default": 1.7e-07,
+                    "description": "Maximum free-to-trapped transition probability per second [1/s]"
+                },
+                "soulsby_theta_s": {
                     "type": "number",
                     "default": 0.1,
-                    "description": "f parameter for Soulsby method"
+                    "description": "Transition scale value [-]"
                 },
-                "r": {
+                "soulsby_gamma_e": {
                     "type": "number",
-                    "default": 0.8,
-                    "description": "r parameter for Soulsby method"
+                    "default": 0.1,
+                    "description": "Long-term equilibrium proportion of free particles [-]"
+                },
+                "soulsby_mu_d": {
+                    "type": "number",
+                    "default": 0.5,
+                    "description": "Dynamic friction coefficient (0.5-1.0) [-]"
+                },
+                "soulsby_freedom_factor": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "Initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
                 }
             },
             "description": "Soulsby method for particle tracking"

@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 import xarray as xr
 
 
-def read_netcdf(file_path):
+def read_netcdf(results_file_path):
     """Read a SedTRAILS NetCDF file and return the xarray Dataset.
 
     Parameters
     ----------
-    file_path : str or pathlib.Path
+    results_file_path : str or pathlib.Path
         Path to the SedTRAILS NetCDF file.
 
     Returns
@@ -22,10 +22,10 @@ def read_netcdf(file_path):
         The xarray Dataset containing the SedTRAILS results.
 
     """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"NetCDF file '{file_path}' not found.")
-    ds = xr.open_dataset(file_path)
+    results_file_path = Path(results_file_path)
+    if not results_file_path.exists():
+        raise FileNotFoundError(f"NetCDF file '{results_file_path}' not found.")
+    ds = xr.open_dataset(results_file_path)
     return ds
 
 
@@ -311,8 +311,10 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
 
     # Save plot if requested
     if save_plot:
-        if output_dir is None:
-            output_dir = Path('results/')
+        if output_dir is None or output_dir == '.':
+            # Extract the source file path from the dataset encoding
+            source_file = ds.encoding.get('source', '.')
+            output_dir = Path(source_file).parent
         else:
             output_dir = Path(output_dir)
 

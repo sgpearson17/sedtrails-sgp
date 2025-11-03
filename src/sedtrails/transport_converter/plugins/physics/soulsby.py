@@ -45,7 +45,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError('Missing required shear stress values in SedtrailsData.')
 
         # Extract particle properties
-        grain_size = self.config.grain_diameter
+        grain_size = self.config.tracer_grain_size
+        if grain_size is None:
+            raise ValueError("Missing required 'tracer_grain_size' in configuration.")
         background_grain_size = self.config.background_grain_size
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         if dimensionless_grain_size is None:
@@ -102,7 +104,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Compute additional particle properties
         nd_background_grain_diameter = (g * (rho_s / rho_w - 1) / (kinematic_viscosity**2)) ** (
             1 / 3
-        ) * background_grain_size  # nd = non-dimentional
+        ) * background_grain_size  # nd = non-dimensional
         grain_size_ratio = grain_size / background_grain_size
         rouse_number = settling_velocity / (von_karman * max_shear_velocity)
 
@@ -127,18 +129,21 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Compute the transition probability b [-] (Equations 3 and 4)
         soulsby_b = np.zeros(theta_max.shape)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if background_theta_max[i][j] > background_theta_cr:
-                    soulsby_b[i][j] = soulsby_b_e * (
-                        1 - np.exp(-(background_theta_max[i][j] - background_theta_cr) / soulsby_theta_s)
-                    )
-                else:
-                    soulsby_b[i][j] = 0
-
+        if transport_probability_method != 'no_probability':
+            for i in range(0, theta_max.shape[0]):
+                for j in range(0, theta_max.shape[1]):
+                    if background_theta_max[i][j] > background_theta_cr:
+                        soulsby_b[i][j] = soulsby_b_e * (
+                            1 - np.exp(-(background_theta_max[i][j] - background_theta_cr) / soulsby_theta_s)
+                        )
+                    else:
+                        soulsby_b[i][j] = 0
+ 
         # Compute the transition probability a [-] (Equation 5)
         soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
 
+
+        # VECTORIZE THESE LOOPS!
         # Compute probability/proportion of time a particle is moving P [-] (Equation 6)
         soulsby_P = np.zeros(theta_max.shape)
         for i in range(0, theta_max.shape[0]):
@@ -156,6 +161,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         Rs = np.zeros(bed_load_velocity.shape)  # Suspended load velocity reduction factor
         soulsby_R = np.zeros(bed_load_velocity.shape)  # Final velocity reduction factor
 
+        # VECTORIZE THESE LOOPS!
         # Compute Rb (Equation 8)
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):
@@ -167,6 +173,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     else:
                         Rb[i][j] = 0
 
+        # VECTORIZE THESE LOOPS!
         # Compute Rs (Equation 11)
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):
@@ -183,7 +190,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                         Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
                     elif np.isnan(Rs[i][j]):
                         Rs[i][j] = 0
-
+        
+        # VECTORIZE THESE LOOPS!
         # Compute R
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):

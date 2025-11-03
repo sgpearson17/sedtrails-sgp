@@ -13,28 +13,23 @@ time:
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
-    - name: populaton_1
+    - name: FineSand
       particle_type: sand
       characteristics:
-        grain_size: 0.00025 
+        grain_size: 0.0001 
         density: 2650.0  
       tracer_methods:
-        #vanwesten:
-        #  flow_field_name: 
-        #    - bed_load_velocity
-        #    - suspended_velocity
-          soulsby:
-            flow_field_name:
-             - grain_velocity
-             # - soulsby_a
-             # - soulsby_b   
-            background_grain_size: 0.0002
-            soulsby_b_e: 1.7e-07
-            soulsby_theta_s: 0.1
-            soulsby_gamma_e: 0.1
-            soulsby_mu_d: 0.5
-            soulsby_freedom_factor: 1
-      transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
+        soulsby:
+          flow_field_name:
+            - grain_velocity
+          tracer_grain_size: 0.0001
+          background_grain_size: 0.0001
+          soulsby_b_e: 1.7e-07
+          soulsby_theta_s: 0.1
+          soulsby_gamma_e: 0.1
+          soulsby_mu_d: 0.5
+          soulsby_freedom_factor: 1
+      transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
         burial_depth: 
           constant: 0
@@ -42,31 +37,26 @@ particles:
         quantity: 1
         strategy: 
           random:
-            bbox: "39400,16800 40600,17800"
+            bbox: "39500,16500 40500,17500"
             seed: 42
             nlocations: 10
-    - name: population_2
+    - name: MediumSand
       particle_type: sand
       characteristics:
-        grain_size: 0.00025 
+        grain_size: 0.0005
         density: 2650.0  
       tracer_methods:
-        #vanwesten:
-        #  flow_field_name: 
-        #    - bed_load_velocity
-        #    - suspended_velocity
           soulsby:
             flow_field_name:
              - grain_velocity
-             # - soulsby_a
-             # - soulsby_b        
-            background_grain_size: 0.0002
+            tracer_grain_size: 0.0005
+            background_grain_size: 0.0005
             soulsby_b_e: 1.7e-07
             soulsby_theta_s: 0.1
             soulsby_gamma_e: 0.1
             soulsby_mu_d: 0.5
             soulsby_freedom_factor: 1
-      transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
+      transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
         burial_depth: 
           constant: 0
@@ -74,11 +64,11 @@ particles:
         quantity: 1
         strategy: 
           random:
-            bbox: "39400,16800 40600,17800"
+            bbox: "39500,16500 40500,17500"
             seed: 42
-            nlocations: 5
+            nlocations: 10
 outputs:
-  directory: ./results
+  #directory: .\results
   store_tracks: true
   save_interval: 1H
 visualization:
