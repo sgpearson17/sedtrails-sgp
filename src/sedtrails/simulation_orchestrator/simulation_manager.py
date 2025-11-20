@@ -318,16 +318,22 @@ class Simulation:
             },
         )
 
+        #TODO: right now this needs to be modified everytime a new tracer method is added. 
+        # make this more generic or move it somewhere easier to change
         # Determine flow field names from configuration
         flow_field_names = []
         for population in populations_config:
             if 'tracer_methods' in population and (
-                'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
+                'vanwesten' in population['tracer_methods'] 
+                or 'soulsby' in population['tracer_methods'] 
+                or 'passive' in population['tracer_methods']
             ):
                 if 'vanwesten' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
                 elif 'soulsby' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
+                elif 'passive' in population['tracer_methods']:
+                    flow_field_names = population['tracer_methods']['passive']['flow_field_name']
                 break  # Use the first population's flow fields for now
 
         # Create SedTrails dataset using DataManager's writer (composition)
@@ -389,14 +395,21 @@ class Simulation:
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
                         # TODO: Consider moving van westen specific fields to the plugin itself
-                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
-                        bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                        
                         if self.physics_converter.config.tracer_method == 'vanwesten':
                             transport_prob = retriever.get_scalar_field(
                                 timer.current, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
-                        else:  # soulsby
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                            bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                        elif self.physics_converter.config.tracer_method == 'soulsby':  # soulsby
                             transport_prob = np.ones_like(bed_level)
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                            bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                        elif self.physics_converter.config.tracer_method == 'passive':  # passive tracer
+                            bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                            transport_prob = np.ones_like(bed_level)
+                            mixing_depth = np.zeros_like(bed_level)
 
                         # Update information at particle positions
                         population.update_information(

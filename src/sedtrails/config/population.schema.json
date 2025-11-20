@@ -94,6 +94,20 @@
                 "grain_size"
             ]
         },
+        "passive_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of flow field names for passive method used in particle computation"
+                }
+            },
+            "description": "van Westen method for particle tracking"
+        },
         "van_westen_method": {
             "type": "object",
             "additionalProperties": false,
@@ -103,7 +117,7 @@
                     "items": {
                         "type": "string"
                     },
-                    "description": "flow field name for van Westen method used in particle computation"
+                    "description": "List of flow field names for van Westen method used in particle computation"
                 },
                 "beta": {
                     "type": "number",
@@ -189,11 +203,11 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "passive": {
+                    "$ref": "#/$defs/passive_method"
+                },
                 "vanwesten": {
                     "$ref": "#/$defs/van_westen_method"
-                },
-                "vanwesten_bl": {
-                    "$ref": "#/$defs/van_westen_bl_method"
                 },
                 "soulsby": {
                     "$ref": "#/$defs/soulsby_method"
