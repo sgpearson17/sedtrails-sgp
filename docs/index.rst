@@ -73,6 +73,7 @@ Features
    developer/plugins
    developer/adding-unit-tests
    developer/architecture
+   developer/virtual-environment-development
 
 .. toctree::
    :maxdepth: 1

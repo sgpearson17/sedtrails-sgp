@@ -291,7 +291,18 @@ The `characteristics` object varies by `particle_type`:
 
 At least one tracer method must be specified. Multiple methods can be used simultaneously.
 
+#### Passive Method
+
+Most basic tracer of passive particles that move with the flow and do not follow additional rules.
+
+| Parameter | Type   | Required | Default | Description                          |
+| --------- | ------ | -------- | ------- | ------------------------------------ |
+| `-`       | number | Optional | `-`   | - |
+
+
 #### Van Westen Method
+
+Sand tracing method as per van Westen et al. (2025).
 
 | Parameter         | Type   | Required | Default | Description                                                                           |
 | ----------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------- |
@@ -300,10 +311,18 @@ At least one tracer method must be specified. Multiple methods can be used simul
 
 #### Soulsby Method
 
-| Parameter | Type   | Required | Default | Description                          |
-| --------- | ------ | -------- | ------- | ------------------------------------ |
-| `f`       | number | Optional | `0.1`   | f parameter for Soulsby formulation. |
-| `r`       | number | Optional | `0.8`   | r parameter for Soulsby formulation. |
+Sand tracing method as per Soulsby et al. (2011).
+
+| Parameter                 | Type   | Required | Default     | Description                                                                |
+| ------------------------- | ------ | -------- | ----------- | -------------------------------------------------------------------------- |
+| `flow_field_name` | array  | Optional | -       | List of flow field names to use for Soulsby method (e.g., [`'grain_velocity', 'soulsby_a', 'soulsby_b'`]). |
+| `tracer_grain_size`       | number | Optional | `0.0002`    | Grain size of tracer sediment [m].                                         |
+| `background_grain_size`   | number | Optional | `0.0002`    | Grain size of background sediment [m].                                     |
+| `soulsby_b_e`             | number | Optional | `1.7e-07`   | Maximum free-to-trapped transition probability per second [1/s].           |
+| `soulsby_theta_s`         | number | Optional | `0.1`       | Transition scale value [-].                                                |
+| `soulsby_gamma_e`         | number | Optional | `0.1`       | Long-term equilibrium proportion of free particles [-].                    |
+| `soulsby_mu_d`            | number | Optional | `0.5`       | Dynamic friction coefficient (0.5-1.0) [-].                               |
+| `soulsby_freedom_factor`  | number | Optional | `1`         | Initial state of Freedom Factor (0 = trapped, 1 = free) [-].              |
 
 (particle-seeding)=
 ### Particle Seeding

@@ -67,14 +67,14 @@ To register your plugin:
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "parmeter1": {
+                "parameter1": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
                     "description": "the name of a parameter for my plugin"
                 },
-                "paramter2": {
+                "parameter2": {
                     "type": "number",
                     "default": 0.2,
                     "description": "the name of another parameter"
@@ -159,6 +159,9 @@ sim = Simulation('my-config.yaml') # configuration file using your plugin
 sim.validate_config()  # this should pass without errors
 
 ```
+
+### Troubleshooting
+Is your validation still failing? You might be using the installed SedTRAILS package instead of the new version of the code that you are working on. Consider testing in a [virtual environment](./developer/virtual-environment-development.md) to see if this solves your problem.
 
 :::important
 Validation of the configuration file will fail if the plugin is not correctly registered in the JSON schema, but not if the plugin itself has errors. Make sure to test your plugin thoroughly.
