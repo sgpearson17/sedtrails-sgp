@@ -6,7 +6,7 @@ from sedtrails.transport_converter import SedtrailsData
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 
 
-class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
+class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the PhysicsPlugin
     """
     Plugin for Soulsby et al. (2011) sediment transport physics calculations.
     This plugin implements the physics calculations as described in Soulsby et al. (2011).
@@ -215,9 +215,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         print('Adding physics fields to SedtrailsData...')
 
-        # Sediment velocities (vector fields)
+        # Sediment velocities (vector fields) 
         sedtrails_data.add_physics_field(
-            'grain_velocity',
+            'grain_velocity', # rename this particle velocity in all calculations to be more general?
             {'x': grain_velocity_x, 'y': grain_velocity_y, 'magnitude': grain_velocity_magnitude},
         )
         # Soulsby et al. (2011) parameters (scalar fields)
