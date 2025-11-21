@@ -138,11 +138,6 @@
                     },
                     "description": "List of flow field names to use for Soulsby method (e.g., ['grain_velocity', 'soulsby_a', 'soulsby_b'])"
                 },
-                "tracer_grain_size": {
-                    "type": "number",
-                    "default": 0.0002,
-                    "description": "Grain size of tracer sediment [m]"
-                },
                 "background_grain_size": {
                     "type": "number",
                     "default": 0.0002,
