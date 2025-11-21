@@ -45,8 +45,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
             raise ValueError('Missing required shear stress values in SedtrailsData.')
 
         # Extract particle properties
-        grain_size = self.config.tracer_grain_size
-        background_grain_size = self.config.background_grain_size
+        grain_size = self.config.grain_diameter
+        background_grain_size = self.config.grain_diameter # replace with hiding/exposure flag # self.config.background_grain_size
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         critical_shields = grain_properties.get('critical_shields')
         settling_velocity = grain_properties.get('settling_velocity')
