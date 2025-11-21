@@ -176,7 +176,7 @@ class Simulation:
             water_density=self._controller.get('physics.constants.rho_w', 1027.0),
             particle_density=self._controller.get('physics.constants.rho_s', 2650.0),
             porosity=self._controller.get('physics.constants.porosity', 0.4),
-            grain_diameter=self._controller.get('physics.constants.grain_diameter', 2.5e-4),
+            grain_diameter=self._controller.get('physics.constants.grain_diameter', 2.40e-4),
             morfac=self._controller.get('physics.constants.morphology_factor', 1.0),
             # trapped_exposed_method=self._controller.get('physics.trapped_exposed_method', 'reduced_velocity'), # other option; 'probabilistic_exposure'
         )
@@ -403,9 +403,9 @@ class Simulation:
                             mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
                             bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
                         elif self.physics_converter.config.tracer_method == 'soulsby':  # soulsby
-                            transport_prob = np.ones_like(bed_level)
-                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
                             bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                            mixing_depth = np.zeros_like(bed_level)
+                            transport_prob = np.ones_like(bed_level)
                         elif self.physics_converter.config.tracer_method == 'passive':  # passive tracer
                             bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
                             transport_prob = np.ones_like(bed_level)
