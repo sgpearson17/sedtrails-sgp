@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 # Import physics library
 from sedtrails.transport_converter import physics_lib
 
-# Physical constants
+# Default physical constants
 GRAVITY = 9.81  # m/s^2
 VON_KARMAN_CONSTANT = 0.40  # [-]
 KINEMATIC_VISCOSITY = 1.36e-6  # m^2/s (10°C, 35 ppt)
@@ -19,7 +19,7 @@ WATER_DENSITY = 1027.0  # kg/m^3 (10°C, 35 ppt)
 PARTICLE_DENSITY = 2650.0  # kg/m^3 (quartz)
 POROSITY = 0.4  # [-]
 # Sediment properties
-GRAIN_DIAMETER = 2.5e-4  # m (250 μm)
+GRAIN_DIAMETER = 2.51e-4  # m (251 μm, fine sand)
 # Morphological acceleration factor
 MORFAC = 1.0
 
@@ -112,7 +112,7 @@ class PhysicsConverter:
         if self.config.tracer_method == 'soulsby':
             # Soulsby method uses tracer grain size
             self._grain_properties = physics_lib.compute_grain_properties(
-                self.config.tracer_grain_size,
+                self.config.grain_diameter,
                 self.config.gravity,
                 self.config.particle_density,
                 self.config.water_density,
