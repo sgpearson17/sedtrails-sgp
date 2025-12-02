@@ -287,7 +287,9 @@ def plot_trajectories_cmd(
 
     try:
         plot_trajectories(results_file, save=save_fig, output_dir=output_dir)
-        if not save_fig:
+        if save_fig:
+            typer.echo(f"Plot saved to '{output_dir}/particle_trajectories.png'")
+        else:
             typer.echo('Plot displayed successfully')
     except Exception as e:
         typer.echo(f'Error plotting trajectories: {e}')

@@ -241,7 +241,7 @@
                             "description": "constant burial depth in meters."
                         }
                     },
-                    "Oneof": [
+                    "oneOf": [
                         {
                             "required": [
                                 "random"
@@ -477,7 +477,37 @@
                                     }
                                 ]
                             }
-                        }
+                        },
+                        "file_points": {
+                            "type": "object",
+							"additionalProperties": false,
+                            "properties": {
+								"path":       { "type": "string", "minLength": 1, "description": "Path to text/CSV/TSV with x,y columns" },
+								"x_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for x" },
+								"y_col":      { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ], "description": "Column index or name for y" },
+								"has_header": { "type": "boolean", "default": true },
+								"deduplicate":{ "type": "boolean", "default": true },
+								"dropna":     { "type": "boolean", "default": true },
+								"stride":     { "type": "integer", "minimum": 1, "default": 1, "description": "Keep every Nth point" },
+								"bbox": {
+								  "oneOf": [
+									{ "type": "string", "description": "xmin,ymin xmax,ymax (commas/whitespace allowed)" },
+									{
+									  "type": "object",
+									  "additionalProperties": false,
+									  "properties": {
+										"xmin": { "type": "number" },
+										"ymin": { "type": "number" },
+										"xmax": { "type": "number" },
+										"ymax": { "type": "number" }
+									  },
+									  "required": ["xmin","ymin","xmax","ymax"]
+									}
+								  ]
+								}
+							},
+							"required": ["path"]
+						}						
                     },
                     "oneOf": [
                         {
@@ -498,6 +528,11 @@
                         {
                             "required": [
                                 "grid"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "file_points"
                             ]
                         }
                     ]

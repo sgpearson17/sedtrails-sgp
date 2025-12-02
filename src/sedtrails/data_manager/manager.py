@@ -4,6 +4,8 @@ from sedtrails.data_manager.netcdf_writer import NetCDFWriter
 from sedtrails.data_manager.xarray_dataset import collect_timestep_data
 import logging
 import numpy as np
+from pathlib import Path
+from typing import Union
 
 
 # Mesh setup. # TODO: Can this be a default? I don't see the need to
@@ -44,7 +46,7 @@ class DataManager:
     output_path = data_manager.writer.write(dataset, filename, trim_to_actual_timesteps=True)
     """
 
-    def __init__(self, output_dir: str, max_bytes=512 * 1024 * 1024):
+    def __init__(self, output_dir: Union[str, Path], max_bytes=512 * 1024 * 1024):
         """
         Initialize the DataManager with a output data directory.
         All other resources are initialized lazily.
@@ -53,10 +55,17 @@ class DataManager:
         system. It handles adding new simulation data, checking memory usage, and writing
         data to disk when necessary.
 
+        Parameters
+        ----------
+        output_dir : str or Path
+            Path to the output directory where data will be stored.
+        max_bytes : int, default=512*1024*1024
+            Maximum memory usage in bytes before writing to disk.
+
         Attributes
         ----------
         
-        output_dir : str
+        output_dir : Path
             Path to the output directory where data will be stored.
         data_buffer : SimulationDataBuffer
             Buffer for temporarily storing simulation data.

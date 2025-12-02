@@ -16,17 +16,19 @@ Random: Release particles at random locations (x,y) within an area
 
 import random
 from abc import ABC, abstractmethod
-from sedtrails.particle_tracer.particle import Particle
-from sedtrails.transport_converter.sedtrails_data import SedtrailsData
-from sedtrails.exceptions import MissingConfigurationParameter
-from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
-from sedtrails.application_interfaces.find import find_value
-from numpy import ndarray
-from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
+from typing import Any, Dict, List, Tuple, Union
+
 import numpy as np
 from matplotlib.path import Path
+from numpy import ndarray
 from scipy.spatial import ConvexHull
+
+from sedtrails.application_interfaces.find import find_value
+from sedtrails.exceptions import MissingConfigurationParameter
+from sedtrails.particle_tracer.particle import Particle
+from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
+from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 
 @dataclass
@@ -268,6 +270,112 @@ class TransectStrategy(SeedingStrategy):
 
         return seed_locations
 
+class FilePointsStrategy(SeedingStrategy):
+    """
+    Seeding strategy to read (x, y) locations from a file.
+
+    Expected settings under `seeding.strategy.file_points`:
+
+    - path: str                 # required. Path to the file with coordinates
+    - x_col: str|int = 0        # optional. Column name or 0-based index for x
+    - y_col: str|int = 1        # optional. Column name or 0-based index for y
+    - has_header: bool = True   # optional. If False, treat as no header
+    - deduplicate: bool = True  # optional. Drop duplicate rows
+    - dropna: bool = True       # optional. Drop rows with NaNs in x/y
+    - bbox: str|dict = None     # optional. Restrict to bbox: "xmin,ymin xmax,ymax" or dict
+    - stride: int = 1           # optional. Keep every `stride`-th point (≥1)
+    """
+
+    def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        import os
+        import pandas as pd
+
+        settings = getattr(config, 'strategy_settings', {})
+        path = settings.get('path', None)
+        if not path:
+            raise MissingConfigurationParameter('"path" must be provided for FilePointsStrategy.')
+
+        # Windows path safety
+        path = os.path.expanduser(str(path))
+
+        x_col = settings.get('x_col', 0)
+        y_col = settings.get('y_col', 1)
+        has_header = bool(settings.get('has_header', True))
+        deduplicate = bool(settings.get('deduplicate', True))
+        dropna = bool(settings.get('dropna', True))
+        stride = int(settings.get('stride', 1))
+        if stride < 1:
+            raise ValueError('"stride" must be >= 1.')
+
+        # Parse optional bbox
+        bbox = settings.get('bbox', None)
+        xmin = ymin = xmax = ymax = None
+        if bbox:
+            if isinstance(bbox, str):
+                parts = bbox.replace(',', ' ').split()
+                if len(parts) != 4:
+                    raise ValueError(f'Invalid bbox string: {bbox}')
+                xmin, ymin, xmax, ymax = map(float, parts)
+            elif isinstance(bbox, dict):
+                xmin = float(bbox['xmin'])
+                ymin = float(bbox['ymin'])
+                xmax = float(bbox['xmax'])
+                ymax = float(bbox['ymax'])
+            else:
+                raise ValueError('bbox must be str "xmin,ymin xmax,ymax" or dict with xmin/ymin/xmax/ymax')
+
+        if config.quantity is None:
+            raise MissingConfigurationParameter('"quantity" must be provided for FilePointsStrategy.')
+        quantity = int(config.quantity)
+
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f'Could not find coordinates file: {path}')
+
+        # --- Read file, auto-delimiter handling via pandas (engine="python" allows sep=None sniffing)
+        try:
+            df = pd.read_csv(
+                path,
+                sep=None, engine="python",
+                header=0 if has_header else None
+            )
+        except Exception:
+            # Fallback: whitespace-delimited
+            df = pd.read_csv(path, delim_whitespace=True, header=0 if has_header else None)
+
+        # Resolve columns by name or index
+        def _resolve_col(col, df):
+            if isinstance(col, int):
+                # Convert positional index to actual column name
+                return df.columns[col]
+            return col  # assume str
+        x_name = _resolve_col(x_col, df)
+        y_name = _resolve_col(y_col, df)
+
+        if x_name not in df.columns or y_name not in df.columns:
+            raise ValueError(f'Columns not found. Available: {list(df.columns)}; requested x={x_name}, y={y_name}')
+
+        df = df[[x_name, y_name]].copy()
+        df.columns = ['x', 'y']
+
+        if dropna:
+            df = df.dropna(subset=['x', 'y'])
+        if deduplicate:
+            df = df.drop_duplicates(subset=['x', 'y'])
+
+        # Optional bbox mask
+        if xmin is not None:
+            df = df[(df['x'] >= xmin) & (df['x'] <= xmax) & (df['y'] >= ymin) & (df['y'] <= ymax)]
+
+        # Optional stride
+        if stride > 1 and not df.empty:
+            df = df.iloc[::stride, :]
+
+        if df.empty:
+            raise ValueError('No valid (x, y) points found after filtering.')
+
+        # Build seed locations
+        seed_locations = [(quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)]
+        return seed_locations
 
 class ParticleFactory:
     @staticmethod
@@ -285,7 +393,7 @@ class ParticleFactory:
         list[Particle]
             List of created particles with positions and release times set.
         """
-        from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+        from sedtrails.particle_tracer.particle import Mud, Passive, Sand
 
         PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
         STRATEGY_MAP = {
@@ -293,6 +401,7 @@ class ParticleFactory:
             'random': RandomStrategy(),
             'grid': GridStrategy(),
             'transect': TransectStrategy(),
+            'file_points': FilePointsStrategy(),
         }
 
         particle_type = getattr(config, 'particle_type', '')
@@ -304,7 +413,7 @@ class ParticleFactory:
         if strategy_name.lower() not in STRATEGY_MAP:
             raise ValueError(f'Unknown seeding strategy: {strategy_name}')
         StrategyClass = STRATEGY_MAP[strategy_name.lower()]
-        from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+        from sedtrails.particle_tracer.particle import Mud, Passive, Sand
 
         PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
         STRATEGY_MAP = {
@@ -312,6 +421,7 @@ class ParticleFactory:
             'random': RandomStrategy(),
             'grid': GridStrategy(),
             'transect': TransectStrategy(),
+            'file_points': FilePointsStrategy(),
         }
 
         # computes seeding positions using the strategy in config
@@ -365,7 +475,7 @@ class ParticlePopulation:
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)  # holds a Numba function
     _position_calculator: Any = field(init=False)  # holds a Numba function
-    _current_time: ndarray = field(init=False)
+    _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: we're not using this field yet
     _field_transport_probability: ndarray = field(init=False)  # TODO: we're not using this field yet
 
@@ -391,14 +501,14 @@ class ParticlePopulation:
         self._outer_envelope = Path(coords[hull.vertices])
 
     def update_information(
-        self, current_time: ndarray, mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
+        self, current_time: Union[int, float], mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
     ) -> None:
         """
         Updates field data information for particles in the population.
 
         Parameters
         ----------
-        current_time : ndarray
+        current_time : float, int
             The current time in the simulation.
         mixing_depth : ndarray
             The mixing depth of the flow field.
@@ -456,9 +566,6 @@ class ParticlePopulation:
         self.particles['is_inside'] = self._outer_envelope.contains_points(
             np.column_stack((self.particles['x'], self.particles['y']))
         )
-
-        # # Compute whether particles are exposed (or buried)
-        # self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
                 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
@@ -466,7 +573,13 @@ class ParticlePopulation:
             self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
+            
+            # if van westen method:
+            # a particle is considered exposed if it is buried at a shallower depth compared to the mixing depth
             self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+            
+            # if soulsby method:
+            # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
         # FIXME: Temporary implementation
@@ -485,7 +598,7 @@ class ParticlePopulation:
             & self.particles['is_picked_up']
         )
 
-    def update_position(self, flow_field: Dict, current_timestep: float, transport_probability_method: str = None) -> None:
+    def update_position(self, flow_field: Dict, current_timestep: float) -> None:
         """
         Update the position of particles in the population based on the flow field.
 

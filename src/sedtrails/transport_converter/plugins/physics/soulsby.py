@@ -46,21 +46,18 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Extract particle properties
         grain_size = self.config.tracer_grain_size
-        if grain_size is None:
-            raise ValueError("Missing required 'tracer_grain_size' in configuration.")
         background_grain_size = self.config.background_grain_size
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
-        if dimensionless_grain_size is None:
-            raise ValueError("Missing required 'dimensionless_grain_size' value in grain_properties.")
-        critical_shear_stress = grain_properties.get('critical_shear_stress')
-        if critical_shear_stress is None:
-            raise ValueError("Missing required 'critical_shear_stress' value in grain_properties.")
         critical_shields = grain_properties.get('critical_shields')
-        if critical_shields is None:
-            raise ValueError("Missing required 'critical_shields' value in grain_properties.")
         settling_velocity = grain_properties.get('settling_velocity')
+        
+        # Validate required grain properties
+        if critical_shields is None:
+            raise ValueError('critical_shields is required for Soulsby physics calculations but was not found in grain_properties')
+        if dimensionless_grain_size is None:
+            raise ValueError('dimensionless_grain_size is required for Soulsby physics calculations but was not found in grain_properties')
         if settling_velocity is None:
-            raise ValueError("Missing required 'settling_velocity' value in grain_properties.")
+            raise ValueError('settling_velocity is required for Soulsby physics calculations but was not found in grain_properties')
 
         # Extract flow velocities (we should be able to change these based on configuration)
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
@@ -127,6 +124,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             )
         )
 
+        # VECTORIZE THESE LOOPS!
         # Compute the transition probability b [-] (Equations 3 and 4)
         soulsby_b = np.zeros(theta_max.shape)
         if transport_probability_method != 'no_probability':

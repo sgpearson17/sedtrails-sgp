@@ -392,6 +392,21 @@ Releases particles on a regular grid.
 | `show_check_plots`      | boolean | Optional     | `false` | Display diagnostic plots.                               |
 | `save_check_plots`      | boolean | Optional     | `false` | Save diagnostic plots.                                  |
 
+##### File Points Release
+
+Releases particles at an arbitrary set of points specified in a text/CSV file.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Path to the text/CSV/TSV file containing x,y coordinates |
+| `x_col` | integer or string | No | - | Column index (0-based) or column name for x-coordinates |
+| `y_col` | integer or string | No | - | Column index (0-based) or column name for y-coordinates |
+| `has_header` | boolean | No | `true` | Whether the file contains a header row |
+| `deduplicate` | boolean | No | `true` | Remove duplicate coordinate pairs |
+| `dropna` | boolean | No | `true` | Remove rows with missing x or y values |
+| `stride` | integer | No | `1` | Keep every Nth point (useful for subsampling dense datasets) |
+| `bbox` | string or object | No | - | Optional bounding box to filter points |
+
 (barriers)=
 ### Barriers
 

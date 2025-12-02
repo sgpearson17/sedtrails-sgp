@@ -41,3 +41,102 @@ The number of particle per location are defined by quantity and the number of se
 The total number of particle in a population is the product of quantity * seeding locations
 When seeding happens a list with the total number of particles in a population is created. If more than one population is specified in the configuration file, than particle creation should be repeated for each one (I will work on automating this). The creation of particle is manage by a ParticleFactory, which takes the configuration for a population and generates the particles, assigns the initial x,y coordinates, release_time (release_start) and quantity.
 """
+
+## File Points Seeding Strategy
+
+The `file_points` seeding strategy allows you to specify particle release locations by reading coordinates from external text, CSV, or TSV files. This is useful when you have pre-defined release points from field surveys, model outputs, or other data sources.
+
+### Configuration Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Path to the text/CSV/TSV file containing x,y coordinates |
+| `x_col` | integer or string | No | - | Column index (0-based) or column name for x-coordinates |
+| `y_col` | integer or string | No | - | Column index (0-based) or column name for y-coordinates |
+| `has_header` | boolean | No | `true` | Whether the file contains a header row |
+| `deduplicate` | boolean | No | `true` | Remove duplicate coordinate pairs |
+| `dropna` | boolean | No | `true` | Remove rows with missing x or y values |
+| `stride` | integer | No | `1` | Keep every Nth point (useful for subsampling dense datasets) |
+| `bbox` | string or object | No | - | Optional bounding box to filter points |
+
+### Column Specification
+
+- **By index**: Use 0-based column indices (e.g., `x_col: 0`, `y_col: 1`)
+- **By name**: Use column names if the file has headers (e.g., `x_col: "longitude"`, `y_col: "latitude"`)
+- **Default behavior**: If not specified, the first two columns are assumed to be x and y coordinates
+
+### Bounding Box Filtering
+
+The optional `bbox` parameter allows you to filter points to a specific geographic area:
+
+**String format:**
+```yaml
+bbox: "xmin,ymin xmax,ymax"  # e.g., "1000,2000 5000,6000"
+```
+
+**Basic Usage with CSV file:**
+```yaml
+seeding:
+  strategy:
+    file_points:
+      path: "release_points.csv"
+      x_col: "x"
+      y_col: "y"
+      has_header: true
+```
+
+**Using column indices with tab-separated file:**
+```yaml
+seeding:
+  strategy:
+    file_points:
+      path: "coordinates.tsv"
+      x_col: 0
+      y_col: 1
+      has_header: false
+```
+
+**Subsampling with stride and bounding box:**
+```yaml
+seeding:
+  strategy:
+    file_points:
+      path: "dense_grid.txt"
+      stride: 5  # Keep every 5th point
+      bbox: "1000,2000 5000,6000"
+      deduplicate: true
+```
+
+### Supported File Formats
+
+- **Text files (.txt)**: Space or tab-separated values
+- **CSV files (.csv)**: Comma-separated values
+- **TSV files (.tsv)**: Tab-separated values
+
+### Example Text File
+Here is a simple comma-separated text file with five points (``examples\sources_xy_inlet.txt``), for use in ``examples\sedtrails-example-multisource.yaml``.
+
+```
+39400,16800
+39400,17800
+40000,17300 
+40600,16800 
+40600,17800
+```
+
+### Data Processing Options
+
+- **Deduplication**: Automatically removes duplicate coordinate pairs when `deduplicate: true`
+- **Missing data handling**: Removes rows with NaN or missing values when `dropna: true`
+- **Subsampling**: Use `stride` parameter to reduce point density (e.g., `stride: 10` keeps every 10th point)
+- **Spatial filtering**: Apply bounding box to restrict release locations to specific areas
+
+### Use Cases
+
+This strategy is particularly useful for:
+
+- Field survey locations
+- Existing monitoring station coordinates
+- Output from other modeling systems
+- Pre-processed release point datasets
+- Integration with GIS-derived coordinate lists

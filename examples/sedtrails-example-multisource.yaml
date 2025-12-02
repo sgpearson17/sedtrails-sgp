@@ -3,18 +3,17 @@ general:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
-folder_settings:
-  input_data: ./sample-data/inlet_sedtrails.nc
-  output_dir: ./results
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
+  read_interval: 10D  # Time chunk size for reading input data
 time:
-  start: 2011-08-01 00:00:00
+  start:  2016-09-21 19:20:00
   timestep: 60S
-  read_input_timestep: 1D
   duration: 1D
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
-    - name: my_population
+    - name: populaton_1
       particle_type: sand
       characteristics:
         grain_size: 0.00025 
@@ -31,12 +30,19 @@ particles:
         release_start: 2016-09-21 19:30:00
         quantity: 1
         strategy: 
-          random:
-            bbox: "39400,16800 40600,17800"
-            seed: 42
-            nlocations: 10
-            
-output:
+          file_points:
+            path: ./examples/sources_xy_inlet.txt
+            has_header: false     # set false if the file has no header row
+            x_col: 0              # "name in header" or 0 (column number)
+            y_col: 1              # "name in header" or 1 (column number)
+            deduplicate: false
+            dropna: false
+            stride: 1               # keep every point; set 2 to keep every 2nd point, etc.    
+outputs:
+  directory: ./results
   store_tracks: true
   save_interval: 1H
-  plot_interval: 1D
+visualization:
+  dashboard:
+    enable: true
+    update_interval: 1H

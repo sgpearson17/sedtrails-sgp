@@ -90,7 +90,7 @@ If you are a part of the SedTRAILS team and have write access to the SedTRAILS G
 
 5. Make sure the existing tests pass by running `pytest` from the root of the repository. 
 
-6. Write tests for any new lines of code you add. 
+6. Write tests for any new lines of code you add. See [Adding Unit Tests](./adding-unit-tests.md) for advice on this.
 
 7. Include in-code documentation in form of comments and docstrings. Use the [numpydoc](https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard) documentation style.
 
@@ -100,7 +100,7 @@ If you are a part of the SedTRAILS team and have write access to the SedTRAILS G
 
 1. Push your feature branch to (your fork of) the SedTRAILS GitHub repository.
 
-1. Create a pull request; for an example, follow the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
+2. Create a pull request; for an example, follow the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
 
 ### Using keywords in issues and pull requests
 

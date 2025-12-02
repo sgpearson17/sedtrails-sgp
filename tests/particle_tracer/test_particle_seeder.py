@@ -9,6 +9,7 @@ from sedtrails.particle_tracer.particle_seeder import (
     RandomStrategy,
     GridStrategy,
     TransectStrategy,
+    FilePointsStrategy,
     ParticleFactory,
     ParticlePopulation,
 )
@@ -35,6 +36,11 @@ def grid_strategy():
 @pytest.fixture
 def transect_strategy():
     return TransectStrategy()
+
+
+@pytest.fixture
+def file_points_strategy():
+    return FilePointsStrategy()
 
 
 # Config fixtures
@@ -193,6 +199,97 @@ def transect_config_multi():
                     }
                 },
                 'quantity': 1,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
+        }
+    )
+
+
+@pytest.fixture
+def file_points_config_basic(tmp_path):
+    """Basic file_points config with CSV file."""
+    # Create a temporary CSV file
+    csv_file = tmp_path / "test_points.csv"
+    csv_file.write_text("x,y\n1.0,2.0\n3.0,4.0\n5.0,6.0\n")
+    
+    return PopulationConfig(
+        {
+            'name': 'File Points Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'file_points': {
+                        'path': str(csv_file),
+                        'x_col': 'x',
+                        'y_col': 'y',
+                        'has_header': True,
+                    }
+                },
+                'quantity': 2,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
+        }
+    )
+
+
+@pytest.fixture
+def file_points_config_no_header(tmp_path):
+    """File_points config with no header."""
+    # Create a temporary file without header
+    txt_file = tmp_path / "test_points_no_header.txt"
+    txt_file.write_text("1.0 2.0\n3.0 4.0\n")
+    
+    return PopulationConfig(
+        {
+            'name': 'File Points Config No Header',
+            'particle_type': 'mud',
+            'seeding': {
+                'strategy': {
+                    'file_points': {
+                        'path': str(txt_file),
+                        'x_col': 0,
+                        'y_col': 1,
+                        'has_header': False,
+                    }
+                },
+                'quantity': 1,
+                'release_start': '2025-06-18 13:00:00',
+                'burial_depth': {
+                    'constant': 1.0,
+                },
+            },
+        }
+    )
+
+
+@pytest.fixture
+def file_points_config_with_bbox(tmp_path):
+    """File_points config with bounding box filtering."""
+    # Create a file with points both inside and outside bbox
+    csv_file = tmp_path / "test_points_bbox.csv"
+    csv_file.write_text("longitude,latitude\n1.0,1.0\n2.0,2.0\n5.0,5.0\n10.0,10.0\n")
+    
+    return PopulationConfig(
+        {
+            'name': 'File Points Config With BBox',
+            'particle_type': 'passive',
+            'seeding': {
+                'strategy': {
+                    'file_points': {
+                        'path': str(csv_file),
+                        'x_col': 'longitude',
+                        'y_col': 'latitude',
+                        'has_header': True,
+                        'bbox': '0,0 3,3',  # Only first two points should be kept
+                    }
+                },
+                'quantity': 3,
                 'release_start': '2025-06-18 13:00:00',
                 'burial_depth': {
                     'constant': 1.0,
@@ -489,6 +586,256 @@ class TestTransectStrategy:
             transect_strategy.seed(config)
 
 
+class TestFilePointsStrategy:
+    """Test cases for FilePointsStrategy."""
+
+    def test_file_points_strategy_basic(self, file_points_strategy, file_points_config_basic):
+        """Test basic file_points strategy functionality."""
+        result = file_points_strategy.seed(file_points_config_basic)
+
+        # Should generate 3 points from CSV file
+        assert len(result) == 3
+        assert result[0] == (2, 1.0, 2.0)
+        assert result[1] == (2, 3.0, 4.0)
+        assert result[2] == (2, 5.0, 6.0)
+
+    def test_file_points_strategy_no_header(self, file_points_strategy, file_points_config_no_header):
+        """Test file_points strategy with no header."""
+        result = file_points_strategy.seed(file_points_config_no_header)
+
+        # Should generate 2 points from text file
+        assert len(result) == 2
+        assert result[0] == (1, 1.0, 2.0)
+        assert result[1] == (1, 3.0, 4.0)
+
+    def test_file_points_strategy_with_bbox(self, file_points_strategy, file_points_config_with_bbox):
+        """Test file_points strategy with bounding box filtering."""
+        result = file_points_strategy.seed(file_points_config_with_bbox)
+
+        # Should generate 2 points (only those within bbox 0,0 3,3)
+        assert len(result) == 2
+        assert result[0] == (3, 1.0, 1.0)
+        assert result[1] == (3, 2.0, 2.0)
+        # Points (5.0,5.0) and (10.0,10.0) should be filtered out by bbox
+
+    def test_file_points_strategy_stride(self, file_points_strategy, tmp_path):
+        """Test file_points strategy with stride parameter."""
+        # Create a file with many points
+        csv_file = tmp_path / "test_stride.csv"
+        csv_file.write_text("x,y\n1,1\n2,2\n3,3\n4,4\n5,5\n6,6\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points Stride Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'stride': 2,  # Keep every 2nd point
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        result = file_points_strategy.seed(config)
+
+        # Should keep every 2nd point: (1,1), (3,3), (5,5)
+        assert len(result) == 3
+        assert result[0] == (1, 1.0, 1.0)
+        assert result[1] == (1, 3.0, 3.0)
+        assert result[2] == (1, 5.0, 5.0)
+
+    def test_file_points_strategy_deduplicate(self, file_points_strategy, tmp_path):
+        """Test file_points strategy with deduplication."""
+        # Create a file with duplicate points
+        csv_file = tmp_path / "test_duplicates.csv"
+        csv_file.write_text("x,y\n1,1\n2,2\n1,1\n3,3\n2,2\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points Dedupe Config',
+                'particle_type': 'mud',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'deduplicate': True,
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        result = file_points_strategy.seed(config)
+
+        # Should have only unique points: (1,1), (2,2), (3,3)
+        assert len(result) == 3
+        positions = [(x, y) for _, x, y in result]
+        assert set(positions) == {(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)}
+
+    def test_file_points_strategy_missing_path(self, file_points_strategy):
+        """Test file_points strategy with missing path."""
+        config = PopulationConfig(
+            {
+                'name': 'File Points Missing Path',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'file_points': {'not_path': 'invalid'}},  # Missing path but has settings
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        with pytest.raises(MissingConfigurationParameter, match='"path" must be provided'):
+            file_points_strategy.seed(config)
+
+    def test_file_points_strategy_file_not_found(self, file_points_strategy):
+        """Test file_points strategy with non-existent file."""
+        config = PopulationConfig(
+            {
+                'name': 'File Points Non-existent File',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': '/non/existent/file.csv',
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        with pytest.raises(FileNotFoundError, match='Could not find coordinates file'):
+            file_points_strategy.seed(config)
+
+    def test_file_points_strategy_invalid_columns(self, file_points_strategy, tmp_path):
+        """Test file_points strategy with invalid column specification."""
+        csv_file = tmp_path / "test_invalid_cols.csv"
+        csv_file.write_text("a,b\n1,2\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points Invalid Cols',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'x_col': 'invalid_col',
+                            'y_col': 'another_invalid_col',
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        with pytest.raises(ValueError, match='Columns not found'):
+            file_points_strategy.seed(config)
+
+    def test_file_points_strategy_bbox_object_format(self, file_points_strategy, tmp_path):
+        """Test file_points strategy with bbox as object."""
+        csv_file = tmp_path / "test_bbox_obj.csv"
+        csv_file.write_text("x,y\n1,1\n2,2\n5,5\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points BBox Object',
+                'particle_type': 'passive',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'bbox': {
+                                'xmin': 0.5,
+                                'ymin': 0.5,
+                                'xmax': 2.5,
+                                'ymax': 2.5,
+                            }
+                        }
+                    },
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        result = file_points_strategy.seed(config)
+
+        # Should keep only points (1,1) and (2,2)
+        assert len(result) == 2
+        assert result[0] == (2, 1.0, 1.0)
+        assert result[1] == (2, 2.0, 2.0)
+
+    def test_file_points_strategy_invalid_stride(self, file_points_strategy, tmp_path):
+        """Test file_points strategy with invalid stride."""
+        csv_file = tmp_path / "test_stride.csv"
+        csv_file.write_text("x,y\n1,1\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points Invalid Stride',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'stride': 0,  # Invalid stride
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        with pytest.raises(ValueError, match='"stride" must be >= 1'):
+            file_points_strategy.seed(config)
+
+    def test_file_points_strategy_empty_after_filtering(self, file_points_strategy, tmp_path):
+        """Test file_points strategy when all points are filtered out."""
+        csv_file = tmp_path / "test_empty_filter.csv"
+        csv_file.write_text("x,y\n10,10\n20,20\n")
+        
+        config = PopulationConfig(
+            {
+                'name': 'File Points Empty Filter',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'bbox': '0,0 1,1',  # Bbox that excludes all points
+                        }
+                    },
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+
+        with pytest.raises(ValueError, match='No valid \\(x, y\\) points found after filtering'):
+            file_points_strategy.seed(config)
+
+
 class TestParticleFactory:
     """Test cases for ParticleFactory."""
 
@@ -692,6 +1039,46 @@ class TestParticleFactory:
 
         # Should have the correct release time
         assert particles[0].release_time == '2025-06-18 13:00:00'
+
+    def test_create_particles_file_points_strategy(self, particle_classes, tmp_path):
+        """Test particle creation with FilePointsStrategy."""
+        Passive = particle_classes['Passive']
+
+        # Create a temporary CSV file
+        csv_file = tmp_path / "test_particles.csv"
+        csv_file.write_text("x,y\n1.5,2.5\n3.5,4.5\n")
+
+        config = PopulationConfig(
+            {
+                'name': 'File Points Particle Creation Test',
+                'particle_type': 'passive',
+                'seeding': {
+                    'strategy': {
+                        'file_points': {
+                            'path': str(csv_file),
+                            'x_col': 'x',
+                            'y_col': 'y',
+                        }
+                    },
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 1.0,
+                    },
+                },
+            }
+        )
+
+        particles = ParticleFactory.create_particles(config)
+
+        # Should create 4 particles (2 locations * 2 quantity)
+        assert len(particles) == 4
+        # Check all particles are Passive type
+        assert all(isinstance(p, Passive) for p in particles)
+        # Check positions
+        positions = [(p.x, p.y) for p in particles]
+        assert positions.count((1.5, 2.5)) == 2  # 2 particles at first location
+        assert positions.count((3.5, 4.5)) == 2  # 2 particles at second location
 
 
 @pytest.fixture
