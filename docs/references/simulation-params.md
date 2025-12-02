@@ -295,9 +295,7 @@ At least one tracer method must be specified. Multiple methods can be used simul
 
 Most basic tracer of passive particles that move with the flow and do not follow additional rules.
 
-| Parameter | Type   | Required | Default | Description                          |
-| --------- | ------ | -------- | ------- | ------------------------------------ |
-| `-`       | number | Optional | `-`   | - |
+No additional parameters are required for the passive method beyond `flow_field_name`.
 
 
 #### Van Westen Method
