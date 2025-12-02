@@ -106,7 +106,7 @@
                     "description": "List of flow field names for passive method used in particle computation"
                 }
             },
-            "description": "van Westen method for particle tracking"
+            "description": "Passive tracer method for particle tracking"
         },
         "van_westen_method": {
             "type": "object",
