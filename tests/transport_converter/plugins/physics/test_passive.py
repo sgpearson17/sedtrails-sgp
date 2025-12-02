@@ -26,8 +26,8 @@ and mixing processes.
 
 import pytest
 import numpy as np
-from unittest.mock import Mock, patch
-from numpy.testing import assert_allclose, assert_array_equal
+from unittest.mock import Mock
+from numpy.testing import assert_array_equal
 
 from sedtrails.transport_converter.plugins.physics.passive import PhysicsPlugin
 from sedtrails.transport_converter.plugins.physics.plugin import BasePhysicsPlugin
@@ -332,7 +332,7 @@ class TestPassiveTracerPhysics:
             for component in ['x', 'y', 'magnitude']:
                 assert_array_equal(
                     results[0][component], results[i][component],
-                    err_msg=f"Passive tracer velocities should be independent of transport probability method"
+                    err_msg="Passive tracer velocities should be independent of transport probability method"
                 )
 
 
@@ -582,7 +582,6 @@ class TestPassiveTracerEdgeCases:
         and allow downstream error detection.
         """
         # Create velocity field with special values
-        shape = (1, 3, 3)
         flow_x = np.array([[[1.0, np.nan, 2.0],
                            [np.inf, 0.0, -np.inf],
                            [3.0, 4.0, 5.0]]])
@@ -643,7 +642,6 @@ class TestPassiveTracerIntegration:
         for t in range(nt):
             # Tidal elevation (semidiurnal, 2m amplitude)
             tidal_phase = 2 * np.pi * t / 12.42  # 12.42 hour tidal period
-            tidal_elevation = 2.0 * np.sin(tidal_phase)
             
             # Alongshore tidal current (0.5 m/s amplitude)
             flow_velocity_x[t] = 0.5 * np.sin(tidal_phase) * (1 + 0.3 * Y / 1000)

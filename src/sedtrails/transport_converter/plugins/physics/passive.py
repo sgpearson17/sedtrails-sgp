@@ -2,8 +2,6 @@
 A plugin for passive tracer physics in Lagrangian transport calculations
 """
 
-import numpy as np
-from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 from sedtrails.transport_converter import SedtrailsData
 
