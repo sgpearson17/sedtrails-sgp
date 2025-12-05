@@ -1,5 +1,6 @@
 """A plugin for Soulsby et al. (2011) sediment transport physics calculations."""
 
+from cmath import tau
 import numpy as np
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter import SedtrailsData
@@ -124,79 +125,88 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             )
         )
 
-        # VECTORIZE THESE LOOPS!
         # Compute the transition probability b [-] (Equations 3 and 4)
         soulsby_b = np.zeros(theta_max.shape)
         if transport_probability_method != 'no_probability':
-            for i in range(0, theta_max.shape[0]):
-                for j in range(0, theta_max.shape[1]):
-                    if background_theta_max[i][j] > background_theta_cr:
-                        soulsby_b[i][j] = soulsby_b_e * (
-                            1 - np.exp(-(background_theta_max[i][j] - background_theta_cr) / soulsby_theta_s)
-                        )
-                    else:
-                        soulsby_b[i][j] = 0
+            mask = background_theta_max > background_theta_cr
+            soulsby_b[mask] = soulsby_b_e * (
+                1 - np.exp(-(background_theta_max[mask] - background_theta_cr) / soulsby_theta_s)
+            )
+ 
+
  
         # Compute the transition probability a [-] (Equation 5)
         soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
 
+                       
+        # # Add quasi steady option to soulsby (default), otherwise do settling lag
+        # # I think this belongs at the particle level
+        # if transport_response_method == 'quasi_steady':
+            
+        #     if is_bedload
+        #         if tau > tau_cr
+        #             # normal behaviour
+        #         else 
+        #             # deposited on bed
+        #     elif is_suspended
+        #         if tau > tau_cr
+        #             # normal behaviour, P=1
+        #         elif tau > tau_d
+        #             # settling with lag
+        #             # don't stop moving though
+        #         else 
+        #             # deposited on bed
+        #     else
+        #         # immobile
+            
 
-        # VECTORIZE THESE LOOPS!
+        # # First vectorize loops in Soulsby 
+
+        # # Then go through and modify P
+        # # Add bedload and susp load states
+        # # If susp and below tau_c but above tau_d, p > nonzero until tau_d, then stop.
+
+        # # More advanced: incorporate zc stuff
+
         # Compute probability/proportion of time a particle is moving P [-] (Equation 6)
+        # P represents the fraction of time a grain is in motion at any given location
+        # Only compute for cells where shear stress exceeds the critical threshold
+        mask = theta_max > theta_cr_exp
         soulsby_P = np.zeros(theta_max.shape)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    soulsby_P[i][j] = (1 + ((np.pi / (6 * soulsby_mu_d)) / (theta_max[i][j] - theta_cr_exp)) ** 4) ** (
-                        -1 / 4
-                    )
-                else:
-                    soulsby_P[i][j] = 0
+        soulsby_P[mask] = (1 + ((np.pi / (6 * soulsby_mu_d)) / (theta_max[mask] - theta_cr_exp)) ** 4) ** (-1 / 4)
 
-        # Compute a reduction factor which is applied on the flow velocities to obtain grain velocities
-
+        # Compute velocity reduction factors R [-]
+        # These factors reduce the flow velocity to obtain grain velocities based on transport mode
+        # Different reduction factors apply for bed load (Rb) vs suspended load (Rs)
+        
         Rb = np.zeros(bed_load_velocity.shape)  # Bed load velocity reduction factor
         Rs = np.zeros(bed_load_velocity.shape)  # Suspended load velocity reduction factor
-        soulsby_R = np.zeros(bed_load_velocity.shape)  # Final velocity reduction factor
+        soulsby_R = np.zeros(bed_load_velocity.shape)  # Final velocity reduction factor (either Rb or Rs)
 
-        # VECTORIZE THESE LOOPS!
-        # Compute Rb (Equation 8)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    # print(bed_load_velocity[i][j] / flow_velocity_magnitude[i][j])
-                    Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
-                    if Rb[i][j] > 1:
-                        Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    else:
-                        Rb[i][j] = 0
+        # Compute Rb (Equation 8): bed load velocity reduction factor
+        # Only apply where shear stress exceeds critical threshold
+        # Limit to maximum of 1 (grain velocity cannot exceed flow velocity)
+        mask = theta_max > theta_cr_exp
+        Rb[mask] = bed_load_velocity[mask] / flow_velocity_magnitude[mask]
+        Rb = np.clip(Rb, 0, 1)
 
-        # VECTORIZE THESE LOOPS!
-        # Compute Rs (Equation 11)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if Rb[i][j] == 0:
-                    Rs[i][j] = 0
-                else:
-                    Rs[i][j] = (
-                        Rb[i][j] * (1 - rouse_number[i][j])
-                        / (8 / 7 - rouse_number[i][j])
-                        * ((8 / 7 * Rb[i][j]) ** (8 - 7 * rouse_number[i][j]) - 1)
-                        / ((8 / 7 * Rb[i][j]) ** (7 - 7 * rouse_number[i][j]) - 1)
-                    )
-                    if Rs[i][j] > 1:
-                        Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif np.isnan(Rs[i][j]):
-                        Rs[i][j] = 0
+        # Compute Rs (Equation 11): suspended load velocity reduction factor
+        # Accounts for vertical distribution of suspended sediment using Rouse number
+        # Only compute where Rb is non-zero (i.e., where sediment is mobile)
+        mask = Rb != 0
+        Rs[mask] = (
+            Rb[mask] * (1 - rouse_number[mask])
+            / (8 / 7 - rouse_number[mask])
+            * ((8 / 7 * Rb[mask]) ** (8 - 7 * rouse_number[mask]) - 1)
+            / ((8 / 7 * Rb[mask]) ** (7 - 7 * rouse_number[mask]) - 1)
+        )
+        Rs = np.clip(Rs, 0, 1)  # Limit to maximum of 1
+        Rs = np.nan_to_num(Rs, nan=0.0)  # Handle division by zero or invalid operations
         
-        # VECTORIZE THESE LOOPS!
-        # Compute R
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if rouse_number[i][j] < 2.5:  # if all material is in suspension use Rs (for suspended load)
-                    soulsby_R[i][j] = Rs[i][j]
-                else:  # otherwise use Rb (for bed load)
-                    soulsby_R[i][j] = Rb[i][j]
+        # Select appropriate reduction factor based on transport mode
+        # Rouse number < 2.5 indicates suspended load dominates, otherwise bed load dominates
+        suspended_mask = rouse_number < 2.5
+        soulsby_R = np.where(suspended_mask, Rs, Rb)
 
         # Compute grain velocities
         grain_velocity_magnitude = np.multiply(soulsby_P, soulsby_R, flow_velocity_magnitude)  # (Equation 1)
