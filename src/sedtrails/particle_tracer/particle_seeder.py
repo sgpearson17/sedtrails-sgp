@@ -560,7 +560,7 @@ class ParticlePopulation:
 
         # Compute whether particles are picked up (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        self.particles['is_mobile'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
         # Compute whether particles are inside (or outside) the domain envelope
         self.particles['is_inside'] = self._outer_envelope.contains_points(
@@ -595,7 +595,7 @@ class ParticlePopulation:
             & self.particles['is_alive']
             & self.particles['is_exposed']
             & self.particles['is_released']
-            & self.particles['is_picked_up']
+            & self.particles['is_mobile']
         )
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:
