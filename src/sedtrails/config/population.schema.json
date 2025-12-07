@@ -158,6 +158,11 @@
                     "type": "number",
                     "default": 1,
                     "description": "Initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
+                },
+                "suspended_lag": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Flag to enable non-equilibrium suspended sediment transport (lagged settling) [-]"
                 }
             },
             "description": "Soulsby method for particle tracking"
