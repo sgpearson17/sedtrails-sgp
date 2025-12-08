@@ -30,7 +30,7 @@ def main():
     #config_file = r"C:\surfdrive\650_SedTRAILS\pyTesting\02_soulsby-debugging\007_finer_hidExp_off\config.example_soulsby.yaml"
     #config_file = r"C:\surfdrive\650_SedTRAILS\pyTesting\02_soulsby-debugging\008_coarser_hidExp_off\config.example_soulsby.yaml"
     #config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\004_grain-size-test\config.example_soulsby.yaml"
-    config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\009_missingGrainSizeField\config.example_soulsby.yaml"
+    config_file = r"C:\sedtrails-sgp\examples\sedtrails-example-macdonald.yaml"
     
     # Set up logging for verbose output (equivalent to CLI verbose mode)
     logging.basicConfig(
