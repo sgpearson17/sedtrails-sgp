@@ -113,6 +113,30 @@
             },
             "description": "van Westen method for particle tracking"
         },
+        "macdonald_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "flow field name for van Westen method used in particle computation"
+                },
+                "computationType": {
+                    "type": "string",
+                    "default": "2D",
+                    "description": "type of computation used in MacDonald method (2D,, Q3D, or 3D)"
+                },
+                "beta": {
+                    "type": "number",
+                    "default": 0.2,
+                    "description": "beta parameter for van Westen method"
+                }
+            },
+            "description": "van Westen method for particle tracking"
+        },
         "soulsby_method": {
             "type": "object",
             "additionalProperties": false,
@@ -197,6 +221,9 @@
                 },
                 "soulsby": {
                     "$ref": "#/$defs/soulsby_method"
+                },
+                "macdonald": {
+                    "$ref": "#/$defs/macdonald_method"
                 }
             },
             "minProperties": 1,
