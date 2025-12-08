@@ -321,14 +321,17 @@ class Simulation:
         # Determine flow field names from configuration
         flow_field_names = []
         for population in populations_config:
-            if 'tracer_methods' in population and (
-                'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
-            ):
+            if 'tracer_methods' in population:
                 if 'vanwesten' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
+                    break
                 elif 'soulsby' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
-                break  # Use the first population's flow fields for now
+                    break
+                elif 'macdonald' in population['tracer_methods']:
+                    # MacDonald method uses both bed load and suspended velocities
+                    flow_field_names = population['tracer_methods']['macdonald']['flow_field_name']
+                    break
 
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
@@ -396,7 +399,11 @@ class Simulation:
                             transport_prob = retriever.get_scalar_field(
                                 timer.current, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
-                        else:  # soulsby
+                        elif self.physics_converter.config.tracer_method == 'macdonald':
+                            transport_prob = retriever.get_scalar_field(
+                                timer.current, flow_field_name.replace('velocity', 'probability')
+                            )['magnitude']
+                        else:  # soulsby 
                             transport_prob = np.ones_like(bed_level)
 
                         # Update information at particle positions
@@ -409,6 +416,8 @@ class Simulation:
 
                         # Update particle burial depth
                         if self.physics_converter.config.tracer_method == 'vanwesten':
+                            population.update_burial_depth()
+                        elif self.physics_converter.config.tracer_method == 'macdonald':
                             population.update_burial_depth()
 
                         # Determining status
@@ -438,8 +447,11 @@ class Simulation:
                     'x': first_population.particles['x'],
                     'y': first_population.particles['y'],
                     'burial_depth': first_population.particles['burial_depth'],
-                    'mixing_depth': first_population.particles['mixing_depth'],
                 }
+                # Add mixing_depth only if it exists in particles
+                if 'mixing_depth' in first_population.particles:
+                    particle_data['mixing_depth'] = first_population.particles['mixing_depth']
+                    
                 # Get bathymetry data
                 bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
 
