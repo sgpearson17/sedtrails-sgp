@@ -1,0 +1,8 @@
+2025-12-08 13:57:43,541 INFO sedtrails: === LOGGING INITIALIZED ===
+2025-12-08 13:57:43,543 INFO sedtrails: Log file: C:\sedtrails-sgp\examples\output\log.txt
+2025-12-08 13:57:43,543 INFO sedtrails.simulation_orchestrator.simulation_manager: Configuration loaded
+2025-12-08 13:57:45,770 INFO sedtrails.simulation_orchestrator.simulation_manager: === SIMULATION START ===
+2025-12-08 13:57:45,770 INFO sedtrails.simulation_orchestrator.simulation_manager: Command: c:\sedtrails-sgp\debug_sedtrails.py
+2025-12-08 13:57:45,770 INFO sedtrails.simulation_orchestrator.simulation_manager: Python: 3.13.7
+2025-12-08 13:57:45,771 INFO sedtrails.simulation_orchestrator.simulation_manager: Config: C:\sedtrails-sgp\examples\config.example_soulsby_susp_lag.yaml
+2025-12-08 13:57:45,771 INFO sedtrails.simulation_orchestrator.simulation_manager: Working directory: C:\sedtrails-sgp

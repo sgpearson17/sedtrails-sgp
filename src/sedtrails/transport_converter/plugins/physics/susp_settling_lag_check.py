@@ -866,10 +866,10 @@ model = SedimentModel(
     shear_stress_func=tidal_shear_stress,
     dt=60,  # 1-minute timestep
     tau_c=0.2,  # critical entrainment threshold
-    tau_d=0.2,  # low-shear threshold for deposition
+    tau_d=0.01,  # low-shear threshold for deposition
     lambda_s_max=0.001,
     lambda_e_max=0.005,
-    w_s=5e-3,
+    w_s=5e-4,
     depth=10.0,  # 3m water depth for MacDonald calculation
     d50=0.0002  # 0.2mm median grain size
 )

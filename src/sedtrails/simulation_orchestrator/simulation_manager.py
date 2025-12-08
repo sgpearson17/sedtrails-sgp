@@ -399,13 +399,33 @@ class Simulation:
                         else:  # soulsby
                             transport_prob = np.ones_like(bed_level)
 
+                        if self.physics_converter.config.tracer_method == 'soulsby':
+                            # Get additional fields for soulsby method
+                            deposition_allowed = None
+                            suspended_mask = None
+                            if sedtrails_data.has_physics_field('deposition_allowed'):
+                                deposition_allowed = retriever.get_scalar_field(timer.current, 'deposition_allowed')['magnitude']
+                            if sedtrails_data.has_physics_field('suspended_mask'):
+                                suspended_mask = retriever.get_scalar_field(timer.current, 'suspended_mask')['magnitude']
+
+
                         # Update information at particle positions
-                        population.update_information(
-                            current_time=timer.current,
-                            mixing_depth=mixing_depth,
-                            bed_level=bed_level,
-                            transport_probability=transport_prob,
-                        )
+                        if self.physics_converter.config.tracer_method == 'soulsby':
+                            population.update_information(
+                                current_time=timer.current,
+                                mixing_depth=mixing_depth,
+                                bed_level=bed_level,
+                                transport_probability=transport_prob,
+                                deposition_allowed=deposition_allowed,
+                                suspended_mask=suspended_mask,
+                            )
+                        else:
+                            population.update_information(
+                                current_time=timer.current,
+                                mixing_depth=mixing_depth,
+                                bed_level=bed_level,
+                                transport_probability=transport_prob,
+                            )
 
                         # Update particle burial depth
                         if self.physics_converter.config.tracer_method == 'vanwesten':

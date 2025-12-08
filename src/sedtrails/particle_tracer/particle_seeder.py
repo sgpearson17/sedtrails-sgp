@@ -501,7 +501,13 @@ class ParticlePopulation:
         self._outer_envelope = Path(coords[hull.vertices])
 
     def update_information(
-        self, current_time: Union[int, float], mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
+        self, 
+        current_time: Union[int, float], 
+        mixing_depth: ndarray, 
+        transport_probability: ndarray, 
+        bed_level: ndarray,
+        deposition_allowed: Union[ndarray, None] = None,
+        suspended_mask: Union[ndarray, None] = None,
     ) -> None:
         """
         Updates field data information for particles in the population.
@@ -516,6 +522,10 @@ class ParticlePopulation:
             The probability of particle transport in the flow field.
         bed_level : ndarray
             The bed level of the flow field.
+        deposition_allowed : ndarray, optional
+            Boolean field indicating where deposition is allowed (for Soulsby method).
+        suspended_mask : ndarray, optional
+            Boolean field indicating suspended particles (for Soulsby method).
         """
 
         self._current_time = current_time
@@ -533,6 +543,21 @@ class ParticlePopulation:
 
         if not np.isnan(bed_level).all():
             self.particles['bed_level'] = self._field_interpolator(bed_level, self.particles['x'], self.particles['y'])
+
+        # Interpolate boolean fields for Soulsby method using nearest neighbor (round to 0 or 1)
+        if deposition_allowed is not None:
+            # Convert boolean to float for interpolation, then round back to boolean
+            deposition_float = deposition_allowed.astype(float)
+            self.particles['deposition_allowed'] = np.round(
+                self._field_interpolator(deposition_float, self.particles['x'], self.particles['y'])
+            ).astype(bool)
+        
+        if suspended_mask is not None:
+            # Convert boolean to float for interpolation, then round back to boolean
+            suspended_float = suspended_mask.astype(float)
+            self.particles['suspended_mask'] = np.round(
+                self._field_interpolator(suspended_float, self.particles['x'], self.particles['y'])
+            ).astype(bool)
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
@@ -558,9 +583,16 @@ class ParticlePopulation:
         """
         n_particles = len(self.particles['x'])
 
+        # Store is_suspended from previous timestep before updating
+        if 'is_suspended' in self.particles:
+            self.particles['is_suspended_prev'] = self.particles['is_suspended'].copy()
+        else:
+            # First timestep - assume all particles start as not suspended (on bed)
+            self.particles['is_suspended_prev'] = np.zeros(n_particles, dtype=bool)
+
         # Compute whether particles are picked up (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['is_mobile'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
         # Compute whether particles are inside (or outside) the domain envelope
         self.particles['is_inside'] = self._outer_envelope.contains_points(
@@ -581,6 +613,22 @@ class ParticlePopulation:
             # if soulsby method:
             # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
+        # Calculate is_suspended status if using Soulsby method with suspended_lag
+        if (self.population_config.population_config.get('tracer_methods', {}).get('soulsby', {}).get('suspended_lag', False) 
+            and 'suspended_mask' in self.particles):
+            self.particles['is_suspended'] = self.particles['suspended_mask']
+            
+            # Apply suspended lag logic: if particle was suspended in previous timestep
+            # and deposition is NOT allowed, keep it picked up (in suspension)
+            if 'deposition_allowed' in self.particles:
+                # Particles remain picked up if:
+                # 1. They were suspended in the previous timestep, AND
+                # 2. Deposition is currently NOT allowed at their location
+                remain_suspended = self.particles['is_suspended_prev'] & ~self.particles['deposition_allowed']
+                self.particles['is_picked_up'] = self.particles['is_picked_up'] | remain_suspended
+        else:
+            self.particles['is_suspended'] = np.zeros(n_particles, dtype=bool)
+
         # Compute whether particles are released (or retained)
         # FIXME: Temporary implementation
         self.particles['release_time'] = np.zeros_like(self.particles['x'])
@@ -595,7 +643,7 @@ class ParticlePopulation:
             & self.particles['is_alive']
             & self.particles['is_exposed']
             & self.particles['is_released']
-            & self.particles['is_mobile']
+            & self.particles['is_picked_up']
         )
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:

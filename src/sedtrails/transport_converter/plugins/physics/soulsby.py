@@ -64,12 +64,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
         flow_velocity_y = sedtrails_data.depth_avg_flow_velocity['y']
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
+        
 
         # Extract Soulsby et al. (2011) empirical parameters
         soulsby_b_e = self.config.soulsby_b_e
         soulsby_theta_s = self.config.soulsby_theta_s
         soulsby_gamma_e = self.config.soulsby_gamma_e
         soulsby_mu_d = self.config.soulsby_mu_d
+        suspended_lag = self.config.suspended_lag
+        deposition_bed_shear_stress = self.config.deposition_bed_shear_stress
+        
+        if suspended_lag:
+            print('  - Suspended load settling lag enabled.')
+            # Extract water depth
+            water_depth = sedtrails_data.water_depth
 
         # === COMPUTE ===
 
@@ -193,6 +201,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # Compute Rs (Equation 11): suspended load velocity reduction factor
         # Accounts for vertical distribution of suspended sediment using Rouse number
         # Only compute where Rb is non-zero (i.e., where sediment is mobile)
+        # if suspended_lag:
+        #     z_s = self.calculate_macdonald_susp_load_height(rouse_number)  # Height of centroid of suspended load
+        #     Rs = np.clip(Rs, 0, 1)  # Limit to maximum of 1
+        #     Rs = np.nan_to_num(Rs, nan=0.0)  # Handle division by zero or invalid operations
+        # else:
         mask = Rb != 0
         Rs[mask] = (
             Rb[mask] * (1 - rouse_number[mask])
@@ -202,10 +215,14 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         )
         Rs = np.clip(Rs, 0, 1)  # Limit to maximum of 1
         Rs = np.nan_to_num(Rs, nan=0.0)  # Handle division by zero or invalid operations
-        
+    
         # Select appropriate reduction factor based on transport mode
         # Rouse number < 2.5 indicates suspended load dominates, otherwise bed load dominates
         suspended_mask = rouse_number < 2.5
+        # if suspended_lag:
+        # make Rs=array of ones, then ...
+        # STUART FIX THIS!!!
+        #otherwise use original soulsby logic
         soulsby_R = np.where(suspended_mask, Rs, Rb)
 
         # Compute grain velocities
@@ -234,3 +251,71 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field('soulsby_a', soulsby_a)
         sedtrails_data.add_physics_field('soulsby_b', soulsby_b)
         sedtrails_data.add_physics_field('mixing_layer_thickness', mixing_layer_thickness)
+
+        # Suspended load settling lag parameters
+        if suspended_lag:
+            # calculate Shields number for deposition condition
+            theta_deposition = physics_lib.compute_shields(
+                deposition_bed_shear_stress,
+                self.config.gravity,
+                self.config.particle_density,
+                self.config.water_density,
+                self.config.grain_diameter,
+                )
+            
+            z_s = self.calculate_macdonald_susp_load_height(rouse_number, water_depth)
+            k_s = self.calculate_macdonald_bed_roughness(theta_max, theta_cr, grain_size, water_depth)
+            suspended_load_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s)
+            
+            # add suspended load velocity field
+            sedtrails_data.add_physics_field('suspended_load_velocity', suspended_load_velocity)
+            # add mask indicating whether particles can currently be suspended
+            sedtrails_data.add_physics_field('suspended_mask', suspended_mask)
+            # add mask indicating whether deposition is allowed
+            sedtrails_data.add_physics_field('deposition_allowed', theta_max<theta_deposition)
+
+    # JUST ENCODE WHOLE MACDONALD CALCULATION?
+    def calculate_macdonald_susp_load_height(self, rouse_number, water_depth):
+        """Calculate height of centroid of suspended load using MacDonald et al. (2006) Eq. 27"""
+        log_arg = np.log(rouse_number) - 0.4
+        tanh_arg = 1.2 * log_arg
+        
+        # Calculate MacDonald height
+        z_s = water_depth * 0.0398 * (10 ** (-1.08 * np.tanh(tanh_arg)))
+        return z_s
+    
+    def calculate_macdonald_bed_roughness(self, theta_max, theta_cr, grain_size, water_depth):
+        """Calculate bed roughness using MacDonald et al. (2006) Eq. 12"""
+        
+        # calculate equilibrium bedform height (eq 12)
+        # Initialize eta_b as zeros with same shape as theta_max
+        eta_b = np.zeros_like(theta_max)
+        
+        # Compute theta ratio
+        theta_ratio = theta_max / theta_cr
+        
+        # Apply conditions using np.where for vectorized operations
+        # Condition 1: 1 < theta_ratio < 24
+        mask_middle = (theta_ratio > 1) & (theta_ratio < 24)
+        eta_b[mask_middle] = (
+            0.11 * water_depth[mask_middle] 
+            * (grain_size / water_depth[mask_middle])**0.3 
+            * (1 - np.exp(-0.5 * (theta_ratio[mask_middle] - 1))) 
+            * (24 - theta_ratio[mask_middle])
+        )
+        # Note: eta_b remains 0 for theta_ratio <= 1 or theta_ratio >= 24
+        
+        # skin friction roughness (eq 13) - NB should be d90 but here we assume uniform grain size
+        k_s = 3 * grain_size
+        
+        # take the greater of bedform height and skin friction roughness
+        k_s = np.where(eta_b > k_s, eta_b, k_s)
+        
+        return k_s
+    
+    def calculate_macdonald_suspended_load_velocity(self, shear_velocity, z_s, k_s):
+        """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
+        suspended_load_velocity = 2.5 * shear_velocity * np.log(30 * z_s / k_s)
+        
+        return suspended_load_velocity
+    

@@ -163,6 +163,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Flag to enable non-equilibrium suspended sediment transport (lagged settling) [-]"
+                },
+                "deposition_bed_shear_stress": {
+                    "type": "number",
+                    "default": 0.05,
+                    "description": "Bed shear stress below which particles are deposited, if using lagged settling (suspended_lag) [Pa]"
                 }
             },
             "description": "Soulsby method for particle tracking"
