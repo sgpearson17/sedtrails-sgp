@@ -1,10 +1,10 @@
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-from pathlib import Path
 import xarray as xr
 from tqdm import tqdm
 
@@ -127,17 +127,17 @@ class Simulation:
     def _get_output_dir(self):
         """
         Returns the output directory for the simulation.
-        
+
         If the output directory is not explicitly specified or is a default value,
         uses the directory containing the config file as the base directory.
-        
+
         Returns
         -------
         Path
             Path object representing the output directory
         """
         output_dir = self._controller.get('outputs.directory')
-        
+
         # Check if output_dir is a default or relative path that should be relative to config file
         if output_dir is None or output_dir in ['.', './output', 'output', './results', 'results']:
             # Use the config file's directory as the base
@@ -154,7 +154,7 @@ class Simulation:
         else:
             # Convert to Path object for consistency
             output_dir = Path(output_dir)
-        
+
         return output_dir
 
     def _get_physics_config(self):
@@ -519,15 +519,7 @@ class Simulation:
 
         # End of Simulation
         pbar.close()
-
-        # Keep dashboard open after simulation ends
-
-        if self.dashboard is not None:
-            print('\nSimulation completed successfully!')
-            self.dashboard.keep_window_open()
-
-        # Finalize results
-        # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
+        print('\nSimulation completed successfully!')
 
         # Write final results to NetCDF using DataManager's writer (composition)
         actual_timesteps = timer.step_count + 1
@@ -536,7 +528,12 @@ class Simulation:
         )
         print(f'Simulation results saved to: {output_file}')
 
+        # Keep dashboard open after simulation ends
+        if self.dashboard is not None:
+            self.dashboard.keep_window_open()
 
+        # Finalize results
+        # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
 
     def _expand_time_dimension(self, xr_data: xr.Dataset, new_max_timesteps: int) -> xr.Dataset:
         """
@@ -572,7 +569,6 @@ class Simulation:
         >>> # Expand dataset from 1000 to 1500 timesteps
         >>> expanded_data = self._expand_time_dimension(xr_data, 1500)
         """
-
 
         current_size = len(xr_data.time)
         additional_steps = new_max_timesteps - current_size
@@ -613,7 +609,10 @@ class Simulation:
         # Create new dataset with expanded variables and all original coordinates (replace 'time')
         expanded_dataset = xr.Dataset(
             expanded_vars,
-            coords={coord: (np.arange(new_max_timesteps) if coord == 'time' else xr_data.coords[coord]) for coord in xr_data.coords}
+            coords={
+                coord: (np.arange(new_max_timesteps) if coord == 'time' else xr_data.coords[coord])
+                for coord in xr_data.coords
+            },
         )
         # Copy attributes
         expanded_dataset.attrs = xr_data.attrs.copy()
