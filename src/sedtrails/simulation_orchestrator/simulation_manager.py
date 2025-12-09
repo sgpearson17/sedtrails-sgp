@@ -323,18 +323,17 @@ class Simulation:
         # Determine flow field names from configuration
         flow_field_names = []
         for population in populations_config:
-            if 'tracer_methods' in population and (
-                'vanwesten' in population['tracer_methods'] 
-                or 'soulsby' in population['tracer_methods'] 
-                or 'passive' in population['tracer_methods']
-            ):
-                if 'vanwesten' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
-                elif 'soulsby' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
-                elif 'passive' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['passive']['flow_field_name']
-                break  # Use the first population's flow fields for now
+            if 'tracer_methods' in population:
+                tracer_methods = population['tracer_methods']
+                # Get the first tracer method key
+                if tracer_methods:
+                    method_key = next(iter(tracer_methods.keys()))
+                    match method_key:
+                        case 'vanwesten' | 'soulsby' | 'passive':
+                            flow_field_names = tracer_methods[method_key]['flow_field_name']
+                            break  # Use the first population's flow fields for now
+                        case _:
+                            pass  # Unknown tracer method, skip
 
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
