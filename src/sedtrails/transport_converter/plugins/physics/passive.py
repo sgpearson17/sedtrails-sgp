@@ -20,7 +20,6 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all classes should be called the Phys
         """
         Add physics using a simple passive tracer approach.
         """
-        print('Using passive tracer approach to compute transport velocities and add to SedTRAILS data...')
     
         # Define particle velocities as the depth-averaged flow velocities
         # TODO: allow specification of different flow fields via config

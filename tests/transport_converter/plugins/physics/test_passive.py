@@ -312,7 +312,7 @@ class TestPassiveTracerPhysics:
         plugin = PhysicsPlugin(mock_config, mock_tracer_config)
         
         # Test different transport probability methods
-        methods = ['no_probability', 'soulsby_probability', 'other_method']
+        methods = ['no_probability', 'reduced_velocity', 'stochastic_transport']
         
         results = []
         for method in methods:
