@@ -179,7 +179,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
         
         # suspended load velocity (MacDonald et al., 2006, equation 29)
-        suspended_load_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s)
+        suspended_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s)
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
         bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, mean_shear_velocity)
