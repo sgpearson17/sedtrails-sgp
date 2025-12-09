@@ -199,7 +199,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     soulsby_R[i][j] = Rb[i][j]
 
         # Compute grain velocities
-        grain_velocity_magnitude = np.multiply(np.multiply(soulsby_P, soulsby_R), flow_velocity_magnitude)  # (Equation 1)
+        grain_velocity_magnitude = soulsby_P * soulsby_R * flow_velocity_magnitude  # (Equation 1)
         grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
         grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
 
