@@ -137,17 +137,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_transport_magnitude_calc, suspended_velocity, self.config.particle_density, self.config.porosity
         )
 
-        # Compute directions from magnitudes using squeezed transport data
-        suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
-            suspended_velocity,
-            suspended_transport_x_calc,
-            suspended_transport_y_calc,
-            suspended_transport_magnitude_calc,
-        )
-        bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
-            bed_load_velocity, bed_load_transport_x_calc, bed_load_transport_y_calc, bed_load_transport_magnitude_calc
-        )
-
+       
         # Compute mixing layer thickness using Bertin et al. (2008) method
 
         critical_shear_stress = grain_properties.get('critical_shear_stress')
@@ -182,7 +172,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         suspended_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s)
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
-        bed_load_velocity = physics_lib.compute_bed_load_velocity(max_shields_number, critical_shields, mean_shear_velocity)
+        bed_load_velocity = physics_lib.compute_bed_load_velocity(
+            max_shields_number, critical_shields, mean_shear_velocity)
+
+         # Compute directions from magnitudes using squeezed transport data
+        suspended_velocity_x, suspended_velocity_y = physics_lib.compute_directions_from_magnitude(
+            suspended_velocity,
+            suspended_transport_x_calc,
+            suspended_transport_y_calc,
+            suspended_transport_magnitude_calc,
+        )
+        bed_load_velocity_x, bed_load_velocity_y = physics_lib.compute_directions_from_magnitude(
+            bed_load_velocity, 
+            bed_load_transport_x_calc, 
+            bed_load_transport_y_calc, 
+            bed_load_transport_magnitude_calc
+        )
 
         # suspended load transport fraction 
         qs_qt = suspended_transport_magnitude_calc / (suspended_transport_magnitude_calc + bed_load_transport_magnitude_calc)
@@ -191,33 +196,67 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # sediment advection velocity (MacDonald et al., 2006, equation 32)
         u_c = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         
+        # total transport centroid elevation (MacDonald et al., 2006, equation 34)
+        z_c = k_s * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
+        
+        # horizontal mean particle advection velocity (u_a) (MacDonald et al., 2006, equation 35)
+        mean_particle_velocity = max_shear_velocity * (5.75 * np.log10(z_c / k_s) + 8.5) 
+        
+        # calculate x and y components of mean particle velocity
+        mean_particle_velocity_x, mean_particle_velocity_y = physics_lib.compute_directions_from_magnitude(
+            mean_particle_velocity,
+            flow_velocity_x,
+            flow_velocity_y,
+            flow_velocity_magnitude,
+        )
+        
+        # MacDonald Q3D mode
+        
+        # mean particle fall time (macdonald et al., 2006, equation 36)
+        t_fall = z_c / settling_velocity
+        
+        # mean particle wait time (macdonald et al., 2006, equation 37)
+        t_wait = 1 / freq_entrainment
+        
+        # proportion of time particle is entrained in flow (macdonald et al., 2006, equation 38)
+        p_time_entrained = t_fall / t_wait
+        
+        # velocity deficit coefficient (macdonald et al., 2006, equation 39)
+        # I DON'T THINK I'M IMPLEMENTING THE LOGIC CORRECTLY HERE- CHECK E.G. INDEXING
+        velocity_deficit_coeff = np.ones_like(mean_particle_velocity)
+        if p_time_entrained > 1:
+            velocity_deficit_coeff = 1
+        else:
+            velocity_deficit_coeff = p_time_entrained
+            
+        # particle position quasi 3D
+        z_p = z_c # FOR NOW! THIS NEEDS TO BE IN PARTICLE PROPERTIES AND UPDATED DYNAMICALLY
+        
+        # adjusted mean particle velocity (macdonald et al., 2006, equation 40)
+        
+        
         # macdonald ----------------------------------------------------------------------------------------
 
         # vanwesten -----------------------------------------------------------------------------------------
-        # Expand dimensions if necessary
-        if has_fraction_dim:
-            shields_number = shields_number[:, np.newaxis, :]
-            bed_load_layer_thickness = bed_load_layer_thickness[:, np.newaxis, :]
-            suspended_layer_thickness = suspended_layer_thickness[:, np.newaxis, :]
-            mixing_layer_thickness = mixing_layer_thickness[:, np.newaxis, :]
+        # # Expand dimensions if necessary
+        # if has_fraction_dim:
+        #     shields_number = shields_number[:, np.newaxis, :]
+        #     bed_load_layer_thickness = bed_load_layer_thickness[:, np.newaxis, :]
+        #     suspended_layer_thickness = suspended_layer_thickness[:, np.newaxis, :]
+        #     mixing_layer_thickness = mixing_layer_thickness[:, np.newaxis, :]
 
-            bed_load_velocity = bed_load_velocity[:, np.newaxis, :]
-            bed_load_velocity_x = bed_load_velocity_x[:, np.newaxis, :]
-            bed_load_velocity_y = bed_load_velocity_y[:, np.newaxis, :]
+        #     bed_load_velocity = bed_load_velocity[:, np.newaxis, :]
+        #     bed_load_velocity_x = bed_load_velocity_x[:, np.newaxis, :]
+        #     bed_load_velocity_y = bed_load_velocity_y[:, np.newaxis, :]
 
-            suspended_velocity = suspended_velocity[:, np.newaxis, :]
-            suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
-            suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
+        #     suspended_velocity = suspended_velocity[:, np.newaxis, :]
+        #     suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
+        #     suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
 
-        # Compute transport probabilities
+        # Compute transport probabilities (placeholders for now)
         with np.errstate(divide='ignore', invalid='ignore'):
-            bed_load_probability = np.where(
-                mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0
-            )
-
-            suspended_probability = np.where(
-                mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0
-            )
+            bed_load_probability = np.ones_like(bed_load_velocity) 
+            suspended_probability = np.ones_like(suspended_velocity) 
 
         # Depending on transport_probability_method; apply transport probabilities
         if transport_probability_method == 'reduced_velocity':
@@ -251,6 +290,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         sedtrails_data.add_physics_field(
             'suspended_velocity',
             {'x': suspended_velocity_x, 'y': suspended_velocity_y, 'magnitude': suspended_velocity},
+        )
+
+        sedtrails_data.add_physics_field(
+            'mean_particle_velocity',
+            {'x': mean_particle_velocity_x, 'y': mean_particle_velocity_y, 'magnitude': mean_particle_velocity},
         )
 
         # Probability fields
