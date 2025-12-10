@@ -1,5 +1,6 @@
 """A plugin for MacDonald et al. (2006) sediment transport physics calculations."""
 
+from random import random
 import numpy as np
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
@@ -152,12 +153,43 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # macdonald -----------------------------------------------------------------------------------------
         
+        # relative density ratio
+        s = self.config.particle_density / self.config.water_density 
+        
+        # get dstar and gravity from compute_grain_properties 
+                
         # question: is it worth coding up the Soulsby-vanRijn transport equations that they have hear so that 
         # we can go directly from a hydrodynamic-only model, in the same way that soulsby is, 
-        # or do we remain dependent on having a sediment trnaport model output
+        # or do we remain dependent on having a sediment transport model output?
+        
+        # soulsby-vanRijn factors (MacDonald et al., 2006, equations 16-18)
+        A_sb = ( (0.005 * water_depth * (grain_size / water_depth) ** 1.2)
+                / (self.config.gravity * (s - 1) * grain_size) ** 1.2
+        )
+        
+        A_ss = ( (0.012 * grain_size * dstar ** -0.6)
+                / (self.config.gravity * (s - 1) * grain_size) ** 1.2
+        )
+        
+        A_s = A_sb + A_ss
+        
+        # drag coefficient (MacDonald et al., 2006, equation 19)
+        
+        # critical velocity (MacDonald et al., 2006, equation 20)
+        
+        # potential sediment transport rate (IF WE DON'T COMPUTE TRANSPORT IN EULERIAN MODEL)
+        U_rms = 0 # RMS wave orbital velocity???
+        
+        q_t_soulsbyVanRijn = (A_s * flow_velocity_magnitude * 
+                              (np.sqrt(flow_velocity_magnitude ** 2 + 0.018 / C_d * U_rms ** 2)
+                               - U_cr)
+            
+        )
+        
+        # macdonald 2D model
         
         # bed roughness (MacDonald et al., 2006, equations 12-13)
-        k_s = self.calculate_macdonald_bed_roughness(theta_max, theta_cr, grain_size, water_depth)
+        k_s_skin, k_s_form = self.calculate_macdonald_bed_roughness(theta_max, theta_cr, grain_size, water_depth)
         
         # suspended load height (MacDonald et al., 2006, equation 27)
         z_s = self.calculate_macdonald_susp_load_height(rouse_number, water_depth)
@@ -169,7 +201,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
         
         # suspended load velocity (MacDonald et al., 2006, equation 29)
-        suspended_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s)
+        suspended_velocity = self.calculate_macdonald_suspended_load_velocity(max_shear_velocity, z_s, k_s_form)
         
         # bed load velocity (MacDonald et al., 2006, equation 30) - Engelund & Fredsoe (1976), same as Soulsby et al (2011)
         bed_load_velocity = physics_lib.compute_bed_load_velocity(
@@ -197,10 +229,11 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         u_c = qs_qt * suspended_velocity + (1 - qs_qt) * bed_load_velocity
         
         # total transport centroid elevation (MacDonald et al., 2006, equation 34)
-        z_c = k_s * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
+        z_c = k_s_form * 10 ** (0.1739 * (u_c / max_shear_velocity) - 1.47826)
         
         # horizontal mean particle advection velocity (u_a) (MacDonald et al., 2006, equation 35)
-        mean_particle_velocity = max_shear_velocity * (5.75 * np.log10(z_c / k_s) + 8.5) 
+        mean_particle_velocity = max_shear_velocity * (5.75 * np.log10(z_c / k_s) + 8.5)
+        # calculate_macdonald_particle_velocity_at_zp(max_shear_velocity, z_c, k_s) 
         
         # calculate x and y components of mean particle velocity
         mean_particle_velocity_x, mean_particle_velocity_y = physics_lib.compute_directions_from_magnitude(
@@ -210,6 +243,36 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             flow_velocity_magnitude,
         )
         
+        # ----------------------------------------------------------------------------------------
+        # MacDonald probabilistic bed-particle interaction model
+        
+        # particle entrainment rate (van Rijn (1984b) pickup function, as used in MacDonald et al., 2006, equation 58)
+        q_pickup = (0.00033 * ((max_shields_number - critical_shields) / critical_shields)**1.5 * (
+            ((s - 1) * self.config.gravity * self.config.grain_diameter**3) / self.config.viscosity**2) ** 0.1 
+            * np.sqrt((s - 1) * self.config.gravity * self.config.grain_diameter)
+        )
+        
+        # frequency of particle pickup (macdonald et al., 2006, equation 60)
+        freq_pickup = q_pickup / self.config.grain_diameter
+        
+        # active layer depth (mixing depth) (macdonald et al., 2006, equation 63)
+        h_active = 5 * (max_shields_number - critical_shields) * self.config.grain_diameter
+        
+        # mixing factor (macdonald et al., 2006, equation 64)
+        if h_active > self.config.grain_diameter:
+            K_mixing = self.config.grain_diameter / h_active
+        else:
+            K_mixing = 1.0
+        
+        # burial factor (macdonald et al., 2006, equation 66)
+        h_burial = 0 # burial depth not implemented yet
+        K_burial = 1 - h_burial/h_active
+        K_burial = np.clip(K_burial, 0, 1)  # ensure between 0 and 1
+        
+        # frequency of entrainment (macdonald et al., 2006, equation 57)
+        freq_entrainment = K_burial * K_mixing * freq_pickup
+        
+        # ----------------------------------------------------------------------------------------    
         # MacDonald Q3D mode
         
         # mean particle fall time (macdonald et al., 2006, equation 36)
@@ -232,8 +295,30 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         # particle position quasi 3D
         z_p = z_c # FOR NOW! THIS NEEDS TO BE IN PARTICLE PROPERTIES AND UPDATED DYNAMICALLY
         
-        # adjusted mean particle velocity (macdonald et al., 2006, equation 40)
+        # # adjusted mean particle velocity (macdonald et al., 2006, equation 40)
+        # if and(z_p > 0, z_p <= z_c):
+        #     mean_particle_velocity = velocity_deficit_coeff * 
+        #     u_zp = calculate_macdonald_particle_velocity_at_zp(max_shear_velocity, z_p, k_s)
+        # mean_particle_velocity
         
+        # particle deposition rate (macdonald et al., 2006, equation 67)
+        if z_p < k_s_skin/4:
+            is_deposited = True
+        else:
+            is_deposited = False
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
+        
+        # q3D entrainment
+        if random.uniform(0, 1) < freq_entrainment * self.config.time_step:
+            is_entrained = True
+            z_p = z_c # initially set particle height to centroid height
+        else:
+            is_entrained = False
+            z_p = z_bed # keep particle at bed level
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
+
+        # if bed-particle interaction disabled, deposited particles instantaneously re-entrained to z_c if mobility M>1
+        # NB. THIS SHOULD BE IN PARTICLE LOOP, NOT APPLIED TO FIELDS
         
         # macdonald ----------------------------------------------------------------------------------------
 
@@ -323,12 +408,13 @@ def calculate_macdonald_bed_roughness(self, theta_max, theta_cr, grain_size, wat
         # Note: eta_b remains 0 for theta_ratio <= 1 or theta_ratio >= 24
         
         # skin friction roughness (eq 13) - NB should be d90 but here we assume uniform grain size
-        k_s = 3 * grain_size
+        k_s_skin = 3 * grain_size
         
-        # take the greater of bedform height and skin friction roughness
-        k_s = np.where(eta_b > k_s, eta_b, k_s)
+        k_s_form = eta_b
         
-        return k_s
+        # MAKE THIS A SEPARATE FUNCTION FOR SKIN AND FORM ROUGHNESS!!!
+        
+        return k_s_skin, k_s_form
 
 def calculate_macdonald_susp_load_height(self, rouse_number, water_depth):
     """Calculate height of centroid of suspended load using MacDonald et al. (2006) Eq. 27"""
@@ -339,8 +425,14 @@ def calculate_macdonald_susp_load_height(self, rouse_number, water_depth):
     z_s = water_depth * 0.0398 * (10 ** (-1.08 * np.tanh(tanh_arg)))
     return z_s
 
-def calculate_macdonald_suspended_load_velocity(self, shear_velocity, z_s, k_s):
+def calculate_macdonald_suspended_load_velocity(self, max_shear_velocity, z_s, k_s):
     """Calculate suspended load velocity using MacDonald et al. (2006) Eq. 29"""
-    suspended_load_velocity = 2.5 * shear_velocity * np.log(30 * z_s / k_s)
+    suspended_load_velocity = 2.5 * max_shear_velocity * np.log(30 * z_s / k_s)
     
     return suspended_load_velocity
+
+def calculate_macdonald_particle_velocity_at_zp(self, max_shear_velocity, z_p, k_s):
+    """Calculate particle velocity at height z_p using MacDonald et al. (2006) Eq. 33"""
+    u_a_zp = max_shear_velocity * (5.75 * np.log10(z_p / k_s) + 8.5) 
+    
+    return u_a_zp
