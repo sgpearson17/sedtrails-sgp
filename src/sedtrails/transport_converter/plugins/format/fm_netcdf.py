@@ -1,13 +1,15 @@
 """A plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format."""
 
-import xugrid as xu
-import xarray as xr
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
+import xarray as xr
+import xugrid as xu
+
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
-from pathlib import Path
-from typing import Dict, Any, List, Union, Optional
 
 
 class FormatPlugin(BaseFormatPlugin):
