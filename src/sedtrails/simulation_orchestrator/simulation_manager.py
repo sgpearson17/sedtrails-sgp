@@ -64,7 +64,7 @@ class Simulation:
             # Global exception handler will catch and log this
             raise
 
-        for population in self.populations_config:
+        for population in self.populations_config:  # FIXME: this just keeps the last one
             tracer_config = population['tracer_methods']
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
@@ -218,7 +218,7 @@ class Simulation:
 
         return self.format_converter.convert_to_sedtrails()
 
-    def validate_config(self) -> bool:  # TODO: this is not used anywhere
+    def validate_config(self) -> bool:
         """
         Validates the configuration file.
 
@@ -287,7 +287,7 @@ class Simulation:
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
 
-        # Load SedTRAILS data for 'x' and 'y' (needed for population seerder)
+        # Load SedTRAILS data for 'x' and 'y' (needed for population seeder)
         sedtrails_data = self.format_converter.convert_to_sedtrails(
             current_time=simulation_time._start, reading_interval=1
         )
@@ -319,15 +319,19 @@ class Simulation:
         )
 
         # Determine flow field names from configuration
+        # tracer_methods is obligatory, so all these checks are not needed.
         flow_field_names = []
         for population in populations_config:
-            if 'tracer_methods' in population and (
-                'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
-            ):
+            # if 'tracer_methods' in population and (
+            #     'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
+            # ):
+            if 'tracer_methods' in population:
                 if 'vanwesten' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
                 elif 'soulsby' in population['tracer_methods']:
                     flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
+                elif 'passive_tracer' in population['tracer_methods']:
+                    flow_field_names = population['tracer_methods']['passive_tracer']['flow_field_name']
                 break  # Use the first population's flow fields for now
 
         # Create SedTrails dataset using DataManager's writer (composition)
@@ -375,7 +379,7 @@ class Simulation:
             # TODO: this loops over populations_config, but only the last one is used. This must be fixed
             # to handle multiple populations with different tracer methods and flow fields
             for population in populations_config:
-                tracer_methods = population['tracer_methods']
+                tracer_methods[population['name']] = population['tracer_methods']
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
@@ -386,13 +390,13 @@ class Simulation:
 
             # Main loop
             for population in populations:
-                for _method in tracer_methods:
+                for _method in tracer_methods.keys():
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
                         # TODO: Consider moving van westen specific fields to the plugin itself
                         mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
                         bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                        if self.physics_converter.config.tracer_method == 'vanwesten':
+                        if tracer_methods[population] == 'vanwesten':
                             transport_prob = retriever.get_scalar_field(
                                 timer.current, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
@@ -408,7 +412,7 @@ class Simulation:
                         )
 
                         # Update particle burial depth
-                        if self.physics_converter.config.tracer_method == 'vanwesten':
+                        if tracer_methods[population] == 'vanwesten':
                             population.update_burial_depth()
 
                         # Determining status

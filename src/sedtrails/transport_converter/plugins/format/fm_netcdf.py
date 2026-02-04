@@ -95,7 +95,9 @@ class FormatPlugin(BaseFormatPlugin):
 
         return decompressed_info
 
-    def convert(self, current_time=None, reading_interval=None) -> SedtrailsData:
+    def convert(
+        self, current_time=None, reading_interval=None, reference_date=np.datetime64('1970-01-01T00:00:00')
+    ) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
 
@@ -114,7 +116,7 @@ class FormatPlugin(BaseFormatPlugin):
 
         # Read the NetCDF file
         self.load()
-        time_info = self._get_time_info(self.input_data, reference_date=np.datetime64('1970-01-01T00:00:00'))
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
 
         # Apply morfac decompression to time before time slicing
         time_info = self._decompress_time(time_info)

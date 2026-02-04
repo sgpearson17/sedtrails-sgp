@@ -1,8 +1,8 @@
 """A plugin for Soulsby et al. (2011) sediment transport physics calculations."""
 
 import numpy as np
-from sedtrails.transport_converter import physics_lib
-from sedtrails.transport_converter import SedtrailsData
+
+from sedtrails.transport_converter import SedtrailsData, physics_lib
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 
 
@@ -16,7 +16,9 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         super().__init__()
         self.config = config
 
-    def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
+    def add_physics(
+        self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str
+    ) -> None:
         """
         Add physics using Soulsby et al. (2011) approach.
         '1. Focus on individual particle tracking velocities\n'
@@ -50,14 +52,20 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         critical_shields = grain_properties.get('critical_shields')
         settling_velocity = grain_properties.get('settling_velocity')
-        
+
         # Validate required grain properties
         if critical_shields is None:
-            raise ValueError('critical_shields is required for Soulsby physics calculations but was not found in grain_properties')
+            raise ValueError(
+                'critical_shields is required for Soulsby physics calculations but was not found in grain_properties'
+            )
         if dimensionless_grain_size is None:
-            raise ValueError('dimensionless_grain_size is required for Soulsby physics calculations but was not found in grain_properties')
+            raise ValueError(
+                'dimensionless_grain_size is required for Soulsby physics calculations but was not found in grain_properties'
+            )
         if settling_velocity is None:
-            raise ValueError('settling_velocity is required for Soulsby physics calculations but was not found in grain_properties')
+            raise ValueError(
+                'settling_velocity is required for Soulsby physics calculations but was not found in grain_properties'
+            )
 
         # Extract flow velocities (we should be able to change these based on configuration)
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
@@ -124,79 +132,86 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             )
         )
 
-        # VECTORIZE THESE LOOPS!
-        # Compute the transition probability b [-] (Equations 3 and 4)
-        soulsby_b = np.zeros(theta_max.shape)
+        soulsby_b = np.zeros_like(theta_max, dtype=float)
+
         if transport_probability_method != 'no_probability':
-            for i in range(0, theta_max.shape[0]):
-                for j in range(0, theta_max.shape[1]):
-                    if background_theta_max[i][j] > background_theta_cr:
-                        soulsby_b[i][j] = soulsby_b_e * (
-                            1 - np.exp(-(background_theta_max[i][j] - background_theta_cr) / soulsby_theta_s)
-                        )
-                    else:
-                        soulsby_b[i][j] = 0
- 
-        # Compute the transition probability a [-] (Equation 5)
-        soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
+            mask_b = background_theta_max > background_theta_cr
+            delta_b = background_theta_max - background_theta_cr  # safe even if negative; mask controls use
+            # b = b_e * (1 - exp(-(theta - theta_cr)/theta_s)) for theta > theta_cr else 0
+            # (Assumes soulsby_theta_s > 0)
+            soulsby_b = np.where(
+                mask_b,
+                soulsby_b_e * (1.0 - np.exp(-delta_b / soulsby_theta_s)),
+                0.0,
+            )
 
+        # a (Eq. 5)  -- scalar denominator guard
+        den_gamma = 1.0 - soulsby_gamma_e
+        soulsby_a = np.divide(
+            soulsby_gamma_e * soulsby_b,
+            den_gamma,
+            out=np.zeros_like(soulsby_b),
+            where=(den_gamma != 0.0),
+        )
 
-        # VECTORIZE THESE LOOPS!
-        # Compute probability/proportion of time a particle is moving P [-] (Equation 6)
-        soulsby_P = np.zeros(theta_max.shape)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    soulsby_P[i][j] = (1 + ((np.pi / (6 * soulsby_mu_d)) / (theta_max[i][j] - theta_cr_exp)) ** 4) ** (
-                        -1 / 4
-                    )
-                else:
-                    soulsby_P[i][j] = 0
+        delta_theta = theta_max - theta_cr_exp
+        mask_P = delta_theta > 0.0
 
-        # Compute a reduction factor which is applied on the flow velocities to obtain grain velocities
+        const_P = np.pi / (6.0 * soulsby_mu_d)
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore', under='ignore'):
+            term = (const_P / delta_theta) ** 4
+            soulsby_P = np.where(mask_P, (1.0 + term) ** (-0.25), 0.0)
 
-        Rb = np.zeros(bed_load_velocity.shape)  # Bed load velocity reduction factor
-        Rs = np.zeros(bed_load_velocity.shape)  # Suspended load velocity reduction factor
-        soulsby_R = np.zeros(bed_load_velocity.shape)  # Final velocity reduction factor
+        # Clean any numerical junk
+        soulsby_P = np.nan_to_num(soulsby_P, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # VECTORIZE THESE LOOPS!
-        # Compute Rb (Equation 8)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    # print(bed_load_velocity[i][j] / flow_velocity_magnitude[i][j])
-                    Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
-                    if Rb[i][j] > 1:
-                        Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    else:
-                        Rb[i][j] = 0
+        Rb = np.zeros_like(bed_load_velocity, dtype=float)
 
-        # VECTORIZE THESE LOOPS!
-        # Compute Rs (Equation 11)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if Rb[i][j] == 0:
-                    Rs[i][j] = 0
-                else:
-                    Rs[i][j] = (
-                        Rb[i][j] * (1 - rouse_number[i][j])
-                        / (8 / 7 - rouse_number[i][j])
-                        * ((8 / 7 * Rb[i][j]) ** (8 - 7 * rouse_number[i][j]) - 1)
-                        / ((8 / 7 * Rb[i][j]) ** (7 - 7 * rouse_number[i][j]) - 1)
-                    )
-                    if Rs[i][j] > 1:
-                        Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif np.isnan(Rs[i][j]):
-                        Rs[i][j] = 0
-        
-        # VECTORIZE THESE LOOPS!
-        # Compute R
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if rouse_number[i][j] < 2.5:  # if all material is in suspension use Rs (for suspended load)
-                    soulsby_R[i][j] = Rs[i][j]
-                else:  # otherwise use Rb (for bed load)
-                    soulsby_R[i][j] = Rb[i][j]
+        # Only compute where theta > theta_cr_exp AND flow_velocity_magnitude > 0 (improvement #1)
+        mask_Rb = (theta_max > theta_cr_exp) & (flow_velocity_magnitude > 0.0)
+
+        np.divide(
+            bed_load_velocity,
+            flow_velocity_magnitude,
+            out=Rb,
+            where=mask_Rb,
+        )
+
+        # Apply limiter and NaN handling (improvement #2)
+        Rb = np.nan_to_num(Rb, nan=0.0, posinf=0.0, neginf=0.0)
+        Rb = np.clip(Rb, 0.0, 1.0)
+
+        Rs = np.zeros_like(Rb, dtype=float)
+
+        rouse = rouse_number.astype(float)
+        base = (8.0 / 7.0) * Rb
+        denA = (8.0 / 7.0) - rouse
+
+        exp1 = 8.0 - 7.0 * rouse
+        exp2 = 7.0 - 7.0 * rouse
+
+        eps = 1e-12  # numerical safety threshold
+
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore', under='ignore'):
+            pow1 = np.power(base, exp1)
+            pow2 = np.power(base, exp2)
+            denPow = pow2 - 1.0
+
+            Rs_calc = Rb * (1.0 - rouse) / denA * (pow1 - 1.0) / denPow
+
+        valid_Rs = (
+            (Rb > 0.0)
+            & np.isfinite(rouse)
+            & np.isfinite(Rb)
+            & (np.abs(denA) > eps)  # avoids 8/7 - rouse == 0 singularity
+            & (np.abs(denPow) > eps)  # avoids pow2 - 1 == 0 singularity (notably around rouse==1)
+        )
+
+        Rs = np.where(valid_Rs, Rs_calc, 0.0)
+        Rs = np.nan_to_num(Rs, nan=0.0, posinf=0.0, neginf=0.0)
+        Rs = np.clip(Rs, 0.0, 1.0)
+
+        soulsby_R = np.where(rouse < 2.5, Rs, Rb)
 
         # Compute grain velocities
         grain_velocity_magnitude = np.multiply(soulsby_P, soulsby_R, flow_velocity_magnitude)  # (Equation 1)

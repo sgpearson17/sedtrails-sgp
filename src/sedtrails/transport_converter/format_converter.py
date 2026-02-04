@@ -6,7 +6,11 @@ hydrodynamic models) and converts them into the SedtrailsData structure for
 use in the SedTRAILS particle tracking system.
 """
 
-from typing import Union, Dict
+from types import ModuleType
+from typing import Dict, Optional, Union
+
+import numpy as np
+
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 
@@ -65,12 +69,12 @@ class FormatConverter:
         return self._input_format
 
     @property
-    def reference_date(self) -> str:
+    def reference_date(self) -> np.datetime64:
         """Get the reference date as a numpy datetime64 object."""
 
         if self._reference_date is None:
             self._reference_date = self.config.get('reference_date', '1970-01-01')
-        return self._reference_date  # Default to Unix epoch
+        return np.datetime64(self._reference_date)  # Default to Unix epoch
 
     @property
     def morfac(self) -> float:
@@ -90,16 +94,16 @@ class FormatConverter:
         if self._format_plugin is None:
             # Dynamically import the format plugin based on the input type
             plugin_module_name = f'sedtrails.transport_converter.plugins.format.{self.input_format}'
+            plugin_module: Optional[ModuleType] = None
             try:
                 plugin_module = importlib.import_module(plugin_module_name)
+                # Initialize the format plugin with the input file and morfac
+                self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
             except ImportError as e:
                 raise ImportError(
                     f'Failed to import format plugin module: {plugin_module_name} '
                     f'Ensure the module exists and is correctly named.'
                 ) from e
-            else:
-                # Initialize the format plugin with the input file and morfac
-                self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
 
         return self._format_plugin
 
@@ -111,7 +115,7 @@ class FormatConverter:
         -----------
         current_time : float, optional
             Current simulation time in seconds
-        reading_interval : float, optional  
+        reading_interval : float, optional
             Reading interval in seconds
 
         Returns:
@@ -125,10 +129,8 @@ class FormatConverter:
         else:
             plugin = self._format_plugin
 
-        # print(f'Using {plugin.__class__.__name__} to convert data to SedtrailsData format...')
+        sedtrails_data = plugin.convert(current_time, reading_interval, self.reference_date)
 
-        sedtrails_data = plugin.convert(current_time, reading_interval)
-        # print('Successfully converted data to SedtrailsData format.')
         return sedtrails_data
 
 

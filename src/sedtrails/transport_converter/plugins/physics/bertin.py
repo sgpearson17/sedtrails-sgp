@@ -16,6 +16,8 @@ class PhysicsPlugin(BasePhysicsPlugin):
     def add_physics(
         self,
         sedtrails_data: SedtrailsData,
+        *args,
+        **kwargs,
     ):
         """
         Add physics using Bertin et al. (2023) approach.

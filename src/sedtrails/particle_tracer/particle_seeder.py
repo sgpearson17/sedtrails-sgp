@@ -270,6 +270,7 @@ class TransectStrategy(SeedingStrategy):
 
         return seed_locations
 
+
 class FilePointsStrategy(SeedingStrategy):
     """
     Seeding strategy to read (x, y) locations from a file.
@@ -288,6 +289,7 @@ class FilePointsStrategy(SeedingStrategy):
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         import os
+
         import pandas as pd
 
         settings = getattr(config, 'strategy_settings', {})
@@ -333,11 +335,7 @@ class FilePointsStrategy(SeedingStrategy):
 
         # --- Read file, auto-delimiter handling via pandas (engine="python" allows sep=None sniffing)
         try:
-            df = pd.read_csv(
-                path,
-                sep=None, engine="python",
-                header=0 if has_header else None
-            )
+            df = pd.read_csv(path, sep=None, engine='python', header=0 if has_header else None)
         except Exception:
             # Fallback: whitespace-delimited
             df = pd.read_csv(path, delim_whitespace=True, header=0 if has_header else None)
@@ -348,6 +346,7 @@ class FilePointsStrategy(SeedingStrategy):
                 # Convert positional index to actual column name
                 return df.columns[col]
             return col  # assume str
+
         x_name = _resolve_col(x_col, df)
         y_name = _resolve_col(y_col, df)
 
@@ -374,8 +373,11 @@ class FilePointsStrategy(SeedingStrategy):
             raise ValueError('No valid (x, y) points found after filtering.')
 
         # Build seed locations
-        seed_locations = [(quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)]
+        seed_locations = [
+            (quantity, float(x), float(y)) for x, y in zip(df['x'].to_numpy(), df['y'].to_numpy(), strict=True)
+        ]
         return seed_locations
+
 
 class ParticleFactory:
     @staticmethod
@@ -413,16 +415,6 @@ class ParticleFactory:
         if strategy_name.lower() not in STRATEGY_MAP:
             raise ValueError(f'Unknown seeding strategy: {strategy_name}')
         StrategyClass = STRATEGY_MAP[strategy_name.lower()]
-        from sedtrails.particle_tracer.particle import Mud, Passive, Sand
-
-        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
-        STRATEGY_MAP = {
-            'point': PointStrategy(),
-            'random': RandomStrategy(),
-            'grid': GridStrategy(),
-            'transect': TransectStrategy(),
-            'file_points': FilePointsStrategy(),
-        }
 
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
@@ -566,18 +558,18 @@ class ParticlePopulation:
         self.particles['is_inside'] = self._outer_envelope.contains_points(
             np.column_stack((self.particles['x'], self.particles['y']))
         )
-                
+
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
             # For no_probability method, all particles are considered exposed (always mobile)
             self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
-            
+
             # if van westen method:
             # a particle is considered exposed if it is buried at a shallower depth compared to the mixing depth
             self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
-            
+
             # if soulsby method:
             # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
