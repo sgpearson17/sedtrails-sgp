@@ -6,12 +6,23 @@ hydrodynamic models) and converts them into the SedtrailsData structure for
 use in the SedTRAILS particle tracking system.
 """
 
+from dataclasses import dataclass
 from types import ModuleType
 from typing import Dict, Optional, Union
 
 import numpy as np
 
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+
+
+@dataclass
+class SeederFieldData:
+    """
+    Minimal field data needed by ParticleSeeder: only spatial coordinates.
+    """
+
+    x: np.ndarray
+    y: np.ndarray
 
 
 class FormatConverter:
@@ -132,6 +143,26 @@ class FormatConverter:
         sedtrails_data = plugin.convert(current_time, reading_interval, self.reference_date)
 
         return sedtrails_data
+
+    def get_seeding_field_data(self) -> SeederFieldData:
+        """
+        Read only the data required by ParticleSeeder.seed: x and y coordinates.
+
+        Returns
+        -------
+        SeederFieldData
+            Minimal coordinate container for seeding workflows.
+        """
+        plugin = self.format_plugin
+
+        if hasattr(plugin, 'get_seeding_coordinates'):
+            x, y = plugin.get_seeding_coordinates()
+        else:
+            # Backward-compatible fallback for plugins that only expose full conversion.
+            sedtrails_data = plugin.convert(None, None, self.reference_date)
+            x, y = sedtrails_data.x, sedtrails_data.y
+
+        return SeederFieldData(x=np.asarray(x), y=np.asarray(y))
 
 
 if __name__ == '__main__':

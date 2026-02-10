@@ -287,14 +287,12 @@ class Simulation:
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
 
-        # Load SedTRAILS data for 'x' and 'y' (needed for population seeder)
-        sedtrails_data = self.format_converter.convert_to_sedtrails(
-            current_time=simulation_time._start, reading_interval=1
-        )
+        # Load only x/y field coordinates needed for the population seeder.
+        seeding_field_data = self.format_converter.get_seeding_field_data()
 
         populations_config = self._controller.get('particles.populations', [])
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
-        populations = seeder.seed(sedtrails_data)  # seed particles for all populations using current sedtrails data
+        populations = seeder.seed(seeding_field_data)  # seed particles for all populations
 
         # Set initial values
         sedtrails_data = None
@@ -378,8 +376,8 @@ class Simulation:
             tracer_methods = {}
             # TODO: this loops over populations_config, but only the last one is used. This must be fixed
             # to handle multiple populations with different tracer methods and flow fields
-            for population in populations_config:
-                tracer_methods[population['name']] = population['tracer_methods']
+            for ip, population in enumerate(populations_config):
+                tracer_methods[ip] = population['tracer_methods']
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
@@ -389,18 +387,26 @@ class Simulation:
             timer.compute_cfl_timestep(flow_data_list, sedtrails_data)
 
             # Main loop
-            for population in populations:
+            for ip, population in enumerate(populations):
                 for _method in tracer_methods.keys():
                     for flow_field_name in flow_field_names:
                         # Obtain scalar field information
                         # TODO: Consider moving van westen specific fields to the plugin itself
-                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
                         bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                        if tracer_methods[population] == 'vanwesten':
+                        mixing_depth = np.full(bed_level.shape, np.nan)
+                        if tracer_methods[ip] == 'vanwesten':
                             transport_prob = retriever.get_scalar_field(
                                 timer.current, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
-                        else:  # soulsby
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
+                                'magnitude'
+                            ]
+                        elif tracer_methods[ip] == 'soulsby':
+                            transport_prob = np.ones_like(bed_level)
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
+                                'magnitude'
+                            ]
+                        else:
                             transport_prob = np.ones_like(bed_level)
 
                         # Update information at particle positions
@@ -412,7 +418,7 @@ class Simulation:
                         )
 
                         # Update particle burial depth
-                        if tracer_methods[population] == 'vanwesten':
+                        if tracer_methods[ip] == 'vanwesten':
                             population.update_burial_depth()
 
                         # Determining status
@@ -441,8 +447,16 @@ class Simulation:
                 particle_data = {
                     'x': first_population.particles['x'],
                     'y': first_population.particles['y'],
-                    'burial_depth': first_population.particles['burial_depth'],
-                    'mixing_depth': first_population.particles['mixing_depth'],
+                    'burial_depth': [
+                        first_population.particles['burial_depth']
+                        if not np.all(np.isnan(first_population.particles['burial_depth']))
+                        else np.full(first_population.particles['x'].shape, np.nan)
+                    ],
+                    'mixing_depth': [
+                        first_population.particles['mixing_depth']
+                        if 'mixing_depth' in first_population.particles.keys()
+                        else np.full(first_population.particles['x'].shape, np.nan)
+                    ],
                 }
                 # Get bathymetry data
                 bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']

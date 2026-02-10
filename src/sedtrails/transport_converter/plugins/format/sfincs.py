@@ -152,6 +152,35 @@ class FormatPlugin(BaseFormatPlugin):
 
         return sedtrails_data
 
+    def get_seeding_coordinates(self):
+        """
+        Return only the spatial coordinates required for particle seeding.
+        """
+        self.load()
+
+        # Fast path: xugrid already provides face centroids.
+        if isinstance(self.input_data, xu.UgridDataset):
+            grid = self.input_data.grid
+            if not isinstance(grid, xu.Ugrid2d):
+                raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
+            return grid.face_x, grid.face_y
+
+        # Fallback: compute centroids from node coordinates and face-node connectivity.
+        node_x_var = self._get_variable('mesh2d_node_x')
+        node_y_var = self._get_variable('mesh2d_node_y')
+        face_nodes_var = self._get_variable('mesh2d_face_nodes')
+
+        start_index = face_nodes_var.attrs.get('start_index', 0)
+        fill_value = face_nodes_var.encoding.get('_FillValue', face_nodes_var.attrs.get('_FillValue', -1))
+
+        return compute_face_centroids(
+            node_x_var,
+            node_y_var,
+            face_nodes_var,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
+
     def load(self) -> Any:
         """
         Reads and loads a SFINCS NetCDF file using xugrid.
@@ -160,7 +189,11 @@ class FormatPlugin(BaseFormatPlugin):
         if self.input_data is None:
             try:
                 # First try using xugrid's open_dataset which handles UGRID conventions
-                self.input_data = xu.open_dataset(self.input_file, decode_times=True, decode_timedelta=True)
+                self.input_data = xu.load_dataset(
+                    self.input_file,
+                    decode_times=True,
+                    decode_timedelta=True,
+                )
             except Exception as e:
                 print(f'Could not open file with xugrid: {e} \n Trying with Xarray...')
                 # Fallback to regular xarray
@@ -334,7 +367,13 @@ class FormatPlugin(BaseFormatPlugin):
         # Derive face coordinates using helper that handles xu.UgridDataset
         node_x_var = self._get_variable('mesh2d_node_x')
         node_y_var = self._get_variable('mesh2d_node_y')
-        face_nodes_var = self._get_variable('mesh2d_face_nodes')
+        grid = self.input_data.grid
+
+        if not isinstance(grid, xu.Ugrid2d):
+            raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
+
+        face_nodes_var = grid.face_node_connectivity
+
         face_x, face_y = compute_face_centroids(
             node_x_var,
             node_y_var,

@@ -17,7 +17,7 @@ Random: Release particles at random locations (x,y) within an area
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Protocol, Tuple, Union
 
 import numpy as np
 from matplotlib.path import Path
@@ -28,7 +28,11 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
-from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+
+
+class HasFieldCoordinates(Protocol):
+    x: ndarray
+    y: ndarray
 
 
 @dataclass
@@ -645,14 +649,14 @@ class ParticleSeeder:
     def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]):
         self.population_configs = population_configs
 
-    def seed(self, sedtrails_data: SedtrailsData) -> List[ParticlePopulation]:
+    def seed(self, sedtrails_data: HasFieldCoordinates) -> List[ParticlePopulation]:
         """
         Create particles from a list of population configuration dictionaries.
 
         Parameters
         ----------
-         sedtrails_data : SedtrailsData
-            The SedtrailsData object containing the field data (x, y coordinates).
+         sedtrails_data : HasFieldCoordinates
+            Any object exposing `x` and `y` field coordinate arrays.
 
         Returns
         -------

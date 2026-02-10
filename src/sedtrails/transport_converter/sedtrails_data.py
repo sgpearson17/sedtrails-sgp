@@ -151,21 +151,34 @@ class SedtrailsData:
             self.metadata.add('outer_envelope', [])
             return
 
-        # Compute minimum resolution using nearest-neighbor search
-        tree = cKDTree(coords)
-        distances, _ = tree.query(coords, k=2)
-        min_resolution = float(np.min(distances[:, 1]))
+        # Drop duplicate points: repeated coordinates are not additional spatial resolution.
+        unique_coords = np.unique(coords, axis=0)
+        if unique_coords.shape[0] < 2:
+            self.metadata.add('min_resolution', None)
+            self.metadata.add('outer_envelope', [])
+            return
+
+        # Compute minimum resolution using nearest-neighbor search on unique points.
+        tree = cKDTree(unique_coords)
+        distances, _ = tree.query(unique_coords, k=2)
+        nearest_distances = distances[:, 1]
+        positive_distances = nearest_distances[nearest_distances > 0.0]
+
+        if positive_distances.size == 0:
+            min_resolution = None
+        else:
+            min_resolution = float(np.min(positive_distances))
 
         # Compute outer envelope using convex hull; fallback to bbox on failure
         try:
-            hull = ConvexHull(coords)
-            outer_envelope = coords[hull.vertices].tolist()
+            hull = ConvexHull(unique_coords)
+            outer_envelope = unique_coords[hull.vertices].tolist()
         except Exception as e:
             warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
-            min_x = float(np.min(coords[:, 0]))
-            max_x = float(np.max(coords[:, 0]))
-            min_y = float(np.min(coords[:, 1]))
-            max_y = float(np.max(coords[:, 1]))
+            min_x = float(np.min(unique_coords[:, 0]))
+            max_x = float(np.max(unique_coords[:, 0]))
+            min_y = float(np.min(unique_coords[:, 1]))
+            max_y = float(np.max(unique_coords[:, 1]))
             outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
 
         # Add to metadata

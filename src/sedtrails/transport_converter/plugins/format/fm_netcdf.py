@@ -208,6 +208,17 @@ class FormatPlugin(BaseFormatPlugin):
 
         return sedtrails_data
 
+    def get_seeding_coordinates(self):
+        """
+        Return only the spatial coordinates required for particle seeding.
+        """
+        self.load()
+
+        if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
+            raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
+
+        return self.input_data['net_xcc'].values, self.input_data['net_ycc'].values
+
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
 
