@@ -4,7 +4,6 @@ from typing import Dict
 
 import numpy as np
 from scipy.spatial import ConvexHull, cKDTree
-from scipy.spatial.distance import pdist
 
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 

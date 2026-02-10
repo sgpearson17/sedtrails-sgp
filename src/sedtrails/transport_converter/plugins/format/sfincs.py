@@ -70,7 +70,7 @@ class FormatPlugin(BaseFormatPlugin):
         self,
         current_time=None,
         reading_interval=None,
-        reference_date=np.datetime64('1970-01-01T00:00:00'),
+        reference_date: Optional[np.datetime64] = None,
     ) -> SedtrailsData:
         """
         SedtrailsData from SFINCS Netcdf.
@@ -89,6 +89,9 @@ class FormatPlugin(BaseFormatPlugin):
         SedtrailsData
             The converted SedtrailsData object.
         """
+
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
 
         # Read the NetCDF file
         self.load()
@@ -409,7 +412,7 @@ class FormatPlugin(BaseFormatPlugin):
         ]
 
         for key in time_dependent_vars:
-            var_name = variable_map.get(key, var_name if 'var_name' in locals() else None)
+            var_name = variable_map.get(key, key)
             try:
                 var = self._get_variable(var_name)
             except KeyError:

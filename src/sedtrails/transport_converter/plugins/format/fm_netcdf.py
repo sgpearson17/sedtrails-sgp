@@ -96,7 +96,7 @@ class FormatPlugin(BaseFormatPlugin):
         return decompressed_info
 
     def convert(
-        self, current_time=None, reading_interval=None, reference_date=np.datetime64('1970-01-01T00:00:00')
+        self, current_time=None, reading_interval=None, reference_date: Optional[np.datetime64] = None
     ) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
@@ -113,6 +113,9 @@ class FormatPlugin(BaseFormatPlugin):
         SedtrailsData
             The converted SedtrailsData object.
         """
+
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
 
         # Read the NetCDF file
         self.load()
