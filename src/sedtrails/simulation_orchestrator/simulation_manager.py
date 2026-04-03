@@ -377,7 +377,13 @@ class Simulation:
             # TODO: this loops over populations_config, but only the last one is used. This must be fixed
             # to handle multiple populations with different tracer methods and flow fields
             for ip, population in enumerate(populations_config):
-                tracer_methods[ip] = population['tracer_methods']
+                tracer_cfg = population.get('tracer_methods', {})
+                if isinstance(tracer_cfg, dict) and tracer_cfg:
+                    tracer_methods[ip] = next(iter(tracer_cfg.keys()))
+                elif isinstance(tracer_cfg, str):
+                    tracer_methods[ip] = tracer_cfg
+                else:
+                    tracer_methods[ip] = 'passive_tracer'
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
@@ -388,47 +394,48 @@ class Simulation:
 
             # Main loop
             for ip, population in enumerate(populations):
-                for _method in tracer_methods.keys():
-                    for flow_field_name in flow_field_names:
-                        # Obtain scalar field information
-                        # TODO: Consider moving van westen specific fields to the plugin itself
-                        bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                        mixing_depth = np.full(bed_level.shape, np.nan)
-                        if tracer_methods[ip] == 'vanwesten':
-                            transport_prob = retriever.get_scalar_field(
-                                timer.current, flow_field_name.replace('velocity', 'probability')
-                            )['magnitude']
-                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
-                                'magnitude'
-                            ]
-                        elif tracer_methods[ip] == 'soulsby':
-                            transport_prob = np.ones_like(bed_level)
-                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
-                                'magnitude'
-                            ]
-                        else:
-                            transport_prob = np.ones_like(bed_level)
+                if ip not in tracer_methods:
+                    raise ConfigurationError(
+                        f'Tracer method not configured for population {ip}. '
+                        f'Check that all populations have "tracer_methods" defined in configuration.'
+                    )
+                tracer_method = tracer_methods[ip]
+                for flow_field_name in flow_field_names:
+                    # Obtain scalar field information
+                    # TODO: Consider moving van westen specific fields to the plugin itself
+                    bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                    mixing_depth = np.full(bed_level.shape, np.nan)
+                    if tracer_method == 'vanwesten':
+                        transport_prob = retriever.get_scalar_field(
+                            timer.current, flow_field_name.replace('velocity', 'probability')
+                        )['magnitude']
+                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                    elif tracer_method == 'soulsby':
+                        transport_prob = np.ones_like(bed_level)
+                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                    else:
+                        transport_prob = np.ones_like(bed_level)
 
-                        # Update information at particle positions
-                        population.update_information(
-                            current_time=timer.current,
-                            mixing_depth=mixing_depth,
-                            bed_level=bed_level,
-                            transport_probability=transport_prob,
-                        )
+                    # Update information at particle positions
+                    population.update_information(
+                        current_time=timer.current,
+                        mixing_depth=mixing_depth,
+                        bed_level=bed_level,
+                        transport_probability=transport_prob,
+                    )
 
-                        # Update particle burial depth
-                        if tracer_methods[ip] == 'vanwesten':
-                            population.update_burial_depth()
+                    # Update particle burial depth
+                    if tracer_method == 'vanwesten':
+                        population.update_burial_depth()
 
-                        # Determining status
-                        population.update_status()
+                    # Determining status
+                    population.update_status()
 
-                        # Get flow field information
-                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+                    # Get flow field information
+                    flow_field = retriever.get_flow_field(timer.current, flow_field_name)
 
-                        # Update particle position
-                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                    # Update particle position
+                    population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
             # Collect data from all populations for this timestep using DataManager
             self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
