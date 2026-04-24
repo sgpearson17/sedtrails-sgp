@@ -605,10 +605,10 @@ class Simulation:
         for var_name in xr_data.data_vars:
             var = xr_data[var_name]
 
-            if 'time' in var.dims:
+            if 'n_timesteps' in var.dims:
                 # Get the shape and create padding
                 pad_shape = list(var.shape)
-                time_dim_idx = var.dims.index('time')
+                time_dim_idx = var.dims.index('n_timesteps')
                 pad_shape[time_dim_idx] = additional_steps
 
                 # Create NaN-filled array for padding
@@ -618,7 +618,7 @@ class Simulation:
                 # Build coordinates for the padded array
                 pad_coords = {}
                 for dim in var.dims:
-                    if dim == 'time':
+                    if dim == 'n_timesteps':
                         pad_coords[dim] = np.arange(current_size, new_max_timesteps)
                     else:
                         pad_coords[dim] = var.coords[dim]
@@ -626,7 +626,7 @@ class Simulation:
                 pad_array = xr.DataArray(pad_data, dims=var.dims, coords=pad_coords)
 
                 # Concatenate along time dimension
-                expanded_vars[var_name] = xr.concat([var, pad_array], dim='time')
+                expanded_vars[var_name] = xr.concat([var, pad_array], dim='n_timesteps')
             else:
                 # Keep non-time variables as is
                 expanded_vars[var_name] = var

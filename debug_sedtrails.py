@@ -32,7 +32,10 @@ def main():
     # config_file = r"C:\surfdrive\650_SedTRAILS\pyTesting\02_soulsby-debugging\008_coarser_hidExp_off\config.example_soulsby.yaml"
     # config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\004_grain-size-test\config.example_soulsby.yaml"
     #  config_file = r'D:\OSS\github_repos\sedtrailsdev\examples\config.example_soulsby.yaml'
-    config_file = r'D:\OSS\github_repos\sedtrailsdev\examples\config.example_sfincs.yaml'
+    # config_file = r'.\examples\config.example_soulsby.yaml'
+    config_file = r'C:\sedtrails\examples\config.example_sfincs.yaml'
+    # config_file = r'.\examples\sedtrails-example.yaml'
+
 
     # Set up logging for verbose output (equivalent to CLI verbose mode)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

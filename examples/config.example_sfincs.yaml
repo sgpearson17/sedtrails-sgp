@@ -9,7 +9,7 @@ inputs:
 time:
   start:  2024-05-01 00:00:00
   timestep: 60S
-  duration: 2H
+  duration: 5M
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
@@ -33,8 +33,8 @@ particles:
 outputs:
   #directory: .\results
   store_tracks: true
-  save_interval: 1H
+  save_interval: 30S
 visualization:
   dashboard:
     enable: true
-    update_interval: 1H
+    update_interval: 30S
