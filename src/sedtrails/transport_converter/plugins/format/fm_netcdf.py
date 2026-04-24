@@ -266,7 +266,7 @@ class FormatPlugin(BaseFormatPlugin):
                     raise IOError(f'Failed to open NetCDF file: {e}') from e
 
                 else:
-                    print(f'Sucessfully loaded (Xarray): {self.input_file}')
+                    print(f'Successfully loaded (Xarray): {self.input_file}')
             else:
                 print('Successfully loaded (Xugrid)', self.input_file)
 

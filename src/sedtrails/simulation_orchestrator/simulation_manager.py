@@ -560,90 +560,78 @@ class Simulation:
         # Finalize results
         # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
 
-    def _expand_time_dimension(self, xr_data: xr.Dataset, new_max_timesteps: int) -> xr.Dataset:
-        """
-        Expand the time dimension of the xarray dataset to accommodate more timesteps.
+    def _expand_time_dimension(
+        self,
+        xr_data: xr.Dataset,
+        new_max_timesteps: int,
+    ) -> xr.Dataset:
+        time_dim = 'n_timesteps' if 'n_timesteps' in xr_data.sizes else 'time'
 
-        This method is called when the number of timesteps approaches the allocated buffer size
-        due to adaptive CFL-based timestepping. It pads all time-dependent data variables with
-        NaN values and updates the time coordinate accordingly.
+        current_size = xr_data.sizes[time_dim]
 
-        Parameters
-        ----------
-        xr_data : xr.Dataset
-            The xarray dataset containing simulation results with time dimension.
-        new_max_timesteps : int
-            The new maximum number of timesteps to allocate. Must be larger than the current
-            time dimension size.
+        if new_max_timesteps <= current_size:
+            raise ValueError(f'new_max_timesteps={new_max_timesteps} must be larger than current size={current_size}')
 
-        Returns
-        -------
-        xr.Dataset
-            The expanded dataset with additional timesteps allocated along the time dimension.
-            New timestep values are filled with NaN.
+        # Replace/normalize the timestep coordinate to guarantee uniqueness
+        xr_data = xr_data.assign_coords({time_dim: np.arange(current_size)})
 
-        Notes
-        -----
-        - Only data variables that have a 'time' dimension are expanded.
-        - The time coordinate is updated to range from 0 to new_max_timesteps - 1.
-        - All newly allocated timesteps are filled with NaN values.
-        - This operation creates a copy of the dataset data in memory.
+        new_coord = np.arange(new_max_timesteps)
 
-        Examples
-        --------
-        >>> # Expand dataset from 1000 to 1500 timesteps
-        >>> expanded_data = self._expand_time_dimension(xr_data, 1500)
-        """
-
-        current_size = len(xr_data.time)
-        additional_steps = new_max_timesteps - current_size
-
-        # Create a dictionary to hold expanded data variables
         expanded_vars = {}
 
-        # Pad all data variables along time dimension
-        for var_name in xr_data.data_vars:
-            var = xr_data[var_name]
-
-            if 'n_timesteps' in var.dims:
-                # Get the shape and create padding
-                pad_shape = list(var.shape)
-                time_dim_idx = var.dims.index('n_timesteps')
-                pad_shape[time_dim_idx] = additional_steps
-
-                # Create NaN-filled array for padding
-                pad_data = np.full(pad_shape, np.nan, dtype=var.dtype)
-
-                # Create DataArray for padding with the same dimensions (except time)
-                # Build coordinates for the padded array
-                pad_coords = {}
-                for dim in var.dims:
-                    if dim == 'n_timesteps':
-                        pad_coords[dim] = np.arange(current_size, new_max_timesteps)
-                    else:
-                        pad_coords[dim] = var.coords[dim]
-
-                pad_array = xr.DataArray(pad_data, dims=var.dims, coords=pad_coords)
-
-                # Concatenate along time dimension
-                expanded_vars[var_name] = xr.concat([var, pad_array], dim='n_timesteps')
-            else:
-                # Keep non-time variables as is
+        for var_name, var in xr_data.data_vars.items():
+            if time_dim not in var.dims:
                 expanded_vars[var_name] = var
+                continue
 
-        # Create new dataset with expanded variables and all original coordinates (replace 'time')
+            time_axis = var.dims.index(time_dim)
+
+            pad_shape = list(var.shape)
+            pad_shape[time_axis] = new_max_timesteps - current_size
+
+            if np.issubdtype(var.dtype, np.floating) or np.issubdtype(var.dtype, np.complexfloating):
+                pad_data = np.full(
+                    pad_shape,
+                    np.nan,
+                    dtype=var.dtype,
+                )
+            else:
+                pad_data = np.zeros(
+                    pad_shape,
+                    dtype=var.dtype,
+                )
+
+            pad_coords = {}
+            for dim in var.dims:
+                if dim == time_dim:
+                    pad_coords[dim] = np.arange(current_size, new_max_timesteps)
+                elif dim in var.coords:
+                    pad_coords[dim] = var.coords[dim]
+
+            pad_array = xr.DataArray(
+                pad_data,
+                dims=var.dims,
+                coords=pad_coords,
+                attrs=var.attrs.copy(),
+            )
+
+            expanded_vars[var_name] = xr.concat(
+                [var, pad_array],
+                dim=time_dim,
+            )
+
+        coords = {}
+        for coord_name, coord in xr_data.coords.items():
+            if coord_name == time_dim:
+                coords[coord_name] = new_coord
+            elif time_dim not in coord.dims:
+                coords[coord_name] = coord
+
         expanded_dataset = xr.Dataset(
             expanded_vars,
-            coords={
-                coord: (np.arange(new_max_timesteps) if coord == 'time' else xr_data.coords[coord])
-                for coord in xr_data.coords
-            },
+            coords=coords,
+            attrs=xr_data.attrs.copy(),
         )
-        # Copy attributes
-        expanded_dataset.attrs = xr_data.attrs.copy()
-        for var_name in xr_data.data_vars:
-            if var_name in expanded_dataset.data_vars:
-                expanded_dataset[var_name].attrs = xr_data[var_name].attrs.copy()
 
         return expanded_dataset
 

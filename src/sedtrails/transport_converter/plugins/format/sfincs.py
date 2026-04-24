@@ -219,13 +219,13 @@ class FormatPlugin(BaseFormatPlugin):
                         except Exception as e:
                             raise IOError(f'Failed to open NetCDF file: {e}') from e
                         else:
-                            print(f'Sucessfully loaded (Xarray, decode_times=False): {self.input_file}')
+                            print(f'Successfully loaded (Xarray, decode_times=False): {self.input_file}')
                     else:
                         raise IOError(f'Failed to open NetCDF file: {e}') from e
                 else:
-                    print(f'Sucessfully loaded (Xarray): {self.input_file}')
+                    print(f'Successfully loaded (Xarray): {self.input_file}')
             else:
-                print(f'Sucessfully loaded (Xugrid): {self.input_file}')
+                print(f'Successfully loaded (Xugrid): {self.input_file}')
 
     def _get_variable(self, name: str):
         """
