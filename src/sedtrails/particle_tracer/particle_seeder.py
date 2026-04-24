@@ -34,6 +34,14 @@ class HasFieldCoordinates(Protocol):
     y: ndarray
 
 
+def _is_temporal_field(field_value: Any) -> bool:
+    return isinstance(field_value, dict) and {'lower', 'upper', 'weight'}.issubset(field_value)
+
+
+def _is_temporal_flow_field(flow_field: Dict) -> bool:
+    return _is_temporal_field(flow_field) and isinstance(flow_field.get('lower'), dict)
+
+
 @dataclass
 class PopulationConfig:
     """
@@ -488,6 +496,7 @@ class ParticlePopulation:
 
         self._field_interpolator = numba_functions['interpolate_field']
         self._position_calculator = numba_functions['update_particles']
+        self._position_calculator_temporal = numba_functions['update_particles_temporal']
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -527,6 +536,23 @@ class ParticlePopulation:
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
+            return
+
+        if _is_temporal_field(field_value):
+            lower_values = np.asarray(field_value['lower'])
+            upper_values = np.asarray(field_value['upper'])
+            if lower_values.size == 0 or np.isnan(lower_values).all():
+                if upper_values.size == 0 or np.isnan(upper_values).all():
+                    return
+
+            lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
+            weight = field_value['weight']
+            if weight <= 0.0 or lower_values is upper_values:
+                self.particles[name] = lower_particle_values
+                return
+
+            upper_particle_values = self._field_interpolator(upper_values, self.particles['x'], self.particles['y'])
+            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
             return
 
         if np.isscalar(field_value):
@@ -622,13 +648,25 @@ class ParticlePopulation:
         dx = np.zeros(n_particles)
         dy = np.zeros(n_particles)
 
-        new_x, new_y = self._position_calculator(
-            self.particles['x'][ix],
-            self.particles['y'][ix],
-            flow_field['u'],
-            flow_field['v'],
-            current_timestep,
-        )
+        if _is_temporal_flow_field(flow_field):
+            new_x, new_y = self._position_calculator_temporal(
+                self.particles['x'][ix],
+                self.particles['y'][ix],
+                flow_field['lower']['u'],
+                flow_field['lower']['v'],
+                flow_field['upper']['u'],
+                flow_field['upper']['v'],
+                flow_field['weight'],
+                current_timestep,
+            )
+        else:
+            new_x, new_y = self._position_calculator(
+                self.particles['x'][ix],
+                self.particles['y'][ix],
+                flow_field['u'],
+                flow_field['v'],
+                current_timestep,
+            )
 
         dx[ix] = new_x - self.particles['x'][ix]  # TODO: this should be stored in the netcdf, as part of the flow field
         dy[ix] = new_y - self.particles['y'][ix]

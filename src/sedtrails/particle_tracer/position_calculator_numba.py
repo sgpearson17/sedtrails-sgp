@@ -130,26 +130,35 @@ class GridGeometry:
 
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
         """Advance particle positions one RK4 step using barycentric velocity sampling."""
+        return self.update_particles_temporal(x0, y0, grid_u, grid_v, grid_u, grid_v, 0.0, dt, igeo)
+
+    def update_particles_temporal(self, x0, y0, lower_u, lower_v, upper_u, upper_v, weight, dt, igeo=0):
+        """Advance particles using lower/upper time-slice velocities blended by weight."""
         x0 = np.asarray(x0, dtype=np.float64)
         y0 = np.asarray(y0, dtype=np.float64)
         if x0.size == 0:
             return x0.copy(), y0.copy()
 
-        grid_u_adj, grid_v_adj = self._velocity_arrays(grid_u, grid_v, igeo)
+        lower_u_adj, lower_v_adj = self._velocity_arrays(lower_u, lower_v, igeo)
+        if weight <= 0.0:
+            upper_u_adj = lower_u_adj
+            upper_v_adj = lower_v_adj
+        else:
+            upper_u_adj, upper_v_adj = self._velocity_arrays(upper_u, upper_v, igeo)
 
-        u1, v1 = self.interpolate_vector(grid_u_adj, grid_v_adj, x0, y0)
+        u1, v1 = self.interpolate_temporal_vector(lower_u_adj, lower_v_adj, upper_u_adj, upper_v_adj, weight, x0, y0)
         x1 = x0 + 0.5 * u1 * dt
         y1 = y0 + 0.5 * v1 * dt
 
-        u2, v2 = self.interpolate_vector(grid_u_adj, grid_v_adj, x1, y1)
+        u2, v2 = self.interpolate_temporal_vector(lower_u_adj, lower_v_adj, upper_u_adj, upper_v_adj, weight, x1, y1)
         x2 = x0 + 0.5 * u2 * dt
         y2 = y0 + 0.5 * v2 * dt
 
-        u3, v3 = self.interpolate_vector(grid_u_adj, grid_v_adj, x2, y2)
+        u3, v3 = self.interpolate_temporal_vector(lower_u_adj, lower_v_adj, upper_u_adj, upper_v_adj, weight, x2, y2)
         x3 = x0 + u3 * dt
         y3 = y0 + v3 * dt
 
-        u4, v4 = self.interpolate_vector(grid_u_adj, grid_v_adj, x3, y3)
+        u4, v4 = self.interpolate_temporal_vector(lower_u_adj, lower_v_adj, upper_u_adj, upper_v_adj, weight, x3, y3)
 
         x_new = x0 + dt / 6.0 * (u1 + 2.0 * u2 + 2.0 * u3 + u4)
         y_new = y0 + dt / 6.0 * (v1 + 2.0 * v2 + 2.0 * v3 + v4)
@@ -160,6 +169,18 @@ class GridGeometry:
         return (
             self.interpolate_field(grid_u, x_points, y_points),
             self.interpolate_field(grid_v, x_points, y_points),
+        )
+
+    def interpolate_temporal_vector(self, lower_u, lower_v, upper_u, upper_v, weight, x_points, y_points):
+        """Interpolate lower/upper vector fields spatially, then blend in time."""
+        lower_u_values, lower_v_values = self.interpolate_vector(lower_u, lower_v, x_points, y_points)
+        if weight <= 0.0:
+            return lower_u_values, lower_v_values
+
+        upper_u_values, upper_v_values = self.interpolate_vector(upper_u, upper_v, x_points, y_points)
+        return (
+            lower_u_values + weight * (upper_u_values - lower_u_values),
+            lower_v_values + weight * (upper_v_values - lower_v_values),
         )
 
     def _velocity_arrays(self, grid_u, grid_v, igeo):
@@ -240,6 +261,7 @@ def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geomet
         'find_triangle': geometry.find_triangle,
         'interpolate_field': geometry.interpolate_field,
         'update_particles': geometry.update_particles,
+        'update_particles_temporal': geometry.update_particles_temporal,
         'update_particles_parallel': geometry.update_particles,
     }
 

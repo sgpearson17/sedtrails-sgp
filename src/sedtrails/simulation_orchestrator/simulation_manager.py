@@ -474,6 +474,32 @@ class Simulation:
                         _cache[cache_key] = _retriever.get_flow_field(_time, flow_field_name)
                 return _cache[cache_key]
 
+            def get_flow_field_bounds_cached(
+                flow_field_name: str,
+                profile_name: str,
+                _cache=field_cache,
+                _retriever=retriever,
+                _time=cache_time,
+            ):
+                cache_key = ('flow_bounds', _time, flow_field_name)
+                if cache_key not in _cache:
+                    with self._profile_section(profile_name):
+                        _cache[cache_key] = _retriever.get_flow_field_bounds(_time, flow_field_name)
+                return _cache[cache_key]
+
+            def get_flow_max_velocity_cached(
+                flow_field_name: str,
+                profile_name: str,
+                _cache=field_cache,
+                _retriever=retriever,
+                _time=cache_time,
+            ):
+                cache_key = ('flow_max_velocity', _time, flow_field_name)
+                if cache_key not in _cache:
+                    with self._profile_section(profile_name):
+                        _cache[cache_key] = _retriever.get_flow_max_velocity_bound(_time, flow_field_name)
+                return _cache[cache_key]
+
             def get_scalar_field_cached(
                 scalar_field_name: str,
                 profile_name: str,
@@ -487,13 +513,33 @@ class Simulation:
                         _cache[cache_key] = _retriever.get_scalar_field(_time, scalar_field_name)['magnitude']
                 return _cache[cache_key]
 
-            flow_data_list = []
+            def get_scalar_field_bounds_cached(
+                scalar_field_name: str,
+                profile_name: str,
+                _cache=field_cache,
+                _retriever=retriever,
+                _time=cache_time,
+            ):
+                cache_key = ('scalar_bounds', _time, scalar_field_name)
+                if cache_key not in _cache:
+                    with self._profile_section(profile_name):
+                        _cache[cache_key] = _retriever.get_scalar_field_bounds(_time, scalar_field_name)
+                return _cache[cache_key]
+
+            max_velocity = 0.0
             for flow_field_name in flow_field_names:
-                flow_data_list.append(get_flow_field_cached(flow_field_name, 'get_flow_field.cfl'))
+                max_velocity = max(
+                    max_velocity,
+                    get_flow_max_velocity_cached(flow_field_name, 'get_flow_max_velocity.cfl'),
+                )
 
             # Compute CFL-based timestep across all flow fields
             with self._profile_section('compute_cfl_timestep'):
-                timer.compute_cfl_timestep(flow_data_list, sedtrails_data)
+                timer.compute_cfl_timestep_from_max_velocity(
+                    max_velocity,
+                    sedtrails_data.metadata.min_resolution,
+                    sedtrails_data.metadata.timestep,
+                )
 
             # Main loop
             for ip, population in enumerate(populations):
@@ -506,20 +552,20 @@ class Simulation:
                 for flow_field_name in flow_field_names:
                     # Obtain scalar field information
                     # TODO: Consider moving van westen specific fields to the plugin itself
-                    bed_level = get_scalar_field_cached('bed_level', 'get_scalar_field.bed_level')
+                    bed_level = get_scalar_field_bounds_cached('bed_level', 'get_scalar_field.bed_level')
                     mixing_depth = None
                     if tracer_method == 'vanwesten':
-                        transport_prob = get_scalar_field_cached(
+                        transport_prob = get_scalar_field_bounds_cached(
                             flow_field_name.replace('velocity', 'probability'),
                             'get_scalar_field.transport_probability',
                         )
-                        mixing_depth = get_scalar_field_cached(
+                        mixing_depth = get_scalar_field_bounds_cached(
                             'mixing_layer_thickness',
                             'get_scalar_field.mixing_layer_thickness',
                         )
                     elif tracer_method == 'soulsby':
                         transport_prob = 1.0
-                        mixing_depth = get_scalar_field_cached(
+                        mixing_depth = get_scalar_field_bounds_cached(
                             'mixing_layer_thickness',
                             'get_scalar_field.mixing_layer_thickness',
                         )
@@ -543,7 +589,7 @@ class Simulation:
                     population.update_status()
 
                     # Get flow field information
-                    flow_field = get_flow_field_cached(flow_field_name, 'get_flow_field.update_position')
+                    flow_field = get_flow_field_bounds_cached(flow_field_name, 'get_flow_field.update_position')
 
                     # Update particle position
                     with self._profile_section('update_position'):
@@ -579,6 +625,7 @@ class Simulation:
                 }
                 # Get bathymetry data
                 bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
+                dashboard_flow_field = get_flow_field_cached(flow_field_names[0], 'get_flow_field.dashboard')
 
                 # Particle data including burial_depth and mixing_depth
 
@@ -589,7 +636,7 @@ class Simulation:
                 # Update dashboard with timing info
 
                 self.dashboard.update(
-                    flow_field,
+                    dashboard_flow_field,
                     bathymetry,
                     particle_data,
                     timer.current,

@@ -37,6 +37,7 @@ class FieldDataRetriever:
         """
         self.sedtrails_data = sedtrails_data
         self.fraction_index = fraction_index
+        self._flow_max_cache = {}
 
     def get_interpolation_indices(self, target_time: float) -> Tuple[int, int, float]:
         """
@@ -217,6 +218,87 @@ class FieldDataRetriever:
                 'magnitude': flow_mag,
             }
 
+    def get_flow_field_bounds(self, time: float, flow_field_name: str) -> Dict:
+        """
+        Return lower/upper time slices for a flow field without full-grid interpolation.
+
+        Particle interpolation is linear in the nodal values, so callers with a
+        small number of query points can interpolate each time slice at those
+        points and blend the results by `weight`.
+        """
+        lower_index, upper_index, weight = self.get_interpolation_indices(time)
+        lower_slice = self.sedtrails_data[lower_index]
+
+        if flow_field_name not in lower_slice:
+            raise KeyError(
+                f"Flow field '{flow_field_name}' not found in SedtrailsData. "
+                f'Available fields: {list(lower_slice.keys())}'
+            )
+
+        lower_flow = self._extract_fraction(lower_slice[flow_field_name])
+        if lower_index == upper_index:
+            upper_flow = lower_flow
+        else:
+            upper_slice = self.sedtrails_data[upper_index]
+            if flow_field_name not in upper_slice:
+                raise KeyError(
+                    f"Flow field '{flow_field_name}' not found in SedtrailsData. "
+                    f'Available fields: {list(upper_slice.keys())}'
+                )
+            upper_flow = self._extract_fraction(upper_slice[flow_field_name])
+
+        return {
+            'x': self.sedtrails_data.x,
+            'y': self.sedtrails_data.y,
+            'lower': {
+                'u': lower_flow['x'],
+                'v': lower_flow['y'],
+                'magnitude': lower_flow['magnitude'],
+            },
+            'upper': {
+                'u': upper_flow['x'],
+                'v': upper_flow['y'],
+                'magnitude': upper_flow['magnitude'],
+            },
+            'weight': weight,
+            'lower_index': lower_index,
+            'upper_index': upper_index,
+        }
+
+    def get_flow_max_velocity_bound(self, time: float, flow_field_name: str) -> float:
+        """
+        Return a conservative max velocity bound for CFL without interpolating a full grid.
+
+        The bound is `(1-w) * max(lower) + w * max(upper)`, which is greater
+        than or equal to the exact max of the linearly interpolated magnitude
+        field for `0 <= w <= 1`.
+        """
+        lower_index, upper_index, weight = self.get_interpolation_indices(time)
+        lower_max = self._get_flow_time_slice_max(flow_field_name, lower_index)
+        if lower_index == upper_index:
+            return lower_max
+
+        upper_max = self._get_flow_time_slice_max(flow_field_name, upper_index)
+        return (1.0 - weight) * lower_max + weight * upper_max
+
+    def _get_flow_time_slice_max(self, flow_field_name: str, time_index: int) -> float:
+        cache_key = (flow_field_name, time_index, self.fraction_index)
+        if cache_key in self._flow_max_cache:
+            return self._flow_max_cache[cache_key]
+
+        time_slice = self.sedtrails_data[time_index]
+        if flow_field_name not in time_slice:
+            raise KeyError(
+                f"Flow field '{flow_field_name}' not found in SedtrailsData. "
+                f'Available fields: {list(time_slice.keys())}'
+            )
+
+        flow_field = self._extract_fraction(time_slice[flow_field_name])
+        magnitude = flow_field['magnitude']
+        max_velocity = 0.0 if np.isnan(magnitude).all() else float(np.nanmax(magnitude))
+        self._flow_max_cache[cache_key] = max_velocity
+        return max_velocity
+
     def get_scalar_field(self, time: float, scalar_field_name: str) -> Dict[str, np.ndarray]:
         """
         Get a scalar field and coordinates at the specified time.
@@ -278,6 +360,39 @@ class FieldDataRetriever:
             scalar_interpolated = self._interpolate_linearly(lower_scalar, upper_scalar, weight)
 
             return {'x': self.sedtrails_data.x, 'y': self.sedtrails_data.y, 'magnitude': scalar_interpolated}
+
+    def get_scalar_field_bounds(self, time: float, scalar_field_name: str) -> Dict:
+        """Return lower/upper time slices for a scalar field without full-grid interpolation."""
+        lower_index, upper_index, weight = self.get_interpolation_indices(time)
+        lower_slice = self.sedtrails_data[lower_index]
+
+        if scalar_field_name not in lower_slice:
+            raise KeyError(
+                f"Scalar field '{scalar_field_name}' not found in SedtrailsData. "
+                f'Available fields: {list(lower_slice.keys())}'
+            )
+
+        lower_scalar = self._extract_fraction(lower_slice[scalar_field_name])
+        if lower_index == upper_index:
+            upper_scalar = lower_scalar
+        else:
+            upper_slice = self.sedtrails_data[upper_index]
+            if scalar_field_name not in upper_slice:
+                raise KeyError(
+                    f"Scalar field '{scalar_field_name}' not found in SedtrailsData. "
+                    f'Available fields: {list(upper_slice.keys())}'
+                )
+            upper_scalar = self._extract_fraction(upper_slice[scalar_field_name])
+
+        return {
+            'x': self.sedtrails_data.x,
+            'y': self.sedtrails_data.y,
+            'lower': lower_scalar,
+            'upper': upper_scalar,
+            'weight': weight,
+            'lower_index': lower_index,
+            'upper_index': upper_index,
+        }
 
 
 # Note: The example code has been moved to examples/data_retriever_example.py

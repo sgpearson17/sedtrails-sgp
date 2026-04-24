@@ -1130,3 +1130,22 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
         np.testing.assert_allclose(population.particles['bed_level'], 0.0)
         assert 'mixing_depth' not in population.particles
+
+    def test_update_information_accepts_temporal_scalar_bounds(self, point_config_simple):
+        """Temporal scalar bounds should match preblended-grid interpolation."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        lower = np.array([0.0, 1.0, 2.0, 1.0])
+        upper = np.array([2.0, 3.0, 4.0, 3.0])
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=None,
+            transport_probability=1.0,
+            bed_level={'lower': lower, 'upper': upper, 'weight': 0.25},
+        )
+
+        np.testing.assert_allclose(population.particles['bed_level'], 0.5)

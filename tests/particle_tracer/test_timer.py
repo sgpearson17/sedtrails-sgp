@@ -244,6 +244,14 @@ class TestTimer:
 
         assert timer.current_timestep == 10.0
 
+    def test_compute_cfl_timestep_from_precomputed_max_velocity(self):
+        time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))
+        timer = Timer(simulation_time=time, cfl_condition=0.5)
+
+        timer.compute_cfl_timestep_from_max_velocity(max_velocity=2.0, min_resolution=4.0, data_timestep=10.0)
+
+        assert timer.current_timestep == 1.0
+
 
 class TestTime:
     """Test cases for the Time class."""
