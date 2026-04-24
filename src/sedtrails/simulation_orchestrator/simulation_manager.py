@@ -1,6 +1,8 @@
 import logging
 import os
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -41,6 +43,10 @@ class Simulation:
         self._start_time = None
         self._config_is_read = False
         self._populations_config = None
+        self._profile_enabled = self._is_profile_enabled()
+        self._profile_timings = {}
+        self._profile_summary_logged = False
+        self._active_progress_bar = None
 
         # Validate config file exists early
         if not os.path.exists(config_file):
@@ -79,6 +85,58 @@ class Simulation:
         setup_logging(output_dir=str(self.writer.output_dir))  # Initialize logging in the results directory
         self.logger = logging.getLogger(__name__)
         self.logger.info('Configuration loaded')
+        if self._profile_enabled:
+            self.logger.info('Profiling enabled via SEDTRAILS_PROFILE')
+
+    @staticmethod
+    def _is_profile_enabled() -> bool:
+        """Return whether lightweight simulation profiling is enabled."""
+        return os.environ.get('SEDTRAILS_PROFILE', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+    @contextmanager
+    def _profile_section(self, name: str):
+        """Measure a section when profiling is enabled."""
+        if not self._profile_enabled:
+            yield
+            return
+
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = time.perf_counter() - start
+            stats = self._profile_timings.setdefault(name, {'count': 0, 'total': 0.0, 'max': 0.0})
+            stats['count'] += 1
+            stats['total'] += elapsed
+            stats['max'] = max(stats['max'], elapsed)
+
+    def _log_profile_summary(self, status: str = 'completed') -> None:
+        """Write the aggregated profiling timings to the simulation logger."""
+        if not self._profile_enabled:
+            return
+
+        if self._profile_summary_logged:
+            return
+
+        self._profile_summary_logged = True
+
+        if not self._profile_timings:
+            self.logger.info('Profiling enabled, but no sections were recorded (status=%s)', status)
+            return
+
+        self.logger.info('=== SEDTRAILS PROFILE SUMMARY (%s) ===', status)
+        for name, stats in sorted(self._profile_timings.items(), key=lambda item: item[1]['total'], reverse=True):
+            count = stats['count']
+            total = stats['total']
+            average = total / count if count else 0.0
+            self.logger.info(
+                'profile %-42s count=%6d total=%10.6fs avg=%10.6fs max=%10.6fs',
+                name,
+                count,
+                total,
+                average,
+                stats['max'],
+            )
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
@@ -268,6 +326,17 @@ class Simulation:
         return value
 
     def run(self):
+        """Execute the simulation and flush profile timings on failure."""
+        try:
+            return self._run_impl()
+        except Exception:
+            if self._active_progress_bar is not None:
+                self._active_progress_bar.close()
+                self._active_progress_bar = None
+            self._log_profile_summary(status='interrupted')
+            raise
+
+    def _run_impl(self):
         """
         Executes the particle simulation workflow.
         """
@@ -288,7 +357,8 @@ class Simulation:
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
 
         # Load only x/y field coordinates needed for the population seeder.
-        seeding_field_data = self.format_converter.get_seeding_field_data()
+        with self._profile_section('get_seeding_field_data'):
+            seeding_field_data = self.format_converter.get_seeding_field_data()
 
         populations_config = self._controller.get('particles.populations', [])
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
@@ -304,6 +374,7 @@ class Simulation:
             unit='%',
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
         )
+        self._active_progress_bar = pbar
 
         log_simulation_state(
             self.logger,
@@ -357,16 +428,18 @@ class Simulation:
                     timer.advance()
                     continue
                 # Convert to SedTRAILS format
-                sedtrails_data = self.format_converter.convert_to_sedtrails(
-                    current_time=current_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
-                )
+                with self._profile_section('convert_to_sedtrails'):
+                    sedtrails_data = self.format_converter.convert_to_sedtrails(
+                        current_time=current_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
+                    )
 
                 # Convert physics fields with transport probability configuration
                 for pop in self.populations_config:
-                    self.physics_converter.convert_physics(
-                        sedtrails_data=sedtrails_data,
-                        transport_probability_method=pop.get('transport_probability'),
-                    )
+                    with self._profile_section('convert_physics'):
+                        self.physics_converter.convert_physics(
+                            sedtrails_data=sedtrails_data,
+                            transport_probability_method=pop.get('transport_probability'),
+                        )
 
                 # Create new FieldDataRetriever with updated data
                 retriever = FieldDataRetriever(sedtrails_data)  # TODO: should the retriever only be created once?
@@ -387,10 +460,12 @@ class Simulation:
 
             flow_data_list = []
             for flow_field_name in flow_field_names:
-                flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
+                with self._profile_section('get_flow_field.cfl'):
+                    flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
 
             # Compute CFL-based timestep across all flow fields
-            timer.compute_cfl_timestep(flow_data_list, sedtrails_data)
+            with self._profile_section('compute_cfl_timestep'):
+                timer.compute_cfl_timestep(flow_data_list, sedtrails_data)
 
             # Main loop
             for ip, population in enumerate(populations):
@@ -403,26 +478,35 @@ class Simulation:
                 for flow_field_name in flow_field_names:
                     # Obtain scalar field information
                     # TODO: Consider moving van westen specific fields to the plugin itself
-                    bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                    with self._profile_section('get_scalar_field.bed_level'):
+                        bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
                     mixing_depth = np.full(bed_level.shape, np.nan)
                     if tracer_method == 'vanwesten':
-                        transport_prob = retriever.get_scalar_field(
-                            timer.current, flow_field_name.replace('velocity', 'probability')
-                        )['magnitude']
-                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                        with self._profile_section('get_scalar_field.transport_probability'):
+                            transport_prob = retriever.get_scalar_field(
+                                timer.current, flow_field_name.replace('velocity', 'probability')
+                            )['magnitude']
+                        with self._profile_section('get_scalar_field.mixing_layer_thickness'):
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
+                                'magnitude'
+                            ]
                     elif tracer_method == 'soulsby':
                         transport_prob = np.ones_like(bed_level)
-                        mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                        with self._profile_section('get_scalar_field.mixing_layer_thickness'):
+                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
+                                'magnitude'
+                            ]
                     else:
                         transport_prob = np.ones_like(bed_level)
 
                     # Update information at particle positions
-                    population.update_information(
-                        current_time=timer.current,
-                        mixing_depth=mixing_depth,
-                        bed_level=bed_level,
-                        transport_probability=transport_prob,
-                    )
+                    with self._profile_section('update_information'):
+                        population.update_information(
+                            current_time=timer.current,
+                            mixing_depth=mixing_depth,
+                            bed_level=bed_level,
+                            transport_probability=transport_prob,
+                        )
 
                     # Update particle burial depth
                     if tracer_method == 'vanwesten':
@@ -432,10 +516,12 @@ class Simulation:
                     population.update_status()
 
                     # Get flow field information
-                    flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+                    with self._profile_section('get_flow_field.update_position'):
+                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
 
                     # Update particle position
-                    population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                    with self._profile_section('update_position'):
+                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
             # Collect data from all populations for this timestep using DataManager
             self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
@@ -466,7 +552,8 @@ class Simulation:
                     ],
                 }
                 # Get bathymetry data
-                bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                with self._profile_section('get_scalar_field.dashboard_bed_level'):
+                    bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
 
                 # Particle data including burial_depth and mixing_depth
 
@@ -544,6 +631,7 @@ class Simulation:
 
         # End of Simulation
         pbar.close()
+        self._active_progress_bar = None
         print('\nSimulation completed successfully!')
 
         # Write final results to NetCDF using DataManager's writer (composition)
@@ -552,6 +640,7 @@ class Simulation:
             xr_data, filename='sedtrails_results.nc', trim_to_actual_timesteps=True, actual_timesteps=actual_timesteps
         )
         print(f'Simulation results saved to: {output_file}')
+        self._log_profile_summary(status='completed')
 
         # Keep dashboard open after simulation ends
         if self.dashboard is not None:
