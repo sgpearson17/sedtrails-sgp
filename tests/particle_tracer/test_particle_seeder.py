@@ -1149,3 +1149,27 @@ class TestParticlePopulation:
         )
 
         np.testing.assert_allclose(population.particles['bed_level'], 0.5)
+
+    def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
+        """Position updates should reuse and refresh particle simplex ids."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        old_simplices = population._particle_simplices.copy()
+        population.particles['is_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
+
+        population.update_position(
+            flow_field={'u': np.ones(4), 'v': np.zeros(4)},
+            current_timestep=0.1,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], [0.1])
+        np.testing.assert_allclose(population.particles['y'], [0.0])
+        expected_simplices = population.grid_geometry.locate_points(
+            population.particles['x'],
+            population.particles['y'],
+            old_simplices,
+        )
+        np.testing.assert_array_equal(population._particle_simplices, expected_simplices)

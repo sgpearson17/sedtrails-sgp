@@ -119,18 +119,18 @@ def test_temporal_rk4_update_matches_preblended_grid():
     np.testing.assert_allclose(y_temporal, y_blended, rtol=1e-12, atol=1e-12)
 
 
-def test_temporal_rk4_uses_one_point_location_per_stage():
+def test_temporal_rk4_uses_one_point_location_pass_per_update():
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     call_count = 0
-    original_barycentric_weights = geometry.barycentric_weights
+    original_locate_points = geometry.locate_points
 
-    def counted_barycentric_weights(x_points, y_points):
+    def counted_locate_points(x_points, y_points, start_simplices=None):
         nonlocal call_count
         call_count += 1
-        return original_barycentric_weights(x_points, y_points)
+        return original_locate_points(x_points, y_points, start_simplices)
 
-    geometry.barycentric_weights = counted_barycentric_weights
+    geometry.locate_points = counted_locate_points
 
     geometry.update_particles_temporal(
         np.array([0.2, 0.4]),
@@ -143,7 +143,49 @@ def test_temporal_rk4_uses_one_point_location_per_stage():
         0.1,
     )
 
-    assert call_count == 4
+    assert call_count == 1
+
+
+def test_temporal_update_returns_reusable_simplex_ids():
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+    starts = geometry.locate_points(np.array([0.2, 0.4]), np.array([0.2, 0.3]))
+
+    x_new, y_new, new_simplices = geometry.update_particles_temporal_with_simplex(
+        np.array([0.2, 0.4]),
+        np.array([0.2, 0.3]),
+        np.ones_like(grid_x),
+        np.full_like(grid_y, 0.5),
+        np.full_like(grid_x, 3.0),
+        np.full_like(grid_y, 1.5),
+        0.25,
+        0.1,
+        simplex_ids=starts,
+    )
+
+    np.testing.assert_allclose(x_new, [0.35, 0.55])
+    np.testing.assert_allclose(y_new, [0.275, 0.375])
+    np.testing.assert_array_equal(new_simplices, geometry.locate_points(x_new, y_new, new_simplices))
+
+
+def test_position_update_preserves_particle_array_shape():
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+    x0 = np.array([[0.2, 0.4]])
+    y0 = np.array([[0.2, 0.3]])
+
+    x_new, y_new = geometry.update_particles(
+        x0,
+        y0,
+        np.ones_like(grid_x),
+        np.full_like(grid_y, 0.5),
+        0.1,
+    )
+
+    assert x_new.shape == x0.shape
+    assert y_new.shape == y0.shape
+    np.testing.assert_allclose(x_new, x0 + 0.1)
+    np.testing.assert_allclose(y_new, y0 + 0.05)
 
 
 def test_velocity_arrays_do_not_copy_non_geographic_float32_fields():

@@ -26,7 +26,7 @@ from numpy import ndarray
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry, create_numba_particle_calculator
+from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
 
 
 class HasFieldCoordinates(Protocol):
@@ -460,16 +460,22 @@ class ParticlePopulation:
         Configuration for the particle population, including seeding strategy and parameters.
     particles : Dict
         A dictionary containing particle attributes such as positions and status.
-    _field_interpolator : Dict
-        A dictionary containing Numba functions for interpolating field data.
-    _position_calculator : Dict
-        A dictionary containing Numba functions for calculating particle positions.
+    _field_interpolator : Any
+        Bound method for interpolating one nodal field to particle positions.
+    _field_interpolator_multi : Any
+        Bound method for interpolating multiple nodal fields with one point-location pass.
+    _position_calculator_with_simplex : Any
+        Bound method for advancing particles while reusing cached simplex ids.
+    _position_calculator_temporal_with_simplex : Any
+        Bound method for temporal particle updates while reusing cached simplex ids.
+    _particle_simplices : ndarray
+        Cached containing-triangle ids for each particle, used to avoid global point location on every update.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
-        The mixing depth of the flow field, used to determine particle behavior.
+        The mixing depth of the flow field, reserved for later particle-behavior logic.
     _field_transport_probability : ndarray
-        The probability of particle transport in the flow field, used to determine if particles are picked up.
+        The probability of particle transport in the flow field, reserved for later pickup logic.
     """
 
     field_x: ndarray
@@ -477,27 +483,24 @@ class ParticlePopulation:
     population_config: PopulationConfig
     grid_geometry: Any = None
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
-    _field_interpolator: Any = field(init=False)  # holds a Numba function
-    _position_calculator: Any = field(init=False)  # holds a Numba function
+    _field_interpolator: Any = field(init=False)
+    _field_interpolator_multi: Any = field(init=False)
+    _position_calculator_with_simplex: Any = field(init=False)
+    _position_calculator_temporal_with_simplex: Any = field(init=False)
+    _particle_simplices: ndarray = field(init=False)
     _current_time: float = field(init=False)
-    _field_mixing_depth: ndarray = field(init=False)  # TODO: we're not using this field yet
-    _field_transport_probability: ndarray = field(init=False)  # TODO: we're not using this field yet
+    _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
+    _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
 
     def __post_init__(self):
         if self.grid_geometry is None:
             self.grid_geometry = create_grid_geometry(self.field_x, self.field_y)
 
-        # Create calculator callables from shared grid geometry.
-        numba_functions = create_numba_particle_calculator(
-            grid_x=self.field_x,
-            grid_y=self.field_y,
-            grid_geometry=self.grid_geometry,
-        )
-
-        self._field_interpolator = numba_functions['interpolate_field']
-        self._field_interpolator_multi = numba_functions['interpolate_fields']
-        self._position_calculator = numba_functions['update_particles']
-        self._position_calculator_temporal = numba_functions['update_particles_temporal']
+        # Reuse methods bound to the shared grid geometry.
+        self._field_interpolator = self.grid_geometry.interpolate_field
+        self._field_interpolator_multi = self.grid_geometry.interpolate_fields
+        self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
+        self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -507,6 +510,7 @@ class ParticlePopulation:
             'release_time': np.array([p.release_time for p in _particles]),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
+        self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
 
         # Store the outer envelope of the domain using shared grid geometry.
         self._outer_envelope = Path(self.grid_geometry.outer_envelope)
@@ -655,9 +659,12 @@ class ParticlePopulation:
         """
 
         ix = self.particles['is_mobile']  # Get indices of mobile particles
+        particle_indices = np.flatnonzero(ix)
+        if particle_indices.size == 0:
+            return
 
         if _is_temporal_flow_field(flow_field):
-            new_x, new_y = self._position_calculator_temporal(
+            new_x, new_y, new_simplices = self._position_calculator_temporal_with_simplex(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['lower']['u'],
@@ -666,20 +673,23 @@ class ParticlePopulation:
                 flow_field['upper']['v'],
                 flow_field['weight'],
                 current_timestep,
+                simplex_ids=self._particle_simplices[particle_indices],
             )
         else:
-            new_x, new_y = self._position_calculator(
+            new_x, new_y, new_simplices = self._position_calculator_with_simplex(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['u'],
                 flow_field['v'],
                 current_timestep,
+                simplex_ids=self._particle_simplices[particle_indices],
             )
 
         # TODO: implement Bart's solution for gross/net values here. Add
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
+        self._particle_simplices[particle_indices] = new_simplices
 
 
 class ParticleSeeder:
