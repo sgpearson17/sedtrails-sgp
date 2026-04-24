@@ -117,16 +117,22 @@ class GridGeometry:
 
     def interpolate_field(self, field, x_points, y_points):
         """Barycentrically interpolate a nodal field at point coordinates."""
-        values = np.asarray(field, dtype=np.float64).ravel()
+        return self.interpolate_fields((field,), x_points, y_points)[0]
+
+    def interpolate_fields(self, fields, x_points, y_points):
+        """Interpolate multiple nodal fields using one point-location pass."""
         simplices, weights = self.barycentric_weights(x_points, y_points)
-        out = np.zeros(len(simplices), dtype=np.float64)
+        outputs = [np.zeros(len(simplices), dtype=np.float64) for _ in fields]
 
         valid = simplices >= 0
         if np.any(valid):
             vertices = self.triangles[simplices[valid]]
-            out[valid] = np.sum(values[vertices] * weights[valid], axis=1)
+            valid_weights = weights[valid]
+            for output, field in zip(outputs, fields, strict=True):
+                values = np.asarray(field).ravel()
+                output[valid] = np.einsum('ij,ij->i', values[vertices], valid_weights)
 
-        return out
+        return tuple(outputs)
 
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
         """Advance particle positions one RK4 step using barycentric velocity sampling."""
@@ -173,26 +179,29 @@ class GridGeometry:
 
     def interpolate_temporal_vector(self, lower_u, lower_v, upper_u, upper_v, weight, x_points, y_points):
         """Interpolate lower/upper vector fields spatially, then blend in time."""
-        lower_u_values, lower_v_values = self.interpolate_vector(lower_u, lower_v, x_points, y_points)
         if weight <= 0.0:
-            return lower_u_values, lower_v_values
+            return self.interpolate_fields((lower_u, lower_v), x_points, y_points)
 
-        upper_u_values, upper_v_values = self.interpolate_vector(upper_u, upper_v, x_points, y_points)
+        lower_u_values, lower_v_values, upper_u_values, upper_v_values = self.interpolate_fields(
+            (lower_u, lower_v, upper_u, upper_v),
+            x_points,
+            y_points,
+        )
         return (
             lower_u_values + weight * (upper_u_values - lower_u_values),
             lower_v_values + weight * (upper_v_values - lower_v_values),
         )
 
     def _velocity_arrays(self, grid_u, grid_v, igeo):
-        grid_u = np.asarray(grid_u, dtype=np.float64).ravel()
-        grid_v = np.asarray(grid_v, dtype=np.float64).ravel()
+        grid_u = np.asarray(grid_u).ravel()
+        grid_v = np.asarray(grid_v).ravel()
 
         if igeo != 1:
             return grid_u, grid_v
 
         geofac = 6378137.0
         cos_lat = np.cos(np.deg2rad(self.grid_y))
-        return grid_u / (geofac * cos_lat), grid_v / geofac
+        return grid_u.astype(np.float64, copy=False) / (geofac * cos_lat), grid_v.astype(np.float64, copy=False) / geofac
 
 
 def _bounding_box(points):
@@ -260,6 +269,7 @@ def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geomet
         'triangles': geometry.triangles,
         'find_triangle': geometry.find_triangle,
         'interpolate_field': geometry.interpolate_field,
+        'interpolate_fields': geometry.interpolate_fields,
         'update_particles': geometry.update_particles,
         'update_particles_temporal': geometry.update_particles_temporal,
         'update_particles_parallel': geometry.update_particles,

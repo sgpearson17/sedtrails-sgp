@@ -33,6 +33,32 @@ def test_linear_field_interpolation_uses_cached_delaunay_locator():
     np.testing.assert_allclose(interpolated, expected, rtol=1e-12, atol=1e-12)
 
 
+def test_multi_field_interpolation_reuses_single_point_location():
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+    call_count = 0
+    original_barycentric_weights = geometry.barycentric_weights
+
+    def counted_barycentric_weights(x_points, y_points):
+        nonlocal call_count
+        call_count += 1
+        return original_barycentric_weights(x_points, y_points)
+
+    geometry.barycentric_weights = counted_barycentric_weights
+    field_a = grid_x + grid_y
+    field_b = 2.0 * grid_x - grid_y
+
+    values_a, values_b = geometry.interpolate_fields(
+        (field_a, field_b),
+        np.array([0.25, 0.75]),
+        np.array([0.25, 0.25]),
+    )
+
+    assert call_count == 1
+    np.testing.assert_allclose(values_a, [0.5, 1.0])
+    np.testing.assert_allclose(values_b, [0.25, 1.25])
+
+
 def test_explicit_triangle_connectivity_is_preserved():
     grid_x, grid_y = square_grid()
     triangles = np.array([[0, 1, 2], [0, 2, 3]])
@@ -91,3 +117,42 @@ def test_temporal_rk4_update_matches_preblended_grid():
 
     np.testing.assert_allclose(x_temporal, x_blended, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(y_temporal, y_blended, rtol=1e-12, atol=1e-12)
+
+
+def test_temporal_rk4_uses_one_point_location_per_stage():
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+    call_count = 0
+    original_barycentric_weights = geometry.barycentric_weights
+
+    def counted_barycentric_weights(x_points, y_points):
+        nonlocal call_count
+        call_count += 1
+        return original_barycentric_weights(x_points, y_points)
+
+    geometry.barycentric_weights = counted_barycentric_weights
+
+    geometry.update_particles_temporal(
+        np.array([0.2, 0.4]),
+        np.array([0.2, 0.3]),
+        np.ones_like(grid_x),
+        np.full_like(grid_y, 0.5),
+        np.full_like(grid_x, 3.0),
+        np.full_like(grid_y, 1.5),
+        0.25,
+        0.1,
+    )
+
+    assert call_count == 4
+
+
+def test_velocity_arrays_do_not_copy_non_geographic_float32_fields():
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+    grid_u = np.ones_like(grid_x, dtype=np.float32)
+    grid_v = np.ones_like(grid_y, dtype=np.float32)
+
+    grid_u_adj, grid_v_adj = geometry._velocity_arrays(grid_u, grid_v, igeo=0)
+
+    assert np.shares_memory(grid_u_adj, grid_u)
+    assert np.shares_memory(grid_v_adj, grid_v)

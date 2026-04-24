@@ -26,6 +26,9 @@ from sedtrails.transport_converter.physics_converter import PhysicsConverter
 class Simulation:
     """Class to encapsulate the particle simulation process."""
 
+    _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
+    _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
+
     def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
         """
         Initialize the simulation with the given configuration.
@@ -47,6 +50,7 @@ class Simulation:
         self._profile_timings = {}
         self._profile_summary_logged = False
         self._active_progress_bar = None
+        self._dashboard_throttle_logged = False
 
         # Validate config file exists early
         if not os.path.exists(config_file):
@@ -167,6 +171,34 @@ class Simulation:
             return dashboard
         else:
             return None
+
+    def _should_update_dashboard(self, sedtrails_data, timer) -> bool:
+        """Throttle full-grid dashboard redraws for large grids."""
+        if self.dashboard is None:
+            return False
+
+        grid_size = np.size(sedtrails_data.x)
+        if grid_size <= self._DASHBOARD_FULL_GRID_CELL_LIMIT:
+            return True
+
+        stride = self._controller.get(
+            'visualization.dashboard.large_grid_update_stride',
+            self._DASHBOARD_LARGE_GRID_UPDATE_STRIDE,
+        )
+        try:
+            stride = max(1, int(stride))
+        except (TypeError, ValueError):
+            stride = self._DASHBOARD_LARGE_GRID_UPDATE_STRIDE
+
+        if not self._dashboard_throttle_logged:
+            self.logger.info(
+                'Dashboard full-grid updates throttled to every %d steps for %d grid cells',
+                stride,
+                grid_size,
+            )
+            self._dashboard_throttle_logged = True
+
+        return timer.step_count % stride == 0
 
     def _get_format_config(self):
         """
@@ -606,7 +638,7 @@ class Simulation:
                 xr_data = self._expand_time_dimension(xr_data, max_timesteps)
 
             # Update dashboard if enabled
-            if self.dashboard is not None:
+            if self._should_update_dashboard(sedtrails_data, timer):
                 # For dashboard, use first population data
                 first_population = populations[0]
                 particle_data = {

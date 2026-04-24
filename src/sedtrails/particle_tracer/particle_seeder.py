@@ -495,6 +495,7 @@ class ParticlePopulation:
         )
 
         self._field_interpolator = numba_functions['interpolate_field']
+        self._field_interpolator_multi = numba_functions['interpolate_fields']
         self._position_calculator = numba_functions['update_particles']
         self._position_calculator_temporal = numba_functions['update_particles_temporal']
 
@@ -541,17 +542,24 @@ class ParticlePopulation:
         if _is_temporal_field(field_value):
             lower_values = np.asarray(field_value['lower'])
             upper_values = np.asarray(field_value['upper'])
-            if lower_values.size == 0 or np.isnan(lower_values).all():
-                if upper_values.size == 0 or np.isnan(upper_values).all():
-                    return
+            if lower_values.size == 0:
+                return
 
-            lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
             weight = field_value['weight']
             if weight <= 0.0 or lower_values is upper_values:
+                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
+                if np.isnan(lower_particle_values).all():
+                    return
                 self.particles[name] = lower_particle_values
                 return
 
-            upper_particle_values = self._field_interpolator(upper_values, self.particles['x'], self.particles['y'])
+            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
+                (lower_values, upper_values),
+                self.particles['x'],
+                self.particles['y'],
+            )
+            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+                return
             self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
             return
 
@@ -560,10 +568,14 @@ class ParticlePopulation:
             return
 
         field_array = np.asarray(field_value)
-        if field_array.size == 0 or np.isnan(field_array).all():
+        if field_array.size == 0:
             return
 
-        self.particles[name] = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
+        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
+        if np.isnan(particle_values).all():
+            return
+
+        self.particles[name] = particle_values
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
@@ -644,10 +656,6 @@ class ParticlePopulation:
 
         ix = self.particles['is_mobile']  # Get indices of mobile particles
 
-        n_particles = len(self.particles['x'])
-        dx = np.zeros(n_particles)
-        dy = np.zeros(n_particles)
-
         if _is_temporal_flow_field(flow_field):
             new_x, new_y = self._position_calculator_temporal(
                 self.particles['x'][ix],
@@ -667,9 +675,6 @@ class ParticlePopulation:
                 flow_field['v'],
                 current_timestep,
             )
-
-        dx[ix] = new_x - self.particles['x'][ix]  # TODO: this should be stored in the netcdf, as part of the flow field
-        dy[ix] = new_y - self.particles['y'][ix]
 
         # TODO: implement Bart's solution for gross/net values here. Add
 

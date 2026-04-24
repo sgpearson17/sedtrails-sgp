@@ -202,3 +202,32 @@ class TestSimulationManagerExpandTimeDimension:
             expanded['x'].isel(time=slice(0, original_size)).values,
             original_x,  # Compare against the stored original, not dataset['x']
         )
+
+
+class TestSimulationDashboardThrottle:
+    def test_large_grid_dashboard_updates_are_throttled(self):
+        manager = object.__new__(Simulation)
+        manager.dashboard = object()
+        manager._dashboard_throttle_logged = False
+        manager.logger = type('Logger', (), {'info': lambda self, *args, **kwargs: None})()
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
+
+        sedtrails_data = type('SedtrailsData', (), {'x': np.arange(100_001)})()
+        timer = type('Timer', (), {'step_count': 0})()
+
+        assert manager._should_update_dashboard(sedtrails_data, timer)
+
+        timer.step_count = 1
+        assert not manager._should_update_dashboard(sedtrails_data, timer)
+
+        timer.step_count = 10
+        assert manager._should_update_dashboard(sedtrails_data, timer)
+
+    def test_small_grid_dashboard_updates_every_step(self):
+        manager = object.__new__(Simulation)
+        manager.dashboard = object()
+
+        sedtrails_data = type('SedtrailsData', (), {'x': np.arange(100)})()
+        timer = type('Timer', (), {'step_count': 1})()
+
+        assert manager._should_update_dashboard(sedtrails_data, timer)
