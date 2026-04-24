@@ -1110,3 +1110,23 @@ class TestParticlePopulation:
         assert population is not None
         assert len(population.particles['x']) == 10  # 2 nlocations * 5 quantity
         assert len(population.particles['y']) == 10  # 2 nlocations * 5 quantity
+
+    def test_update_information_accepts_scalar_transport_probability(self, point_config_simple):
+        """Scalar fields should update particles without allocating full grid fields."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        bed_level = np.array([0.0, 1.0, 2.0, 1.0])
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=None,
+            transport_probability=1.0,
+            bed_level=bed_level,
+        )
+
+        np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
+        np.testing.assert_allclose(population.particles['bed_level'], 0.0)
+        assert 'mixing_depth' not in population.particles

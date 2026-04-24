@@ -405,10 +405,12 @@ class Timer:
             for flow_data in flow_data_list:
                 magnitude = flow_data['magnitude']
 
-                # Handle NaNs by setting them to 0
-                magnitude_clean = np.nan_to_num(magnitude, nan=0.0)
-                max_velocity = max(max_velocity, np.max(magnitude_clean))
-                max_velocity = max(max_velocity, 1e-12)
+                if np.isnan(magnitude).all():
+                    continue
+
+                max_velocity = max(max_velocity, np.nanmax(magnitude))
+
+            max_velocity = max(max_velocity, 1e-12)
 
             min_resolution = sedtrails_data.metadata.min_resolution
             cfl_timestep = self.cfl_condition * min_resolution / max_velocity

@@ -227,6 +227,23 @@ class TestTimer:
         with pytest.raises(RuntimeWarning):
             timer.advance()
 
+    def test_compute_cfl_timestep_skips_all_nan_flow_fields(self):
+        """All-NaN velocity fields should not require a full nan_to_num grid copy."""
+
+        class Metadata:
+            min_resolution = 2.0
+            timestep = 10.0
+
+        class SedtrailsData:
+            metadata = Metadata()
+
+        time = Time(_start='2023-01-01 12:00:00', time_step=Duration('1H'))
+        timer = Timer(simulation_time=time, cfl_condition=0.5)
+
+        timer.compute_cfl_timestep([{'magnitude': np.array([np.nan, np.nan])}], SedtrailsData())
+
+        assert timer.current_timestep == 10.0
+
 
 class TestTime:
     """Test cases for the Time class."""

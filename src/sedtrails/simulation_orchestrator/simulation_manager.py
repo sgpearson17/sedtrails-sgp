@@ -458,10 +458,38 @@ class Simulation:
                 else:
                     tracer_methods[ip] = 'passive_tracer'
 
+            field_cache = {}
+            cache_time = timer.current
+
+            def get_flow_field_cached(
+                flow_field_name: str,
+                profile_name: str,
+                _cache=field_cache,
+                _retriever=retriever,
+                _time=cache_time,
+            ):
+                cache_key = ('flow', _time, flow_field_name)
+                if cache_key not in _cache:
+                    with self._profile_section(profile_name):
+                        _cache[cache_key] = _retriever.get_flow_field(_time, flow_field_name)
+                return _cache[cache_key]
+
+            def get_scalar_field_cached(
+                scalar_field_name: str,
+                profile_name: str,
+                _cache=field_cache,
+                _retriever=retriever,
+                _time=cache_time,
+            ):
+                cache_key = ('scalar', _time, scalar_field_name)
+                if cache_key not in _cache:
+                    with self._profile_section(profile_name):
+                        _cache[cache_key] = _retriever.get_scalar_field(_time, scalar_field_name)['magnitude']
+                return _cache[cache_key]
+
             flow_data_list = []
             for flow_field_name in flow_field_names:
-                with self._profile_section('get_flow_field.cfl'):
-                    flow_data_list.append(retriever.get_flow_field(timer.current, flow_field_name))
+                flow_data_list.append(get_flow_field_cached(flow_field_name, 'get_flow_field.cfl'))
 
             # Compute CFL-based timestep across all flow fields
             with self._profile_section('compute_cfl_timestep'):
@@ -478,26 +506,25 @@ class Simulation:
                 for flow_field_name in flow_field_names:
                     # Obtain scalar field information
                     # TODO: Consider moving van westen specific fields to the plugin itself
-                    with self._profile_section('get_scalar_field.bed_level'):
-                        bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
-                    mixing_depth = np.full(bed_level.shape, np.nan)
+                    bed_level = get_scalar_field_cached('bed_level', 'get_scalar_field.bed_level')
+                    mixing_depth = None
                     if tracer_method == 'vanwesten':
-                        with self._profile_section('get_scalar_field.transport_probability'):
-                            transport_prob = retriever.get_scalar_field(
-                                timer.current, flow_field_name.replace('velocity', 'probability')
-                            )['magnitude']
-                        with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
-                                'magnitude'
-                            ]
+                        transport_prob = get_scalar_field_cached(
+                            flow_field_name.replace('velocity', 'probability'),
+                            'get_scalar_field.transport_probability',
+                        )
+                        mixing_depth = get_scalar_field_cached(
+                            'mixing_layer_thickness',
+                            'get_scalar_field.mixing_layer_thickness',
+                        )
                     elif tracer_method == 'soulsby':
-                        transport_prob = np.ones_like(bed_level)
-                        with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                            mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')[
-                                'magnitude'
-                            ]
+                        transport_prob = 1.0
+                        mixing_depth = get_scalar_field_cached(
+                            'mixing_layer_thickness',
+                            'get_scalar_field.mixing_layer_thickness',
+                        )
                     else:
-                        transport_prob = np.ones_like(bed_level)
+                        transport_prob = 1.0
 
                     # Update information at particle positions
                     with self._profile_section('update_information'):
@@ -516,8 +543,7 @@ class Simulation:
                     population.update_status()
 
                     # Get flow field information
-                    with self._profile_section('get_flow_field.update_position'):
-                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+                    flow_field = get_flow_field_cached(flow_field_name, 'get_flow_field.update_position')
 
                     # Update particle position
                     with self._profile_section('update_position'):
@@ -552,8 +578,7 @@ class Simulation:
                     ],
                 }
                 # Get bathymetry data
-                with self._profile_section('get_scalar_field.dashboard_bed_level'):
-                    bathymetry = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
 
                 # Particle data including burial_depth and mixing_depth
 

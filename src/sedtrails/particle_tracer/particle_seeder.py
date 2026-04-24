@@ -22,12 +22,11 @@ from typing import Any, Dict, List, Protocol, Tuple, Union
 import numpy as np
 from matplotlib.path import Path
 from numpy import ndarray
-from scipy.spatial import ConvexHull
 
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
+from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry, create_numba_particle_calculator
 
 
 class HasFieldCoordinates(Protocol):
@@ -468,6 +467,7 @@ class ParticlePopulation:
     field_x: ndarray
     field_y: ndarray
     population_config: PopulationConfig
+    grid_geometry: Any = None
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)  # holds a Numba function
     _position_calculator: Any = field(init=False)  # holds a Numba function
@@ -476,8 +476,15 @@ class ParticlePopulation:
     _field_transport_probability: ndarray = field(init=False)  # TODO: we're not using this field yet
 
     def __post_init__(self):
-        # Create a Numba calculator for particle operations
-        numba_functions = create_numba_particle_calculator(grid_x=self.field_x, grid_y=self.field_y)
+        if self.grid_geometry is None:
+            self.grid_geometry = create_grid_geometry(self.field_x, self.field_y)
+
+        # Create calculator callables from shared grid geometry.
+        numba_functions = create_numba_particle_calculator(
+            grid_x=self.field_x,
+            grid_y=self.field_y,
+            grid_geometry=self.grid_geometry,
+        )
 
         self._field_interpolator = numba_functions['interpolate_field']
         self._position_calculator = numba_functions['update_particles']
@@ -491,13 +498,11 @@ class ParticlePopulation:
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
 
-        # store the outer envelope of the domain
-        coords = np.column_stack((self.field_x, self.field_y))
-        hull = ConvexHull(coords)
-        self._outer_envelope = Path(coords[hull.vertices])
+        # Store the outer envelope of the domain using shared grid geometry.
+        self._outer_envelope = Path(self.grid_geometry.outer_envelope)
 
     def update_information(
-        self, current_time: Union[int, float], mixing_depth: ndarray, transport_probability: ndarray, bed_level: ndarray
+        self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
         """
         Updates field data information for particles in the population.
@@ -516,19 +521,23 @@ class ParticlePopulation:
 
         self._current_time = current_time
 
-        if not np.isnan(mixing_depth).all():
-            self.particles['mixing_depth'] = self._field_interpolator(
-                mixing_depth, self.particles['x'], self.particles['y']
-            )
+        self._update_particle_field('mixing_depth', mixing_depth)
+        self._update_particle_field('transport_probability', transport_probability)
+        self._update_particle_field('bed_level', bed_level)
 
-        if not np.isnan(transport_probability).all():
-            """values between 0 and 1"""
-            self.particles['transport_probability'] = self._field_interpolator(
-                transport_probability, self.particles['x'], self.particles['y']
-            )
+    def _update_particle_field(self, name: str, field_value) -> None:
+        if field_value is None:
+            return
 
-        if not np.isnan(bed_level).all():
-            self.particles['bed_level'] = self._field_interpolator(bed_level, self.particles['x'], self.particles['y'])
+        if np.isscalar(field_value):
+            self.particles[name] = np.full(len(self.particles['x']), field_value, dtype=float)
+            return
+
+        field_array = np.asarray(field_value)
+        if field_array.size == 0 or np.isnan(field_array).all():
+            return
+
+        self.particles[name] = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
@@ -674,9 +683,15 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
+        grid_geometry = create_grid_geometry(sedtrails_data.x, sedtrails_data.y)
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
-            pop = ParticlePopulation(field_x=sedtrails_data.x, field_y=sedtrails_data.y, population_config=config)
+            pop = ParticlePopulation(
+                field_x=sedtrails_data.x,
+                field_y=sedtrails_data.y,
+                population_config=config,
+                grid_geometry=grid_geometry,
+            )
             populations.append(pop)
         return populations
 
