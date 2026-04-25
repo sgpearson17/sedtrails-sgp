@@ -1,12 +1,11 @@
-import os
 import importlib.util
 import inspect
+from pathlib import Path
+
 import pytest
 from sedtrails.transport_converter.plugins.physics.plugin import BasePhysicsPlugin
 
-PLUGIN_DIR = os.path.dirname(__file__).replace(
-    'tests/transport_converter/plugins', 'src/sedtrails/transport_converter/plugins/physics'
-)
+PLUGIN_DIR = Path(__file__).resolve().parents[3] / 'src' / 'sedtrails' / 'transport_converter' / 'plugins' / 'physics'
 
 
 def get_plugin_classes():
@@ -18,11 +17,11 @@ def get_plugin_classes():
         list: List of plugin classes found in the directory.
     """
     plugin_classes = []
-    for fname in os.listdir(PLUGIN_DIR):
+    for plugin_path in PLUGIN_DIR.iterdir():
+        fname = plugin_path.name
         if fname.endswith('.py') and fname != 'plugin.py' and not fname.startswith('__'):
-            module_path = os.path.join(PLUGIN_DIR, fname)
             module_name = f'sedtrails.transport_converter.plugins.physics.{fname[:-3]}'
-            spec = importlib.util.spec_from_file_location(module_name, module_path)
+            spec = importlib.util.spec_from_file_location(module_name, plugin_path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             for _, obj in inspect.getmembers(module, inspect.isclass):
