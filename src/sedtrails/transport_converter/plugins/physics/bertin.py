@@ -1,5 +1,9 @@
+import logging
+
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 from sedtrails.transport_converter import SedtrailsData
+
+logger = logging.getLogger(__name__)
 
 
 class PhysicsPlugin(BasePhysicsPlugin):
@@ -22,7 +26,7 @@ class PhysicsPlugin(BasePhysicsPlugin):
         """
         Add physics using Bertin et al. (2023) approach.
         """
-        print('Using Bertin et al. (2023) to compute transport velocities and add to SedTRAILS data...')
+        logger.info('Using Bertin et al. (2023) to compute transport velocities and add to SedTRAILS data')
 
         raise NotImplementedError('Bertin et al. (2023) physics calculations not yet implemented.')
         # Implement Bertin et al. (2023) physics calculations here
