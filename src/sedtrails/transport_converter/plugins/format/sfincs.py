@@ -25,13 +25,10 @@ class FormatPlugin(BaseFormatPlugin):
         """
         super().__init__()
         self.input_file = Path(input_file)
-        self.input_data = None  # holds Dataset after reading
-        self._input_variables: List[str] = []
-
-    def __post_init__(self):
-        # Check if the input file exists
         if not self.input_file.exists():
             raise FileNotFoundError(f'Input file not found: {self.input_file}')
+        self.input_data = None  # holds Dataset after reading
+        self._input_variables: List[str] = []
 
     @property
     def variables(self) -> List[str]:
