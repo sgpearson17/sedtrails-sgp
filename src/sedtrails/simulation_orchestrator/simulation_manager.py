@@ -397,7 +397,11 @@ class Simulation:
 
                     # Get flow field information
                     flow_field = retriever.get_flow_field(timer.current, flow_field_name)
-                    dashboard_flow_field = flow_field
+                    if (
+                        runtime_plan.population_index == 0
+                        and flow_field_name == tracer_plan.flow_field_names[0]
+                    ):
+                        dashboard_flow_field = flow_field
 
                     # Update particle position
                     population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
