@@ -2,9 +2,10 @@
 Time related classes used internally to represent simulation time.
 """
 
-from dataclasses import dataclass, field
-import numpy as np
 import re
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from sedtrails.exceptions.exceptions import DateFormatError, DurationFormatError, ZeroDuration
 
@@ -427,14 +428,17 @@ class Timer:
             self.compute_cfl_timestep_from_max_velocity(max_velocity, min_resolution, sedtrails_data.metadata.timestep)
 
     def compute_cfl_timestep_from_max_velocity(
-        self, max_velocity: float, min_resolution: float, data_timestep: float
+        self, max_velocity: float, min_resolution: float | None, data_timestep: float | None
     ) -> None:
         """Compute CFL timestep from a precomputed maximum velocity."""
         if self.cfl_condition > 0:
-            max_velocity = max(max_velocity, 1e-12)
+            if min_resolution is None or min_resolution <= 0:
+                return
+            max_velocity = max(max_velocity, 1e-4)
             cfl_timestep = self.cfl_condition * min_resolution / max_velocity
 
-            # Ensure CFL timestep doesn't exceed sedtrails data timestep
-            cfl_timestep = min(cfl_timestep, data_timestep)
+            # Ensure CFL timestep doesn't exceed sedtrails data timestep when valid
+            if data_timestep is not None and data_timestep > 0:
+                cfl_timestep = min(cfl_timestep, data_timestep)
 
             self.set_timestep(cfl_timestep)
