@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Mapping, Sequence
+
+import numpy as np
 
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
@@ -62,6 +65,22 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
         for runtime_plan in runtime_plans
         for flow_field_name in runtime_plan.tracer.flow_field_names
     )
+
+
+def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
+    """Run plan physics and return a clone containing only plan-required physics fields."""
+
+    working_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    tracer_plan.converter.convert_physics(
+        sedtrails_data=working_data,
+        transport_probability_method=tracer_plan.transport_probability_method,
+    )
+
+    plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    for field_name in tracer_plan.required_physics_fields:
+        if working_data.has_physics_field(field_name):
+            plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
+    return plan_data
 
 
 def _build_population_runtime_plan(
@@ -190,3 +209,19 @@ def _unique_preserving_order(values: Sequence[str] | Any) -> list[str]:
             unique_values.append(value)
             seen.add(value)
     return unique_values
+
+
+def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
+    cloned_data = copy.copy(sedtrails_data)
+    cloned_data._physics_fields = {}
+    return cloned_data
+
+
+def _copy_physics_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _copy_physics_value(item) for key, item in value.items()}
+    if isinstance(value, np.ndarray):
+        return np.array(value, copy=True)
+    if hasattr(value, 'copy'):
+        return value.copy()
+    return copy.deepcopy(value)

@@ -1,10 +1,13 @@
 """Tests for population tracer runtime planning."""
 
+import numpy as np
 import pytest
 
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.simulation_orchestrator.runtime_plan import (
     DEFAULT_TRANSPORT_PROBABILITY_METHOD,
+    TracerRuntimePlan,
+    build_plan_sedtrails_data,
     build_population_runtime_plans,
     required_physics_fields,
     unique_flow_field_names,
@@ -132,3 +135,58 @@ def test_required_physics_fields_are_method_specific_and_unique():
         'soulsby_a',
         'soulsby_b',
     )
+
+
+def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
+    source_data = _FakeSedtrailsData()
+    converter = _FakePhysicsConverter()
+    tracer_plan = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('bed_load_velocity', 'mixing_layer_thickness'),
+        converter=converter,
+    )
+
+    plan_data = build_plan_sedtrails_data(source_data, tracer_plan)
+
+    assert converter.transport_probability_method == 'stochastic_transport'
+    assert source_data.get_physics_fields() == []
+    assert plan_data.get_physics_fields() == ['bed_load_velocity', 'mixing_layer_thickness']
+    assert not plan_data.has_physics_field('ignored_field')
+    assert plan_data.bed_load_velocity is not converter.generated_velocity
+    assert plan_data.bed_load_velocity['x'] is not converter.generated_velocity['x']
+    np.testing.assert_array_equal(plan_data.bed_load_velocity['x'], np.array([1.0, 2.0]))
+
+
+class _FakeSedtrailsData:
+    def __init__(self):
+        self._physics_fields = {}
+
+    def add_physics_field(self, name, data):
+        self._physics_fields[name] = data
+        setattr(self, name, data)
+
+    def has_physics_field(self, name):
+        return name in self._physics_fields
+
+    def get_physics_fields(self):
+        return list(self._physics_fields)
+
+
+class _FakePhysicsConverter:
+    def __init__(self):
+        self.generated_velocity = None
+        self.transport_probability_method = None
+
+    def convert_physics(self, sedtrails_data, transport_probability_method):
+        self.transport_probability_method = transport_probability_method
+        self.generated_velocity = {
+            'x': np.array([1.0, 2.0]),
+            'y': np.array([3.0, 4.0]),
+            'magnitude': np.array([5.0, 6.0]),
+        }
+        sedtrails_data.add_physics_field('bed_load_velocity', self.generated_velocity)
+        sedtrails_data.add_physics_field('mixing_layer_thickness', np.array([0.1, 0.2]))
+        sedtrails_data.add_physics_field('ignored_field', np.array([9.0, 9.0]))
