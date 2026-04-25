@@ -168,7 +168,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
                     if Rb[i][j] > 1:
                         Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    else:
+                    elif not np.isfinite(Rb[i][j]):
                         Rb[i][j] = 0
 
         # VECTORIZE THESE LOOPS!
@@ -199,7 +199,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                     soulsby_R[i][j] = Rb[i][j]
 
         # Compute grain velocities
-        grain_velocity_magnitude = np.multiply(soulsby_P, soulsby_R, flow_velocity_magnitude)  # (Equation 1)
+        grain_velocity_magnitude = soulsby_P * soulsby_R * flow_velocity_magnitude  # (Equation 1)
         grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
         grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
 
