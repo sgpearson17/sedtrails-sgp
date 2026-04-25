@@ -286,6 +286,23 @@ class TestSimulationDashboardThrottle:
 
         assert manager._dashboard_update_interval_seconds() == 3600
 
+    def test_dashboard_particle_data_uses_arrays_not_single_element_lists(self):
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'burial_depth': np.array([0.1, 0.2]),
+            }
+
+        particle_data = Simulation._dashboard_particle_data(Population())
+
+        assert isinstance(particle_data['burial_depth'], np.ndarray)
+        assert isinstance(particle_data['mixing_depth'], np.ndarray)
+        assert not isinstance(particle_data['burial_depth'], list)
+        assert not isinstance(particle_data['mixing_depth'], list)
+        np.testing.assert_array_equal(particle_data['burial_depth'], np.array([0.1, 0.2]))
+        np.testing.assert_array_equal(particle_data['mixing_depth'], np.array([np.nan, np.nan]))
+
     def test_large_grid_dashboard_updates_are_throttled(self):
         manager = object.__new__(Simulation)
         manager.dashboard = object()
