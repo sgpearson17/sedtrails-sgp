@@ -200,6 +200,52 @@ class Simulation:
 
         return timer.step_count % stride == 0
 
+    def _dashboard_update_interval_seconds(self) -> int:
+        """Return the configured dashboard redraw interval in seconds."""
+        update_interval = self._controller.get('visualization.dashboard.update_interval', '1H')
+        return Duration(update_interval).seconds
+
+    def _create_simulation_time(self) -> Time:
+        """Build simulation time using the same reference date as the input data."""
+        return Time(
+            _start=self._controller.get('time.start'),
+            duration=Duration(self._controller.get('time.duration')),
+            time_step=Duration(self._controller.get('time.timestep')),
+            read_input_interval=Duration(self._controller.get('inputs.read_interval')),
+            reference_date=self._controller.get('general.input_model.reference_date', '1970-01-01 00:00:00'),
+        )
+
+    @staticmethod
+    def _needs_sedtrails_reload(sedtrails_data, current_time_seconds: float) -> bool:
+        """Return whether the current time is outside the loaded SedTRAILS data chunk."""
+        if sedtrails_data is None:
+            return True
+
+        times = np.asarray(sedtrails_data.times)
+        if times.size == 0:
+            return True
+
+        return current_time_seconds < times[0] or current_time_seconds > times[-1]
+
+    @staticmethod
+    def _is_after_loaded_sedtrails_data(sedtrails_data, current_time_seconds: float) -> bool:
+        """Return whether current time is after the last timestamp in the loaded data."""
+        if sedtrails_data is None:
+            return False
+
+        times = np.asarray(sedtrails_data.times)
+        if times.size == 0:
+            return False
+
+        return current_time_seconds > times[-1]
+
+    @classmethod
+    def _should_attempt_sedtrails_reload(
+        cls, sedtrails_data, current_time_seconds: float, input_data_exhausted: bool
+    ) -> bool:
+        """Return whether the loop should try to load another SedTRAILS data chunk."""
+        return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
+
     def _get_format_config(self):
         """
         Returns configuration parameters required for the format converter.
@@ -379,12 +425,7 @@ class Simulation:
             self._config_is_read = True
 
         # Time configuration
-        simulation_time = Time(
-            _start=self._controller.get('time.start'),
-            duration=Duration(self._controller.get('time.duration')),
-            time_step=Duration(self._controller.get('time.timestep')),
-            read_input_interval=Duration(self._controller.get('inputs.read_interval')),
-        )
+        simulation_time = self._create_simulation_time()
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
 
@@ -451,10 +492,12 @@ class Simulation:
         self.data_manager.writer.add_metadata(xr_data, populations, flow_field_names)
 
         # Main simulation loop with variable timestep
+        input_data_exhausted = False
+        input_exhaustion_warning_logged = False
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
-            if sedtrails_data is None or current_time_seconds > sedtrails_data.times[-2]:
+            if self._should_attempt_sedtrails_reload(sedtrails_data, current_time_seconds, input_data_exhausted):
                 # Avoid recreating SedTRAILS data if current time is before the first time step
                 if sedtrails_data is not None and current_time_seconds < sedtrails_data.times[0]:
                     timer.advance()
@@ -475,6 +518,17 @@ class Simulation:
 
                 # Create new FieldDataRetriever with updated data
                 retriever = FieldDataRetriever(sedtrails_data)  # TODO: should the retriever only be created once?
+
+                if self._is_after_loaded_sedtrails_data(sedtrails_data, current_time_seconds):
+                    input_data_exhausted = True
+                    if not input_exhaustion_warning_logged:
+                        self.logger.warning(
+                            'Simulation time %.3fs is beyond the final input field timestamp %.3fs; '
+                            'reusing the last available fields for remaining timesteps.',
+                            current_time_seconds,
+                            float(np.asarray(sedtrails_data.times)[-1]),
+                        )
+                        input_exhaustion_warning_logged = True
 
             # TODO: integrate loop over flow fields into CFL Condition
             # Collect flow fields for CFL computation
@@ -633,50 +687,45 @@ class Simulation:
             # Check if we need to expand the time dimension
             if timer.step_count >= max_timesteps - 10:  # 10-step safety margin
                 old_max = max_timesteps
-                max_timesteps = int(max_timesteps * 1.5)  # Expand by 50%
+                max_timesteps = int(max_timesteps * 2.0)  # Expand by 100%
                 self.logger.info(f'Expanding time dimension from {old_max} to {max_timesteps}')
                 xr_data = self._expand_time_dimension(xr_data, max_timesteps)
 
             # Update dashboard if enabled
             if self._should_update_dashboard(sedtrails_data, timer):
-                # For dashboard, use first population data
-                first_population = populations[0]
-                particle_data = {
-                    'x': first_population.particles['x'],
-                    'y': first_population.particles['y'],
-                    'burial_depth': [
-                        first_population.particles['burial_depth']
-                        if not np.all(np.isnan(first_population.particles['burial_depth']))
-                        else np.full(first_population.particles['x'].shape, np.nan)
-                    ],
-                    'mixing_depth': [
-                        first_population.particles['mixing_depth']
-                        if 'mixing_depth' in first_population.particles.keys()
-                        else np.full(first_population.particles['x'].shape, np.nan)
-                    ],
-                }
-                # Get bathymetry data
-                bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
-                dashboard_flow_field = get_flow_field_cached(flow_field_names[0], 'get_flow_field.dashboard')
+                plot_interval_seconds = self._dashboard_update_interval_seconds()
+                if self.dashboard.should_update(timer.current, plot_interval_seconds):
+                    # For dashboard, use first population data
+                    first_population = populations[0]
+                    particle_data = {
+                        'x': first_population.particles['x'],
+                        'y': first_population.particles['y'],
+                        'burial_depth': [
+                            first_population.particles['burial_depth']
+                            if not np.all(np.isnan(first_population.particles['burial_depth']))
+                            else np.full(first_population.particles['x'].shape, np.nan)
+                        ],
+                        'mixing_depth': [
+                            first_population.particles['mixing_depth']
+                            if 'mixing_depth' in first_population.particles.keys()
+                            else np.full(first_population.particles['x'].shape, np.nan)
+                        ],
+                    }
+                    bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
+                    dashboard_flow_field = get_flow_field_cached(flow_field_names[0], 'get_flow_field.dashboard')
+                    mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
-                # Particle data including burial_depth and mixing_depth
-
-                # Get simulation timing
-                # plot_interval_str = self._controller.get('output.plot_interval', '1H')
-                plot_interval_seconds = 3600  # self._parse_duration(plot_interval_str)
-
-                # Update dashboard with timing info
-
-                self.dashboard.update(
-                    dashboard_flow_field,
-                    bathymetry,
-                    particle_data,
-                    timer.current,
-                    timer.current_timestep,
-                    plot_interval_seconds,
-                    simulation_start_time=simulation_time.start,  # Add this
-                    simulation_end_time=simulation_time.end,  # Add this
-                )
+                    self.dashboard.update(
+                        dashboard_flow_field,
+                        bathymetry,
+                        particle_data,
+                        timer.current,
+                        timer.current_timestep,
+                        plot_interval_seconds,
+                        simulation_start_time=simulation_time.start,
+                        simulation_end_time=simulation_time.end,
+                        mesh_geometry=mesh_geometry,
+                    )
 
             timer.advance()
 

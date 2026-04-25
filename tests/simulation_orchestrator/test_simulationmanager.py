@@ -9,6 +9,69 @@ import xarray as xr
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
+class TestSimulationManagerTimeConfig:
+    """Tests for simulation-time construction from configuration."""
+
+    def test_simulation_time_uses_input_model_reference_date(self):
+        """SFINCS-style date-only reference dates should align timer seconds with SedTRAILS times."""
+
+        class Controller:
+            values = {
+                'time.start': '2024-05-01 00:00:00',
+                'time.duration': '5M',
+                'time.timestep': '60S',
+                'inputs.read_interval': '30M',
+                'general.input_model.reference_date': '2024-05-01',
+            }
+
+            def get(self, key, default=None):
+                return self.values.get(key, default)
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        simulation_time = manager._create_simulation_time()
+
+        assert simulation_time.reference_date == '2024-05-01'
+        assert simulation_time.start == 0
+
+    @pytest.mark.parametrize('current_time', [0.0, 6011.0, 7200.0])
+    def test_loaded_chunk_is_reused_through_final_interpolation_interval(self, current_time):
+        """A loaded chunk remains valid until current time moves beyond its last timestamp."""
+
+        class SedtrailsData:
+            times = np.array([0.0, 1200.0, 2400.0, 3600.0, 4800.0, 6000.0, 7200.0])
+
+        assert not Simulation._needs_sedtrails_reload(SedtrailsData(), current_time)
+
+    @pytest.mark.parametrize('current_time', [-1.0, 7200.1])
+    def test_loaded_chunk_reloads_outside_coverage(self, current_time):
+        """Reload only when current time is outside the loaded chunk."""
+
+        class SedtrailsData:
+            times = np.array([0.0, 1200.0, 2400.0, 3600.0, 4800.0, 6000.0, 7200.0])
+
+        assert Simulation._needs_sedtrails_reload(SedtrailsData(), current_time)
+
+    def test_input_exhaustion_detects_time_after_loaded_data(self):
+        """If reload still leaves current time beyond the loaded data, input is exhausted."""
+
+        class SedtrailsData:
+            times = np.array([4800.0, 6000.0, 7200.0])
+
+        assert Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.1)
+        assert not Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.0)
+
+    def test_exhausted_input_suppresses_further_reload_attempts(self):
+        """After input exhaustion, later timesteps should reuse the last loaded fields."""
+
+        class SedtrailsData:
+            times = np.array([4800.0, 6000.0, 7200.0])
+
+        assert Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=False)
+        assert not Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=True)
+
+
 class TestSimulationManagerExpandTimeDimension:
     """Tests for the _expand_time_dimension method."""
 
@@ -205,6 +268,24 @@ class TestSimulationManagerExpandTimeDimension:
 
 
 class TestSimulationDashboardThrottle:
+    def test_dashboard_update_interval_uses_visualization_config(self):
+        class Controller:
+            def get(self, key, default=None):
+                if key == 'visualization.dashboard.update_interval':
+                    return '30S'
+                return default
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        assert manager._dashboard_update_interval_seconds() == 30
+
+    def test_dashboard_update_interval_defaults_to_one_hour(self):
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
+
+        assert manager._dashboard_update_interval_seconds() == 3600
+
     def test_large_grid_dashboard_updates_are_throttled(self):
         manager = object.__new__(Simulation)
         manager.dashboard = object()

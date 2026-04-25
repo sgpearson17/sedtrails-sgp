@@ -62,9 +62,20 @@ def convert_datetime_string_to_datetime64(datetime_str: str) -> np.datetime64:
     DateFormatError
         If the input string does not match the required format.
     """
+    datetime_str = str(datetime_str)
     if not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', datetime_str):
         raise DateFormatError(f"date string '{datetime_str}' does not match required format 'YYYY-MM-DD hh:mm:ss'")
     return np.datetime64(datetime_str, 's')
+
+
+def convert_reference_date_to_datetime64(reference_date: str) -> np.datetime64:
+    """
+    Convert a reference date to numpy.datetime64, accepting date-only strings as midnight.
+    """
+    reference_date = str(reference_date)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', reference_date):
+        reference_date = f'{reference_date} 00:00:00'
+    return convert_datetime_string_to_datetime64(reference_date)
 
 
 class Duration:
@@ -200,7 +211,7 @@ class Time:
     def start(self) -> int:
         """Returns the simulation start time as an integer representing seconds since the reference date."""
         start_datetime = convert_datetime_string_to_datetime64(self._start)
-        reference_datetime = convert_datetime_string_to_datetime64(self.reference_date)
+        reference_datetime = convert_reference_date_to_datetime64(self.reference_date)
         # Calculate the difference in seconds
         delta_seconds = (start_datetime - reference_datetime).astype('timedelta64[s]').astype(int)
         return delta_seconds

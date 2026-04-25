@@ -99,6 +99,37 @@ def test_sfincs_get_seeding_coordinates_fallback_computes_centroids(monkeypatch)
     np.testing.assert_allclose(y, np.array([1.0]))
 
 
+def test_sfincs_convert_stores_face_node_mesh_geometry(monkeypatch):
+    ds = xr.Dataset(
+        data_vars={
+            'mesh2d_node_x': (('node',), np.array([0.0, 2.0, 2.0, 0.0])),
+            'mesh2d_node_y': (('node',), np.array([0.0, 0.0, 2.0, 2.0])),
+            'mesh2d_face_nodes': (('face', 'nmax'), np.array([[1, 2, 3, 4]], dtype=np.int64)),
+            'zb': (('face',), np.array([-1.0])),
+            'h': (('time', 'face'), np.array([[1.0], [2.0]])),
+            'u': (('time', 'face'), np.array([[0.1], [0.2]])),
+            'v': (('time', 'face'), np.array([[0.0], [0.0]])),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['mesh2d_face_nodes'].attrs['start_index'] = 1
+    ds['mesh2d_face_nodes'].encoding['_FillValue'] = -999
+
+    def fake_load(self):
+        self.input_data = ds
+
+    monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
+
+    plugin = sfincs.FormatPlugin('dummy.nc')
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
+
+    np.testing.assert_array_equal(sedtrails_data.node_x, np.array([0.0, 2.0, 2.0, 0.0]))
+    np.testing.assert_array_equal(sedtrails_data.node_y, np.array([0.0, 0.0, 2.0, 2.0]))
+    np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, np.array([[0, 1, 2, 3]]))
+    assert sedtrails_data.face_node_fill_value == -1
+    assert sedtrails_data.mesh_geometry()['face_node_connectivity'].shape == (1, 4)
+
+
 def test_sfincs_get_seeding_coordinates_raises_on_non_ugrid2d(monkeypatch):
     class FakeNonUgrid2d:
         pass

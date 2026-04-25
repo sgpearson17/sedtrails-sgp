@@ -1,6 +1,6 @@
 import warnings
 from dataclasses import dataclass
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 from scipy.spatial import ConvexHull, cKDTree
@@ -91,16 +91,44 @@ class SedtrailsData:
     sediment_concentration: np.ndarray
     nonlinear_wave_velocity: Dict[str, np.ndarray]
     metadata: SedtrailsMetadata
+    node_x: np.ndarray | None = None
+    node_y: np.ndarray | None = None
+    face_node_connectivity: np.ndarray | None = None
+    face_node_fill_value: int = -1
 
     def __post_init__(self):
         """Initialize container for dynamic physics fields and validate metadata."""
 
+        self._normalize_optional_mesh_geometry()
         # Validate metadata field
         self._validate_metadata()
         # TODO: do we also need to check that min max values are sensible? i.e. min <= max
         self._calculate_timestep()
         self._compute_grid_metadata()
         self._physics_fields: Dict[str, np.ndarray | Dict[str, np.ndarray]] = {}
+
+    def _normalize_optional_mesh_geometry(self) -> None:
+        """Normalize optional UGRID-style mesh geometry for dashboard consumers."""
+        if self.node_x is not None:
+            self.node_x = np.asarray(self.node_x)
+        if self.node_y is not None:
+            self.node_y = np.asarray(self.node_y)
+        if self.face_node_connectivity is not None:
+            self.face_node_connectivity = np.asarray(self.face_node_connectivity, dtype=np.int64)
+
+    def mesh_geometry(self) -> Dict[str, Any] | None:
+        """Return optional face-node mesh geometry for visualization code."""
+        if self.node_x is None or self.node_y is None or self.face_node_connectivity is None:
+            return None
+
+        return {
+            'x': self.x,
+            'y': self.y,
+            'node_x': self.node_x,
+            'node_y': self.node_y,
+            'face_node_connectivity': self.face_node_connectivity,
+            'face_node_fill_value': self.face_node_fill_value,
+        }
 
     def _calculate_timestep(self):
         """Calculate median timestep and add to metadata."""

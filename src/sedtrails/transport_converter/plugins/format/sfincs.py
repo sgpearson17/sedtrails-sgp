@@ -151,6 +151,10 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=None,
             sediment_concentration=None,
             nonlinear_wave_velocity=None,
+            node_x=mapped_data.get('node_x'),
+            node_y=mapped_data.get('node_y'),
+            face_node_connectivity=mapped_data.get('face_node_connectivity'),
+            face_node_fill_value=-1,
         )
 
         return sedtrails_data
@@ -168,13 +172,7 @@ class FormatPlugin(BaseFormatPlugin):
                 raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
             return grid.face_x, grid.face_y
 
-        # Fallback: compute centroids from node coordinates and face-node connectivity.
-        node_x_var = self._get_variable('mesh2d_node_x')
-        node_y_var = self._get_variable('mesh2d_node_y')
-        face_nodes_var = self._get_variable('mesh2d_face_nodes')
-
-        start_index = face_nodes_var.attrs.get('start_index', 0)
-        fill_value = face_nodes_var.encoding.get('_FillValue', face_nodes_var.attrs.get('_FillValue', -1))
+        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
 
         return compute_face_centroids(
             node_x_var,
@@ -367,22 +365,15 @@ class FormatPlugin(BaseFormatPlugin):
             else slice(None)
         )
 
-        # Derive face coordinates using helper that handles xu.UgridDataset
-        node_x_var = self._get_variable('mesh2d_node_x')
-        node_y_var = self._get_variable('mesh2d_node_y')
-        grid = self.input_data.grid
-
-        if not isinstance(grid, xu.Ugrid2d):
-            raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
-
-        face_nodes_var = grid.face_node_connectivity
+        # Derive face coordinates and keep generic UGRID geometry for visualization.
+        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
 
         face_x, face_y = compute_face_centroids(
             node_x_var,
             node_y_var,
             face_nodes_var,
-            start_index=1,
-            fill_value=-999,
+            start_index=start_index,
+            fill_value=fill_value,
         )
 
         # Variable mapping for SFINCS files
@@ -399,6 +390,13 @@ class FormatPlugin(BaseFormatPlugin):
         # First, get spatial coordinates (typically not time-dependent)
         data['x'] = face_x
         data['y'] = face_y
+        data['node_x'] = np.asarray(node_x_var)
+        data['node_y'] = np.asarray(node_y_var)
+        data['face_node_connectivity'] = normalize_face_node_connectivity(
+            face_nodes_var,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
 
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
@@ -436,6 +434,26 @@ class FormatPlugin(BaseFormatPlugin):
 
         return data
 
+    def _get_face_node_mesh_variables(self):
+        """Return UGRID node coordinates and face-node connectivity with indexing metadata."""
+        node_x_var = self._get_variable('mesh2d_node_x')
+        node_y_var = self._get_variable('mesh2d_node_y')
+
+        try:
+            face_nodes_var = self._get_variable('mesh2d_face_nodes')
+        except KeyError as err:
+            if not isinstance(self.input_data, xu.UgridDataset):
+                raise
+            grid = self.input_data.grid
+            if not isinstance(grid, xu.Ugrid2d):
+                raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}') from err
+            face_nodes_var = grid.face_node_connectivity
+            return node_x_var, node_y_var, face_nodes_var, 0, -1
+
+        start_index = face_nodes_var.attrs.get('start_index', 0)
+        fill_value = face_nodes_var.encoding.get('_FillValue', face_nodes_var.attrs.get('_FillValue', -1))
+        return node_x_var, node_y_var, face_nodes_var, start_index, fill_value
+
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
 
@@ -463,6 +481,17 @@ class FormatPlugin(BaseFormatPlugin):
         return start_idx, end_idx
 
 
+def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_value=-999):
+    """Return zero-based face-node connectivity with invalid entries set to -1."""
+    faces = np.asarray(mesh2d_face_nodes)
+    normalized = faces.astype(np.int64) - int(start_index)
+    invalid = normalized < 0
+    if fill_value is not None:
+        invalid |= faces == fill_value
+    normalized[invalid] = -1
+    return normalized
+
+
 def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, start_index=1, fill_value=-999):
     """
     Compute face centroids from UGRID mesh node coordinates and face->node connectivity.
@@ -485,17 +514,14 @@ def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, star
     """
     node_x = np.asarray(mesh2d_node_x)
     node_y = np.asarray(mesh2d_node_y)
-    faces = np.asarray(mesh2d_face_nodes)
-
-    # Convert to 0-based indexing
-    faces = faces.astype(np.int64) - start_index
+    faces = normalize_face_node_connectivity(mesh2d_face_nodes, start_index=start_index, fill_value=fill_value)
 
     face_x = np.empty(faces.shape[0], dtype=np.float64)
     face_y = np.empty(faces.shape[0], dtype=np.float64)
 
     for i, face in enumerate(faces):
         # Drop padded indices and out-of-range
-        valid = face[(face != (fill_value - start_index)) & (face >= 0)]
+        valid = face[face >= 0]
         if valid.size == 0:
             face_x[i] = np.nan
             face_y[i] = np.nan

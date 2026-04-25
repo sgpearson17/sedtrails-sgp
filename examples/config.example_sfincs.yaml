@@ -9,7 +9,7 @@ inputs:
 time:
   start:  2024-05-01 00:00:00
   timestep: 60S
-  duration: 5M
+  duration: 6H
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
@@ -37,4 +37,4 @@ outputs:
 visualization:
   dashboard:
     enable: true
-    update_interval: 30S
+    update_interval: 1200S

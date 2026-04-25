@@ -31,12 +31,9 @@ def main():
     # config_file = r"C:\surfdrive\650_SedTRAILS\pyTesting\02_soulsby-debugging\007_finer_hidExp_off\config.example_soulsby.yaml"
     # config_file = r"C:\surfdrive\650_SedTRAILS\pyTesting\02_soulsby-debugging\008_coarser_hidExp_off\config.example_soulsby.yaml"
     # config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\004_grain-size-test\config.example_soulsby.yaml"
-    #  config_file = r'D:\OSS\github_repos\sedtrailsdev\examples\config.example_soulsby.yaml'
-    # config_file = r'.\examples\config.example_soulsby.yaml'
-    config_file = r'C:\sedtrails\examples\config.example_sfincs.yaml'
-    # config_file = r'.\examples\sedtrails-example.yaml'
-
-
+    #  config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\009_missingGrainSizeField\config.example_soulsby.yaml"
+    #  config_file = r'.\examples\config.example_sfincs.yaml'
+    config_file = r'.\examples\config.example_soulsby.yaml'
     # Set up logging for verbose output (equivalent to CLI verbose mode)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -152,13 +149,12 @@ if __name__ == '__main__':
     exit_code = main()
 
     # 2. Test just configuration loading (uncomment to test config only)
-    config_file = r'D:\OSS\github_repos\sedtrailsdev\examples\config.example_soulsby.yaml'
-    #  config = debug_config_loading(config_file=config_file)
-    #  exit_code = 0 if config is not None else 1
+    # config = debug_config_loading()
+    # exit_code = 0 if config is not None else 1
 
     # 3. Test just simulation creation (uncomment to test simulation creation only)
-    #  simulation = debug_simulation_creation(config_file)
-    #  exit_code = 0 if simulation is not None else 1
+    # simulation = debug_simulation_creation()
+    # exit_code = 0 if simulation is not None else 1
 
     # Exit with the appropriate code
     sys.exit(exit_code)
