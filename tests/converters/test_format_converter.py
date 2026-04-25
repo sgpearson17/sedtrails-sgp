@@ -8,6 +8,10 @@ from sedtrails.transport_converter.format_converter import FormatConverter
 from sedtrails.transport_converter.plugins.format import sfincs
 
 
+def _existing_input_path():
+    return __file__
+
+
 class _PluginWithCoordinateReader:
     def __init__(self):
         self.convert_called = False
@@ -69,7 +73,7 @@ def test_sfincs_get_seeding_coordinates_uses_ugrid_face_coordinates(monkeypatch)
     monkeypatch.setattr(sfincs.xu, 'Ugrid2d', FakeUgrid2d)
     monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
 
-    plugin = sfincs.FormatPlugin('dummy.nc')
+    plugin = sfincs.FormatPlugin(_existing_input_path())
     x, y = plugin.get_seeding_coordinates()
 
     np.testing.assert_array_equal(x, np.array([1.0, 2.0, 3.0]))
@@ -92,7 +96,7 @@ def test_sfincs_get_seeding_coordinates_fallback_computes_centroids(monkeypatch)
 
     monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
 
-    plugin = sfincs.FormatPlugin('dummy.nc')
+    plugin = sfincs.FormatPlugin(_existing_input_path())
     x, y = plugin.get_seeding_coordinates()
 
     np.testing.assert_allclose(x, np.array([1.0]))
@@ -120,7 +124,7 @@ def test_sfincs_convert_stores_face_node_mesh_geometry(monkeypatch):
 
     monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
 
-    plugin = sfincs.FormatPlugin('dummy.nc')
+    plugin = sfincs.FormatPlugin(_existing_input_path())
     sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
 
     np.testing.assert_array_equal(sedtrails_data.node_x, np.array([0.0, 2.0, 2.0, 0.0]))
@@ -145,7 +149,7 @@ def test_sfincs_get_seeding_coordinates_raises_on_non_ugrid2d(monkeypatch):
     monkeypatch.setattr(sfincs.xu, 'Ugrid2d', type('OtherGrid', (), {}))
     monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
 
-    plugin = sfincs.FormatPlugin('dummy.nc')
+    plugin = sfincs.FormatPlugin(_existing_input_path())
 
     with pytest.raises(TypeError, match='Expected Ugrid2d'):
         plugin.get_seeding_coordinates()
