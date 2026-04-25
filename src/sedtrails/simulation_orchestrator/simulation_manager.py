@@ -205,6 +205,36 @@ class Simulation:
         update_interval = self._controller.get('visualization.dashboard.update_interval', '1H')
         return Duration(update_interval).seconds
 
+    @staticmethod
+    def _missing_particle_field_like(particle_x: np.ndarray) -> np.ndarray:
+        """Return a same-shaped NaN particle field for unavailable dashboard data."""
+        return np.full(np.asarray(particle_x).shape, np.nan, dtype=float)
+
+    @classmethod
+    def _dashboard_particle_data(cls, population) -> dict[str, np.ndarray]:
+        """Build dashboard particle arrays from a population."""
+        particle_x = population.particles['x']
+        particle_data = {
+            'x': particle_x,
+            'y': population.particles['y'],
+        }
+
+        burial_depth = population.particles.get('burial_depth')
+        if burial_depth is None:
+            burial_depth = cls._missing_particle_field_like(particle_x)
+        else:
+            burial_depth = np.asarray(burial_depth)
+            if np.all(np.isnan(burial_depth)):
+                burial_depth = cls._missing_particle_field_like(particle_x)
+        particle_data['burial_depth'] = burial_depth
+
+        mixing_depth = population.particles.get('mixing_depth')
+        particle_data['mixing_depth'] = (
+            cls._missing_particle_field_like(particle_x) if mixing_depth is None else np.asarray(mixing_depth)
+        )
+
+        return particle_data
+
     def _create_simulation_time(self) -> Time:
         """Build simulation time using the same reference date as the input data."""
         return Time(
@@ -697,20 +727,7 @@ class Simulation:
                 if self.dashboard.should_update(timer.current, plot_interval_seconds):
                     # For dashboard, use first population data
                     first_population = populations[0]
-                    particle_data = {
-                        'x': first_population.particles['x'],
-                        'y': first_population.particles['y'],
-                        'burial_depth': [
-                            first_population.particles['burial_depth']
-                            if not np.all(np.isnan(first_population.particles['burial_depth']))
-                            else np.full(first_population.particles['x'].shape, np.nan)
-                        ],
-                        'mixing_depth': [
-                            first_population.particles['mixing_depth']
-                            if 'mixing_depth' in first_population.particles.keys()
-                            else np.full(first_population.particles['x'].shape, np.nan)
-                        ],
-                    }
+                    particle_data = self._dashboard_particle_data(first_population)
                     bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
                     dashboard_flow_field = get_flow_field_cached(flow_field_names[0], 'get_flow_field.dashboard')
                     mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
