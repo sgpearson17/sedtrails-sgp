@@ -70,7 +70,14 @@ class PhysicsConfig:
             if isinstance(tracer_config.get(method), dict):
                 method_params = tracer_config[method]
             elif any(isinstance(value, dict) for value in tracer_config.values()):
-                method_params = {}
+                available_methods = sorted(
+                    key for key, value in tracer_config.items() if isinstance(value, dict)
+                )
+                raise ValueError(
+                    f"Nested tracer_config was provided, but it does not contain settings "
+                    f"for the active tracer_method '{method}'. "
+                    f"Available method keys: {available_methods}"
+                )
             else:
                 method_params = tracer_config
 
