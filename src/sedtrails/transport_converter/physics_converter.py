@@ -5,7 +5,7 @@ This module adds physics-based calculations to existing SedtrailsData objects
 using the physics library functions and allowing method selection.
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
 # Import physics library
@@ -181,4 +181,4 @@ class PhysicsConverter:
             plugin = self._physics_plugin
 
         # Use empty dict as default if no config provided
-        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or {})
+        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or 'no_probability')
