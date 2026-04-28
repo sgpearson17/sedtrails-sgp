@@ -8,6 +8,7 @@ from sedtrails.exceptions import YamlValidationError
 
 
 def test_population_schema_rejects_multiple_tracer_methods(tmp_path):
+    """Reject populations that configure more than one tracer method."""
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {
         'vanwesten': {'flow_field_name': ['bed_load_velocity']},
@@ -19,6 +20,7 @@ def test_population_schema_rejects_multiple_tracer_methods(tmp_path):
 
 
 def test_population_schema_requires_flow_field_name(tmp_path):
+    """Require flow_field_name for the selected tracer method."""
     config = _base_config()
     config['particles']['populations'][0]['tracer_methods'] = {'vanwesten': {'beta': 0.2}}
 
@@ -27,6 +29,7 @@ def test_population_schema_requires_flow_field_name(tmp_path):
 
 
 def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
+    """Accept a valid single tracer method with flow field names."""
     config = _base_config()
 
     validated = _validate_config(tmp_path, config)
@@ -36,12 +39,14 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
 
 
 def _validate_config(tmp_path, config):
+    """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'
     config_file.write_text(yaml.dump(config))
     return YAMLConfigValidator().validate_yaml(str(config_file))
 
 
 def _base_config():
+    """Build a minimal valid base configuration for population schema tests."""
     return {
         'particles': {
             'populations': [
