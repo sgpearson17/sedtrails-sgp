@@ -1,9 +1,13 @@
 """A plugin for Soulsby et al. (2011) sediment transport physics calculations."""
 
+import logging
+
 import numpy as np
 from sedtrails.transport_converter import physics_lib
 from sedtrails.transport_converter import SedtrailsData
 from sedtrails.transport_converter.plugins import BasePhysicsPlugin
+
+logger = logging.getLogger(__name__)
 
 
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
@@ -25,7 +29,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         'See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating '
         'the dispersal of sand-sized particles in coastal waters.'
         """
-        print('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data...')
+        logger.info('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data')
 
         # === LOAD: Extract data ===
 
@@ -213,7 +217,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # === STORE ===
 
-        print('Adding physics fields to SedtrailsData...')
+        logger.info('Adding physics fields to SedtrailsData')
 
         # Sediment velocities (vector fields)
         sedtrails_data.add_physics_field(
