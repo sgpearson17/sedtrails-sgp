@@ -6,6 +6,7 @@ from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
 def build_sedtrails_data():
+    """Builds a minimal two-time-slice SedtrailsData fixture for retriever tests."""
     x = np.array([0.0, 1.0, 1.0, 0.0])
     y = np.array([0.0, 0.0, 1.0, 1.0])
     lower_u = np.array([1.0, 1.0, 1.0, 1.0])
@@ -30,6 +31,8 @@ def build_sedtrails_data():
         }
     )
 
+    # Assemble the minimal model input used by the tests: one flow field, one scalar field,
+    # and two timesteps to exercise lower/upper bounds and temporal weighting logic.
     return SedtrailsData(
         times=np.array([0.0, 10.0], dtype=float),
         reference_date=np.datetime64('1970-01-01T00:00:00'),
@@ -54,6 +57,7 @@ def build_sedtrails_data():
 
 
 def test_flow_field_bounds_defer_full_grid_interpolation():
+    """Checks flow bounds return lower/upper slices and interpolation weight."""
     retriever = FieldDataRetriever(build_sedtrails_data())
 
     bounds = retriever.get_flow_field_bounds(2.5, 'depth_avg_flow_velocity')
@@ -64,6 +68,7 @@ def test_flow_field_bounds_defer_full_grid_interpolation():
 
 
 def test_scalar_field_bounds_defer_full_grid_interpolation():
+    """Checks scalar bounds return lower/upper slices and interpolation weight."""
     retriever = FieldDataRetriever(build_sedtrails_data())
 
     bounds = retriever.get_scalar_field_bounds(2.5, 'water_depth')
@@ -74,6 +79,7 @@ def test_scalar_field_bounds_defer_full_grid_interpolation():
 
 
 def test_flow_max_velocity_bound_is_conservative():
+    """Verifies max-velocity bound is conservative relative to exact interpolation."""
     retriever = FieldDataRetriever(build_sedtrails_data())
     exact = retriever.get_flow_field(2.5, 'depth_avg_flow_velocity')['magnitude']
 

@@ -6,6 +6,7 @@ from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
 def _build_sedtrails_data(x, y):
+    """Builds a minimal SedtrailsData instance for metadata resolution tests."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     npoints = x.size
@@ -27,6 +28,7 @@ def _build_sedtrails_data(x, y):
         }
     )
 
+    # Keep all dynamic fields simple/zeroed so tests isolate spatial metadata behavior.
     return SedtrailsData(
         times=np.array([0.0, 1.0], dtype=float),
         reference_date=np.datetime64('1970-01-01T00:00:00'),
@@ -47,6 +49,7 @@ def _build_sedtrails_data(x, y):
 
 
 def test_min_resolution_ignores_duplicate_coordinates():
+    """Checks min resolution uses distinct points and ignores duplicates."""
     data = _build_sedtrails_data(
         x=[0.0, 1.0, 1.0, 2.0],
         y=[0.0, 0.0, 0.0, 0.0],
@@ -56,6 +59,7 @@ def test_min_resolution_ignores_duplicate_coordinates():
 
 
 def test_min_resolution_none_when_no_distinct_points():
+    """Checks degenerate coordinates produce no resolution/envelope metadata."""
     data = _build_sedtrails_data(
         x=[5.0, 5.0, 5.0],
         y=[7.0, 7.0, 7.0],

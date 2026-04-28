@@ -268,7 +268,10 @@ class TestSimulationManagerExpandTimeDimension:
 
 
 class TestSimulationDashboardThrottle:
+    """Tests dashboard update cadence and particle payload shape for visualization."""
+
     def test_dashboard_update_interval_uses_visualization_config(self):
+        """Configured dashboard interval should override the default update cadence."""
         class Controller:
             def get(self, key, default=None):
                 if key == 'visualization.dashboard.update_interval':
@@ -281,12 +284,14 @@ class TestSimulationDashboardThrottle:
         assert manager._dashboard_update_interval_seconds() == 30
 
     def test_dashboard_update_interval_defaults_to_one_hour(self):
+        """When unset, dashboard updates should default to a one-hour interval."""
         manager = object.__new__(Simulation)
         manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
 
         assert manager._dashboard_update_interval_seconds() == 3600
 
     def test_dashboard_particle_data_uses_arrays_not_single_element_lists(self):
+        """Dashboard particle payload should keep vector fields as NumPy arrays."""
         class Population:
             particles = {
                 'x': np.array([1.0, 2.0]),
@@ -304,6 +309,7 @@ class TestSimulationDashboardThrottle:
         np.testing.assert_array_equal(particle_data['mixing_depth'], np.array([np.nan, np.nan]))
 
     def test_large_grid_dashboard_updates_are_throttled(self):
+        """Large grids should throttle dashboard refreshes to periodic steps."""
         manager = object.__new__(Simulation)
         manager.dashboard = object()
         manager._dashboard_throttle_logged = False
@@ -322,6 +328,7 @@ class TestSimulationDashboardThrottle:
         assert manager._should_update_dashboard(sedtrails_data, timer)
 
     def test_small_grid_dashboard_updates_every_step(self):
+        """Small grids should keep per-step dashboard updates enabled."""
         manager = object.__new__(Simulation)
         manager.dashboard = object()
 

@@ -10,6 +10,7 @@ def square_grid():
 
 
 def test_cached_geometry_reused_by_calculator():
+    """Ensures the calculator reuses a provided GridGeometry instance."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
 
@@ -20,6 +21,7 @@ def test_cached_geometry_reused_by_calculator():
 
 
 def test_linear_field_interpolation_uses_cached_delaunay_locator():
+    """Checks linear nodal fields interpolate to exact values at query points."""
     grid_x, grid_y = square_grid()
     calculator = create_numba_particle_calculator(grid_x, grid_y)
     field = 2.0 * grid_x + 3.0 * grid_y
@@ -34,6 +36,7 @@ def test_linear_field_interpolation_uses_cached_delaunay_locator():
 
 
 def test_multi_field_interpolation_reuses_single_point_location():
+    """Verifies multiple fields share one barycentric point-location pass."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     call_count = 0
@@ -60,6 +63,7 @@ def test_multi_field_interpolation_reuses_single_point_location():
 
 
 def test_explicit_triangle_connectivity_is_preserved():
+    """Confirms user-supplied triangle connectivity is used unchanged."""
     grid_x, grid_y = square_grid()
     triangles = np.array([[0, 1, 2], [0, 2, 3]])
 
@@ -69,6 +73,7 @@ def test_explicit_triangle_connectivity_is_preserved():
 
 
 def test_rk4_update_with_constant_velocity():
+    """Validates RK4 advection matches constant-velocity analytical motion."""
     grid_x, grid_y = square_grid()
     calculator = create_numba_particle_calculator(grid_x, grid_y)
     grid_u = np.ones_like(grid_x)
@@ -85,6 +90,7 @@ def test_rk4_update_with_constant_velocity():
 
 
 def test_temporal_rk4_update_matches_preblended_grid():
+    """Ensures temporal RK4 equals RK4 on a preblended velocity field."""
     grid_x, grid_y = square_grid()
     calculator = create_numba_particle_calculator(grid_x, grid_y)
     lower_u = np.ones_like(grid_x)
@@ -120,6 +126,7 @@ def test_temporal_rk4_update_matches_preblended_grid():
 
 
 def test_temporal_rk4_uses_one_point_location_pass_per_update():
+    """Checks temporal updates call point-location only once per update."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     call_count = 0
@@ -147,6 +154,7 @@ def test_temporal_rk4_uses_one_point_location_pass_per_update():
 
 
 def test_temporal_update_returns_reusable_simplex_ids():
+    """Confirms temporal updates return simplex ids usable as next-step seeds."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     starts = geometry.locate_points(np.array([0.2, 0.4]), np.array([0.2, 0.3]))
@@ -169,6 +177,7 @@ def test_temporal_update_returns_reusable_simplex_ids():
 
 
 def test_position_update_preserves_particle_array_shape():
+    """Ensures particle update keeps input array dimensionality intact."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     x0 = np.array([[0.2, 0.4]])
@@ -189,6 +198,7 @@ def test_position_update_preserves_particle_array_shape():
 
 
 def test_velocity_arrays_do_not_copy_non_geographic_float32_fields():
+    """Verifies non-geographic velocity arrays are returned without copies."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(grid_x, grid_y)
     grid_u = np.ones_like(grid_x, dtype=np.float32)
