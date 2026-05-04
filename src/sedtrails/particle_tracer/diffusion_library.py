@@ -109,6 +109,24 @@ class RandomDiffusion(DiffusionStrategy):
         return xdif, ydif
 
 
+class BrownianDiffusion(DiffusionStrategy):
+    """Isotropic Brownian diffusion using a constant Kh coefficient."""
+
+    def calculate(
+        self,
+        dt: float,
+        x: np.ndarray,
+        y: np.ndarray,
+        u: np.ndarray,
+        v: np.ndarray,
+        nu: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        sigma = math.sqrt(2.0 * nu * dt)
+        dx = np.random.normal(0.0, sigma, size=x.shape)
+        dy = np.random.normal(0.0, sigma, size=y.shape)
+        return x + dx, y + dy
+
+
 class DiffusionCalculator:
     """
     Main class for calculating diffusion effects.
