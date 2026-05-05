@@ -3,11 +3,15 @@ import numpy as np
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 
 from ._helpers import (
+    analytic_line_style,
     integrate_time_dependent,
+    legend_style,
     liu_weisberg_skill,
     maybe_save_artifact,
     maybe_save_plot,
+    plot_fontdict,
     rect_grid,
+    sedtrails_line_style,
     write_metrics,
 )
 
@@ -58,30 +62,27 @@ def test_radial_rotation_closed_orbits(tmp_path):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
+        fontdict = plot_fontdict()
+        dense_times = np.linspace(0.0, 86_400.0, 400)
         for idx in range(xs.shape[1]):
-            ax.plot(
-                xs[:, idx],
-                ys[:, idx],
-                color='tab:blue',
-                linewidth=1.0,
-                marker='.',
-                markersize=3,
-                label='sedtrails' if idx == 0 else None,
-            )
             r = np.hypot(x0[idx], y0[idx])
-            theta = np.arctan2(y0[idx], x0[idx]) + omega * times
+            theta = np.arctan2(y0[idx], x0[idx]) + omega * dense_times
             ax.plot(
                 r * np.cos(theta),
                 r * np.sin(theta),
-                color='tab:orange',
-                linestyle='--',
-                linewidth=1.0,
+                **analytic_line_style(),
                 label='analytic' if idx == 0 else None,
             )
-        ax.set_xlabel('x [m]')
-        ax.set_ylabel('y [m]')
-        ax.set_title('Radial rotation: SedTRAILS vs analytic')
-        ax.legend()
+            ax.plot(
+                xs[:, idx],
+                ys[:, idx],
+                **sedtrails_line_style(),
+                label='sedtrails' if idx == 0 else None,
+            )
+        ax.set_xlabel('x [m]', fontdict=fontdict)
+        ax.set_ylabel('y [m]', fontdict=fontdict)
+        ax.set_title('Radial rotation: SedTRAILS vs analytic', fontdict=fontdict)
+        ax.legend(**legend_style())
         ax.axis('equal')
         return fig
 

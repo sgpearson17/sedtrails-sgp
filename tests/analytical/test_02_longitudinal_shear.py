@@ -3,24 +3,31 @@ import numpy as np
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 
 from ._helpers import (
+    analytic_line_style,
     integrate_time_dependent,
+    legend_style,
     liu_weisberg_skill,
     maybe_save_artifact,
     maybe_save_plot,
+    plot_fontdict,
     rect_grid,
+    sedtrails_line_style,
     write_metrics,
 )
 
 
 def test_longitudinal_shear_adapted_linear_shear(tmp_path):
-    gx, gy = rect_grid(-5_000_000.0, 5_000_000.0, 81, -8_000_000.0, 8_000_000.0, 81)
+    gx, gy = rect_grid(-15_000_000.0, 15_000_000.0, 121, -8_000_000.0, 8_000_000.0, 81)
     calculator = create_numba_particle_calculator(gx, gy)
 
+    meters_per_degree = 111_000.0
+    u_m_per_s = 1.0
+
     def velocity_fn(_t):
-        return np.ones_like(gy), np.zeros_like(gy)
+        return u_m_per_s * np.ones_like(gy), np.zeros_like(gy)
 
     x0 = np.zeros(31, dtype=np.float64)
-    y0 = np.linspace(-45.0, 45.0, x0.size) * 111_000.0
+    y0 = np.linspace(-30.0, 60.0, x0.size) * meters_per_degree
 
     total_time = 57.0 * 86_400.0
     x_end, y_end, times, xs, ys = integrate_time_dependent(
@@ -34,13 +41,14 @@ def test_longitudinal_shear_adapted_linear_shear(tmp_path):
         history_stride=int(86_400.0 / 300.0),
     )
 
-    x_true = x0 + total_time
+    u_particles = np.full_like(y0, u_m_per_s)
+    x_true = x0 + u_particles * total_time
     y_true = y0
 
     maybe_save_artifact(tmp_path, '02_longitudinal_shear_x_error', x_end - x_true)
     maybe_save_artifact(tmp_path, '02_longitudinal_shear_y_error', y_end - y_true)
 
-    analytic_x = np.stack([x0 + t for t in times])
+    analytic_x = np.stack([x0 + u_particles * t for t in times])
     analytic_y = np.stack([y0 for _ in times])
     skill_mean, skill_std, _ = liu_weisberg_skill(analytic_x, analytic_y, xs, ys)
 
@@ -60,30 +68,30 @@ def test_longitudinal_shear_adapted_linear_shear(tmp_path):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
+        fontdict = plot_fontdict()
+        dense_times = np.linspace(0.0, total_time, 400)
         for idx in range(xs.shape[1]):
-            analytic_x = x0[idx] + times
-            analytic_y = np.full_like(times, y0[idx])
+            lat_deg = y0[idx] / meters_per_degree
+            lat_rad = np.deg2rad(lat_deg)
+            deg_per_meter = 1.0 / (meters_per_degree * np.cos(lat_rad))
+            analytic_x = x0[idx] + u_particles[idx] * dense_times
+            analytic_y = np.full_like(dense_times, y0[idx])
             ax.plot(
-                xs[:, idx] / 1000.0,
-                ys[:, idx] / 1000.0,
-                color='tab:blue',
-                linewidth=1.0,
-                marker='.',
-                markersize=3,
-                label='sedtrails' if idx == 0 else None,
-            )
-            ax.plot(
-                analytic_x / 1000.0,
-                analytic_y / 1000.0,
-                color='tab:orange',
-                linestyle='--',
-                linewidth=1.0,
+                analytic_x * deg_per_meter,
+                analytic_y / meters_per_degree,
+                **analytic_line_style(),
                 label='analytic' if idx == 0 else None,
             )
-        ax.set_xlabel('zonal distance [km]')
-        ax.set_ylabel('meridional distance [km]')
-        ax.set_title('Longitudinal shear: SedTRAILS vs analytic')
-        ax.legend()
+            ax.plot(
+                xs[:, idx] * deg_per_meter,
+                ys[:, idx] / meters_per_degree,
+                **sedtrails_line_style(),
+                label='sedtrails' if idx == 0 else None,
+            )
+        ax.set_xlabel('longitude [degrees]', fontdict=fontdict)
+        ax.set_ylabel('latitude [degrees]', fontdict=fontdict)
+        ax.set_title('Longitudinal shear: SedTRAILS vs analytic', fontdict=fontdict)
+        ax.legend(**legend_style())
         return fig
 
     maybe_save_plot(tmp_path, '02_longitudinal_shear_comparison', _plot)

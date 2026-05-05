@@ -45,12 +45,54 @@ def maybe_save_plot(tmp_path, name, plot_fn):
     if not _artifacts_enabled():
         return
     try:
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
     except Exception:
         return
-    fig = plot_fn()
-    fig.savefig(_output_dir(tmp_path) / f'{name}.png', dpi=200, bbox_inches='tight')
-    plt.close(fig)
+    original_rc = plt.rcParams.copy()
+    try:
+        plt.rcParams.update(
+            {
+                'font.family': 'Arial',
+                'font.weight': 'bold',
+                'font.style': 'italic',
+            }
+        )
+        fig = plot_fn()
+        fig.savefig(_output_dir(tmp_path) / f'{name}.png', dpi=200, bbox_inches='tight')
+        plt.close(fig)
+    finally:
+        plt.rcParams.update(original_rc)
+
+
+def plot_fontdict():
+    return {
+        'family': 'Arial',
+        'weight': 'bold',
+        'style': 'italic',
+    }
+
+
+def sedtrails_line_style():
+    return {
+        'color': 'black',
+        'linewidth': 0.6,
+        'marker': '.',
+        'markersize': 4,
+    }
+
+
+def analytic_line_style():
+    return {
+        'color': '0.7',
+        'linestyle': '--',
+        'linewidth': 1.6,
+    }
+
+
+def legend_style():
+    return {'prop': plot_fontdict()}
 
 
 def liu_weisberg_skill(x_obs, y_obs, x_mod, y_mod, n_tolerance=1.0):

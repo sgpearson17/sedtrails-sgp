@@ -3,11 +3,15 @@ import numpy as np
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 
 from ._helpers import (
+    analytic_line_style,
     integrate_time_dependent,
+    legend_style,
     liu_weisberg_skill,
     maybe_save_artifact,
     maybe_save_plot,
+    plot_fontdict,
     rect_grid,
+    sedtrails_line_style,
     write_metrics,
 )
 
@@ -83,12 +87,20 @@ def test_damped_inertial_oscillation(tmp_path):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        ax.plot(xs[:, 0], ys[:, 0], color='tab:blue', label='sedtrails', marker='.', markersize=3)
-        ax.plot(analytic_x, analytic_y, color='tab:orange', linestyle='--', label='analytic')
-        ax.set_xlabel('x [m]')
-        ax.set_ylabel('y [m]')
-        ax.set_title('Damped oscillation: SedTRAILS vs analytic')
-        ax.legend()
+        fontdict = plot_fontdict()
+        dense_times = np.linspace(0.0, total_time, 400)
+        dense_x = []
+        dense_y = []
+        for t in dense_times:
+            x_val, y_val = true_values(t, x0[0], y0[0])
+            dense_x.append(x_val)
+            dense_y.append(y_val)
+        ax.plot(dense_x, dense_y, **analytic_line_style(), label='analytic')
+        ax.plot(xs[:, 0], ys[:, 0], **sedtrails_line_style(), label='sedtrails')
+        ax.set_xlabel('x [m]', fontdict=fontdict)
+        ax.set_ylabel('y [m]', fontdict=fontdict)
+        ax.set_title('Damped oscillation: SedTRAILS vs analytic', fontdict=fontdict)
+        ax.legend(**legend_style())
         return fig
 
     maybe_save_plot(tmp_path, '06_dampedoscillation_comparison', _plot)

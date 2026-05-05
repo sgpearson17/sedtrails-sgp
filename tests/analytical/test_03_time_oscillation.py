@@ -3,11 +3,15 @@ import numpy as np
 from sedtrails.particle_tracer.position_calculator_numba import create_numba_particle_calculator
 
 from ._helpers import (
+    analytic_line_style,
     liu_weisberg_skill,
+    legend_style,
     make_retriever,
     maybe_save_artifact,
     maybe_save_plot,
+    plot_fontdict,
     rect_grid,
+    sedtrails_line_style,
     write_metrics,
 )
 
@@ -83,32 +87,29 @@ def test_time_oscillation_with_field_retriever_integration(tmp_path):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
+        fontdict = plot_fontdict()
         xs_arr = np.stack(xs)
         ys_arr = np.stack(ys)
+        dense_times = np.linspace(0.0, total_time, 400)
         for idx in range(xs_arr.shape[1]):
-            analytic_x = x0[idx] + amplitude / omega * np.sin(omega * times_arr)
-            analytic_y = y0[idx] + amplitude * times_arr
-            ax.plot(
-                xs_arr[:, idx],
-                ys_arr[:, idx],
-                color='tab:blue',
-                linewidth=1.0,
-                marker='.',
-                markersize=3,
-                label='sedtrails' if idx == 0 else None,
-            )
+            analytic_x = x0[idx] + amplitude / omega * np.sin(omega * dense_times)
+            analytic_y = y0[idx] + amplitude * dense_times
             ax.plot(
                 analytic_x,
                 analytic_y,
-                color='tab:orange',
-                linestyle='--',
-                linewidth=1.0,
+                **analytic_line_style(),
                 label='analytic' if idx == 0 else None,
             )
-        ax.set_xlabel('x [m]')
-        ax.set_ylabel('y [m]')
-        ax.set_title('Time oscillation: SedTRAILS vs analytic')
-        ax.legend()
+            ax.plot(
+                xs_arr[:, idx],
+                ys_arr[:, idx],
+                **sedtrails_line_style(),
+                label='sedtrails' if idx == 0 else None,
+            )
+        ax.set_xlabel('x [m]', fontdict=fontdict)
+        ax.set_ylabel('y [m]', fontdict=fontdict)
+        ax.set_title('Time oscillation: SedTRAILS vs analytic', fontdict=fontdict)
+        ax.legend(**legend_style())
         return fig
 
     maybe_save_plot(tmp_path, '03_timeoscillation_comparison', _plot)

@@ -3,7 +3,14 @@ import numpy as np
 
 from sedtrails.particle_tracer.diffusion_library import BrownianDiffusion
 
-from ._helpers import maybe_save_artifact, maybe_save_plot, write_metrics
+from ._helpers import (
+    analytic_line_style,
+    legend_style,
+    maybe_save_artifact,
+    maybe_save_plot,
+    plot_fontdict,
+    write_metrics,
+)
 
 
 def test_brownian_random_walk_moments(tmp_path):
@@ -52,12 +59,17 @@ def test_brownian_random_walk_moments(tmp_path):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        ax.hist(dx / 1000.0, bins=60, alpha=0.6, density=True, label='dx')
-        ax.hist(dy / 1000.0, bins=60, alpha=0.6, density=True, label='dy')
-        ax.set_xlabel('displacement [km]')
-        ax.set_ylabel('density')
-        ax.set_title('Brownian motion: displacement histograms')
-        ax.legend()
+        fontdict = plot_fontdict()
+        sigma_km = math.sqrt(expected_var) / 1000.0
+        grid = np.linspace(-4.0 * sigma_km, 4.0 * sigma_km, 400)
+        pdf = (1.0 / (sigma_km * math.sqrt(2.0 * math.pi))) * np.exp(-(grid**2) / (2.0 * sigma_km**2))
+        ax.plot(grid, pdf, color='black', linewidth=1.6, linestyle='--', label='analytic PDF')
+        ax.hist(dx / 1000.0, bins=60, alpha=0.5, density=True, color='black', label='dx')
+        ax.hist(dy / 1000.0, bins=60, alpha=0.35, density=True, color='black', label='dy')
+        ax.set_xlabel('displacement [km]', fontdict=fontdict)
+        ax.set_ylabel('density', fontdict=fontdict)
+        ax.set_title('Brownian motion: displacement histograms', fontdict=fontdict)
+        ax.legend(**legend_style())
         return fig
 
     maybe_save_plot(tmp_path, '07_brownian_histograms', _plot)
