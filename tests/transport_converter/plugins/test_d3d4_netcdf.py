@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sedtrails.transport_converter.plugins.format import delft3d4_netcdf
+from sedtrails.transport_converter.plugins.format import d3d4_netcdf
 
 
 SAMPLE_FILE = Path('sample-data/trim-inlet.nc')
@@ -43,6 +43,22 @@ def _plot_if_requested(
         subsampled_mask = invalid_mask[::stride_x, ::stride_y]
         u = np.where(subsampled_mask, np.nan, u)
         v = np.where(subsampled_mask, np.nan, v)
+        plt.figure(figsize=(7, 6))
+        plt.quiver(xs, ys, u, v, scale=10)
+        plt.title(f'Depth-averaged flow velocity ({time_label})')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.tight_layout()
+        plt.savefig(output_dir / 'flow_velocity_vectors.png', dpi=150)
+        plt.close()
+    elif x.ndim == 1 and y.ndim == 1:
+        u = data.depth_avg_flow_velocity['x'][time_idx]
+        v = data.depth_avg_flow_velocity['y'][time_idx]
+        stride = max(1, x.size // 2500)
+        xs = x[::stride]
+        ys = y[::stride]
+        u = u[::stride]
+        v = v[::stride]
         plt.figure(figsize=(7, 6))
         plt.quiver(xs, ys, u, v, scale=10)
         plt.title(f'Depth-averaged flow velocity ({time_label})')
@@ -127,6 +143,25 @@ def _plot_scalar_field(
         plt.xlabel('x')
         plt.ylabel('y')
         plt.gca().set_aspect('equal', adjustable='box')
+    elif np.asarray(x).ndim == 1 and np.asarray(y).ndim == 1:
+        x_arr = np.asarray(x)
+        y_arr = np.asarray(y)
+        invalid_mask = (x_arr == 0) & (y_arr == 0)
+        if mask is not None:
+            invalid_mask = invalid_mask | mask
+        masked_values = np.where(invalid_mask, np.nan, values)
+        valid = np.isfinite(masked_values)
+        plt.scatter(
+            x_arr[valid],
+            y_arr[valid],
+            c=masked_values[valid],
+            s=36,
+            marker='s',
+            linewidths=0,
+        )
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.gca().set_aspect('equal', adjustable='box')
     else:
         plt.imshow(values, origin='lower')
     plt.colorbar(label=colorbar_label)
@@ -165,6 +200,9 @@ def _resolve_scalar_coordinates(data) -> tuple[np.ndarray, np.ndarray]:
     """Return XZ/YZ coordinates for scalar plotting when available."""
     import xarray as xr
 
+    if np.asarray(data.x).ndim == 1:
+        return np.asarray(data.x), np.asarray(data.y)
+
     if SAMPLE_FILE.exists():
         try:
             ds = xr.open_dataset(SAMPLE_FILE, decode_times=False, decode_timedelta=False)
@@ -175,41 +213,6 @@ def _resolve_scalar_coordinates(data) -> tuple[np.ndarray, np.ndarray]:
                 return np.asarray(ds['XZ'].values), np.asarray(ds['YZ'].values)
 
     return np.asarray(data.x), np.asarray(data.y)
-
-
-def _compute_cell_edges(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute cell edge coordinates from cell centers for curvilinear grids."""
-    if x.ndim != 2 or y.ndim != 2:
-        raise ValueError('x and y must be 2D arrays for edge computation')
-
-    m, n = x.shape
-    x_edges = np.empty((m + 1, n + 1), dtype=float)
-    y_edges = np.empty((m + 1, n + 1), dtype=float)
-
-    x_edges[1:-1, 1:-1] = 0.25 * (x[:-1, :-1] + x[1:, :-1] + x[:-1, 1:] + x[1:, 1:])
-    y_edges[1:-1, 1:-1] = 0.25 * (y[:-1, :-1] + y[1:, :-1] + y[:-1, 1:] + y[1:, 1:])
-
-    x_edges[0, 1:-1] = x_edges[1, 1:-1] - (x_edges[2, 1:-1] - x_edges[1, 1:-1])
-    x_edges[-1, 1:-1] = x_edges[-2, 1:-1] + (x_edges[-2, 1:-1] - x_edges[-3, 1:-1])
-    x_edges[1:-1, 0] = x_edges[1:-1, 1] - (x_edges[1:-1, 2] - x_edges[1:-1, 1])
-    x_edges[1:-1, -1] = x_edges[1:-1, -2] + (x_edges[1:-1, -2] - x_edges[1:-1, -3])
-
-    y_edges[0, 1:-1] = y_edges[1, 1:-1] - (y_edges[2, 1:-1] - y_edges[1, 1:-1])
-    y_edges[-1, 1:-1] = y_edges[-2, 1:-1] + (y_edges[-2, 1:-1] - y_edges[-3, 1:-1])
-    y_edges[1:-1, 0] = y_edges[1:-1, 1] - (y_edges[1:-1, 2] - y_edges[1:-1, 1])
-    y_edges[1:-1, -1] = y_edges[1:-1, -2] + (y_edges[1:-1, -2] - y_edges[1:-1, -3])
-
-    x_edges[0, 0] = x_edges[0, 1] + x_edges[1, 0] - x_edges[1, 1]
-    x_edges[0, -1] = x_edges[0, -2] + x_edges[1, -1] - x_edges[1, -2]
-    x_edges[-1, 0] = x_edges[-1, 1] + x_edges[-2, 0] - x_edges[-2, 1]
-    x_edges[-1, -1] = x_edges[-1, -2] + x_edges[-2, -1] - x_edges[-2, -2]
-
-    y_edges[0, 0] = y_edges[0, 1] + y_edges[1, 0] - y_edges[1, 1]
-    y_edges[0, -1] = y_edges[0, -2] + y_edges[1, -1] - y_edges[1, -2]
-    y_edges[-1, 0] = y_edges[-1, 1] + y_edges[-2, 0] - y_edges[-2, 1]
-    y_edges[-1, -1] = y_edges[-1, -2] + y_edges[-2, -1] - y_edges[-2, -2]
-
-    return x_edges, y_edges
 
 
 def _resolve_plot_mask() -> str | None:
@@ -244,7 +247,7 @@ def _build_kcs_mask() -> np.ndarray | None:
 @pytest.mark.skipif(not SAMPLE_FILE.exists(), reason='Sample Delft3D4 NetCDF file not available')
 def test_delft3d4_netcdf_conversion() -> None:
     """Check Delft3D4 NetCDF conversion produces a valid SedtrailsData object."""
-    plugin = delft3d4_netcdf.FormatPlugin(str(SAMPLE_FILE))
+    plugin = d3d4_netcdf.FormatPlugin(str(SAMPLE_FILE))
     data = plugin.convert(reference_date=np.datetime64('1970-01-01T00:00:00'))
 
     assert data.times.size > 0

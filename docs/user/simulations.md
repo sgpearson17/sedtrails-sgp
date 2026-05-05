@@ -145,9 +145,11 @@ By default, the map output from Delft3D-4 is written to binary `trim-*.dat` file
 FlNcdf= #maphis#
 ncFormat=4
 ```
-The resulting  `*.nc` file can then be directly read by SedTRAILS using the `delft3d4_netcdf.py` format converter plugin.
+The resulting  `*.nc` file can then be directly read by SedTRAILS using the `d3d4_netcdf.py` format converter plugin.
 
-Note: the format converter interpolates data at all U/V points to cell centers.
+Note: the format converter interpolates data at all U/V points to cell centers and
+flattens structured grids to 1D spatial vectors so downstream modules can treat
+all inputs consistently.
 
 ### Other models
 To add other models as input, you need to construct a format converter plugin as per the

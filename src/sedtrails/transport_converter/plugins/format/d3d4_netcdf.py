@@ -178,9 +178,13 @@ class FormatPlugin(BaseFormatPlugin):
         self.load()
 
         if 'XZ' in self.input_data and 'YZ' in self.input_data:
-            return self.input_data['XZ'].values, self.input_data['YZ'].values
+            x_vals = self.input_data['XZ'].values
+            y_vals = self.input_data['YZ'].values
+            return self._flatten_xy(x_vals, y_vals)
         if 'XCOR' in self.input_data and 'YCOR' in self.input_data:
-            return self.input_data['XCOR'].values, self.input_data['YCOR'].values
+            x_vals = self.input_data['XCOR'].values
+            y_vals = self.input_data['YCOR'].values
+            return self._flatten_xy(x_vals, y_vals)
 
         raise KeyError("Required variables 'XZ'/'YZ' or 'XCOR'/'YCOR' not found in dataset")
 
@@ -351,6 +355,19 @@ class FormatPlugin(BaseFormatPlugin):
             return values[..., : grid_shape[0], : grid_shape[1]]
         return values
 
+    def _flatten_xy(self, x_vals: np.ndarray, y_vals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Flatten 2D coordinate grids to 1D vectors."""
+        if x_vals.ndim == 2 and y_vals.ndim == 2:
+            return x_vals.reshape(-1), y_vals.reshape(-1)
+        return x_vals, y_vals
+
+    def _flatten_spatial(self, values: np.ndarray, grid_shape: tuple) -> np.ndarray:
+        """Flatten structured spatial grids to 1D spatial vectors."""
+        if values.ndim >= 2 and values.shape[-2:] == grid_shape:
+            new_shape = values.shape[:-2] + (grid_shape[0] * grid_shape[1],)
+            return values.reshape(new_shape)
+        return values
+
     def _interpolate_to_centers(self, values: np.ndarray, axis: int) -> np.ndarray:
         """Interpolate staggered-grid values to cell centers along a given axis."""
         if values.ndim < 2:
@@ -453,5 +470,10 @@ class FormatPlugin(BaseFormatPlugin):
                 s1_vals = np.broadcast_to(s1.values, (num_times, *s1.shape))
             data['water_depth'] = self._ensure_grid_shape(s1_vals + data['bed_level'], grid_shape)
 
-        return data
+        data['x'], data['y'] = self._flatten_xy(data['x'], data['y'])
+        for key, values in list(data.items()):
+            if key in {'x', 'y'}:
+                continue
+            data[key] = self._flatten_spatial(values, grid_shape)
 
+        return data

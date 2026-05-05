@@ -1,0 +1,9 @@
+2026-05-05 18:08:22,916 INFO sedtrails: === LOGGING INITIALIZED ===
+2026-05-05 18:08:22,916 INFO sedtrails: Log file: C:\sedtrails-sgp\examples\results\log.txt
+2026-05-05 18:08:22,916 INFO sedtrails.simulation_orchestrator.simulation_manager: Configuration loaded
+2026-05-05 18:08:23,559 INFO sedtrails.simulation_orchestrator.simulation_manager: === SIMULATION START ===
+2026-05-05 18:08:23,559 INFO sedtrails.simulation_orchestrator.simulation_manager: Command: C:\sedtrails-sgp\debug_sedtrails.py
+2026-05-05 18:08:23,559 INFO sedtrails.simulation_orchestrator.simulation_manager: Python: 3.13.7
+2026-05-05 18:08:23,559 INFO sedtrails.simulation_orchestrator.simulation_manager: Config: .\examples\sedtrails-example-d3d4.yaml
+2026-05-05 18:08:23,559 INFO sedtrails.simulation_orchestrator.simulation_manager: Working directory: C:\sedtrails-sgp
+2026-05-05 18:09:21,171 INFO sedtrails.simulation_orchestrator.simulation_manager: Expanding time dimension from 5762 to 11524

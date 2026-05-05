@@ -109,12 +109,14 @@
           "enum": [
             "fm_netcdf",
             "d3d4",
+            "d3d4_netcdf",
+            "d3d4_matlab",
             "xbeach",
             "aeolis",
             "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4 (legacy), 'd3d4_netcdf' = Delft3D-4 NetCDF, 'd3d4_matlab' = Delft3D-4 Matlab export, 'xbeach' = xbeach, 'aeolis' = aeolis, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",

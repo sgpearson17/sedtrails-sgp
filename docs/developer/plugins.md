@@ -170,4 +170,6 @@ If you need help, please reach out the [SedTRAILS Team in GitHub](https://github
 The Delft3D4 NetCDF format stores vector components on staggered grids (U/V points)
 while scalars live on cell centers. The Delft3D4 converter interpolates these
 vector components to cell centers during conversion so that all quantities share
-the same coordinate grid for downstream SedTRAILS computations.
+the same coordinate grid for downstream SedTRAILS computations. Structured
+grids are flattened to 1D spatial vectors to match the SedTRAILS data model and
+avoid misinterpreting M/N dimensions as sediment fractions.

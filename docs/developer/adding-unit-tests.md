@@ -105,7 +105,7 @@ stored in the repository (for example, Delft3D4 NetCDF conversion uses
 ``sample-data/trim-inlet.nc``). Run these tests with:
 
 ```bash
-python -m pytest -m integration tests/transport_converter/plugins/test_delft3d4_netcdf.py
+python -m pytest -m integration tests/transport_converter/plugins/test_d3d4_netcdf.py
 ```
 
 The Delft3D4 converter test can optionally emit diagnostic plots for visual
@@ -120,7 +120,7 @@ Example:
 ```bash
 set SEDTRAILS_PLOT_DIR=tests_output/plots
 set SEDTRAILS_PLOT_TIME_INDEX=10
-python -m pytest -m integration tests/transport_converter/plugins/test_delft3d4_netcdf.py
+python -m pytest -m integration tests/transport_converter/plugins/test_d3d4_netcdf.py
 ```
 
 ## Adding Your Own Known Value Tests
