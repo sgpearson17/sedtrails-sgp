@@ -116,3 +116,37 @@ sedtrails run -c ./config-example.yaml
 The simulation will start running, and a dashboard will open to show the progress. Close the dashboard window to get back to the terminal and see the simulation results.
 :::
 
+## Input Models
+
+SedTRAILS computes particle pathways based on pre-existing hydrodynamic and/or sediment transport model output. At present we support output from several models:
+1. D-Flow FM
+2. XBeach
+3. SFINCS
+4. Delft3D-4
+
+In the sections below we provide information about the output settings required in these models in order to be used in SedTRAILS.
+
+### 1. D-Flow FM
+The map output from D-Flow FM is written to binary `*.nc` files which can be directly read by SedTRAILS using the `fm_netcdf.py` format converter plugin.
+
+### 2. XBeach
+The map output from D-Flow FM is written to binary `*.nc` files which can  be directly read by SedTRAILS using the `xbeach.py` format converter plugin. 
+
+::: note
+NOTE: JOHAN- MERGE BRANCH, IT IS NOT IN DEV
+:::
+
+### 3. SFINCS
+The map output from D-Flow FM is written to binary `*.nc` files which can  be directlyread by SedTRAILS using the `sfincs.py` format converter plugin.
+
+### 4. Delft3D-4
+By default, the map output from Delft3D-4 is written to binary `trim-*.dat` files. At present it is not possible to directly read these files in with Python, so it is better to instead write the map output as `*.nc` files. To enable `*.nc` output in Delft3D-4, add the following lines to the `*.mdf` file:
+```
+FlNcdf= #maphis#
+ncFormat=4
+```
+The resulting  `*.nc` file can then be directly read by SedTRAILS using the `delft3d4_netcdf.py` format converter plugin.
+
+### Other models
+To add other models as input, you need to construct a format converter plugin as per the
+[Plugin Guidelines](../docs/developer/plugins.md).
