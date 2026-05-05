@@ -63,9 +63,9 @@ def test_brownian_random_walk_moments(tmp_path):
         sigma_km = math.sqrt(expected_var) / 1000.0
         grid = np.linspace(-4.0 * sigma_km, 4.0 * sigma_km, 400)
         pdf = (1.0 / (sigma_km * math.sqrt(2.0 * math.pi))) * np.exp(-(grid**2) / (2.0 * sigma_km**2))
-        ax.plot(grid, pdf, color='black', linewidth=1.6, linestyle='--', label='analytic PDF')
-        ax.hist(dx / 1000.0, bins=60, alpha=0.5, density=True, color='black', label='dx')
-        ax.hist(dy / 1000.0, bins=60, alpha=0.35, density=True, color='black', label='dy')
+        ax.plot(grid, pdf, color='#0b2d5c', linewidth=1.6, linestyle='--', label='analytic PDF')
+        ax.hist(dx / 1000.0, bins=60, alpha=0.5, density=True, color='#cfe3f7', label='dx')
+        ax.hist(dy / 1000.0, bins=60, alpha=0.35, density=True, color='#a9c9ee', label='dy')
         ax.set_xlabel('displacement [km]', fontdict=fontdict)
         ax.set_ylabel('density', fontdict=fontdict)
         ax.set_title('Brownian motion: displacement histograms', fontdict=fontdict)

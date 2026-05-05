@@ -85,6 +85,7 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
 
     def _plot():
         import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
 
         fig, ax = plt.subplots()
         fontdict = plot_fontdict()
@@ -111,8 +112,17 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
             )
         ax.set_xlabel('x [km]', fontdict=fontdict)
         ax.set_ylabel('y [km]', fontdict=fontdict)
-        ax.set_title('Stommel gyre: SedTRAILS trajectories', fontdict=fontdict)
-        ax.legend(**legend_style())
+        ax.set_title('Stommel gyre: SedTRAILS vs streamfunction', fontdict=fontdict)
+        stream_handle = Line2D(
+            [0],
+            [0],
+            color=analytic_line_style()['color'],
+            linestyle='--',
+            linewidth=1.6,
+            label='streamfunction',
+        )
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend([stream_handle, *handles], ['streamfunction', *labels], **legend_style())
         return fig
 
     def _plot_psi():

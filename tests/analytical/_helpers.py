@@ -76,7 +76,7 @@ def plot_fontdict():
 
 def sedtrails_line_style():
     return {
-        'color': 'black',
+        'color': '#0b2d5c',
         'linewidth': 0.6,
         'marker': '.',
         'markersize': 4,
@@ -85,7 +85,7 @@ def sedtrails_line_style():
 
 def analytic_line_style():
     return {
-        'color': '0.7',
+        'color': '#b7d6f2',
         'linestyle': '--',
         'linewidth': 1.6,
     }

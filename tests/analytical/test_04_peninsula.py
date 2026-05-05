@@ -67,6 +67,7 @@ def test_peninsula_streamfunction_conservation(tmp_path):
 
     def _plot():
         import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
 
         fig, ax = plt.subplots()
         fontdict = plot_fontdict()
@@ -74,7 +75,7 @@ def test_peninsula_streamfunction_conservation(tmp_path):
         y_vals = np.linspace(np.min(gy), np.max(gy), 400)
         xx, yy = np.meshgrid(x_vals, y_vals, indexing='xy')
         psi_grid = psi_fn(xx, yy)
-        ax.contourf(xx, yy, psi_grid >= 0.0, levels=[0.5, 1.5], colors=['#d9c2a3'])
+        ax.contourf(xx, yy, psi_grid >= 0.0, levels=[0.5, 1.5], colors=['#c8c8c8'])
         ax.contour(
             xx,
             yy,
@@ -95,8 +96,17 @@ def test_peninsula_streamfunction_conservation(tmp_path):
         ax.set_xlabel('x [km]', fontdict=fontdict)
         ax.set_ylabel('y [km]', fontdict=fontdict)
         ax.set_ylim(0.0, 35.0)
-        ax.set_title('Peninsula flow: SedTRAILS trajectories', fontdict=fontdict)
-        ax.legend(**legend_style())
+        ax.set_title('Peninsula flow: SedTRAILS vs streamfunction', fontdict=fontdict)
+        stream_handle = Line2D(
+            [0],
+            [0],
+            color=analytic_line_style()['color'],
+            linestyle='--',
+            linewidth=1.6,
+            label='streamfunction',
+        )
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend([stream_handle, *handles], ['streamfunction', *labels], **legend_style())
         return fig
 
     def _plot_psi():

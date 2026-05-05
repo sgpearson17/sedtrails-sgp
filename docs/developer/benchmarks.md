@@ -1,7 +1,7 @@
 Benchmark tests
 ===============
 
-SedTRAILS includes a small benchmark suite under ``tests/analytical`` based on the idealized and analytic test cases described by Lange & van Sebille.
+SedTRAILS includes a small benchmark suite under ``tests/analytical`` based on the idealized and analytic test cases described by Lange & van Sebille (2017).
 These analytical tests exercise passive tracer advection only (no sediment physics), so they remain close to the original analytic formulations.
 
 The suite is intentionally split into one pytest per benchmark so that CI can report failures per scenario:
@@ -133,6 +133,31 @@ You can also direct outputs to a fixed folder:
 
 	TEST_SAVE_ARTIFACTS=1 BENCHMARK_OUTPUT_DIR=./bench_outputs python -m pytest tests/analytical -q
 
+Paper-ready overview figure + metrics summary
+--------------------------------------------
+
+Once the benchmark plots and metrics are generated, you can create a single
+landscape overview figure (7 panels, labeled (a) to (g)) and a consolidated
+metrics summary text file using:
+
+.. code-block:: bash
+
+	python tests/analytical/benchmark_report.py --input-dir ./bench_outputs
+
+The script writes:
+
+* ``benchmarks_overview.png`` (combined figure)
+* ``benchmarks_metrics_summary.txt`` (all metrics in one file)
+
+You can override the output locations if needed:
+
+.. code-block:: bash
+
+	python tests/analytical/benchmark_report.py \
+		--input-dir ./bench_outputs \
+		--output-figure ./bench_outputs/benchmarks_overview.png \
+		--output-metrics ./bench_outputs/benchmarks_metrics_summary.txt
+
 Integration smoke test
 ----------------------
 
@@ -144,3 +169,10 @@ When to add a benchmark
 -----------------------
 
 Add a benchmark when a new control-flow path or physics formulation needs regression coverage against a known analytic reference.
+
+
+References
+----------
+Lange, M., & van Sebille, E. (2017). Parcels v0. 9: prototyping a Lagrangian ocean analysis framework for the petascale age. Geoscientific Model Development, 10(11), 4175-4186.
+
+Van Sebille, E., Griffies, S. M., Abernathey, R., Adams, T. P., Berloff, P., Biastoch, A., ... & Zika, J. D. (2018). Lagrangian ocean analysis: Fundamentals and practices. Ocean modelling, 121, 49-75.
