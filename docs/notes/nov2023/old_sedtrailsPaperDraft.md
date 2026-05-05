@@ -375,7 +375,7 @@ Does the software deliver on its claims? Entry level, typical, and advanced case
 	- **Steady-state flow around a peninsula   
 	- Steady-state flow in a Stommel gyre and western boundary current (Fabbroni, 2009) to test particle trajectories in a domain with large gradients in flow speed. 
 	- Damped inertial oscillation on a geostrophic flow (Fabbroni, 2009; Döös et al., 2013) to appropriately quantify sub-inertial motion, e.g., loopers. 
-	- For codes that include diffusivity, a simulation of Brownian motion with a given Kh and Kv to test for sub-grid parameterizations of diffusivity.
+	- For codes that include diffusivity, a simulation of Brownian motion with a given $K_h$ and $K_v$ to test for sub-grid parameterizations of diffusivity.
 
 Other analytical tests from  available here:\\ 
 

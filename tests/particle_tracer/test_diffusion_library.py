@@ -42,7 +42,7 @@ class TestDiffusion:
         self.u = np.array([1.0, 2.0, 3.0])
         self.v = np.array([1.0, 1.0, 1.0])
         self.dt = 0.1
-        self.nu = 0.5
+        self.kh = 0.5
 
     def test_gradient_diffusion_calculation(self):
         """
@@ -52,7 +52,7 @@ class TestDiffusion:
         """
         strategy = GradientDiffusion()
         xdif, ydif = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.nu
+            self.dt, self.x, self.y, self.u, self.v, self.kh
         )
 
         # Check that the returned values are NumPy arrays.
@@ -75,13 +75,13 @@ class TestDiffusion:
         # Set a fixed random seed and calculate diffusion.
         np.random.seed(42)
         xdif1, ydif1 = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.nu
+            self.dt, self.x, self.y, self.u, self.v, self.kh
         )
 
         # Reset the seed and calculate again to ensure reproducibility.
         np.random.seed(42)
         xdif2, ydif2 = strategy.calculate(
-            self.dt, self.x, self.y, self.u, self.v, self.nu
+            self.dt, self.x, self.y, self.u, self.v, self.kh
         )
 
         # Check that the returned values are NumPy arrays.
@@ -111,7 +111,7 @@ class TestDiffusion:
         gradient_strategy = GradientDiffusion()
         calc = DiffusionCalculator(strategy=gradient_strategy)
         xdif_grad, ydif_grad = calc.calc_diffusion(
-            self.x, self.y, self.u, self.v, self.nu, self.dt
+            self.x, self.y, self.u, self.v, self.kh, self.dt
         )
 
         # Ensure output from gradient strategy is as expected.
@@ -128,7 +128,7 @@ class TestDiffusion:
         # Set a fixed seed for reproducibility.
         np.random.seed(100)
         xdif_rand, ydif_rand = calc.calc_diffusion(
-            self.x, self.y, self.u, self.v, self.nu, self.dt
+            self.x, self.y, self.u, self.v, self.kh, self.dt
         )
 
         # Check that the output from the random strategy is a NumPy array with the expected shape.

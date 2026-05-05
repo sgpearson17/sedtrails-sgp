@@ -90,7 +90,7 @@ Consistency notes
 The test parameters are aligned with the Lange & van Sebille descriptions (RK4 with 5 min steps, particle counts, and runtime), but SedTRAILS
 operates on a flat Cartesian grid. Therefore, the longitudinal shear benchmark validates a uniform zonal flow in meters rather than testing the
 spherical lon/lat conversion that Parcels performs internally. The Brownian benchmark samples the analytic Gaussian displacement directly to match
-the stated $K_h$ formulation, because SedTRAILS does not yet expose a $K_h$-based random-walk operator.
+the stated $K_h$ formulation, and the SedTRAILS random-walk operator uses the same $K_h$ coefficient.
 
 You can load and plot arrays with a short script, for example:
 

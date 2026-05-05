@@ -1,3 +1,4 @@
+import math
 import numpy as np
 
 from sedtrails.particle_tracer.diffusion_library import BrownianDiffusion
@@ -21,12 +22,13 @@ def test_brownian_random_walk_moments(tmp_path):
     u = np.zeros_like(x)
     v = np.zeros_like(y)
     for _ in range(steps):
-        x, y = diffusion.calculate(dt=dt, x=x, y=y, u=u, v=v, nu=kh)
+        x, y = diffusion.calculate(dt=dt, x=x, y=y, u=u, v=v, kh=kh)
 
     dx = x
     dy = y
 
     expected_var = 2.0 * kh * total_time
+    mean_tol = 3.0 * math.sqrt(expected_var / n_particles)
 
     maybe_save_artifact(
         tmp_path,
@@ -60,7 +62,7 @@ def test_brownian_random_walk_moments(tmp_path):
 
     maybe_save_plot(tmp_path, '07_brownian_histograms', _plot)
 
-    assert abs(dx.mean()) < 0.02
-    assert abs(dy.mean()) < 0.02
+    assert abs(dx.mean()) < mean_tol
+    assert abs(dy.mean()) < mean_tol
     np.testing.assert_allclose(dx.var(ddof=1), expected_var, rtol=0.1)
     np.testing.assert_allclose(dy.var(ddof=1), expected_var, rtol=0.1)

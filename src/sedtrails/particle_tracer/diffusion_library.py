@@ -16,7 +16,7 @@ class DiffusionStrategy(ABC):
         y: np.ndarray,
         u: np.ndarray,
         v: np.ndarray,
-        nu: float,
+        kh: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply diffusion to the given positions and velocities.
 
@@ -27,7 +27,7 @@ class DiffusionStrategy(ABC):
             y: Array of y-coordinates.
             u: Array of x-velocity components.
             v: Array of y-velocity components.
-            nu: Diffusion coefficient.
+            kh: Diffusion coefficient.
 
         Returns
         -------
@@ -48,7 +48,7 @@ class GradientDiffusion(DiffusionStrategy):
         y: np.ndarray,
         u: np.ndarray,
         v: np.ndarray,
-        nu: float,
+        kh: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Example dummy diffusion calculation using gradients of the velocity field.
@@ -76,9 +76,9 @@ class GradientDiffusion(DiffusionStrategy):
                 dvdx[i] = (v[nearest_idx] - v[i]) * dx * scale
                 dvdy[i] = (v[nearest_idx] - v[i]) * dy * scale
 
-        # Diffusion terms: nu * Laplacian
-        xdif = nu * (dudx + dvdy)
-        ydif = nu * (dudy + dvdx)
+        # Diffusion terms: kh * Laplacian
+        xdif = kh * (dudx + dvdy)
+        ydif = kh * (dudy + dvdx)
         return xdif, ydif
 
 
@@ -94,11 +94,11 @@ class RandomDiffusion(DiffusionStrategy):
         y: np.ndarray,
         u: np.ndarray,
         v: np.ndarray,
-        nu: float,
+        kh: float,
     ) -> Tuple[float, float]:
         vel_mag = np.sqrt(u**2 + v**2)
         rndnr_mag = np.random.randn(*vel_mag.shape)
-        mag_diff = np.abs(rndnr_mag * nu) * vel_mag
+        mag_diff = np.abs(rndnr_mag * kh) * vel_mag
         rndnr_angle = np.random.rand(*vel_mag.shape)
         angle_diff = rndnr_angle * 2 * math.pi
         dx_diff = mag_diff * np.cos(angle_diff) * dt
@@ -110,7 +110,7 @@ class RandomDiffusion(DiffusionStrategy):
 
 
 class BrownianDiffusion(DiffusionStrategy):
-    """Isotropic Brownian diffusion using a constant Kh coefficient."""
+    """Isotropic Brownian diffusion using a constant kh coefficient."""
 
     def calculate(
         self,
@@ -119,9 +119,9 @@ class BrownianDiffusion(DiffusionStrategy):
         y: np.ndarray,
         u: np.ndarray,
         v: np.ndarray,
-        nu: float,
+        kh: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        sigma = math.sqrt(2.0 * nu * dt)
+        sigma = math.sqrt(2.0 * kh * dt)
         dx = np.random.normal(0.0, sigma, size=x.shape)
         dy = np.random.normal(0.0, sigma, size=y.shape)
         return x + dx, y + dy
@@ -164,7 +164,7 @@ class DiffusionCalculator:
         y: float,
         u: np.ndarray,
         v: np.ndarray,
-        nu: float,
+        kh: float,
         dt: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -176,11 +176,11 @@ class DiffusionCalculator:
             y: Current y position
             u: Velocity field x-component (2D array)
             v: Velocity field y-component (2D array)
-            nu: Diffusion coefficient
+            kh: Diffusion coefficient
             dt: Current time step
 
         Returns
         -------
             Tuple of (x_diffusion, y_diffusion) representing position changes
         """
-        return self._strategy.calculate(dt, x, y, u, v, nu)
+        return self._strategy.calculate(dt, x, y, u, v, kh)
