@@ -4,7 +4,6 @@ import numpy as np
 from sedtrails.particle_tracer.diffusion_library import BrownianDiffusion
 
 from ._helpers import (
-    analytic_line_style,
     legend_style,
     maybe_save_artifact,
     maybe_save_plot,

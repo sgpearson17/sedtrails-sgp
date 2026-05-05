@@ -9,7 +9,6 @@ from ._helpers import (
     maybe_save_artifact,
     maybe_save_plot,
     plot_fontdict,
-    rect_grid,
     sedtrails_line_style,
     write_metrics,
 )
