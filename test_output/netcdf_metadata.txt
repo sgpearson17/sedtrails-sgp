@@ -1,0 +1,513 @@
+=== Dataset Summary ===
+<xarray.Dataset> Size: 88MB
+Dimensions:        (M: 120, N: 72, MC: 120, NC: 72, LSTSCI: 1, time: 97,
+                    KMAXOUT_RESTR: 1, LSED: 1, KMAXOUT: 2, KMAX: 1, LSEDTOT: 1,
+                    nlyr: 1, nlyrp1: 2, avgtime: 1, SIG_LYR: 1, SIG_INTF: 2)
+Coordinates:
+    XCOR           (MC, NC) float64 69kB ...
+    YCOR           (MC, NC) float64 69kB ...
+    XZ             (M, N) float64 69kB ...
+    YZ             (M, N) float64 69kB ...
+  * SIG_LYR        (SIG_LYR) float32 4B -0.5
+  * SIG_INTF       (SIG_INTF) float32 8B 0.0 -1.0
+  * KMAXOUT        (KMAXOUT) int32 8B 0 1
+  * KMAXOUT_RESTR  (KMAXOUT_RESTR) int32 4B 0
+  * time           (time) float64 776B 0.0 3.6e+03 ... 3.42e+05 3.456e+05
+Dimensions without coordinates: M, N, MC, NC, LSTSCI, LSED, KMAX, LSEDTOT,
+                                nlyr, nlyrp1, avgtime
+Data variables: (12/46)
+    ALFAS          (M, N) float32 35kB ...
+    KCU            (MC, N) int32 35kB ...
+    KCV            (M, NC) int32 35kB ...
+    KCS            (M, N) int32 35kB ...
+    DP0            (MC, NC) float32 35kB ...
+    DPS0           (M, N) float32 35kB ...
+    ...             ...
+    MFTAVG         (avgtime) float64 8B ...
+    MORAVG         (avgtime) float32 4B ...
+    SBUUA          (avgtime, LSEDTOT, MC, N) float32 35kB ...
+    SBVVA          (avgtime, LSEDTOT, M, NC) float32 35kB ...
+    SSUUA          (avgtime, LSED, MC, N) float32 35kB ...
+    SSVVA          (avgtime, LSED, M, NC) float32 35kB ...
+Attributes:
+    Conventions:  CF-1.6 SGRID-0.3
+    institution:  Deltares
+    references:   www.deltares.nl
+    source:       Deltares, FLOW2D3D Version 6.03.00.62434, Oct 24 2018, 14:5...
+    history:      This file is created on 2026-05-05T13:46:46+0200, Delft3D
+    LAYER_MODEL:  SIGMA-MODEL
+
+=== Global Attributes ===
+Conventions: CF-1.6 SGRID-0.3
+institution: Deltares
+references: www.deltares.nl
+source: Deltares, FLOW2D3D Version 6.03.00.62434, Oct 24 2018, 14:57:52
+history: This file is created on 2026-05-05T13:46:46+0200, Delft3D
+LAYER_MODEL: SIGMA-MODEL
+
+=== Coordinates ===
+[XCOR] dims=('MC', 'NC') shape=(120, 72) dtype=float64
+  standard_name: projection_x_coordinate
+  long_name: X-coordinate of grid points
+  units: m
+[YCOR] dims=('MC', 'NC') shape=(120, 72) dtype=float64
+  standard_name: projection_y_coordinate
+  long_name: Y-coordinate of grid points
+  units: m
+[XZ] dims=('M', 'N') shape=(120, 72) dtype=float64
+  standard_name: projection_x_coordinate
+  long_name: X-coordinate of cell centres
+  units: m
+[YZ] dims=('M', 'N') shape=(120, 72) dtype=float64
+  standard_name: projection_y_coordinate
+  long_name: Y-coordinate of cell centres
+  units: m
+[SIG_LYR] dims=('SIG_LYR',) shape=(1,) dtype=float32
+  standard_name: ocean_sigma_coordinate
+  long_name: Sigma coordinates of layer centres
+  units: 1
+  formula_terms: sigma: SIG_LYR eta: S1 depth: DPS
+[SIG_INTF] dims=('SIG_INTF',) shape=(2,) dtype=float32
+  standard_name: ocean_sigma_coordinate
+  long_name: Sigma coordinates of layer interfaces
+  units: 1
+  formula_terms: sigma: SIG_INTF eta: S1 depth: DPS
+[KMAXOUT] dims=('KMAXOUT',) shape=(2,) dtype=int32
+  long_name: User selected output layer interfaces
+  units: 1
+  compress: SIG_INTF
+[KMAXOUT_RESTR] dims=('KMAXOUT_RESTR',) shape=(1,) dtype=int32
+  long_name: User selected output layer centres
+  units: 1
+  compress: SIG_LYR
+[time] dims=('time',) shape=(97,) dtype=float64
+  standard_name: time
+  long_name: time
+  units: seconds since 2016-12-08 00:00:00
+  calendar: proleptic_gregorian
+
+=== Data Variables ===
+[ALFAS] dims=('M', 'N') shape=(120, 72) dtype=float32
+  long_name: Orientation ksi-axis w.r.t. pos.x-axis at water level point
+  units: arc_degrees
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XZ YZ
+[KCU] dims=('MC', 'N') shape=(120, 72) dtype=int32
+  long_name: Mask array for U-velocity points
+  units: 1
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+[KCV] dims=('M', 'NC') shape=(120, 72) dtype=int32
+  long_name: Mask array for V-velocity points
+  units: 1
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+[KCS] dims=('M', 'N') shape=(120, 72) dtype=int32
+  long_name: Non-active/active water-level point
+  units: 1
+  grid: grid
+  location: face
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XZ YZ
+[DP0] dims=('MC', 'NC') shape=(120, 72) dtype=float32
+  long_name: Initial bottom depth (positive down)
+  units: m
+  grid: grid
+  location: node
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XCOR YCOR
+[DPS0] dims=('M', 'N') shape=(120, 72) dtype=float32
+  long_name: Initial bottom depth at zeta points (positive down)
+  units: m
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XZ YZ
+[DPU0] dims=('MC', 'N') shape=(120, 72) dtype=float32
+  long_name: Initial bottom depth at u points (positive down)
+  units: m
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+[DPV0] dims=('M', 'NC') shape=(120, 72) dtype=float32
+  long_name: Initial bottom depth at v points (positive down)
+  units: m
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+[NAMCON] dims=('LSTSCI',) shape=(1,) dtype=|S20
+  long_name: Name of constituent quantity
+  encoding:
+    dtype: |S1
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1, 20)
+    char_dim_name: strlen20
+[GSQS] dims=('M', 'N') shape=(120, 72) dtype=float32
+  long_name: Horizontal area of computational cell
+  units: m2
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XZ YZ
+[PPARTITION] dims=('M', 'N') shape=(120, 72) dtype=int32
+  long_name: Partition
+  units: 1
+  grid: grid
+  location: face
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (120, 72)
+    coordinates: XZ YZ
+[RHOCONST] dims=() shape=() dtype=float32
+  long_name: User specified constant density
+  units: kg/m3
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: ()
+[GRAVITY] dims=() shape=() dtype=float32
+  long_name: Gravitational acceleration
+  units: m/s2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: ()
+[grid] dims=() shape=() dtype=int32
+  units: 1
+  cf_role: grid_topology
+  topology_dimension: 2
+  node_dimensions: MC NC
+  face_dimensions: M:MC (padding: low) N:NC (padding: low)
+  face_coordinates: XZ YZ
+  node_coordinates: XCOR YCOR
+  vertical_dimensions: SIG_LYR:SIG_INTF (padding: none)
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: ()
+[S1] dims=('time', 'M', 'N') shape=(97, 120, 72) dtype=float32
+  long_name: Water-level in zeta point
+  units: m
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+    coordinates: XZ YZ
+[KFU] dims=('time', 'MC', 'N') shape=(97, 120, 72) dtype=int32
+  long_name: Non-active/active in U-point
+  units: 1
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[KFV] dims=('time', 'M', 'NC') shape=(97, 120, 72) dtype=int32
+  long_name: Non-active/active in V-point
+  units: 1
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: int32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[U1] dims=('time', 'KMAXOUT_RESTR', 'MC', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: U-velocity per layer in U-point (Eulerian)
+  units: m/s
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[V1] dims=('time', 'KMAXOUT_RESTR', 'M', 'NC') shape=(97, 1, 120, 72) dtype=float32
+  long_name: V-velocity per layer in V-point (Eulerian)
+  units: m/s
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[R1] dims=('time', 'LSTSCI', 'KMAXOUT_RESTR', 'M', 'N') shape=(97, 1, 1, 120, 72) dtype=float32
+  long_name: Concentrations per layer in zeta point
+  units: 1
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 1, 120, 72)
+    coordinates: XZ YZ
+[TAUKSI] dims=('time', 'MC', 'N') shape=(97, 120, 72) dtype=float32
+  long_name: Bottom stress in U-point
+  units: N/m2
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[TAUETA] dims=('time', 'M', 'NC') shape=(97, 120, 72) dtype=float32
+  long_name: Bottom stress in V-point
+  units: N/m2
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[TAUMAX] dims=('time', 'M', 'N') shape=(97, 120, 72) dtype=float32
+  long_name: Tau_max in zeta points (scalar)
+  units: N/m2
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+    coordinates: XZ YZ
+[RHO] dims=('time', 'KMAXOUT_RESTR', 'M', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Density per layer in zeta point
+  units: kg/m3
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+    coordinates: XZ YZ
+[UMNLDF] dims=('time', 'MC', 'N') shape=(97, 120, 72) dtype=float32
+  long_name: Filtered U-velocity
+  units: m/s
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[VMNLDF] dims=('time', 'M', 'NC') shape=(97, 120, 72) dtype=float32
+  long_name: Filtered V-velocity
+  units: m/s
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+[VICUV] dims=('time', 'KMAXOUT_RESTR', 'M', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Horizontal eddy viscosity in zeta point
+  units: m2/s
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+    coordinates: XZ YZ
+[MORFAC] dims=('time',) shape=(97,) dtype=float32
+  long_name: morphological acceleration factor (MORFAC)
+  units: 1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97,)
+[MORFT] dims=('time',) shape=(97,) dtype=float64
+  long_name: morphological time (days since start of simulation)
+  units: days
+  encoding:
+    dtype: float64
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97,)
+[WS] dims=('time', 'LSED', 'KMAXOUT', 'M', 'N') shape=(97, 1, 2, 120, 72) dtype=float32
+  long_name: Settling velocity per layer
+  units: m/s
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 2, 120, 72)
+    coordinates: XZ YZ
+[RSEDEQ] dims=('time', 'LSED', 'KMAX', 'M', 'N') shape=(97, 1, 1, 120, 72) dtype=float32
+  long_name: Equilibrium concentration of sediment (2D only)
+  units: kg/m3
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 1, 120, 72)
+    coordinates: XZ YZ
+[SBUU] dims=('time', 'LSEDTOT', 'MC', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Bed-load transport u-direction (u point)
+  units: m3/(s m)
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[SBVV] dims=('time', 'LSEDTOT', 'M', 'NC') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Bed-load transport v-direction (v point)
+  units: m3/(s m)
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[SSUU] dims=('time', 'LSED', 'MC', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Suspended-load transport u-direction (u point)
+  units: m3/(s m)
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[SSVV] dims=('time', 'LSED', 'M', 'NC') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Suspended-load transport v-direction (v point)
+  units: m3/(s m)
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+[RCA] dims=('time', 'LSED', 'M', 'N') shape=(97, 1, 120, 72) dtype=float32
+  long_name: Near-bed reference concentration of sediment
+  units: kg/m3
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 120, 72)
+    coordinates: XZ YZ
+[DPS] dims=('time', 'M', 'N') shape=(97, 120, 72) dtype=float32
+  long_name: Bottom depth (zeta point)
+  units: m
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 120, 72)
+    coordinates: XZ YZ
+[MSED] dims=('time', 'LSEDTOT', 'nlyr', 'M', 'N') shape=(97, 1, 1, 120, 72) dtype=float32
+  long_name: Mass of sediment in layer
+  units: kg/m2
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 1, 120, 72)
+    coordinates: XZ YZ
+[LYRFRAC] dims=('time', 'LSEDTOT', 'nlyr', 'M', 'N') shape=(97, 1, 1, 120, 72) dtype=float32
+  long_name: Volume fraction of sediment in layer
+  units: 1
+  grid: grid
+  location: face
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 1, 1, 120, 72)
+    coordinates: XZ YZ
+[DP_BEDLYR] dims=('time', 'nlyrp1', 'M', 'N') shape=(97, 2, 120, 72) dtype=float32
+  long_name: Vertical position of sediment layer interface
+  units: m
+  grid: grid
+  location: face
+  axis: Z
+  positive: down
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (97, 2, 120, 72)
+    coordinates: XZ YZ
+[MFTAVG] dims=('avgtime',) shape=(1,) dtype=float64
+  long_name: morphological time (days since start of simulation)
+  units: days
+  encoding:
+    dtype: float64
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1,)
+[MORAVG] dims=('avgtime',) shape=(1,) dtype=float32
+  long_name: average MORFAC used during averaging period
+  units: 1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1,)
+[SBUUA] dims=('avgtime', 'LSEDTOT', 'MC', 'N') shape=(1, 1, 120, 72) dtype=float32
+  long_name: Average bed-load transport u-direction (u point)
+  units: m3/(s m)
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1, 1, 120, 72)
+[SBVVA] dims=('avgtime', 'LSEDTOT', 'M', 'NC') shape=(1, 1, 120, 72) dtype=float32
+  long_name: Average bed-load transport v-direction (v point)
+  units: m3/(s m)
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1, 1, 120, 72)
+[SSUUA] dims=('avgtime', 'LSED', 'MC', 'N') shape=(1, 1, 120, 72) dtype=float32
+  long_name: Average suspended-load transport u-direction (u point)
+  units: m3/(s m)
+  grid: grid
+  location: edge1
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1, 1, 120, 72)
+[SSVVA] dims=('avgtime', 'LSED', 'M', 'NC') shape=(1, 1, 120, 72) dtype=float32
+  long_name: Average suspended-load transport v-direction (v point)
+  units: m3/(s m)
+  grid: grid
+  location: edge2
+  encoding:
+    dtype: float32
+    source: c:\sedtrails-sgp\sample-data\trim-inlet.nc
+    original_shape: (1, 1, 120, 72)

@@ -351,6 +351,18 @@ class FormatPlugin(BaseFormatPlugin):
             return values[..., : grid_shape[0], : grid_shape[1]]
         return values
 
+    def _interpolate_to_centers(self, values: np.ndarray, axis: int) -> np.ndarray:
+        """Interpolate staggered-grid values to cell centers along a given axis."""
+        if values.ndim < 2:
+            return values
+
+        rolled = np.roll(values, -1, axis=axis)
+        centered = 0.5 * (values + rolled)
+        indexer = [slice(None)] * centered.ndim
+        indexer[axis] = -1
+        centered[tuple(indexer)] = np.nan
+        return centered
+
     def _map_delft3d4_variables(
         self, time_info: Dict, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
     ) -> Dict:
@@ -412,6 +424,21 @@ class FormatPlugin(BaseFormatPlugin):
                     values = var.isel(time=time_slice).values
                 else:
                     values = np.broadcast_to(var.values, (num_times, *var.shape))
+
+                if key in {
+                    'flow_velocity_x',
+                    'bed_shear_stress_x',
+                    'bed_load_transport_x',
+                    'suspended_transport_x',
+                }:
+                    values = self._interpolate_to_centers(values, axis=-2)
+                elif key in {
+                    'flow_velocity_y',
+                    'bed_shear_stress_y',
+                    'bed_load_transport_y',
+                    'suspended_transport_y',
+                }:
+                    values = self._interpolate_to_centers(values, axis=-1)
 
                 data[key] = self._ensure_grid_shape(values, grid_shape)
             else:

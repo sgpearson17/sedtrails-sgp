@@ -164,3 +164,10 @@ sim.validate_config()  # this should pass without errors
 Validation of the configuration file will fail if the plugin is not correctly registered in the JSON schema, but not if the plugin itself has errors. Make sure to test your plugin thoroughly.
 If you need help, please reach out the [SedTRAILS Team in GitHub](https://github.com/sedtrails/sedtrails/issues).
 :::
+
+## Delft3D4 NetCDF Notes
+
+The Delft3D4 NetCDF format stores vector components on staggered grids (U/V points)
+while scalars live on cell centers. The Delft3D4 converter interpolates these
+vector components to cell centers during conversion so that all quantities share
+the same coordinate grid for downstream SedTRAILS computations.

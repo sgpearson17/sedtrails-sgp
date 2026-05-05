@@ -147,6 +147,8 @@ ncFormat=4
 ```
 The resulting  `*.nc` file can then be directly read by SedTRAILS using the `delft3d4_netcdf.py` format converter plugin.
 
+Note: the format converter interpolates data at all U/V points to cell centers.
+
 ### Other models
 To add other models as input, you need to construct a format converter plugin as per the
 [Plugin Guidelines](../docs/developer/plugins.md).

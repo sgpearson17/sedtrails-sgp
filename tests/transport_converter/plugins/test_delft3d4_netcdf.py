@@ -14,7 +14,12 @@ from sedtrails.transport_converter.plugins.format import delft3d4_netcdf
 SAMPLE_FILE = Path('sample-data/trim-inlet.nc')
 
 
-def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray | None) -> None:
+def _plot_if_requested(
+    data,
+    output_dir: Path,
+    time_idx: int,
+    mask: np.ndarray | None,
+) -> None:
     """Write optional diagnostic plots when SEDTRAILS_PLOT_DIR is configured."""
     import matplotlib.pyplot as plt
 
@@ -22,6 +27,7 @@ def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray |
 
     x = np.asarray(data.x)
     y = np.asarray(data.y)
+    scalar_x, scalar_y = _resolve_scalar_coordinates(data)
     time_label = _format_time_label(data, time_idx)
 
     if x.ndim == 2 and y.ndim == 2:
@@ -47,8 +53,8 @@ def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray |
         plt.close()
 
     _plot_scalar_field(
-        x,
-        y,
+        scalar_x,
+        scalar_y,
         data.mean_bed_shear_stress[time_idx],
         output_dir / 'mean_bed_shear_stress.png',
         title=f'Mean bed shear stress ({time_label})',
@@ -57,8 +63,8 @@ def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray |
     )
 
     _plot_scalar_field(
-        x,
-        y,
+        scalar_x,
+        scalar_y,
         data.max_bed_shear_stress[time_idx],
         output_dir / 'max_bed_shear_stress.png',
         title=f'Max bed shear stress ({time_label})',
@@ -68,8 +74,8 @@ def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray |
 
     if data.bed_load_transport is not None:
         _plot_scalar_field(
-            x,
-            y,
+            scalar_x,
+            scalar_y,
             data.bed_load_transport['magnitude'][time_idx],
             output_dir / 'bed_load_transport.png',
             title=f'Bed load transport magnitude ({time_label})',
@@ -79,8 +85,8 @@ def _plot_if_requested(data, output_dir: Path, time_idx: int, mask: np.ndarray |
 
     if data.suspended_transport is not None:
         _plot_scalar_field(
-            x,
-            y,
+            scalar_x,
+            scalar_y,
             data.suspended_transport['magnitude'][time_idx],
             output_dir / 'suspended_transport.png',
             title=f'Suspended transport magnitude ({time_label})',
@@ -103,11 +109,21 @@ def _plot_scalar_field(
 
     plt.figure(figsize=(7, 6))
     if np.asarray(x).ndim == 2 and np.asarray(y).ndim == 2:
-        invalid_mask = (np.asarray(x) == 0) & (np.asarray(y) == 0)
+        x_arr = np.asarray(x)
+        y_arr = np.asarray(y)
+        invalid_mask = (x_arr == 0) & (y_arr == 0)
         if mask is not None:
             invalid_mask = invalid_mask | mask
         masked_values = np.where(invalid_mask, np.nan, values)
-        plt.pcolormesh(x, y, masked_values, shading='auto')
+        valid = np.isfinite(masked_values)
+        plt.scatter(
+            x_arr[valid],
+            y_arr[valid],
+            c=masked_values[valid],
+            s=36,
+            marker='s',
+            linewidths=0,
+        )
         plt.xlabel('x')
         plt.ylabel('y')
         plt.gca().set_aspect('equal', adjustable='box')
@@ -143,6 +159,57 @@ def _resolve_plot_time_index(data) -> int:
     if idx >= data.times.size:
         idx = data.times.size - 1
     return idx
+
+
+def _resolve_scalar_coordinates(data) -> tuple[np.ndarray, np.ndarray]:
+    """Return XZ/YZ coordinates for scalar plotting when available."""
+    import xarray as xr
+
+    if SAMPLE_FILE.exists():
+        try:
+            ds = xr.open_dataset(SAMPLE_FILE, decode_times=False, decode_timedelta=False)
+        except Exception:
+            ds = None
+        else:
+            if 'XZ' in ds and 'YZ' in ds:
+                return np.asarray(ds['XZ'].values), np.asarray(ds['YZ'].values)
+
+    return np.asarray(data.x), np.asarray(data.y)
+
+
+def _compute_cell_edges(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Compute cell edge coordinates from cell centers for curvilinear grids."""
+    if x.ndim != 2 or y.ndim != 2:
+        raise ValueError('x and y must be 2D arrays for edge computation')
+
+    m, n = x.shape
+    x_edges = np.empty((m + 1, n + 1), dtype=float)
+    y_edges = np.empty((m + 1, n + 1), dtype=float)
+
+    x_edges[1:-1, 1:-1] = 0.25 * (x[:-1, :-1] + x[1:, :-1] + x[:-1, 1:] + x[1:, 1:])
+    y_edges[1:-1, 1:-1] = 0.25 * (y[:-1, :-1] + y[1:, :-1] + y[:-1, 1:] + y[1:, 1:])
+
+    x_edges[0, 1:-1] = x_edges[1, 1:-1] - (x_edges[2, 1:-1] - x_edges[1, 1:-1])
+    x_edges[-1, 1:-1] = x_edges[-2, 1:-1] + (x_edges[-2, 1:-1] - x_edges[-3, 1:-1])
+    x_edges[1:-1, 0] = x_edges[1:-1, 1] - (x_edges[1:-1, 2] - x_edges[1:-1, 1])
+    x_edges[1:-1, -1] = x_edges[1:-1, -2] + (x_edges[1:-1, -2] - x_edges[1:-1, -3])
+
+    y_edges[0, 1:-1] = y_edges[1, 1:-1] - (y_edges[2, 1:-1] - y_edges[1, 1:-1])
+    y_edges[-1, 1:-1] = y_edges[-2, 1:-1] + (y_edges[-2, 1:-1] - y_edges[-3, 1:-1])
+    y_edges[1:-1, 0] = y_edges[1:-1, 1] - (y_edges[1:-1, 2] - y_edges[1:-1, 1])
+    y_edges[1:-1, -1] = y_edges[1:-1, -2] + (y_edges[1:-1, -2] - y_edges[1:-1, -3])
+
+    x_edges[0, 0] = x_edges[0, 1] + x_edges[1, 0] - x_edges[1, 1]
+    x_edges[0, -1] = x_edges[0, -2] + x_edges[1, -1] - x_edges[1, -2]
+    x_edges[-1, 0] = x_edges[-1, 1] + x_edges[-2, 0] - x_edges[-2, 1]
+    x_edges[-1, -1] = x_edges[-1, -2] + x_edges[-2, -1] - x_edges[-2, -2]
+
+    y_edges[0, 0] = y_edges[0, 1] + y_edges[1, 0] - y_edges[1, 1]
+    y_edges[0, -1] = y_edges[0, -2] + y_edges[1, -1] - y_edges[1, -2]
+    y_edges[-1, 0] = y_edges[-1, 1] + y_edges[-2, 0] - y_edges[-2, 1]
+    y_edges[-1, -1] = y_edges[-1, -2] + y_edges[-2, -1] - y_edges[-2, -2]
+
+    return x_edges, y_edges
 
 
 def _resolve_plot_mask() -> str | None:
