@@ -13,11 +13,11 @@ class MockPopulation:
             'x': np.array([1.0, 2.0]),
             'y': np.array([3.0, 4.0]),
             'burial_depth': np.array([0.0, 0.1]),
-            'is_mobile': np.array([True, False]),
+            'status_mobile': np.array([True, False]),
         }
 
 
-def test_collect_timestep_data_exports_is_mobile_status():
+def test_collect_timestep_data_exports_status_mobile():
     """Checks boolean mobility flags are written as integer status values."""
     ds = create_sedtrails_dataset(N_particles=2, N_populations=1, N_timesteps=1, N_flowfields=1)
 

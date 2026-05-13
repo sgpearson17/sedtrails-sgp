@@ -1158,7 +1158,7 @@ class TestParticlePopulation:
             population_config=point_config_simple,
         )
         old_simplices = population._particle_simplices.copy()
-        population.particles['is_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
+        population.particles['status_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
 
         population.update_position(
             flow_field={'u': np.ones(4), 'v': np.zeros(4)},
