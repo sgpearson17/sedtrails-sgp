@@ -1100,6 +1100,36 @@ def population_config():
 
 
 class TestParticlePopulation:
+    @staticmethod
+    def _status_test_population(current_time=0.0):
+        config = PopulationConfig(
+            {
+                'name': 'Status Test Config',
+                'particle_type': 'sand',
+                'transport_probability': 'stochastic_transport',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 4,
+                    'release_start': '0',
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population._current_time = current_time
+        population.particles['x'] = np.array([0.5, 0.5, 2.0, 0.5])
+        population.particles['y'] = np.array([0.5, 0.5, 2.0, 0.5])
+        population.particles['burial_depth'] = np.array([0.1, 2.0, 0.1, 0.1])
+        population.particles['mixing_depth'] = np.ones(4)
+        population.particles['transport_probability'] = np.array([1.0, 1.0, 1.0, 0.0])
+        return population
+
     def test_create_population(self, population_config):
         """Test creating a ParticlePopulation with a valid configuration."""
         population = ParticlePopulation(
@@ -1149,6 +1179,43 @@ class TestParticlePopulation:
         )
 
         np.testing.assert_allclose(population.particles['bed_level'], 0.5)
+
+    def test_update_status_uses_status_keys_and_mobile_mask_composition(self, monkeypatch):
+        """Only particles that satisfy every status flag should be mobile."""
+        population = self._status_test_population(current_time=0.0)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.array([0.0, 0.0, 0.0, 1.0]))
+
+        population.update_status()
+
+        expected_keys = {
+            'status_alive',
+            'status_buried',
+            'status_domain',
+            'status_released',
+            'status_transported',
+            'status_mobile',
+        }
+        assert expected_keys.issubset(population.particles)
+        assert not any(
+            key in population.particles
+            for key in {'is_alive', 'is_exposed', 'is_inside', 'is_mobile', 'is_picked_up', 'is_released'}
+        )
+        np.testing.assert_array_equal(population.particles['status_alive'], np.array([True, True, True, True]))
+        np.testing.assert_array_equal(population.particles['status_buried'], np.array([False, True, False, False]))
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, True, False, True]))
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([True, True, True, True]))
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True, True, True, False]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True, False, False, False]))
+
+    def test_update_status_requires_released_particles_for_mobile_mask(self, monkeypatch):
+        """Particles that are otherwise mobile should not move before release."""
+        population = self._status_test_population(current_time=-1.0)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([False, False, False, False]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False, False, False]))
 
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""
