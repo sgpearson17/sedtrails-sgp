@@ -105,6 +105,16 @@ def populate_flowfield_metadata(ds, flow_field_names):
         ds['flowfield_name'][ff_idx, :] = name_array
 
 
+def _require_population_field(population, field_name):
+    if field_name not in population.particles:
+        available_fields = ', '.join(sorted(population.particles))
+        raise KeyError(
+            f"Population particles must include '{field_name}' before exporting timestep data. "
+            f'Available fields: {available_fields}'
+        )
+    return population.particles[field_name]
+
+
 def collect_timestep_data(ds, populations, timestep, current_time):
     """
     Collect data from all populations for a specific timestep.
@@ -150,8 +160,6 @@ def collect_timestep_data(ds, populations, timestep, current_time):
         ds['status_released'][particle_slice, timestep] = population.particles.get(
             'status_released', np.ones(num_particles, dtype=int)
         )
-        ds['status_mobile'][particle_slice, timestep] = population.particles.get(
-            'status_mobile', np.zeros(num_particles, dtype=int)
-        )
+        ds['status_mobile'][particle_slice, timestep] = _require_population_field(population, 'status_mobile')
 
         particle_offset += num_particles
