@@ -111,7 +111,8 @@
             "d3d4",
             "xbeach",
             "aeolis",
-            "sfincs"
+            "sfincs",
+            "xbeach"
           ],
           "default": "fm_netcdf",
           "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis, 'sfincs' = SFINCS"
