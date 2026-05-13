@@ -2,19 +2,20 @@
 Unit tests for particle seeding strategies.
 """
 
+import numpy as np
 import pytest
+
+from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle_seeder import (
-    PopulationConfig,
-    PointStrategy,
-    RandomStrategy,
-    GridStrategy,
-    TransectStrategy,
     FilePointsStrategy,
+    GridStrategy,
     ParticleFactory,
     ParticlePopulation,
+    PointStrategy,
+    PopulationConfig,
+    RandomStrategy,
+    TransectStrategy,
 )
-from sedtrails.exceptions import MissingConfigurationParameter
-import numpy as np
 
 
 # Strategy fixtures
@@ -212,9 +213,9 @@ def transect_config_multi():
 def file_points_config_basic(tmp_path):
     """Basic file_points config with CSV file."""
     # Create a temporary CSV file
-    csv_file = tmp_path / "test_points.csv"
-    csv_file.write_text("x,y\n1.0,2.0\n3.0,4.0\n5.0,6.0\n")
-    
+    csv_file = tmp_path / 'test_points.csv'
+    csv_file.write_text('x,y\n1.0,2.0\n3.0,4.0\n5.0,6.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config',
@@ -242,9 +243,9 @@ def file_points_config_basic(tmp_path):
 def file_points_config_no_header(tmp_path):
     """File_points config with no header."""
     # Create a temporary file without header
-    txt_file = tmp_path / "test_points_no_header.txt"
-    txt_file.write_text("1.0 2.0\n3.0 4.0\n")
-    
+    txt_file = tmp_path / 'test_points_no_header.txt'
+    txt_file.write_text('1.0 2.0\n3.0 4.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config No Header',
@@ -272,9 +273,9 @@ def file_points_config_no_header(tmp_path):
 def file_points_config_with_bbox(tmp_path):
     """File_points config with bounding box filtering."""
     # Create a file with points both inside and outside bbox
-    csv_file = tmp_path / "test_points_bbox.csv"
-    csv_file.write_text("longitude,latitude\n1.0,1.0\n2.0,2.0\n5.0,5.0\n10.0,10.0\n")
-    
+    csv_file = tmp_path / 'test_points_bbox.csv'
+    csv_file.write_text('longitude,latitude\n1.0,1.0\n2.0,2.0\n5.0,5.0\n10.0,10.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config With BBox',
@@ -302,7 +303,7 @@ def file_points_config_with_bbox(tmp_path):
 # Particle classes fixture
 @pytest.fixture
 def particle_classes():
-    from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+    from sedtrails.particle_tracer.particle import Mud, Passive, Sand
 
     return {'Sand': Sand, 'Mud': Mud, 'Passive': Passive}
 
@@ -621,9 +622,9 @@ class TestFilePointsStrategy:
     def test_file_points_strategy_stride(self, file_points_strategy, tmp_path):
         """Test file_points strategy with stride parameter."""
         # Create a file with many points
-        csv_file = tmp_path / "test_stride.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n3,3\n4,4\n5,5\n6,6\n")
-        
+        csv_file = tmp_path / 'test_stride.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n3,3\n4,4\n5,5\n6,6\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Stride Config',
@@ -653,9 +654,9 @@ class TestFilePointsStrategy:
     def test_file_points_strategy_deduplicate(self, file_points_strategy, tmp_path):
         """Test file_points strategy with deduplication."""
         # Create a file with duplicate points
-        csv_file = tmp_path / "test_duplicates.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n1,1\n3,3\n2,2\n")
-        
+        csv_file = tmp_path / 'test_duplicates.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n1,1\n3,3\n2,2\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Dedupe Config',
@@ -723,9 +724,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_invalid_columns(self, file_points_strategy, tmp_path):
         """Test file_points strategy with invalid column specification."""
-        csv_file = tmp_path / "test_invalid_cols.csv"
-        csv_file.write_text("a,b\n1,2\n")
-        
+        csv_file = tmp_path / 'test_invalid_cols.csv'
+        csv_file.write_text('a,b\n1,2\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Invalid Cols',
@@ -750,9 +751,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_bbox_object_format(self, file_points_strategy, tmp_path):
         """Test file_points strategy with bbox as object."""
-        csv_file = tmp_path / "test_bbox_obj.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n5,5\n")
-        
+        csv_file = tmp_path / 'test_bbox_obj.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n5,5\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points BBox Object',
@@ -766,7 +767,7 @@ class TestFilePointsStrategy:
                                 'ymin': 0.5,
                                 'xmax': 2.5,
                                 'ymax': 2.5,
-                            }
+                            },
                         }
                     },
                     'quantity': 2,
@@ -785,9 +786,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_invalid_stride(self, file_points_strategy, tmp_path):
         """Test file_points strategy with invalid stride."""
-        csv_file = tmp_path / "test_stride.csv"
-        csv_file.write_text("x,y\n1,1\n")
-        
+        csv_file = tmp_path / 'test_stride.csv'
+        csv_file.write_text('x,y\n1,1\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Invalid Stride',
@@ -811,9 +812,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_empty_after_filtering(self, file_points_strategy, tmp_path):
         """Test file_points strategy when all points are filtered out."""
-        csv_file = tmp_path / "test_empty_filter.csv"
-        csv_file.write_text("x,y\n10,10\n20,20\n")
-        
+        csv_file = tmp_path / 'test_empty_filter.csv'
+        csv_file.write_text('x,y\n10,10\n20,20\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Empty Filter',
@@ -1045,8 +1046,8 @@ class TestParticleFactory:
         Passive = particle_classes['Passive']
 
         # Create a temporary CSV file
-        csv_file = tmp_path / "test_particles.csv"
-        csv_file.write_text("x,y\n1.5,2.5\n3.5,4.5\n")
+        csv_file = tmp_path / 'test_particles.csv'
+        csv_file.write_text('x,y\n1.5,2.5\n3.5,4.5\n')
 
         config = PopulationConfig(
             {
