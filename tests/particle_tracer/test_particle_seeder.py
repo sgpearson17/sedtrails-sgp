@@ -1209,6 +1209,30 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['release_time'], np.array([-600.0]))
 
+    def test_missing_release_start_defaults_to_simulation_start(self):
+        config = PopulationConfig(
+            {
+                'name': 'Release Time Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 1,
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+                'transport_probability': 'no_probability',
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+            reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+        )
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([0.0]))
+
 
 def _single_particle_population(release_start):
     config = PopulationConfig(

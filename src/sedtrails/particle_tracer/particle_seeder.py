@@ -37,28 +37,24 @@ class HasFieldCoordinates(Protocol):
 
 
 DEFAULT_REFERENCE_DATE = '1970-01-01 00:00:00'
+DEFAULT_RELEASE_START = '__SIMULATION_START__'
 
 
 def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
     """Convert a release time to seconds since the model reference date."""
 
-    if isinstance(release_time, (int, float)):
+    if release_time == DEFAULT_RELEASE_START:
+        release_seconds = 0.0
+    elif isinstance(release_time, (int, float)):
         release_seconds = float(release_time)
-        if release_seconds < 0:
-            warnings.warn(
-                'Computed release time is negative. Particles may be released from simulation start; '
-                'check seeding.release_start and general.input_model.reference_date.',
-                UserWarning,
-                stacklevel=2,
-            )
-        return release_seconds
-
-    release_datetime = convert_datetime_string_to_datetime64(str(release_time))
-    if isinstance(reference_date, np.datetime64):
-        reference_datetime = reference_date.astype('datetime64[s]')
     else:
-        reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
-    release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+        release_datetime = convert_datetime_string_to_datetime64(str(release_time))
+        if isinstance(reference_date, np.datetime64):
+            reference_datetime = reference_date.astype('datetime64[s]')
+        else:
+            reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
+        release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+
     if release_seconds < 0:
         warnings.warn(
             'Computed release time is negative. Particles may be released from simulation start; '
@@ -89,8 +85,9 @@ class PopulationConfig:
             The configuration dictionary containing the seeding paraameters for a population.
         particle_type : str
             The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-        release_start : str
+        release_start : str | int | float
             The time at which the particles for a given population are released.
+            If omitted, particles are released from simulation start.
         quantity : int
             The number of particles to release per release location.
     s    strategy_settings : Dict
@@ -104,7 +101,7 @@ class PopulationConfig:
     population_config: Dict  # configuration for a single population
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
-    release_start: str = field(init=False)  # particle for a given population are released at this time
+    release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
     quantity: int = field(init=False)  # number of particles to release per release location
     burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
@@ -121,10 +118,8 @@ class PopulationConfig:
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'seeding.release_start', {})
-        if not _release_start:
-            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = _release_start
+        _release_start = find_value(self.population_config, 'seeding.release_start', None)
+        self.release_start = DEFAULT_RELEASE_START if _release_start is None else _release_start
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
