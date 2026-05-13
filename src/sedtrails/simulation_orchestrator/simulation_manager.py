@@ -591,10 +591,7 @@ class Simulation:
 
                     with self._profile_section('get_flow_field.update_position'):
                         flow_field = retriever.get_flow_field(timer.current, flow_field_name)
-                    if (
-                        runtime_plan.population_index == 0
-                        and flow_field_name == tracer_plan.flow_field_names[0]
-                    ):
+                    if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
                         dashboard_flow_field = flow_field
 
                     with self._profile_section('update_position'):
