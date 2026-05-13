@@ -1203,6 +1203,12 @@ class TestParticlePopulation:
         with pytest.raises(DateFormatError):
             _single_particle_population(release_start='1970/01/01 00:10:00')
 
+    def test_release_time_before_reference_date_warns(self):
+        with pytest.warns(UserWarning, match='Computed release time is negative'):
+            population = _single_particle_population(release_start='1969-12-31 23:50:00')
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([-600.0]))
+
 
 def _single_particle_population(release_start):
     config = PopulationConfig(

@@ -15,6 +15,7 @@ Random: Release particles at random locations (x,y) within an area
 """
 
 import random
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, Tuple, Union
@@ -42,14 +43,30 @@ def _release_time_to_seconds(release_time: str | int | float, reference_date: st
     """Convert a release time to seconds since the model reference date."""
 
     if isinstance(release_time, (int, float)):
-        return float(release_time)
+        release_seconds = float(release_time)
+        if release_seconds < 0:
+            warnings.warn(
+                'Computed release time is negative. Particles may be released from simulation start; '
+                'check seeding.release_start and general.input_model.reference_date.',
+                UserWarning,
+                stacklevel=2,
+            )
+        return release_seconds
 
     release_datetime = convert_datetime_string_to_datetime64(str(release_time))
     if isinstance(reference_date, np.datetime64):
         reference_datetime = reference_date.astype('datetime64[s]')
     else:
         reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
-    return float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+    release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+    if release_seconds < 0:
+        warnings.warn(
+            'Computed release time is negative. Particles may be released from simulation start; '
+            'check seeding.release_start and general.input_model.reference_date.',
+            UserWarning,
+            stacklevel=2,
+        )
+    return release_seconds
 
 
 def _is_temporal_field(field_value: Any) -> bool:
