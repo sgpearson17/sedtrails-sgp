@@ -34,6 +34,20 @@ class HasFieldCoordinates(Protocol):
     y: ndarray
 
 
+DEFAULT_REFERENCE_DATE = np.datetime64('1970-01-01T00:00:00', 's')
+
+
+def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
+    """Convert a release time to seconds since the model reference date."""
+
+    if isinstance(release_time, (int, float)):
+        return float(release_time)
+
+    release_datetime = np.datetime64(release_time, 's')
+    reference_datetime = np.datetime64(reference_date, 's')
+    return float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+
+
 def _is_temporal_field(field_value: Any) -> bool:
     return isinstance(field_value, dict) and {'lower', 'upper', 'weight'}.issubset(field_value)
 
@@ -482,6 +496,7 @@ class ParticlePopulation:
     field_y: ndarray
     population_config: PopulationConfig
     grid_geometry: Any = None
+    reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
@@ -507,7 +522,10 @@ class ParticlePopulation:
         self.particles = {
             'x': np.array([p.x for p in _particles]),
             'y': np.array([p.y for p in _particles]),
-            'release_time': np.array([p.release_time for p in _particles]),
+            'release_time': np.array(
+                [_release_time_to_seconds(p.release_time, self.reference_date) for p in _particles],
+                dtype=float,
+            ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
@@ -629,8 +647,6 @@ class ParticlePopulation:
             # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        # FIXME: Temporary implementation
-        self.particles['release_time'] = np.zeros_like(self.particles['x'])
         self.particles['is_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
@@ -744,6 +760,7 @@ class ParticleSeeder:
                 field_y=sedtrails_data.y,
                 population_config=config,
                 grid_geometry=grid_geometry,
+                reference_date=getattr(sedtrails_data, 'reference_date', DEFAULT_REFERENCE_DATE),
             )
             populations.append(pop)
         return populations

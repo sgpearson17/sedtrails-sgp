@@ -1173,3 +1173,50 @@ class TestParticlePopulation:
             old_simplices,
         )
         np.testing.assert_array_equal(population._particle_simplices, expected_simplices)
+
+    def test_release_time_is_converted_to_seconds_since_reference_date(self):
+        population = _single_particle_population(release_start='1970-01-01 00:10:00')
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+    def test_update_status_respects_release_time(self):
+        population = _single_particle_population(release_start='1970-01-01 00:10:00')
+        population.particles['transport_probability'] = np.ones_like(population.particles['x'])
+
+        population._current_time = 599.0
+        population.update_status()
+
+        assert population.particles['is_released'].tolist() == [False]
+        assert population.particles['is_mobile'].tolist() == [False]
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+        population._current_time = 600.0
+        population.update_status()
+
+        assert population.particles['is_released'].tolist() == [True]
+        assert population.particles['is_mobile'].tolist() == [True]
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+
+def _single_particle_population(release_start):
+    config = PopulationConfig(
+        {
+            'name': 'Release Time Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1,
+                'release_start': release_start,
+                'burial_depth': {
+                    'constant': 0.0,
+                },
+            },
+            'transport_probability': 'no_probability',
+        }
+    )
+    return ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+        reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
