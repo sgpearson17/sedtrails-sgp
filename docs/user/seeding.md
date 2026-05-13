@@ -19,7 +19,7 @@ Seeding is the process of adding the particle(s) to the model. In SedTRAILS, the
 
 Particle release timing is controlled by `seeding.release_start` per population.
 
-- `release_start` can be provided as a datetime string (for example: `2020-01-01 00:10:00`).
+- `release_start` is required and must be provided as a datetime string (for example: `2020-01-01 00:10:00`).
 - Format is validated as `YYYY-MM-DD HH:MM:SS`.
 - The configured value is converted to seconds relative to `general.input_model.reference_date`.
 - A particle only becomes mobile once simulation time is greater than or equal to its converted release time.
