@@ -9,6 +9,7 @@ description = "Sediment TRAnsport vIsualization and Lagrangian Simulator."
 dependencies = [
   "jsonschema",
   "numpy<2.2,>=1.24",
+  "scipy",
   "pyyaml",
   "pandas",
   "matplotlib",

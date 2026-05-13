@@ -12,6 +12,7 @@ from sedtrails.exceptions import YamlValidationError, YamlOutputError
 
 @pytest.fixture
 def validator():
+    """Provide a YAMLConfigValidator instance for tests."""
     # You can use any valid schema file path, but for testing _apply_defaults, schema_content is enough
     dummy_schema = {}
     dummy_schema_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yml')
@@ -29,6 +30,7 @@ class TestYAMLConfigValidator:
     """
 
     def test_apply_defaults_object(self, validator):
+        """Apply object defaults when all optional keys are missing."""
         schema = {
             'type': 'object',
             'properties': {
@@ -41,6 +43,7 @@ class TestYAMLConfigValidator:
         assert result == {'a': 'foo', 'b': 42}
 
     def test_apply_defaults_partial_object(self, validator):
+        """Preserve provided values while filling missing object defaults."""
         schema = {
             'type': 'object',
             'properties': {
@@ -53,6 +56,7 @@ class TestYAMLConfigValidator:
         assert result == {'a': 'bar', 'b': 42}
 
     def test_apply_defaults_nested_object(self, validator):
+        """Apply defaults recursively in nested object properties."""
         schema = {
             'type': 'object',
             'properties': {'outer': {'type': 'object', 'properties': {'inner': {'type': 'string', 'default': 'baz'}}}},
@@ -62,6 +66,7 @@ class TestYAMLConfigValidator:
         assert result == {'outer': {'inner': 'baz'}}
 
     def test_apply_defaults_array(self, validator):
+        """Apply item defaults for each element in an array of objects."""
         schema = {'type': 'array', 'items': {'type': 'object', 'properties': {'x': {'type': 'integer', 'default': 1}}}}
         config = [{'x': 2}, {}]
         result = validator._apply_defaults(schema, config)
