@@ -27,6 +27,7 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
 
 
 class HasFieldCoordinates(Protocol):
@@ -34,7 +35,7 @@ class HasFieldCoordinates(Protocol):
     y: ndarray
 
 
-DEFAULT_REFERENCE_DATE = np.datetime64('1970-01-01T00:00:00', 's')
+DEFAULT_REFERENCE_DATE = '1970-01-01 00:00:00'
 
 
 def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
@@ -43,8 +44,11 @@ def _release_time_to_seconds(release_time: str | int | float, reference_date: st
     if isinstance(release_time, (int, float)):
         return float(release_time)
 
-    release_datetime = np.datetime64(release_time, 's')
-    reference_datetime = np.datetime64(reference_date, 's')
+    release_datetime = convert_datetime_string_to_datetime64(str(release_time))
+    if isinstance(reference_date, np.datetime64):
+        reference_datetime = reference_date.astype('datetime64[s]')
+    else:
+        reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
     return float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
 
 

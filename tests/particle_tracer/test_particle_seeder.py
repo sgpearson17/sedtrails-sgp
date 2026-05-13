@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from sedtrails.exceptions import MissingConfigurationParameter
+from sedtrails.exceptions.exceptions import DateFormatError
 from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     GridStrategy,
@@ -1197,6 +1198,10 @@ class TestParticlePopulation:
         assert population.particles['is_released'].tolist() == [True]
         assert population.particles['is_mobile'].tolist() == [True]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+    def test_invalid_release_time_raises_date_format_error(self):
+        with pytest.raises(DateFormatError):
+            _single_particle_population(release_start='1970/01/01 00:10:00')
 
 
 def _single_particle_population(release_start):
