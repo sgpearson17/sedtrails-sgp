@@ -14,6 +14,8 @@ Random: Release particles at random locations (x,y) within an area
     constrained by a bounding box (xmin, xmax, ymin, ymax).
 """
 
+import logging
+import os
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -27,6 +29,225 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+
+logger = logging.getLogger(__name__)
+
+
+def _read_polygon_file(path: str) -> np.ndarray:
+    """Read polygon vertices from a file, auto-detecting the format.
+
+    Supported formats
+    -----------------
+    - Delft3D/TELEMAC ``.pol``: ``<name>\\n<nrows> <ncols>\\n<x> <y>\\n...``
+    - CSV with a header row (first token non-numeric)
+    - Plain two-column text (space- or comma-separated, no header)
+    """
+    path = os.path.expanduser(str(path))
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f'Polygon file not found: {path}')
+
+    with open(path) as f:
+        lines = [ln.strip() for ln in f if ln.strip()]
+
+    if not lines:
+        raise ValueError(f'Polygon file is empty: {path}')
+
+    vertices: list[tuple[float, float]] = []
+
+    # --- Delft3D .pol format ---
+    if os.path.splitext(path)[1].lower() == '.pol':
+        i = 0
+        while i < len(lines):
+            i += 1  # skip name line
+            if i >= len(lines):
+                break
+            try:
+                parts = lines[i].split()
+                nrows = int(parts[0])
+                i += 1
+            except (ValueError, IndexError):
+                continue
+            for j in range(nrows):
+                if i + j < len(lines):
+                    coords = lines[i + j].replace(',', ' ').split()
+                    if len(coords) >= 2:
+                        vertices.append((float(coords[0]), float(coords[1])))
+            i += nrows
+        if vertices:
+            return np.array(vertices)
+
+    # --- Generic text / CSV ---
+    # Detect header: first line is a header if its first token is not a float.
+    def _is_numeric(token: str) -> bool:
+        try:
+            float(token)
+            return True
+        except ValueError:
+            return False
+
+    first_tokens = lines[0].replace(',', ' ').split()
+    start = 1 if (first_tokens and not _is_numeric(first_tokens[0])) else 0
+
+    for line in lines[start:]:
+        parts = line.replace(',', ' ').split()
+        if len(parts) >= 2:
+            try:
+                vertices.append((float(parts[0]), float(parts[1])))
+            except ValueError:
+                continue
+
+    if not vertices:
+        raise ValueError(f'Could not parse any polygon vertices from: {path}')
+    return np.array(vertices)
+
+
+def _parse_polygon(poly_spec) -> np.ndarray:
+    """Return an (N, 2) array of polygon vertices.
+
+    Parameters
+    ----------
+    poly_spec : str or list[str]
+        Either a file path (string) or a list of ``'x,y'`` coordinate strings.
+    """
+    if isinstance(poly_spec, str):
+        return _read_polygon_file(poly_spec)
+    if isinstance(poly_spec, list):
+        vertices = []
+        for item in poly_spec:
+            parts = str(item).replace(',', ' ').split()
+            if len(parts) < 2:
+                raise ValueError(f"Invalid polygon coordinate '{item}'. Expected 'x,y' or 'x y'.")
+            vertices.append((float(parts[0]), float(parts[1])))
+        if len(vertices) < 3:
+            raise ValueError('A polygon requires at least 3 vertices.')
+        return np.array(vertices)
+    raise ValueError('poly must be a file path string or a list of "x,y" coordinate strings.')
+
+
+def _sample_burial_depth(burial_depth_config) -> float:
+    """Resolve a single burial-depth value from the population config entry.
+
+    Parameters
+    ----------
+    burial_depth_config : dict or float
+        Either ``{'constant': value}`` for a fixed depth, or
+        ``{'random': max_value}`` to draw uniformly from ``[0, max_value]``.
+        A bare float is passed through unchanged (used when the config is
+        already a resolved number, e.g. from legacy test fixtures).
+    """
+    if isinstance(burial_depth_config, dict):
+        if 'constant' in burial_depth_config:
+            return float(burial_depth_config['constant'])
+        if 'random' in burial_depth_config:
+            return random.uniform(0.0, float(burial_depth_config['random']))
+        raise ValueError(
+            'Unsupported burial_depth configuration. '
+            'Use {constant: value} or {random: max_value}.'
+        )
+    return float(burial_depth_config)
+
+
+def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float | None:
+    """Return the 2-D seeding area in m² for area-based strategies, or None.
+
+    Only ``random`` and ``grid`` strategies define a spatial area (via ``bbox``
+    or ``poly``).  For all other strategies (point, transect, file_points) the
+    concept of a seeding area is not applicable and ``None`` is returned.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Name of the active seeding strategy.
+    strategy_settings : dict
+        Raw settings dict for that strategy (i.e. ``config.strategy_settings``).
+
+    Returns
+    -------
+    float or None
+        Area in m², or None when not computable.
+    """
+    if strategy_name not in ('random', 'grid'):
+        return None
+
+    poly = strategy_settings.get('poly')
+    bbox = strategy_settings.get('bbox')
+
+    if poly is not None:
+        vertices = _parse_polygon(poly)
+        n = len(vertices)
+        area = 0.5 * abs(
+            sum(
+                vertices[i][0] * vertices[(i + 1) % n][1]
+                - vertices[(i + 1) % n][0] * vertices[i][1]
+                for i in range(n)
+            )
+        )
+        return area
+
+    if bbox is not None:
+        if isinstance(bbox, str):
+            parts = bbox.replace(',', ' ').split()
+            xmin, ymin, xmax, ymax = map(float, parts)
+        else:
+            xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+        return (xmax - xmin) * (ymax - ymin)
+
+    return None
+
+
+def _log_seeding_box_volume(config, positions: list) -> None:
+    """Log the seeding box volume and representative particle volume.
+
+    The "seeding box" is defined only when both of the following conditions hold:
+
+    1. The strategy is area-based (``random`` or ``grid``) so a 2-D footprint
+       can be computed from the ``bbox`` or ``poly`` setting.
+    2. The ``burial_depth`` is configured as ``{random: max_depth}``, so
+       particles are scattered uniformly in depth from 0 to *max_depth* and
+       the depth extent is well-defined.
+
+    When both conditions are met the function logs (at INFO level):
+
+    * seeding footprint area [m²]
+    * depth range [m]
+    * total box volume [m³]
+    * total number of particles
+    * representative volume per particle [m³]
+
+    Parameters
+    ----------
+    config : PopulationConfig
+        Population configuration.
+    positions : list of (int, float, float)
+        Seed locations returned by the active strategy, each entry being
+        ``(quantity, x, y)``.
+    """
+    burial_depth = getattr(config, 'burial_depth', None)
+    if not isinstance(burial_depth, dict) or 'random' not in burial_depth:
+        return
+
+    max_depth = float(burial_depth['random'])
+    strategy_name = getattr(config, 'strategy', '')
+    strategy_settings = getattr(config, 'strategy_settings', {})
+
+    area = _compute_seeding_area(strategy_name, strategy_settings)
+    if area is None:
+        return
+
+    n_particles = sum(qty for qty, *_ in positions)
+    if n_particles == 0:
+        return
+
+    volume = area * max_depth
+    repr_volume = volume / n_particles
+
+    pop_name = config.population_config.get('name', strategy_name)
+    logger.info(
+        "Seeding box for population '%s': "
+        "area=%.4g m², depth=[0, %.4g] m, volume=%.4g m³, "
+        "n_particles=%d, representative volume=%.4g m³/particle",
+        pop_name, area, max_depth, volume, n_particles, repr_volume,
+    )
 
 
 class HasFieldCoordinates(Protocol):
@@ -73,6 +294,7 @@ class PopulationConfig:
     quantity: int = field(init=False)  # number of particles to release per release location
     burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
+    remove_permanently_buried: bool = field(init=False, default=False)
 
     def __post_init__(self):
         _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
@@ -96,7 +318,10 @@ class PopulationConfig:
         _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
         if not _burial_depth:
             raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
-        self.burial_depth = _burial_depth.get('constant', 0.0)  # TODO: support other types of burial depth
+        self.burial_depth = _burial_depth
+        self.remove_permanently_buried = bool(
+            find_value(self.population_config, 'seeding.remove_permanently_buried', False)
+        )
 
 
 class SeedingStrategy(ABC):
@@ -152,53 +377,98 @@ class PointStrategy(SeedingStrategy):
 
 class RandomStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles at at random locations (x,y) within an area constraint by a
-    bounding box 'xmin,ymin xmax,ymax'.
+    Seeding strategy to release particles at random locations (x,y) within an area.
 
+    The area can be defined as:
+    - ``bbox``: axis-aligned bounding box string ``'xmin,ymin xmax,ymax'``
+    - ``poly``: an arbitrary polygon given as a list of ``'x,y'`` strings or a
+      path to a polygon file (``.pol``, CSV, or plain text).  When both are
+      given, ``poly`` takes precedence.
+
+    Rejection sampling is used for ``poly``; up to
+    ``max(nlocations * 1000, 10_000)`` candidate points are drawn from the
+    polygon's bounding box and tested for containment.
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
-        # expects strategy_settings to contain 'bbox' and 'seed'
-        bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
-        if not bbox:
-            raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
+        settings = getattr(config, 'strategy_settings', {})
+        bbox = settings.get('bbox', None)
+        poly = settings.get('poly', None)
 
-        seed = getattr(config, 'strategy_settings', {}).get('seed', None)
-        if not seed:
+        if poly is None and not bbox:
+            raise MissingConfigurationParameter('"bbox" or "poly" must be provided for RandomStrategy.')
+
+        seed_val = settings.get('seed', None)
+        if not seed_val:
             raise MissingConfigurationParameter('"seed" must be provided for RandomStrategy.')
-        random.seed(seed)
+        random.seed(seed_val)
 
-        nlocations = getattr(config, 'strategy_settings', {}).get('nlocations', None)
+        nlocations = settings.get('nlocations', None)
         if not nlocations:
             raise MissingConfigurationParameter('"nlocations" must be provided for RandomStrategy.')
 
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
         quantity = int(config.quantity)
-        seed_locations = []
 
-        _bbox = bbox.replace(',', ' ').split()  # separates values with whitespaces. Order is xmin, ymin, xmax, ymax
-        for _ in range(nlocations):
-            x = random.uniform(float(_bbox[0]), float(_bbox[2]))
-            y = random.uniform(float(_bbox[1]), float(_bbox[3]))
-            seed_locations.append((quantity, x, y))
+        if poly is not None:
+            vertices = _parse_polygon(poly)
+            xmin, ymin = vertices.min(axis=0)
+            xmax, ymax = vertices.max(axis=0)
+            poly_path = Path(vertices)
+
+            seed_locations: list[Tuple[int, float, float]] = []
+            max_attempts = max(nlocations * 1000, 10_000)
+            attempts = 0
+            while len(seed_locations) < nlocations and attempts < max_attempts:
+                x = random.uniform(xmin, xmax)
+                y = random.uniform(ymin, ymax)
+                if poly_path.contains_point((x, y), radius=1e-9):
+                    seed_locations.append((quantity, x, y))
+                attempts += 1
+
+            if len(seed_locations) < nlocations:
+                raise ValueError(
+                    f'Could only generate {len(seed_locations)} of {nlocations} points inside the polygon '
+                    f'after {max_attempts} attempts. The polygon may be very narrow relative to its bounding box.'
+                )
+        else:
+            _bbox = bbox.replace(',', ' ').split()
+            seed_locations = []
+            for _ in range(nlocations):
+                x = random.uniform(float(_bbox[0]), float(_bbox[2]))
+                y = random.uniform(float(_bbox[1]), float(_bbox[3]))
+                seed_locations.append((quantity, x, y))
+
         return seed_locations
 
 
 class GridStrategy(SeedingStrategy):
     """
-    Seeding strategy to release particles that follows regular grid pattern.
-    The grid is defined by the distance between particles (dx, dy) and the simulation domain size.
-    If dx and dy have the same value, a square grid is created.
-    The origin of the grid is at the bottom left corner of the bounding box
+    Seeding strategy to release particles on a regular grid.
+
+    The grid is defined by the distance between particles (dx, dy).  The
+    seeding area can be defined as:
+
+    - ``bbox``: axis-aligned bounding box — dict with ``xmin/ymin/xmax/ymax``
+      keys, or a string ``'xmin,ymin xmax,ymax'``.
+    - ``poly``: an arbitrary polygon given as a list of ``'x,y'`` strings or a
+      path to a polygon file (``.pol``, CSV, or plain text).  When both are
+      given, ``poly`` takes precedence.
+
+    Grid points are generated over the area's bounding box and then filtered
+    to those that fall inside the polygon.
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
-        bbox = config.strategy_settings.get('bbox')
-        if not bbox:
-            raise MissingConfigurationParameter('"bbox" must be provided for GridStrategy.')
+        settings = config.strategy_settings
+        bbox = settings.get('bbox')
+        poly = settings.get('poly', None)
 
-        separation = config.strategy_settings.get('separation')
+        if poly is None and not bbox:
+            raise MissingConfigurationParameter('"bbox" or "poly" must be provided for GridStrategy.')
+
+        separation = settings.get('separation')
         if not separation or 'dx' not in separation or 'dy' not in separation:
             raise MissingConfigurationParameter('"separation" with "dx" and "dy" must be provided for GridStrategy.')
 
@@ -209,23 +479,28 @@ class GridStrategy(SeedingStrategy):
         dx = separation['dx']
         dy = separation['dy']
 
-        # Handle both dict and string bbox formats
-        if isinstance(bbox, str):
-            _bbox = bbox.replace(',', ' ').split()
-            if len(_bbox) != 4:
-                raise ValueError(f"Invalid bbox format. Expected 'xmin,ymin xmax,ymax', got: {bbox}")
-            xmin, ymin, xmax, ymax = map(float, _bbox)
+        if poly is not None:
+            vertices = _parse_polygon(poly)
+            xmin, ymin = vertices.min(axis=0)
+            xmax, ymax = vertices.max(axis=0)
+            poly_path = Path(vertices)
         else:
-            xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+            poly_path = None
+            if isinstance(bbox, str):
+                _bbox = bbox.replace(',', ' ').split()
+                if len(_bbox) != 4:
+                    raise ValueError(f"Invalid bbox format. Expected 'xmin,ymin xmax,ymax', got: {bbox}")
+                xmin, ymin, xmax, ymax = map(float, _bbox)
+            else:
+                xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
 
         seed_locations = []
-
-        # Generate grid points
         x = xmin
         while x <= xmax:
             y = ymin
             while y <= ymax:
-                seed_locations.append((quantity, x, y))
+                if poly_path is None or poly_path.contains_point((x, y), radius=1e-9):
+                    seed_locations.append((quantity, x, y))
                 y += dy
             x += dx
 
@@ -430,15 +705,17 @@ class ParticleFactory:
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
+        _log_seeding_box_volume(config, positions)
         particles = []
         for qty, x, y in positions:
             for _ in range(qty):
                 p = ParticleClass()
                 p.x = x
                 p.y = y
-                p.burial_depth = burial_depth
                 p.release_time = getattr(config, 'release_start', None)
 
+                p.burial_depth = _sample_burial_depth(burial_depth)
+                    
                 particles.append(p)
 
         return particles
@@ -515,6 +792,83 @@ class ParticlePopulation:
         # Store the outer envelope of the domain using shared grid geometry.
         self._outer_envelope = Path(self.grid_geometry.outer_envelope)
 
+    def remove_permanently_buried_particles(self, max_exposure_depth: ndarray) -> int:
+        """Remove particles that can never be exposed given the maximum possible exposure.
+
+        A particle at burial depth *d* can only be mobilised if the bed erodes
+        and/or the mixing layer deepens enough to reach it.  If
+
+            d > max_erosion(x, y) + max_mixing_depth(x, y)
+
+        for the particle's location, it will stay buried for the entire
+        simulation and can be dropped from the particle arrays to save memory
+        and computation.
+
+        This method is a no-op when
+        ``population_config.remove_permanently_buried`` is ``False`` (the
+        default).  Call it once after creating the population and before
+        starting the time loop, passing pre-computed nodal arrays.
+
+        Parameters
+        ----------
+        max_exposure_depth : ndarray
+            Per-node field equal to ``max_erosion + max_mixing_depth`` over the
+            full simulation period.  Particles whose burial depth exceeds the
+            interpolated value at their location are permanently removed.
+            Nodes/particles with ``NaN`` values are kept (conservative).
+
+        Returns
+        -------
+        int
+            Number of particles removed (0 when the flag is off or no particle
+            qualifies).
+        """
+        if not self.population_config.remove_permanently_buried:
+            return 0
+
+        n_total = len(self.particles['x'])
+        if n_total == 0:
+            return 0
+
+        pop_name = self.population_config.population_config.get('name', 'unknown')
+
+        # Interpolate max-exposure field to each particle's current position.
+        max_exposure = self._field_interpolator(
+            max_exposure_depth, self.particles['x'], self.particles['y']
+        )
+        # NaN means outside the grid — keep those particles (conservative).
+        max_exposure = np.where(np.isnan(max_exposure), np.inf, max_exposure)
+
+        keep = self.particles['burial_depth'] <= max_exposure
+        n_removed = int(np.sum(~keep))
+
+        if n_removed == 0:
+            logger.debug(
+                "Population '%s': no permanently buried particles found (all %d particles are potentially mobile).",
+                pop_name, n_total,
+            )
+            return 0
+
+        # Remove particles from every attribute array and the simplex cache.
+        for key in list(self.particles.keys()):
+            self.particles[key] = self.particles[key][keep]
+        self._particle_simplices = self._particle_simplices[keep]
+
+        pct = 100.0 * n_removed / n_total
+        if n_removed == n_total:
+            logger.warning(
+                "Population '%s': ALL %d particles removed as permanently buried. "
+                "Check burial_depth configuration and max_exposure_depth field.",
+                pop_name, n_total,
+            )
+        else:
+            logger.info(
+                "Population '%s': removed %d of %d permanently buried particles (%.1f%% of total); "
+                "%d particles remain.",
+                pop_name, n_removed, n_total, pct, n_total - n_removed,
+            )
+        return n_removed
+
     def update_information(
         self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
@@ -535,9 +889,17 @@ class ParticlePopulation:
 
         self._current_time = current_time
 
+        # Store previous bed level for bed level change calculation (if needed)
+        if 'bed_level' in self.particles:
+            self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
+
         self._update_particle_field('mixing_depth', mixing_depth)
         self._update_particle_field('transport_probability', transport_probability)
         self._update_particle_field('bed_level', bed_level)
+
+        if 'bed_level_previous' not in self.particles: # (only for the first update, after seeding)
+            self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
+
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -583,21 +945,34 @@ class ParticlePopulation:
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
-        This method is a placeholder and should be implemented with the actual logic for updating burial depth.
-        Currently, it does not perform any operations.
         """
 
-        # Initialize vertical position ('z') based on bed level and burial depth
+        # Update burial depth
+        bed_level_change_total  = self.particles['bed_level'] - self.particles['bed_level_previous']
+        bed_level_change_position = self.particles.get('bed_level_change_position', np.zeros_like(bed_level_change_total))
+        bed_level_change_time = bed_level_change_total - bed_level_change_position
+        self.particles['burial_depth'] += bed_level_change_time
+
+        # Prevent negative burial depth (particles cannot be above the bed level)
+        i_negative_burial = self.particles['burial_depth'] < 0
+        self.particles['burial_depth'][i_negative_burial] = 0.
+
+        # Update vertical position ('z') based on bed level and burial depth
+        # TODO: add to top attributes. This must go to netcdf for every timestep.
+        # BART: WHAT IS MEANT BY THIS??
         self.particles['z'] = (
             self.particles['bed_level'] - self.particles['burial_depth']
-        )  # TODO: add to top attributes. This must go to netcdf for every timestep.
+        )  
 
-        # Make sure particles can never be higher than the bed level
-        i_above_bed = self.particles['z'] > self.particles['bed_level']
-        self.particles['z'][i_above_bed] = self.particles['bed_level'][i_above_bed]
+    def update_bed_level_change_after_movement(self, bed_level) -> None:
+        """Updates the bed level change due to particle movement (not due to bed level changes in model).
+        """
 
-        # Update burial depth (is always a positive value)
-        self.particles['burial_depth'] = self.particles['bed_level'] - self.particles['z']
+        # Update bed level change based on particle movement 
+        bed_level_old = self.particles['bed_level'].copy()  # store old bed level for next update
+        self._update_particle_field('bed_level', bed_level)
+        self.particles['bed_level_change_position'] = self.particles['bed_level'] - bed_level_old
+
 
     def update_status(self) -> None:
         """

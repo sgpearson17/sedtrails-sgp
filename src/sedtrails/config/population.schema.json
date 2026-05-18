@@ -304,6 +304,11 @@
                     "type": "string",
                     "description": "release stop time, e.g., '2020-01-01 01:00:00'. If empty, then release stops immediately after the first particles are released."
                 },
+                "remove_permanently_buried": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, particles whose initial burial depth exceeds the maximum possible exposure depth (max_erosion + max_mixing_depth) at their location are permanently removed before the simulation starts. Requires calling ParticlePopulation.remove_permanently_buried_particles() with the pre-computed max-exposure field."
+                },
                 "strategy": {
                     "type": "object",
                     "additionalProperties": false,
@@ -395,13 +400,25 @@
                             "type": "object",
                             "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
-                                    "type": "string",
-                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
-                                },
                                 "bbox": {
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for random point generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "nlocations": {
                                     "type": "integer",
@@ -427,43 +444,48 @@
                             "required": [
                                 "nlocations"
                             ],
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "bbox"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                }
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "grid": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
+                                "bbox": {
                                     "type": "string",
-                                    "description": "path to tekal '.pol' file with bounding polygon for cluster analysis"
+                                    "description": "bounding box for grid generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for grid generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "separation": {
                                     "type": "object",
+                                    "additionalProperties": false,
                                     "properties": {
                                         "dx": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
+                                            "description": "grid spacing in x-direction [m]"
                                         },
                                         "dy": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
-                                        },
-                                        "jitter_pct": {
-                                            "type": "number",
-                                            "default": 0.1,
-                                            "description": "fraction of grid cell size to jitter by"
+                                            "description": "grid spacing in y-direction [m]"
                                         }
                                     },
                                     "required": [
@@ -482,17 +504,12 @@
                                     "description": "Do you want to save cluster check plots?"
                                 }
                             },
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "separation"
-                                    ]
-                                }
+                            "required": [
+                                "separation"
+                            ],
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "file_points": {

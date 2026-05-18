@@ -364,25 +364,24 @@ class FieldDataRetriever:
     def get_scalar_field_bounds(self, time: float, scalar_field_name: str) -> Dict:
         """Return lower/upper time slices for a scalar field without full-grid interpolation."""
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
-        lower_slice = self.sedtrails_data[lower_index]
+        # lower_slice = self.sedtrails_data[lower_index] # FIX ME: SOMEHOW RESULTS IN WRONG SELECTION FOR BEDLEVEL?
 
-        if scalar_field_name not in lower_slice:
+        if scalar_field_name not in self.sedtrails_data[lower_index]: 
             raise KeyError(
                 f"Scalar field '{scalar_field_name}' not found in SedtrailsData. "
-                f'Available fields: {list(lower_slice.keys())}'
+                f'Available fields: {list(self.sedtrails_data[lower_index].keys())}'
             )
 
-        lower_scalar = self._extract_fraction(lower_slice[scalar_field_name])
+        lower_scalar = self._extract_fraction(getattr(self.sedtrails_data, scalar_field_name)[lower_index])
         if lower_index == upper_index:
             upper_scalar = lower_scalar
         else:
-            upper_slice = self.sedtrails_data[upper_index]
-            if scalar_field_name not in upper_slice:
+            if scalar_field_name not in self.sedtrails_data[upper_index]:
                 raise KeyError(
                     f"Scalar field '{scalar_field_name}' not found in SedtrailsData. "
-                    f'Available fields: {list(upper_slice.keys())}'
+                    f'Available fields: {list(self.sedtrails_data[upper_index].keys())}'
                 )
-            upper_scalar = self._extract_fraction(upper_slice[scalar_field_name])
+            upper_scalar = self._extract_fraction(getattr(self.sedtrails_data, scalar_field_name)[upper_index])
 
         return {
             'x': self.sedtrails_data.x,

@@ -12,6 +12,10 @@ from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     ParticleFactory,
     ParticlePopulation,
+    _parse_polygon,
+    _read_polygon_file,
+    _compute_seeding_area,
+    _log_seeding_box_volume,
 )
 from sedtrails.exceptions import MissingConfigurationParameter
 import numpy as np
@@ -394,7 +398,7 @@ class TestRandomStrategy:
             }
         )
 
-        with pytest.raises(MissingConfigurationParameter, match='"bbox" must be provided'):
+        with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly" must be provided'):
             random_strategy.seed(config)
 
 
@@ -410,11 +414,10 @@ class TestGridStrategy:
         assert len(result) == 9
 
         # Check that all points have the correct quantity
-        for qty, _x, _y in result:
-            assert qty == 2
+        assert all(qty == 2 for qty, *_ in result)
 
         # Check specific points
-        positions = [(x, y) for qty, x, y in result]
+        positions = [(x, y) for _, x, y in result]
         assert (0.0, 0.0) in positions
         assert (1.0, 1.0) in positions
         assert (2.0, 2.0) in positions
@@ -429,7 +432,7 @@ class TestGridStrategy:
         assert len(result) == 4
 
         # Check positions
-        positions = [(x, y) for qty, x, y in result]
+        positions = [(x, y) for _, x, y in result]
         expected_positions = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
         assert set(positions) == set(expected_positions)
 
@@ -454,7 +457,7 @@ class TestGridStrategy:
                 },
             }
         )
-        with pytest.raises(MissingConfigurationParameter, match='"bbox" must be provided'):
+        with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly" must be provided'):
             grid_strategy.seed(config)
 
     def test_grid_strategy_missing_separation(self, grid_strategy):
@@ -508,7 +511,7 @@ class TestGridStrategy:
 
         # Should generate a 3x3 grid (0, 0.5, 1.0 in both directions)
         assert len(result) == 9
-        positions = [(x, y) for qty, x, y in result]
+        positions = [(x, y) for _, x, y in result]
         assert (0.0, 0.0) in positions
         assert (0.5, 0.5) in positions
         assert (1.0, 1.0) in positions
@@ -1173,3 +1176,475 @@ class TestParticlePopulation:
             old_simplices,
         )
         np.testing.assert_array_equal(population._particle_simplices, expected_simplices)
+
+
+# ---------------------------------------------------------------------------
+# Polygon helpers
+# ---------------------------------------------------------------------------
+
+class TestParsePolygon:
+    """Tests for _parse_polygon and _read_polygon_file."""
+
+    def test_inline_list(self):
+        verts = _parse_polygon(['0,0', '1,0', '1,1', '0,1'])
+        assert verts.shape == (4, 2)
+        np.testing.assert_array_equal(verts[0], [0.0, 0.0])
+        np.testing.assert_array_equal(verts[2], [1.0, 1.0])
+
+    def test_inline_list_space_separated(self):
+        verts = _parse_polygon(['0 0', '1 0', '0.5 1'])
+        assert verts.shape == (3, 2)
+
+    def test_inline_too_few_vertices(self):
+        with pytest.raises(ValueError, match='at least 3 vertices'):
+            _parse_polygon(['0,0', '1,1'])
+
+    def test_inline_invalid_coord(self):
+        with pytest.raises(ValueError):
+            _parse_polygon(['0,0', 'bad', '1,1'])
+
+    def test_file_plain_text(self, tmp_path):
+        p = tmp_path / 'poly.txt'
+        p.write_text('0 0\n1 0\n1 1\n0 1\n')
+        verts = _read_polygon_file(str(p))
+        assert verts.shape == (4, 2)
+
+    def test_file_csv_with_header(self, tmp_path):
+        p = tmp_path / 'poly.csv'
+        p.write_text('x,y\n0,0\n1,0\n1,1\n0,1\n')
+        verts = _read_polygon_file(str(p))
+        assert verts.shape == (4, 2)
+
+    def test_file_pol_format(self, tmp_path):
+        p = tmp_path / 'poly.pol'
+        p.write_text('my_polygon\n4 2\n0.0 0.0\n2.0 0.0\n2.0 2.0\n0.0 2.0\n')
+        verts = _read_polygon_file(str(p))
+        assert verts.shape == (4, 2)
+        np.testing.assert_array_equal(verts[2], [2.0, 2.0])
+
+    def test_file_not_found(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            _read_polygon_file(str(tmp_path / 'missing.txt'))
+
+    def test_string_path_dispatches_to_file(self, tmp_path):
+        p = tmp_path / 'poly.txt'
+        p.write_text('0 0\n4 0\n4 4\n0 4\n')
+        verts = _parse_polygon(str(p))
+        assert verts.shape == (4, 2)
+
+    def test_invalid_type(self):
+        with pytest.raises(ValueError, match='file path string or a list'):
+            _parse_polygon(12345)
+
+
+# ---------------------------------------------------------------------------
+# RandomStrategy with poly
+# ---------------------------------------------------------------------------
+
+class TestRandomStrategyPoly:
+
+    def _make_config(self, poly, nlocations=10, seed=42):
+        return PopulationConfig({
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'poly': poly, 'nlocations': nlocations, 'seed': seed}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+            },
+        })
+
+    def test_inline_poly_all_inside(self):
+        # Unit square polygon
+        poly = ['0,0', '1,0', '1,1', '0,1']
+        config = self._make_config(poly, nlocations=20)
+        result = RandomStrategy().seed(config)
+        assert len(result) == 20
+        for qty, x, y in result:
+            assert qty == 1
+            assert 0.0 <= x <= 1.0
+            assert 0.0 <= y <= 1.0
+
+    def test_inline_poly_reproducible(self):
+        poly = ['0,0', '2,0', '2,2', '0,2']
+        config = self._make_config(poly, nlocations=5, seed=7)
+        r1 = RandomStrategy().seed(config)
+        r2 = RandomStrategy().seed(config)
+        assert r1 == r2
+
+    def test_poly_from_file(self, tmp_path):
+        p = tmp_path / 'sq.txt'
+        p.write_text('0 0\n1 0\n1 1\n0 1\n')
+        config = self._make_config(str(p), nlocations=5)
+        result = RandomStrategy().seed(config)
+        assert len(result) == 5
+
+    def test_missing_both_bbox_and_poly(self):
+        config = PopulationConfig({
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'nlocations': 1, 'seed': 1}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+            },
+        })
+        with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly"'):
+            RandomStrategy().seed(config)
+
+    def test_poly_triangular_points_inside(self):
+        # Right triangle: (0,0), (2,0), (0,2)
+        poly = ['0,0', '2,0', '0,2']
+        config = self._make_config(poly, nlocations=50, seed=99)
+        result = RandomStrategy().seed(config)
+        assert len(result) == 50
+        for _, x, y in result:
+            # All points must satisfy x+y <= 2 (inside triangle, roughly)
+            assert x + y <= 2.0 + 1e-9
+
+
+# ---------------------------------------------------------------------------
+# GridStrategy with poly
+# ---------------------------------------------------------------------------
+
+class TestGridStrategyPoly:
+
+    def _make_config(self, poly, dx=1.0, dy=1.0):
+        return PopulationConfig({
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'grid': {
+                    'poly': poly,
+                    'separation': {'dx': dx, 'dy': dy},
+                }},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+            },
+        })
+
+    def test_inline_unit_square_grid(self):
+        # 2x2 unit square: grid at 0,0  0,1  1,0  1,1 (corners on boundary)
+        poly = ['0,0', '2,0', '2,2', '0,2']
+        config = self._make_config(poly, dx=1.0, dy=1.0)
+        result = GridStrategy().seed(config)
+        positions = {(x, y) for _, x, y in result}
+        # All integer grid points inside (or on boundary of) 2x2 square
+        assert (0.0, 0.0) in positions
+        assert (1.0, 1.0) in positions
+        assert (2.0, 2.0) in positions
+
+    def test_triangular_poly_filters_points(self):
+        # Triangle (0,0), (4,0), (0,4): diagonal cuts out top-right
+        poly = ['0,0', '4,0', '0,4']
+        config = self._make_config(poly, dx=1.0, dy=1.0)
+        result = GridStrategy().seed(config)
+        for _, x, y in result:
+            assert x + y <= 4.0 + 1e-9  # must be inside triangle
+
+    def test_poly_fewer_points_than_full_bbox(self):
+        # Rectangular bbox would give 3x3=9 points; triangle gives fewer
+        poly = ['0,0', '2,0', '0,2']
+        config = self._make_config(poly, dx=1.0, dy=1.0)
+        result = GridStrategy().seed(config)
+        assert len(result) < 9
+
+    def test_poly_from_file(self, tmp_path):
+        p = tmp_path / 'sq.csv'
+        p.write_text('x,y\n0,0\n3,0\n3,3\n0,3\n')
+        config = self._make_config(str(p), dx=1.0, dy=1.0)
+        result = GridStrategy().seed(config)
+        positions = {(x, y) for _, x, y in result}
+        assert (0.0, 0.0) in positions
+        assert (3.0, 3.0) in positions
+
+    def test_missing_both_bbox_and_poly(self):
+        config = PopulationConfig({
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'grid': {'separation': {'dx': 1.0, 'dy': 1.0}}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+            },
+        })
+        with pytest.raises(MissingConfigurationParameter, match='"bbox" or "poly"'):
+            GridStrategy().seed(config)
+
+    def test_pol_file_format(self, tmp_path):
+        p = tmp_path / 'area.pol'
+        p.write_text('test_polygon\n4 2\n0.0 0.0\n2.0 0.0\n2.0 2.0\n0.0 2.0\n')
+        config = self._make_config(str(p), dx=1.0, dy=1.0)
+        result = GridStrategy().seed(config)
+        positions = {(x, y) for _, x, y in result}
+        assert (0.0, 0.0) in positions
+        assert (2.0, 2.0) in positions
+
+
+# ---------------------------------------------------------------------------
+# Seeding box volume logging
+# ---------------------------------------------------------------------------
+
+class TestComputeSeedingArea:
+
+    def test_bbox_string(self):
+        area = _compute_seeding_area('random', {'bbox': '0,0 4,3'})
+        assert area == pytest.approx(12.0)
+
+    def test_bbox_dict(self):
+        area = _compute_seeding_area('grid', {'bbox': {'xmin': 1.0, 'ymin': 2.0, 'xmax': 5.0, 'ymax': 6.0}})
+        assert area == pytest.approx(16.0)
+
+    def test_poly_square(self):
+        area = _compute_seeding_area('random', {'poly': ['0,0', '2,0', '2,2', '0,2']})
+        assert area == pytest.approx(4.0)
+
+    def test_poly_triangle(self):
+        # right triangle base=4, height=4 → area=8
+        area = _compute_seeding_area('grid', {'poly': ['0,0', '4,0', '0,4']})
+        assert area == pytest.approx(8.0)
+
+    def test_point_strategy_returns_none(self):
+        assert _compute_seeding_area('point', {'locations': ['0,0']}) is None
+
+    def test_transect_strategy_returns_none(self):
+        assert _compute_seeding_area('transect', {'segments': ['0,0 1,1'], 'k': 2}) is None
+
+    def test_file_points_strategy_returns_none(self):
+        assert _compute_seeding_area('file_points', {'path': 'x.csv'}) is None
+
+    def test_no_area_key_returns_none(self):
+        assert _compute_seeding_area('random', {'seed': 1, 'nlocations': 5}) is None
+
+
+class TestLogSeedingBoxVolume:
+
+    def _make_random_config(self, burial_depth, bbox='0,0 4,3', nlocations=6, quantity=2):
+        return PopulationConfig({
+            'name': 'test_pop',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'bbox': bbox, 'nlocations': nlocations, 'seed': 1}},
+                'quantity': quantity,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': burial_depth,
+            },
+        })
+
+    def test_logs_when_random_burial_and_bbox(self, caplog):
+        config = self._make_random_config({'random': 3.0})
+        positions = [(2, 1.0, 1.0), (2, 2.0, 2.0), (2, 3.0, 3.0)]  # 6 particles total
+        with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
+            _log_seeding_box_volume(config, positions)
+        assert len(caplog.records) == 1
+        msg = caplog.records[0].message
+        # area = 4*3=12, depth=3, volume=36, n=6, repr=6.0
+        assert '12' in msg
+        assert '36' in msg
+        assert '6' in msg
+        assert 'test_pop' in msg
+
+    def test_no_log_for_constant_burial(self, caplog):
+        config = self._make_random_config({'constant': 1.0})
+        positions = [(1, 0.0, 0.0)]
+        with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
+            _log_seeding_box_volume(config, positions)
+        assert caplog.records == []
+
+    def test_no_log_for_point_strategy(self, caplog):
+        config = PopulationConfig({
+            'name': 'pts',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0,0', '1,1']}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'random': 2.0},
+            },
+        })
+        positions = [(1, 0.0, 0.0), (1, 1.0, 1.0)]
+        with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
+            _log_seeding_box_volume(config, positions)
+        assert caplog.records == []
+
+    def test_logs_with_poly(self, caplog):
+        config = PopulationConfig({
+            'name': 'poly_pop',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'poly': ['0,0', '2,0', '2,2', '0,2'], 'nlocations': 4, 'seed': 1}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'random': 5.0},
+            },
+        })
+        # 4 positions × qty 1 = 4 particles; area=4, depth=5, volume=20, repr=5
+        positions = [(1, 0.5, 0.5), (1, 1.5, 0.5), (1, 0.5, 1.5), (1, 1.5, 1.5)]
+        with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
+            _log_seeding_box_volume(config, positions)
+        assert len(caplog.records) == 1
+        msg = caplog.records[0].message
+        assert '20' in msg   # volume
+        assert '4' in msg    # n_particles or area
+        assert '5' in msg    # depth or repr volume
+
+    def test_factory_emits_log_for_random_burial_bbox(self, caplog):
+        config = PopulationConfig({
+            'name': 'factory_test',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'random': {'bbox': '0,0 10,10', 'nlocations': 5, 'seed': 42}},
+                'quantity': 2,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'random': 2.0},
+            },
+        })
+        with caplog.at_level('INFO', logger='sedtrails.particle_tracer.particle_seeder'):
+            ParticleFactory.create_particles(config)
+        assert any('volume' in r.message.lower() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Permanently-buried particle removal
+# ---------------------------------------------------------------------------
+
+def _make_population(burial_depth_cfg, remove_flag=False, n_pts=4):
+    """Create a minimal ParticlePopulation on a unit-square grid."""
+    config = PopulationConfig({
+        'name': 'test_pop',
+        'particle_type': 'sand',
+        'seeding': {
+            'strategy': {'point': {'locations': [f'{i},{i}' for i in range(n_pts)]}},
+            'quantity': 1,
+            'release_start': '2025-01-01 00:00:00',
+            'burial_depth': burial_depth_cfg,
+            'remove_permanently_buried': remove_flag,
+        },
+    })
+    # Grid: unit square with enough nodes to contain the seed points
+    field_x = np.array([0.0, 4.0, 4.0, 0.0])
+    field_y = np.array([0.0, 0.0, 4.0, 4.0])
+    return ParticlePopulation(field_x=field_x, field_y=field_y, population_config=config)
+
+
+class TestRemovePermanentlyBuriedParticles:
+
+    def test_flag_off_removes_nothing(self):
+        pop = _make_population({'constant': 5.0}, remove_flag=False)
+        n_before = len(pop.particles['x'])
+        # Even with zero max_exposure, nothing is removed when flag is off
+        max_exposure = np.zeros(4)
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert removed == 0
+        assert len(pop.particles['x']) == n_before
+
+    def test_removes_particles_deeper_than_exposure(self):
+        # 4 particles, burial_depth = 5.0 (constant)
+        # max_exposure at every node = 3.0  →  5.0 > 3.0, all removed
+        pop = _make_population({'constant': 5.0}, remove_flag=True)
+        n_before = len(pop.particles['x'])
+        max_exposure = np.full(4, 3.0)
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert removed == n_before
+        assert len(pop.particles['x']) == 0
+
+    def test_keeps_particles_shallower_than_exposure(self):
+        # burial_depth = 1.0, max_exposure = 3.0  →  all kept
+        pop = _make_population({'constant': 1.0}, remove_flag=True)
+        n_before = len(pop.particles['x'])
+        max_exposure = np.full(4, 3.0)
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert removed == 0
+        assert len(pop.particles['x']) == n_before
+
+    def test_partial_removal(self):
+        # Place particles exactly at grid node positions so interpolation is exact.
+        # Grid nodes: (0,0), (4,0), (4,4), (0,4).
+        # burial_depth = 2.0 for all particles.
+        # max_exposure at nodes: [10, 10, 0.5, 0.5]
+        #   → particles at (0,0),(4,0): 2.0 ≤ 10  → kept
+        #   → particles at (4,4),(0,4): 2.0 > 0.5 → removed
+        config = PopulationConfig({
+            'name': 'partial_test',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0,0', '4,0', '4,4', '0,4']}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 2.0},
+                'remove_permanently_buried': True,
+            },
+        })
+        field_x = np.array([0.0, 4.0, 4.0, 0.0])
+        field_y = np.array([0.0, 0.0, 4.0, 4.0])
+        pop = ParticlePopulation(field_x=field_x, field_y=field_y, population_config=config)
+        max_exposure = np.array([10.0, 10.0, 0.5, 0.5])
+        n_before = len(pop.particles['x'])
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert 0 < removed < n_before
+        assert len(pop.particles['x']) == n_before - removed
+
+    def test_simplices_updated_after_removal(self):
+        pop = _make_population({'constant': 5.0}, remove_flag=True)
+        n_before = len(pop._particle_simplices)
+        max_exposure = np.full(4, 3.0)
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert len(pop._particle_simplices) == n_before - removed
+
+    def test_all_particle_arrays_trimmed(self):
+        pop = _make_population({'constant': 5.0}, remove_flag=True)
+        # Manually set extra particle keys to test they are all trimmed
+        n = len(pop.particles['x'])
+        pop.particles['burial_depth'] = np.full(n, 5.0)
+        pop.particles['some_extra_field'] = np.ones(n)
+        max_exposure = np.zeros(4)
+        pop.remove_permanently_buried_particles(max_exposure)
+        for key, arr in pop.particles.items():
+            assert len(arr) == 0, f"Key '{key}' not trimmed"
+
+    def test_nan_exposure_keeps_particle(self):
+        # NaN max_exposure should be treated as inf (keep particle conservatively)
+        pop = _make_population({'constant': 999.0}, remove_flag=True)
+        max_exposure = np.full(4, np.nan)
+        removed = pop.remove_permanently_buried_particles(max_exposure)
+        assert removed == 0
+
+    def test_logs_removal_info(self, caplog):
+        pop = _make_population({'constant': 5.0}, remove_flag=True)
+        max_exposure = np.zeros(4)
+        with caplog.at_level('WARNING', logger='sedtrails.particle_tracer.particle_seeder'):
+            pop.remove_permanently_buried_particles(max_exposure)
+        assert any('permanently buried' in r.message.lower() for r in caplog.records)
+
+    def test_logs_no_removal_debug(self, caplog):
+        pop = _make_population({'constant': 0.5}, remove_flag=True)
+        max_exposure = np.full(4, 10.0)
+        with caplog.at_level('DEBUG', logger='sedtrails.particle_tracer.particle_seeder'):
+            pop.remove_permanently_buried_particles(max_exposure)
+        assert any('no permanently buried' in r.message.lower() for r in caplog.records)
+
+    def test_config_flag_read_from_population_config(self):
+        config = PopulationConfig({
+            'name': 'p', 'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0,0']}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+                'remove_permanently_buried': True,
+            },
+        })
+        assert config.remove_permanently_buried is True
+
+    def test_config_flag_defaults_to_false(self):
+        config = PopulationConfig({
+            'name': 'p', 'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0,0']}},
+                'quantity': 1,
+                'release_start': '2025-01-01 00:00:00',
+                'burial_depth': {'constant': 0.0},
+                # remove_permanently_buried not specified
+            },
+        })
+        assert config.remove_permanently_buried is False

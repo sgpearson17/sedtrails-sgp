@@ -467,6 +467,15 @@ class Simulation:
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
 
+        # Permanently remove particles that can never be exposed during the simulation.
+        # Only done when at least one population has remove_permanently_buried=True, to
+        # avoid scanning the full dataset unnecessarily.
+        if any(pop.population_config.remove_permanently_buried for pop in populations):
+            with self._profile_section('get_max_exposure_depth'):
+                max_exposure_depth = self.format_converter.get_max_exposure_depth(self.physics_converter)
+            for pop in populations:
+                pop.remove_permanently_buried_particles(max_exposure_depth)
+
         # Set initial values
         sedtrails_data = None
 
@@ -637,9 +646,9 @@ class Simulation:
                 _time=cache_time,
             ):
                 cache_key = ('scalar_bounds', _time, scalar_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_scalar_field_bounds(_time, scalar_field_name)
+                # if cache_key not in _cache:
+                with self._profile_section(profile_name):
+                    _cache[cache_key] = _retriever.get_scalar_field_bounds(_time, scalar_field_name)
                 return _cache[cache_key]
 
             max_velocity = 0.0
@@ -666,9 +675,11 @@ class Simulation:
                     )
                 tracer_method = tracer_methods[ip]
                 for flow_field_name in flow_field_names:
+
                     # Obtain scalar field information
                     # TODO: Consider moving van westen specific fields to the plugin itself
                     bed_level = get_scalar_field_bounds_cached('bed_level', 'get_scalar_field.bed_level')
+
                     mixing_depth = None
                     if tracer_method == 'vanwesten':
                         transport_prob = get_scalar_field_bounds_cached(
@@ -710,6 +721,10 @@ class Simulation:
                     # Update particle position
                     with self._profile_section('update_position'):
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+
+                    # Update particle bed level based on new position to inform burial depth in the next iteration
+                    if tracer_method == 'vanwesten':
+                        population.update_bed_level_change_after_movement(bed_level)
 
             # Collect data from all populations for this timestep using DataManager
             self.data_manager.collect_timestep_data(xr_data, populations, timer.step_count, timer.current)
