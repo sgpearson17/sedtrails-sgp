@@ -109,6 +109,12 @@
                     "type": "number",
                     "default": 0.2,
                     "description": "beta parameter for van Westen method"
+                },
+                "suspended_velocity_method": {
+                    "type": "string",
+                    "enum": ["soulsby_2011", "macdonald_2006"],
+                    "default": "soulsby_2011",
+                    "description": "Method for computing suspended sediment velocity. 'soulsby_2011': Rouse-profile ratio (van Westen et al. 2025). 'macdonald_2006': log-profile at suspended sediment centroid height (MacDonald 2006, Eqs. 27-29)."
                 }
             },
             "description": "van Westen method for particle tracking"

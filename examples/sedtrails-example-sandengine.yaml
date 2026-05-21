@@ -20,7 +20,8 @@ particles:
         density: 2650.0  
       tracer_methods:
         vanwesten:
-          flow_field_name: 
+          suspended_velocity_method: macdonald_2006
+          flow_field_name:
             - bed_load_velocity
             - suspended_velocity
       transport_probability: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity

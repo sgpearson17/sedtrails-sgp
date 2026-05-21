@@ -30,6 +30,7 @@ class PhysicsConfig:
 
     # Physics methods
     tracer_method: str = 'vanwesten'  # name of method for
+    suspended_velocity_method: str = 'soulsby_2011'  # default suspended velocity method
     gravity: float = GRAVITY
     von_karman_constant: float = VON_KARMAN_CONSTANT
     kinematic_viscosity: float = KINEMATIC_VISCOSITY

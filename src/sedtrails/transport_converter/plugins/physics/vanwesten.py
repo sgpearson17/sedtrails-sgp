@@ -105,6 +105,22 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         if settling_velocity is None:
             raise ValueError("Missing required 'settling_velocity' value in grain_prperties.")
 
+        suspended_velocity_method_str = getattr(self.config, 'suspended_velocity_method', 'soulsby_2011')
+        try:
+            suspended_velocity_method = physics_lib.SuspendedVelocityMethod(suspended_velocity_method_str)
+        except ValueError:
+            raise ValueError(
+                f"Unknown suspended_velocity_method '{suspended_velocity_method_str}'. "
+                f"Valid options: {[m.value for m in physics_lib.SuspendedVelocityMethod]}"
+            )
+
+        suspended_velocity_kwargs = {}
+        if suspended_velocity_method == physics_lib.SuspendedVelocityMethod.MACDONALD_2006:
+            suspended_velocity_kwargs = {
+                'water_depth': sedtrails_data.water_depth,
+                'grain_diameter': self.config.grain_diameter,
+            }
+
         suspended_velocity = physics_lib.compute_suspended_velocity(
             flow_velocity_magnitude,
             bed_load_velocity,
@@ -113,7 +129,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             max_shear_velocity,
             shields_number,
             critical_shields,
-            method=physics_lib.SuspendedVelocityMethod.SOULSBY_2011,
+            method=suspended_velocity_method,
+            **suspended_velocity_kwargs,
         )
 
         # Compute layer thicknesses using squeezed transport data
