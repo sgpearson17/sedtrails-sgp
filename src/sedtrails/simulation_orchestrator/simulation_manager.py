@@ -19,8 +19,12 @@ from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.timer import Duration, Time, Timer
 from sedtrails.pathway_visualizer import SimulationDashboard
 from sedtrails.simulation_orchestrator.global_logger import log_simulation_state, setup_logging
+from sedtrails.simulation_orchestrator.runtime_plan import (
+    build_plan_sedtrails_data,
+    build_population_runtime_plans,
+    unique_flow_field_names,
+)
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
-from sedtrails.transport_converter.physics_converter import PhysicsConverter
 
 
 class Simulation:
@@ -73,13 +77,8 @@ class Simulation:
         except Exception:
             # Global exception handler will catch and log this
             raise
-
-        for population in self.populations_config:  # FIXME: this just keeps the last one
-            tracer_config = population['tracer_methods']
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
-        # Added population_config for the soulsby method
-        self.physics_converter = PhysicsConverter(self._get_physics_config(), tracer_config)
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
@@ -329,13 +328,7 @@ class Simulation:
         """
         from sedtrails.transport_converter.physics_converter import PhysicsConfig
 
-        # TODO implement configuration controller for multiple populations in a robust way
-        # TODO make sure the tracer_methods in config file match exactly with the plugin file name
-        tracer_method = self._controller.get('particles.populations')[0].get('tracer_methods', 'vanwesten')
-        if isinstance(tracer_method, dict):
-            tracer_method = list(tracer_method.keys())[0]
         config = PhysicsConfig(
-            tracer_method=tracer_method,
             gravity=self._controller.get('physics.constants.g', 9.81),
             von_karman_constant=self._controller.get('physics.constants.von_karman', 0.40),
             kinematic_viscosity=self._controller.get('physics.constants.kinematic_viscosity', 1.36e-6),
@@ -466,6 +459,8 @@ class Simulation:
         populations_config = self._controller.get('particles.populations', [])
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
+        runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
+        flow_field_names = unique_flow_field_names(runtime_plans)
 
         # Set initial values
         sedtrails_data = None
@@ -489,23 +484,6 @@ class Simulation:
                 'working_directory': os.getcwd(),
             },
         )
-
-        # Determine flow field names from configuration
-        # tracer_methods is obligatory, so all these checks are not needed.
-        flow_field_names = []
-        for population in populations_config:
-            # if 'tracer_methods' in population and (
-            #     'vanwesten' in population['tracer_methods'] or 'soulsby' in population['tracer_methods']
-            # ):
-            if 'tracer_methods' in population:
-                if 'vanwesten' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['vanwesten']['flow_field_name']
-                elif 'soulsby' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['soulsby']['flow_field_name']
-                elif 'passive_tracer' in population['tracer_methods']:
-                    flow_field_names = population['tracer_methods']['passive_tracer']['flow_field_name']
-                break  # Use the first population's flow fields for now
-
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         estimated_timesteps = (simulation_time.duration.seconds // simulation_time.time_step.seconds) + 1
@@ -524,6 +502,8 @@ class Simulation:
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
+        plan_retrievers = {}
+        dashboard_flow_field = None
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
@@ -537,17 +517,12 @@ class Simulation:
                     sedtrails_data = self.format_converter.convert_to_sedtrails(
                         current_time=current_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                     )
-
-                # Convert physics fields with transport probability configuration
-                for pop in self.populations_config:
-                    with self._profile_section('convert_physics'):
-                        self.physics_converter.convert_physics(
-                            sedtrails_data=sedtrails_data,
-                            transport_probability_method=pop.get('transport_probability'),
-                        )
-
-                # Create new FieldDataRetriever with updated data
-                retriever = FieldDataRetriever(sedtrails_data)  # TODO: should the retriever only be created once?
+                plan_retrievers = {
+                    runtime_plan.population_index: FieldDataRetriever(
+                        build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
+                    )
+                    for runtime_plan in runtime_plans
+                }
 
                 if self._is_after_loaded_sedtrails_data(sedtrails_data, current_time_seconds):
                     input_data_exhausted = True
@@ -562,92 +537,15 @@ class Simulation:
 
             # TODO: integrate loop over flow fields into CFL Condition
             # Collect flow fields for CFL computation
-            tracer_methods = {}
-            # TODO: this loops over populations_config, but only the last one is used. This must be fixed
-            # to handle multiple populations with different tracer methods and flow fields
-            for ip, population in enumerate(populations_config):
-                tracer_cfg = population.get('tracer_methods', {})
-                if isinstance(tracer_cfg, dict) and tracer_cfg:
-                    tracer_methods[ip] = next(iter(tracer_cfg.keys()))
-                elif isinstance(tracer_cfg, str):
-                    tracer_methods[ip] = tracer_cfg
-                else:
-                    tracer_methods[ip] = 'passive_tracer'
-
-            field_cache = {}
-            cache_time = timer.current
-
-            def get_flow_field_cached(
-                flow_field_name: str,
-                profile_name: str,
-                _cache=field_cache,
-                _retriever=retriever,
-                _time=cache_time,
-            ):
-                cache_key = ('flow', _time, flow_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_flow_field(_time, flow_field_name)
-                return _cache[cache_key]
-
-            def get_flow_field_bounds_cached(
-                flow_field_name: str,
-                profile_name: str,
-                _cache=field_cache,
-                _retriever=retriever,
-                _time=cache_time,
-            ):
-                cache_key = ('flow_bounds', _time, flow_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_flow_field_bounds(_time, flow_field_name)
-                return _cache[cache_key]
-
-            def get_flow_max_velocity_cached(
-                flow_field_name: str,
-                profile_name: str,
-                _cache=field_cache,
-                _retriever=retriever,
-                _time=cache_time,
-            ):
-                cache_key = ('flow_max_velocity', _time, flow_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_flow_max_velocity_bound(_time, flow_field_name)
-                return _cache[cache_key]
-
-            def get_scalar_field_cached(
-                scalar_field_name: str,
-                profile_name: str,
-                _cache=field_cache,
-                _retriever=retriever,
-                _time=cache_time,
-            ):
-                cache_key = ('scalar', _time, scalar_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_scalar_field(_time, scalar_field_name)['magnitude']
-                return _cache[cache_key]
-
-            def get_scalar_field_bounds_cached(
-                scalar_field_name: str,
-                profile_name: str,
-                _cache=field_cache,
-                _retriever=retriever,
-                _time=cache_time,
-            ):
-                cache_key = ('scalar_bounds', _time, scalar_field_name)
-                if cache_key not in _cache:
-                    with self._profile_section(profile_name):
-                        _cache[cache_key] = _retriever.get_scalar_field_bounds(_time, scalar_field_name)
-                return _cache[cache_key]
-
             max_velocity = 0.0
-            for flow_field_name in flow_field_names:
-                max_velocity = max(
-                    max_velocity,
-                    get_flow_max_velocity_cached(flow_field_name, 'get_flow_max_velocity.cfl'),
-                )
+            for runtime_plan in runtime_plans:
+                retriever = plan_retrievers[runtime_plan.population_index]
+                for flow_field_name in runtime_plan.tracer.flow_field_names:
+                    with self._profile_section('get_flow_max_velocity.cfl'):
+                        max_velocity = max(
+                            max_velocity,
+                            retriever.get_flow_max_velocity_bound(timer.current, flow_field_name),
+                        )
 
             # Compute CFL-based timestep across all flow fields
             with self._profile_section('compute_cfl_timestep'):
@@ -658,37 +556,26 @@ class Simulation:
                 )
 
             # Main loop
-            for ip, population in enumerate(populations):
-                if ip not in tracer_methods:
-                    raise ConfigurationError(
-                        f'Tracer method not configured for population {ip}. '
-                        f'Check that all populations have "tracer_methods" defined in configuration.'
-                    )
-                tracer_method = tracer_methods[ip]
-                for flow_field_name in flow_field_names:
-                    # Obtain scalar field information
-                    # TODO: Consider moving van westen specific fields to the plugin itself
-                    bed_level = get_scalar_field_bounds_cached('bed_level', 'get_scalar_field.bed_level')
-                    mixing_depth = None
-                    if tracer_method == 'vanwesten':
-                        transport_prob = get_scalar_field_bounds_cached(
-                            flow_field_name.replace('velocity', 'probability'),
-                            'get_scalar_field.transport_probability',
-                        )
-                        mixing_depth = get_scalar_field_bounds_cached(
-                            'mixing_layer_thickness',
-                            'get_scalar_field.mixing_layer_thickness',
-                        )
-                    elif tracer_method == 'soulsby':
-                        transport_prob = 1.0
-                        mixing_depth = get_scalar_field_bounds_cached(
-                            'mixing_layer_thickness',
-                            'get_scalar_field.mixing_layer_thickness',
-                        )
-                    else:
-                        transport_prob = 1.0
+            dashboard_flow_field = None
+            for runtime_plan in runtime_plans:
+                population = runtime_plan.population
+                tracer_plan = runtime_plan.tracer
+                retriever = plan_retrievers[runtime_plan.population_index]
 
-                    # Update information at particle positions
+                with self._profile_section('get_scalar_field.mixing_layer_thickness'):
+                    mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                with self._profile_section('get_scalar_field.bed_level'):
+                    bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+
+                for flow_field_name in tracer_plan.flow_field_names:
+                    if tracer_plan.method_name == 'vanwesten':
+                        with self._profile_section('get_scalar_field.transport_probability'):
+                            transport_prob = retriever.get_scalar_field(
+                                timer.current, flow_field_name.replace('velocity', 'probability')
+                            )['magnitude']
+                    else:
+                        transport_prob = np.ones_like(bed_level)
+
                     with self._profile_section('update_information'):
                         population.update_information(
                             current_time=timer.current,
@@ -697,17 +584,16 @@ class Simulation:
                             transport_probability=transport_prob,
                         )
 
-                    # Update particle burial depth
-                    if tracer_method == 'vanwesten':
+                    if tracer_plan.method_name == 'vanwesten':
                         population.update_burial_depth()
 
-                    # Determining status
                     population.update_status()
 
-                    # Get flow field information
-                    flow_field = get_flow_field_bounds_cached(flow_field_name, 'get_flow_field.update_position')
+                    with self._profile_section('get_flow_field.update_position'):
+                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+                    if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
+                        dashboard_flow_field = flow_field
 
-                    # Update particle position
                     with self._profile_section('update_position'):
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
@@ -722,14 +608,15 @@ class Simulation:
                 xr_data = self._expand_time_dimension(xr_data, max_timesteps)
 
             # Update dashboard if enabled
-            if self._should_update_dashboard(sedtrails_data, timer):
+            if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
                 plot_interval_seconds = self._dashboard_update_interval_seconds()
                 if self.dashboard.should_update(timer.current, plot_interval_seconds):
                     # For dashboard, use first population data
                     first_population = populations[0]
                     particle_data = self._dashboard_particle_data(first_population)
-                    bathymetry = get_scalar_field_cached('bed_level', 'get_scalar_field.dashboard_bed_level')
-                    dashboard_flow_field = get_flow_field_cached(flow_field_names[0], 'get_flow_field.dashboard')
+                    dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
+                    with self._profile_section('get_scalar_field.dashboard_bed_level'):
+                        bathymetry = dashboard_retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
                     mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
                     self.dashboard.update(
