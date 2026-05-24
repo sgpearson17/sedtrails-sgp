@@ -16,10 +16,12 @@ from ._helpers import (
 )
 
 
-def test_longitudinal_shear_adapted_linear_shear(tmp_path):
+def test_longitudinal_shear_adapted_linear_shear():
+    """Validate linear zonal flow against the analytic shear solution."""
     gx, gy = rect_grid(-15_000_000.0, 15_000_000.0, 121, -8_000_000.0, 8_000_000.0, 81)
     calculator = create_numba_particle_calculator(gx, gy)
 
+    # Convert degrees to meters using a flat-Earth approximation.
     meters_per_degree = 111_000.0
     u_m_per_s = 1.0
 
@@ -30,6 +32,7 @@ def test_longitudinal_shear_adapted_linear_shear(tmp_path):
     y0 = np.linspace(-30.0, 60.0, x0.size) * meters_per_degree
 
     total_time = 57.0 * 86_400.0
+    # Integrate particle trajectories and sample a daily history.
     x_end, y_end, times, xs, ys = integrate_time_dependent(
         calculator,
         x0,
@@ -41,19 +44,19 @@ def test_longitudinal_shear_adapted_linear_shear(tmp_path):
         history_stride=int(86_400.0 / 300.0),
     )
 
+    # Analytic solution is uniform advection in x with constant u.
     u_particles = np.full_like(y0, u_m_per_s)
     x_true = x0 + u_particles * total_time
     y_true = y0
 
-    maybe_save_artifact(tmp_path, '02_longitudinal_shear_x_error', x_end - x_true)
-    maybe_save_artifact(tmp_path, '02_longitudinal_shear_y_error', y_end - y_true)
+    maybe_save_artifact('02_longitudinal_shear_x_error', x_end - x_true)
+    maybe_save_artifact('02_longitudinal_shear_y_error', y_end - y_true)
 
     analytic_x = np.stack([x0 + u_particles * t for t in times])
     analytic_y = np.stack([y0 for _ in times])
     skill_mean, skill_std, _ = liu_weisberg_skill(analytic_x, analytic_y, xs, ys)
 
     write_metrics(
-        tmp_path,
         '02_longitudinal_shear_metrics',
         {
             'max_abs_x_error_m': float(np.max(np.abs(x_end - x_true))),
@@ -94,7 +97,7 @@ def test_longitudinal_shear_adapted_linear_shear(tmp_path):
         ax.legend(**legend_style())
         return fig
 
-    maybe_save_plot(tmp_path, '02_longitudinal_shear_comparison', _plot)
+    maybe_save_plot('02_longitudinal_shear_comparison', _plot)
 
     np.testing.assert_allclose(x_end, x_true, rtol=1e-2, atol=2.0)
     np.testing.assert_allclose(y_end, y_true, rtol=1e-6, atol=1e-6)

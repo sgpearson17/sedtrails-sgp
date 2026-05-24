@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import numpy as np
@@ -15,35 +14,22 @@ def rect_grid(xmin, xmax, nx, ymin, ymax, ny):
     return xg.ravel(), yg.ravel()
 
 
-def _artifacts_enabled():
-    return os.getenv('TEST_SAVE_ARTIFACTS', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+def _output_dir() -> Path:
+    output_dir = Path(__file__).resolve().parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
 
 
-def _output_dir(tmp_path):
-    override = os.getenv('BENCHMARK_OUTPUT_DIR', '').strip()
-    if override:
-        path = Path(override)
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-    return Path(tmp_path)
+def maybe_save_artifact(name, array):
+    np.save(_output_dir() / f'{name}.npy', np.asarray(array))
 
 
-def maybe_save_artifact(tmp_path, name, array):
-    if not _artifacts_enabled():
-        return
-    np.save(_output_dir(tmp_path) / f'{name}.npy', np.asarray(array))
-
-
-def write_metrics(tmp_path, name, metrics):
-    if not _artifacts_enabled():
-        return
+def write_metrics(name, metrics):
     lines = [f'{key}: {value}' for key, value in metrics.items()]
-    ( _output_dir(tmp_path) / f'{name}.txt').write_text('\n'.join(lines), encoding='utf-8')
+    (_output_dir() / f'{name}.txt').write_text('\n'.join(lines), encoding='utf-8')
 
 
-def maybe_save_plot(tmp_path, name, plot_fn):
-    if not _artifacts_enabled():
-        return
+def maybe_save_plot(name, plot_fn):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -60,7 +46,7 @@ def maybe_save_plot(tmp_path, name, plot_fn):
             }
         )
         fig = plot_fn()
-        fig.savefig(_output_dir(tmp_path) / f'{name}.png', dpi=200, bbox_inches='tight')
+        fig.savefig(_output_dir() / f'{name}.png', dpi=200, bbox_inches='tight')
         plt.close(fig)
     finally:
         plt.rcParams.update(original_rc)

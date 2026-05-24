@@ -14,7 +14,8 @@ from ._helpers import (
 )
 
 
-def test_stommel_gyre_streamfunction_conservation(tmp_path):
+def test_stommel_gyre_streamfunction_conservation():
+    """Validate streamfunction conservation for a Stommel gyre."""
     a = b = 10_000.0
     eps = 0.05
     amplitude = 100.0
@@ -30,6 +31,7 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
     c1 = (1.0 - np.exp(l2)) / (np.exp(l2) - np.exp(l1))
     c2 = -(1.0 + c1)
 
+    # Streamfunction for the analytic Stommel gyre solution.
     def psi_fn(x, y):
         xi = x / a
         yi = y / b
@@ -58,6 +60,7 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
     dt = 300.0
     history_stride = int(86_400.0 / dt)
 
+    # Integrate trajectories over a long window to check drift.
     x_end, y_end, times, xs, ys = integrate_time_dependent(
         calculator,
         x0,
@@ -70,11 +73,11 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
     )
     psi_end = psi_fn(x_end, y_end)
 
+    # Relative streamfunction error provides a scale-aware tolerance.
     psi_rel = np.abs(psi_end - psi0) / np.maximum(np.abs(psi0), 1.0)
-    maybe_save_artifact(tmp_path, '05_stommel_streamfunction_relative_error', psi_rel)
+    maybe_save_artifact('05_stommel_streamfunction_relative_error', psi_rel)
 
     write_metrics(
-        tmp_path,
         '05_stommel_metrics',
         {
             'max_rel_psi_error': float(np.max(psi_rel)),
@@ -137,11 +140,11 @@ def test_stommel_gyre_streamfunction_conservation(tmp_path):
             sed_style.pop('markevery', None)
             ax.plot(times, psi_hist - psi0[idx], **sed_style, label=f'particle {idx + 1}')
         ax.set_xlabel('time [s]', fontdict=fontdict)
-        ax.set_ylabel('psi error', fontdict=fontdict)
+        ax.set_ylabel('psi error [km^2/s]', fontdict=fontdict)
         ax.set_title('Stommel gyre: streamfunction error', fontdict=fontdict)
         return fig
 
-    maybe_save_plot(tmp_path, '05_stommel_trajectories', _plot)
-    maybe_save_plot(tmp_path, '05_stommel_psi_error', _plot_psi)
+    maybe_save_plot('05_stommel_trajectories', _plot)
+    maybe_save_plot('05_stommel_psi_error', _plot_psi)
 
     assert np.max(psi_rel) < 1e-2

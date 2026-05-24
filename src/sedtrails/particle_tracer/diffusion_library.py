@@ -4,6 +4,14 @@ from typing import Tuple
 
 import numpy as np
 
+__all__ = [
+    "DiffusionStrategy",
+    "GradientDiffusionStrategy",
+    "RandomDiffusionStrategy",
+    "BrownianDiffusionStrategy",
+    "DiffusionCalculator",
+]
+
 
 class DiffusionStrategy(ABC):
     """Abstract base class for diffusion strategies."""
@@ -36,7 +44,7 @@ class DiffusionStrategy(ABC):
         pass
 
 
-class GradientDiffusion(DiffusionStrategy):
+class GradientDiffusionStrategy(DiffusionStrategy):
     """
     Diffusion based on spatial gradients of the velocity field.
     """
@@ -82,7 +90,7 @@ class GradientDiffusion(DiffusionStrategy):
         return xdif, ydif
 
 
-class RandomDiffusion(DiffusionStrategy):
+class RandomDiffusionStrategy(DiffusionStrategy):
     """
     Random walk diffusion model.
     """
@@ -109,7 +117,7 @@ class RandomDiffusion(DiffusionStrategy):
         return xdif, ydif
 
 
-class BrownianDiffusion(DiffusionStrategy):
+class BrownianDiffusionStrategy(DiffusionStrategy):
     """Isotropic Brownian diffusion using a constant kh coefficient."""
 
     def calculate(

@@ -14,16 +14,6 @@ The suite is intentionally split into one pytest per benchmark so that CI can re
 * Damped inertial oscillation
 * Brownian motion
 
-Test design rules
------------------
-
-* Prefer analytical or moment-based assertions over visual inspection.
-* Keep the stochastic case deterministic by fixing the random seed.
-* Keep artifacts optional and gated by ``TEST_SAVE_ARTIFACTS=1``.
-* Keep the full suite fast enough for CI; the current target is under 30 seconds.
-* Plot axes use zonal/meridional distance in kilometers except where noted (e.g.,
-  longitudinal shear uses degrees to mirror the original script).
-
 What the tests exercise
 -----------------------
 
@@ -39,7 +29,7 @@ stack (interpolation + time integration), not a bespoke integrator. Specifically
 	enabled).
 * ``FieldDataRetriever`` (with ``SedtrailsData``) is used in the time-oscillation
 	benchmark to exercise the full retrieval + advection path.
-* ``BrownianDiffusion`` is used directly in the Brownian benchmark to validate the
+* ``BrownianDiffusionStrategy`` is used directly in the Brownian benchmark to validate the
 	diffusion operator against analytic moments.
 
 Running the suite
@@ -51,38 +41,10 @@ From a shell in the repository root:
 
 	python -m pytest tests/analytical -q
 
-To enable artifact output (plots, NumPy ``.npy`` files, and metrics ``.txt`` files) use an environment variable.
-
-PowerShell:
-
-.. code-block:: powershell
-
-	$env:TEST_SAVE_ARTIFACTS=1
-	python -m pytest tests/analytical -q
-
-CMD:
-
-.. code-block:: batch
-
-	set TEST_SAVE_ARTIFACTS=1
-	python -m pytest tests/analytical -q
-
-Bash:
-
-.. code-block:: bash
-
-	TEST_SAVE_ARTIFACTS=1 python -m pytest tests/analytical -q
-
 Artifact locations and plotting
 -------------------------------
 
-Artifacts are written into pytest's ``tmp_path`` for each test. By default this
-is a system temp folder like ``%LOCALAPPDATA%\Temp\pytest-*`` on Windows. You can
-pin the output location with ``--basetemp``:
-
-.. code-block:: bash
-
-	TEST_SAVE_ARTIFACTS=1 python -m pytest tests/analytical --basetemp ./.bench_artifacts
+Artifacts are written into ``tests/analytical/output`` by default.
 
 Each benchmark writes:
 
@@ -97,23 +59,18 @@ The peninsula and Stommel benchmarks use a streamfunction $\psi$ to describe the
 particles should remain on a constant-$\psi$ streamline. The psi error plots show $\psi(t) - \psi(t_0)$ for each particle; each line
 represents one particle, and values near zero indicate that particles remain on their initial streamlines.
 
+The streamfunction has units of length$^2$/time. Since these benchmarks plot $x$ and $y$ in kilometers, the psi error axis is in km$^2$/s.
+Use the relative error metrics (``*_streamfunction_relative_error.npy`` and ``*_metrics.txt``) to judge whether a deviation is significant.
+
 Small deviations from zero are expected because SedTRAILS uses barycentric interpolation on a discrete grid and a finite RK4 timestep.
 In the Stommel case, velocities are derived from finite differences of $\psi$, which adds additional discretization error.
 
-The longitudinal shear benchmark seeds particles from -30 to 60 degrees latitude
-and plots in degrees to match the original formulation on a flat grid. Peninsula
-and Stommel cases include additional seed points and longer integration windows
-to ensure better spatial coverage. The peninsula benchmark also stops early if
-any particle reaches x=100 km.
+The longitudinal shear benchmark seeds particles from -30 to 60 degrees latitude and plots in degrees to match the original formulation on a flat grid. Peninsula and Stommel cases include additional seed points and longer integration windows to ensure better spatial coverage. The peninsula benchmark also stops early if any particle reaches x=100 km.
 
 Consistency notes
 -----------------
 
-The test parameters are aligned with the Lange & van Sebille descriptions (RK4 with 5 min steps, particle counts, and runtime), but SedTRAILS
-operates on a flat Cartesian grid. Therefore, the longitudinal shear benchmark validates a uniform zonal flow using a degree-based grid and an
-approximate meters-to-degrees conversion rather than the spherical lon/lat conversion that Parcels performs internally. The Brownian benchmark
-samples the analytic Gaussian displacement directly to match the stated $K_h$ formulation, and the SedTRAILS random-walk operator uses the same
-$K_h$ coefficient.
+The test parameters are aligned with the Lange & van Sebille descriptions (RK4 with 5 min steps, particle counts, and runtime), but SedTRAILS operates on a flat Cartesian grid. Therefore, the longitudinal shear benchmark validates a uniform zonal flow using a degree-based grid and an approximate meters-to-degrees conversion rather than the spherical lon/lat conversion that Parcels performs internally. The Brownian benchmark samples the analytic Gaussian displacement directly to match the stated $K_h$ formulation, and the SedTRAILS random-walk operator uses the same $K_h$ coefficient.
 
 You can load and plot arrays with a short script, for example:
 
@@ -122,16 +79,10 @@ You can load and plot arrays with a short script, for example:
 	import numpy as np
 	import matplotlib.pyplot as plt
 
-	data = np.load('path/to/03_timeoscillation_x_error.npy')
+	data = np.load('tests/analytical/output/03_timeoscillation_x_error.npy')
 	plt.plot(data)
 	plt.title('Time oscillation x-error')
 	plt.show()
-
-You can also direct outputs to a fixed folder:
-
-.. code-block:: bash
-
-	TEST_SAVE_ARTIFACTS=1 BENCHMARK_OUTPUT_DIR=./bench_outputs python -m pytest tests/analytical -q
 
 Paper-ready overview figure + metrics summary
 --------------------------------------------
@@ -142,7 +93,7 @@ metrics summary text file using:
 
 .. code-block:: bash
 
-	python tests/analytical/benchmark_report.py --input-dir ./bench_outputs
+	python tests/analytical/benchmark_report.py --input-dir tests/analytical/output
 
 The script writes:
 
@@ -154,16 +105,10 @@ You can override the output locations if needed:
 .. code-block:: bash
 
 	python tests/analytical/benchmark_report.py \
-		--input-dir ./bench_outputs \
-		--output-figure ./bench_outputs/benchmarks_overview.png \
-		--output-metrics ./bench_outputs/benchmarks_metrics_summary.txt
+		--input-dir tests/analytical/output \
+		--output-figure tests/analytical/output/benchmarks_overview.png \
+		--output-metrics tests/analytical/output/benchmarks_metrics_summary.txt
 
-Integration smoke test
-----------------------
-
-A lightweight integration smoke test lives in ``tests/integration/test_passive_tracer_smoke.py``. It runs a minimal passive-tracer
-simulation using the bundled sample NetCDF input, and asserts that the output directory is created. This ensures the top-level
-simulation pipeline remains functional without tying the test to analytic reference trajectories.
 
 When to add a benchmark
 -----------------------

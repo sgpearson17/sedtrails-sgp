@@ -16,10 +16,12 @@ from ._helpers import (
 )
 
 
-def test_time_oscillation_with_field_retriever_integration(tmp_path):
+def test_time_oscillation_with_field_retriever_integration():
+    """Validate time-oscillating flow using the FieldDataRetriever pathway."""
     omega = 2.0 * np.pi / 86_400.0
     amplitude = 0.1
 
+    # Build a time-varying velocity field sampled at the same cadence as integration.
     times = np.arange(0.0, 4.0 * 86_400.0 + 300.0, 300.0)
     gx, gy = rect_grid(-20_000.0, 20_000.0, 2, 0.0, 40_000.0, 2)
 
@@ -42,6 +44,7 @@ def test_time_oscillation_with_field_retriever_integration(tmp_path):
     ys = [y.copy()]
     times_hist = [0.0]
 
+    # Integrate with the retriever to exercise the full data path.
     for step in range(nsteps):
         t = step * dt
         flow = retriever.get_flow_field(t, 'depth_avg_flow_velocity')
@@ -59,12 +62,13 @@ def test_time_oscillation_with_field_retriever_integration(tmp_path):
             ys.append(y.copy())
             times_hist.append(t + dt)
 
+    # Analytic solution for harmonic u(t) and constant v(t).
     total_time = nsteps * dt
     x_true = x0 + amplitude / omega * np.sin(omega * total_time)
     y_true = y0 + amplitude * total_time
 
-    maybe_save_artifact(tmp_path, '03_timeoscillation_x_error', x - x_true)
-    maybe_save_artifact(tmp_path, '03_timeoscillation_y_error', y - y_true)
+    maybe_save_artifact('03_timeoscillation_x_error', x - x_true)
+    maybe_save_artifact('03_timeoscillation_y_error', y - y_true)
 
     times_arr = np.asarray(times_hist)
     analytic_x = np.stack([x0 + amplitude / omega * np.sin(omega * t) for t in times_arr])
@@ -72,7 +76,6 @@ def test_time_oscillation_with_field_retriever_integration(tmp_path):
     skill_mean, skill_std, _ = liu_weisberg_skill(analytic_x, analytic_y, np.stack(xs), np.stack(ys))
 
     write_metrics(
-        tmp_path,
         '03_timeoscillation_metrics',
         {
             'max_abs_x_error_m': float(np.max(np.abs(x - x_true))),
@@ -112,7 +115,7 @@ def test_time_oscillation_with_field_retriever_integration(tmp_path):
         ax.legend(**legend_style())
         return fig
 
-    maybe_save_plot(tmp_path, '03_timeoscillation_comparison', _plot)
+    maybe_save_plot('03_timeoscillation_comparison', _plot)
 
     np.testing.assert_allclose(x, x_true, rtol=1e-2, atol=4.0)
     np.testing.assert_allclose(y, y_true, rtol=1e-2, atol=4.0)

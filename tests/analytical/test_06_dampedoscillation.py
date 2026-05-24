@@ -16,7 +16,8 @@ from ._helpers import (
 )
 
 
-def test_damped_inertial_oscillation(tmp_path):
+def test_damped_inertial_oscillation():
+    """Validate damped inertial oscillation against the analytic trajectory."""
     u_g = 0.04
     u_0 = 0.3
     gamma = 1.0 / (2.89 * 86_400.0)
@@ -26,6 +27,7 @@ def test_damped_inertial_oscillation(tmp_path):
     gx, gy = rect_grid(-20_000.0, 20_000.0, 5, -20_000.0, 20_000.0, 5)
     calculator = create_numba_particle_calculator(gx, gy)
 
+    # Time-dependent velocity with exponential damping.
     def velocity_fn(t):
         u = u_g * np.exp(-gamma_g * t) + (u_0 - u_g) * np.exp(-gamma * t) * np.cos(coriolis * t)
         v = -(u_0 - u_g) * np.exp(-gamma * t) * np.sin(coriolis * t)
@@ -46,6 +48,7 @@ def test_damped_inertial_oscillation(tmp_path):
     y0 = np.array([0.0])
 
     total_time = 4.0 * 86_400.0
+    # Integrate with temporal blending to exercise the temporal kernel.
     x_end, y_end, times, xs, ys = integrate_time_dependent(
         calculator,
         x0,
@@ -58,9 +61,10 @@ def test_damped_inertial_oscillation(tmp_path):
         history_stride=int(3_600.0 / 300.0),
     )
 
+    # Closed-form solution for the final position.
     x_true, y_true = true_values(total_time, x0[0], y0[0])
 
-    maybe_save_artifact(tmp_path, '06_dampedoscillation_xy_end', np.array([x_end[0], y_end[0], x_true, y_true]))
+    maybe_save_artifact('06_dampedoscillation_xy_end', np.array([x_end[0], y_end[0], x_true, y_true]))
 
     analytic_x = []
     analytic_y = []
@@ -73,7 +77,6 @@ def test_damped_inertial_oscillation(tmp_path):
     skill_mean, skill_std, _ = liu_weisberg_skill(analytic_x, analytic_y, xs, ys)
 
     write_metrics(
-        tmp_path,
         '06_dampedoscillation_metrics',
         {
             'abs_x_error_m': float(abs(x_end[0] - x_true)),
@@ -103,7 +106,7 @@ def test_damped_inertial_oscillation(tmp_path):
         ax.legend(**legend_style())
         return fig
 
-    maybe_save_plot(tmp_path, '06_dampedoscillation_comparison', _plot)
+    maybe_save_plot('06_dampedoscillation_comparison', _plot)
 
     np.testing.assert_allclose(x_end[0], x_true, rtol=1e-2, atol=20.0)
     np.testing.assert_allclose(y_end[0], y_true, rtol=1e-2, atol=20.0)

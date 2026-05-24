@@ -16,11 +16,13 @@ from ._helpers import (
 )
 
 
-def test_radial_rotation_closed_orbits(tmp_path):
+def test_radial_rotation_closed_orbits():
+    """Validate closed orbits for solid-body rotation against an analytic solution."""
     domain = 20_000.0
     gx, gy = rect_grid(-domain / 2, domain / 2, 201, -domain / 2, domain / 2, 201)
     calculator = create_numba_particle_calculator(gx, gy)
 
+    # Solid-body rotation rate for a 24-hour period.
     omega = 2.0 * np.pi / 86_400.0
 
     def velocity_fn(_t):
@@ -29,6 +31,7 @@ def test_radial_rotation_closed_orbits(tmp_path):
     x0 = np.zeros(4, dtype=np.float64)
     y0 = np.array([1_000.0, 2_000.0, 3_000.0, 4_000.0])
 
+    # Integrate trajectories and keep a history for comparison plots.
     x_end, y_end, times, xs, ys = integrate_time_dependent(
         calculator,
         x0,
@@ -40,15 +43,15 @@ def test_radial_rotation_closed_orbits(tmp_path):
         history_stride=12,
     )
 
+    # Closure error after one full rotation should be small.
     closing_error = np.sqrt((x_end - x0) ** 2 + (y_end - y0) ** 2)
-    maybe_save_artifact(tmp_path, '01_radial_rotation_closing_error', closing_error)
+    maybe_save_artifact('01_radial_rotation_closing_error', closing_error)
 
     analytic_x = np.stack([x0 * np.cos(omega * t) - y0 * np.sin(omega * t) for t in times])
     analytic_y = np.stack([x0 * np.sin(omega * t) + y0 * np.cos(omega * t) for t in times])
     skill_mean, skill_std, _ = liu_weisberg_skill(analytic_x, analytic_y, xs, ys)
 
     write_metrics(
-        tmp_path,
         '01_radial_rotation_metrics',
         {
             'max_closing_error_m': float(np.max(closing_error)),
@@ -86,6 +89,6 @@ def test_radial_rotation_closed_orbits(tmp_path):
         ax.axis('equal')
         return fig
 
-    maybe_save_plot(tmp_path, '01_radial_rotation_comparison', _plot)
+    maybe_save_plot('01_radial_rotation_comparison', _plot)
 
     assert np.max(closing_error) < 25.0

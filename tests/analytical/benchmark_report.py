@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -20,10 +19,7 @@ PLOT_FILES = [
 def resolve_input_dir(arg_value: str | None) -> Path:
     if arg_value:
         return Path(arg_value)
-    env_dir = os.getenv("BENCHMARK_OUTPUT_DIR", "").strip()
-    if env_dir:
-        return Path(env_dir)
-    return Path("./bench_outputs")
+    return Path(__file__).resolve().parent / "output"
 
 
 def build_overview_figure(input_dir: Path, output_path: Path) -> None:

@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-from sedtrails.particle_tracer.diffusion_library import BrownianDiffusion
+from sedtrails.particle_tracer.diffusion_library import BrownianDiffusionStrategy
 
 from ._helpers import (
     legend_style,
@@ -12,7 +12,8 @@ from ._helpers import (
 )
 
 
-def test_brownian_random_walk_moments(tmp_path):
+def test_brownian_random_walk_moments():
+    """Validate Brownian diffusion moments against the analytic Gaussian spread."""
     np.random.seed(123456)
 
     n_particles = 100_000
@@ -24,7 +25,8 @@ def test_brownian_random_walk_moments(tmp_path):
     total_time = 86_400.0
     steps = int(total_time / dt)
 
-    diffusion = BrownianDiffusion()
+    # Random-walk diffusion with constant kh.
+    diffusion = BrownianDiffusionStrategy()
     u = np.zeros_like(x)
     v = np.zeros_like(y)
     for _ in range(steps):
@@ -33,17 +35,16 @@ def test_brownian_random_walk_moments(tmp_path):
     dx = x
     dy = y
 
+    # Analytic variance for Brownian motion in each dimension.
     expected_var = 2.0 * kh * total_time
     mean_tol = 3.0 * math.sqrt(expected_var / n_particles)
 
     maybe_save_artifact(
-        tmp_path,
         '07_brownian_stats',
         np.array([dx.mean(), dy.mean(), dx.var(ddof=1), dy.var(ddof=1)]),
     )
 
     write_metrics(
-        tmp_path,
         '07_brownian_metrics',
         {
             'mean_dx': float(dx.mean()),
@@ -71,7 +72,7 @@ def test_brownian_random_walk_moments(tmp_path):
         ax.legend(**legend_style())
         return fig
 
-    maybe_save_plot(tmp_path, '07_brownian_histograms', _plot)
+    maybe_save_plot('07_brownian_histograms', _plot)
 
     assert abs(dx.mean()) < mean_tol
     assert abs(dy.mean()) < mean_tol
