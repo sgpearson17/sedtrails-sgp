@@ -48,12 +48,16 @@ def _release_time_to_seconds(release_time: str | int | float, reference_date: st
     elif isinstance(release_time, (int, float)):
         release_seconds = float(release_time)
     else:
-        release_datetime = convert_datetime_string_to_datetime64(str(release_time))
-        if isinstance(reference_date, np.datetime64):
-            reference_datetime = reference_date.astype('datetime64[s]')
-        else:
-            reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
-        release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+        release_time_str = str(release_time).strip()
+        try:
+            release_seconds = float(release_time_str)
+        except ValueError:
+            release_datetime = convert_datetime_string_to_datetime64(release_time_str)
+            if isinstance(reference_date, np.datetime64):
+                reference_datetime = reference_date.astype('datetime64[s]')
+            else:
+                reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
+            release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
 
     if release_seconds < 0:
         warnings.warn(
@@ -663,8 +667,6 @@ class ParticlePopulation:
             # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        # FIXME: Temporary implementation
-        self.particles['release_time'] = np.zeros_like(self.particles['x'])
         self.particles['status_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)

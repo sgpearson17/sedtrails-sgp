@@ -1255,15 +1255,15 @@ class TestParticlePopulation:
         population._current_time = 599.0
         population.update_status()
 
-        assert population.particles['is_released'].tolist() == [False]
-        assert population.particles['is_mobile'].tolist() == [False]
+        assert population.particles['status_released'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
 
         population._current_time = 600.0
         population.update_status()
 
-        assert population.particles['is_released'].tolist() == [True]
-        assert population.particles['is_mobile'].tolist() == [True]
+        assert population.particles['status_released'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [True]
         np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
 
     def test_invalid_release_time_raises_date_format_error(self):
