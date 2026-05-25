@@ -15,6 +15,7 @@ Random: Release particles at random locations (x,y) within an area
 """
 
 import random
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, Tuple, Union
@@ -27,11 +28,41 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
 
 
 class HasFieldCoordinates(Protocol):
     x: ndarray
     y: ndarray
+
+
+DEFAULT_REFERENCE_DATE = '1970-01-01 00:00:00'
+DEFAULT_RELEASE_START = '__SIMULATION_START__'
+
+
+def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
+    """Convert a release time to seconds since the model reference date."""
+
+    if release_time == DEFAULT_RELEASE_START:
+        release_seconds = 0.0
+    elif isinstance(release_time, (int, float)):
+        release_seconds = float(release_time)
+    else:
+        release_datetime = convert_datetime_string_to_datetime64(str(release_time))
+        if isinstance(reference_date, np.datetime64):
+            reference_datetime = reference_date.astype('datetime64[s]')
+        else:
+            reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
+        release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+
+    if release_seconds < 0:
+        warnings.warn(
+            'Computed release time is negative. Particles may be released from simulation start; '
+            'check seeding.release_start and general.input_model.reference_date.',
+            UserWarning,
+            stacklevel=2,
+        )
+    return release_seconds
 
 
 def _is_temporal_field(field_value: Any) -> bool:
@@ -54,8 +85,9 @@ class PopulationConfig:
             The configuration dictionary containing the seeding paraameters for a population.
         particle_type : str
             The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-        release_start : str
+        release_start : str | int | float
             The time at which the particles for a given population are released.
+            If omitted, particles are released from simulation start.
         quantity : int
             The number of particles to release per release location.
     s    strategy_settings : Dict
@@ -69,7 +101,7 @@ class PopulationConfig:
     population_config: Dict  # configuration for a single population
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
-    release_start: str = field(init=False)  # particle for a given population are released at this time
+    release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
     quantity: int = field(init=False)  # number of particles to release per release location
     burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
@@ -86,10 +118,8 @@ class PopulationConfig:
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'seeding.release_start', {})
-        if not _release_start:
-            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = _release_start
+        _release_start = find_value(self.population_config, 'seeding.release_start', None)
+        self.release_start = DEFAULT_RELEASE_START if _release_start is None else _release_start
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
@@ -482,6 +512,7 @@ class ParticlePopulation:
     field_y: ndarray
     population_config: PopulationConfig
     grid_geometry: Any = None
+    reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
@@ -507,7 +538,10 @@ class ParticlePopulation:
         self.particles = {
             'x': np.array([p.x for p in _particles]),
             'y': np.array([p.y for p in _particles]),
-            'release_time': np.array([p.release_time for p in _particles]),
+            'release_time': np.array(
+                [_release_time_to_seconds(p.release_time, self.reference_date) for p in _particles],
+                dtype=float,
+            ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
@@ -629,8 +663,6 @@ class ParticlePopulation:
             # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        # FIXME: Temporary implementation
-        self.particles['release_time'] = np.zeros_like(self.particles['x'])
         self.particles['is_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
@@ -744,6 +776,7 @@ class ParticleSeeder:
                 field_y=sedtrails_data.y,
                 population_config=config,
                 grid_geometry=grid_geometry,
+                reference_date=getattr(sedtrails_data, 'reference_date', DEFAULT_REFERENCE_DATE),
             )
             populations.append(pop)
         return populations
