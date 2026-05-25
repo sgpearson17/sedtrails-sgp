@@ -26,6 +26,7 @@ extensions = [
 ]
 
 autodoc2_packages = ['../src/sedtrails']
+autodoc2_docstring_parser_regexes = [(r'.*', 'rst')]
 
 myst_enable_extensions = [
     'amsmath',

@@ -26,22 +26,21 @@ class StateChecker:
     Class to check the state of particles in a simulation.
     """
 
-    def __init__(self, **config): # this initializes the class with a variable number
-        # of key:value arguments.  The 
+    def __init__(self, **config):
         """
         Initialize the StateChecker with configuration parameters.
 
         Parameters
         ----------
-        **config : dict
+        config : dict
             Configuration parameters for the state checker provided by
-            the cofiguration interface.
+            the configuration interface.
         """
+        # Accept variable key/value configuration settings.
         self.config = config
 
 
-    def check_state(self, particle: Particle, flow_field ) -> str: # flow_field is a placeholder for 
-        # data provided by the Flow Filed Data Buffer
+    def check_state(self, particle: Particle, flow_field) -> str:
         """
         Check the state of a particle based on its properties.
 

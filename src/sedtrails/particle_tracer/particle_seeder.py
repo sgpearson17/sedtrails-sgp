@@ -2,16 +2,19 @@
 Particle Seeding Tool
 =====================
 
-Manage the creation of particles, their positions (x,y) and distribution.
+Manage the creation of particles, their positions (x,y), and distribution
 using various release strategies.
+
 Seeding strategies for positions include:
-Point: Release particles at a specific locations (x,y).
-Regular Grid: Release particles in a regular grid pattern based
-    on distances between particles in x and y directions, and the
-    simulation. A mask can be applied to restrict the area of seeding.
-Transect: release particle along line segments  defined by two points(x1,y1) and (x2,y2).
-Random: Release particles at random locations (x,y) within an area
-    constrained by a bounding box (xmin, xmax, ymin, ymax).
+
+- Point: Release particles at specific locations (x,y).
+- Regular grid: Release particles in a regular grid pattern based on
+  distances between particles in x and y directions and the simulation.
+  A mask can be applied to restrict the area of seeding.
+- Transect: Release particles along line segments defined by two points
+  (x1, y1) and (x2, y2).
+- Random: Release particles at random locations (x,y) within a bounding
+  box (xmin, xmax, ymin, ymax).
 """
 
 import random
@@ -45,25 +48,22 @@ def _is_temporal_flow_field(flow_field: Dict) -> bool:
 @dataclass
 class PopulationConfig:
     """
-        A class to represent the seeding parameters of a population of particle.
-        A population is a group of particles that share the same type and seeding strategy.
+    Class to represent seeding parameters for a particle population.
 
-        Attributes
-        ----------
-        population_config : Dict
-            The configuration dictionary containing the seeding paraameters for a population.
-        particle_type : str
-            The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-        release_start : str
-            The time at which the particles for a given population are released.
-        quantity : int
-            The number of particles to release per release location.
-    s    strategy_settings : Dict
-            The settings for the seeding strategy, extracted from the configuration.
-            These are any key-value pairs defined under the specific strategy in the configuration.
-        A class to represent the seeding parameters of a population of particle.
-        A population is a group of particles that share the same type and seeding strategy.
+    A population is a group of particles that share the same type and seeding strategy.
 
+    Attributes
+    ----------
+    population_config : Dict
+        Configuration dictionary containing the seeding parameters for a population.
+    particle_type : str
+        Type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
+    release_start : str
+        Time at which particles for the population are released.
+    quantity : int
+        Number of particles to release per release location.
+    strategy_settings : Dict
+        Settings for the seeding strategy extracted from the configuration.
     """
 
     population_config: Dict  # configuration for a single population

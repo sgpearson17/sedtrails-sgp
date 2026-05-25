@@ -20,18 +20,25 @@ class DiffusionStrategy(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply diffusion to the given positions and velocities.
 
-           Parameters
-           ----------
-            dt: Time step for diffusion calculation
-            x: Array of x-coordinates.
-            y: Array of y-coordinates.
-            u: Array of x-velocity components.
-            v: Array of y-velocity components.
-            nu: Diffusion coefficient.
+        Parameters
+        ----------
+        dt : float
+            Time step for diffusion calculation.
+        x : np.ndarray
+            Array of x-coordinates.
+        y : np.ndarray
+            Array of y-coordinates.
+        u : np.ndarray
+            Array of x-velocity components.
+        v : np.ndarray
+            Array of y-velocity components.
+        nu : float
+            Diffusion coefficient.
 
         Returns
         -------
-            Tuple of updated x and y positions after diffusion (xdif, ydif).
+        tuple[np.ndarray, np.ndarray]
+            Updated x and y positions after diffusion (xdif, ydif).
         """
         pass
 

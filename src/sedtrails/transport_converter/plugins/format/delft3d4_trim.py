@@ -13,11 +13,11 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Converts  from Delft3D4 TRIM format.
 
-        Parameters:
-        -----------
-        *args : tuple
+        Parameters
+        ----------
+        ``*args`` : tuple
             Positional arguments for conversion.
-        **kwargs : dict
+        ``**kwargs`` : dict
             Keyword arguments for conversion.
         """
         raise NotImplementedError('Delft3D trim file conversion is not yet implemented.')

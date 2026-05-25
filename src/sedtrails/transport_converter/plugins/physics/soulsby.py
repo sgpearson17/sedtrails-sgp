@@ -23,11 +23,14 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
         Add physics using Soulsby et al. (2011) approach.
-        '1. Focus on individual particle tracking velocities\n'
-        '2. Different approach to settling and resuspension\n'
-        '3. Particle-specific rather than layer-based calculations\n'
-        'See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating '
-        'the dispersal of sand-sized particles in coastal waters.'
+
+        Key notes:
+        - Focus on individual particle tracking velocities.
+        - Different approach to settling and resuspension.
+        - Particle-specific rather than layer-based calculations.
+
+        See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating
+        the dispersal of sand-sized particles in coastal waters.
         """
         logger.info('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data')
 

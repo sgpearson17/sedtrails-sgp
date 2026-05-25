@@ -1,4 +1,4 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![TUDelft DCC](https://img.shields.io/badge/tu_delft-DCC-black?style=flat&label=TU%20Delft&labelColor=%23000000%20&color=%2300A6D6)](https://dcc.tudelft.nl)
 [![Deploy Sphinx Documentation](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml/badge.svg)](https://github.com/sedtrails/sedtrails/actions/workflows/publish.yml)
 [![Ruff](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml/badge.svg?branch=dev)](https://github.com/sedtrails/sedtrails/actions/workflows/ruff.yml)
@@ -72,7 +72,7 @@ sedtrails --version
 We welcome contributions from the community! Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take part in developing SedTRAILS. 
 
 ## License
-SetTRAILS is licensed under the [MIT License](LICENSE).
+SetTRAILS is licensed under the [GPL-3.0-only License](LICENSE).
 &copy; (2025) SedTRAILS Team, Delft, The Netherlands. 
 
 ## Citation

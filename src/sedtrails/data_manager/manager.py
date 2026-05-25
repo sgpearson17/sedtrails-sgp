@@ -27,23 +27,24 @@ class DataManager:
 
     Example Usage for SedTrails Output
     ----------------------------------
-    
-    # Initialize DataManager
-    data_manager = DataManager("output/")
+    .. code-block:: python
 
-    # Create SedTrails dataset (using composition)
-    dataset = data_manager.writer.create_dataset(
-        N_particles=100, N_populations=2, N_timesteps=50, N_flowfields=1
-    )
+        # Initialize DataManager
+        data_manager = DataManager("output/")
 
-    # Add metadata (using composition)
-    data_manager.writer.add_metadata(dataset, populations, flow_field_names)
+        # Create SedTrails dataset (using composition)
+        dataset = data_manager.writer.create_dataset(
+            N_particles=100, N_populations=2, N_timesteps=50, N_flowfields=1
+        )
 
-    # During simulation loop (DataManager provides this convenience method)
-    data_manager.collect_timestep_data(dataset, populations, timestep, current_time)
+        # Add metadata (using composition)
+        data_manager.writer.add_metadata(dataset, populations, flow_field_names)
 
-    # Write final results (using composition)
-    output_path = data_manager.writer.write(dataset, filename, trim_to_actual_timesteps=True)
+        # During simulation loop (DataManager provides this convenience method)
+        data_manager.collect_timestep_data(dataset, populations, timestep, current_time)
+
+        # Write final results (using composition)
+        output_path = data_manager.writer.write(dataset, filename, trim_to_actual_timesteps=True)
     """
 
     def __init__(self, output_dir: Union[str, Path], max_bytes=512 * 1024 * 1024):

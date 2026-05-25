@@ -322,7 +322,7 @@ class YAMLConfigValidator:
         -------
         str
             The schema as a YAML formatted string, if no output file is specified.
-        If an output file is specified, the schema is written to that file.
+            If an output file is specified, the schema is written to that file.
 
         Raises
         ------

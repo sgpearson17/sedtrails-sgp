@@ -18,10 +18,10 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Initialize the plugin with the input file.
 
-        Parameters:
-        -----------
-        input_file : str
-            Path to the SFINCS NetCDF file.
+        :param input_file: Path to the SFINCS NetCDF file.
+        :type input_file: str
+        :param morfac: Morphological acceleration factor.
+        :type morfac: float
         """
         super().__init__()
         self.input_file = Path(input_file)
@@ -35,10 +35,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get the variables in the input dataset.
 
-        Returns:
-        --------
-        List
-            List of variable names in the input dataset.
+        :returns: List of variable names in the input dataset.
+        :rtype: list[str]
         """
 
         if self.input_data is None:  # Ensure input_data is loaded
@@ -72,19 +70,14 @@ class FormatPlugin(BaseFormatPlugin):
         """
         SedtrailsData from SFINCS Netcdf.
 
-        Parameters:
-        -----------
-        current_time : float, optional
-            Current simulation time in seconds
-        reading_interval : float, optional
-            Reading interval in seconds
-        reference_date : np.datetime64, optional
-            Reference date for converting time values
-
-        Returns:
-        --------
-        SedtrailsData
-            The converted SedtrailsData object.
+        :param current_time: Current simulation time in seconds.
+        :type current_time: float | None
+        :param reading_interval: Reading interval in seconds.
+        :type reading_interval: float | None
+        :param reference_date: Reference date for converting time values.
+        :type reference_date: np.datetime64 | None
+        :returns: The converted SedtrailsData object.
+        :rtype: SedtrailsData
         """
 
         if reference_date is None:
@@ -247,19 +240,13 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get and transforms time information of a dataset.
 
-        Parameters:
-        -----------
-        input_data : xu.UgridDataset
-            The input dataset containing time information.
-
-        reference_data : np.datetime64
-            The reference date to calculate time in seconds.
-
-        Returns:
-        --------
-        Dict
-            Dictionary containing time values, start time, end time,
-            and time in seconds since reference date
+        :param input_data: The input dataset containing time information.
+        :type input_data: xu.UgridDataset | xr.Dataset
+        :param reference_date: The reference date to calculate time in seconds.
+        :type reference_date: np.datetime64
+        :returns: Dictionary containing time values, start time, end time,
+            and time in seconds since reference date.
+        :rtype: dict
         """
 
         # check reference_date is a numpy datetime64
@@ -337,19 +324,14 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Map SFINCS variables to SedtrailsData structure.
 
-        Parameters:
-        -----------
-        time_info : Dict
-            Time information
-        time_start_idx : int, optional
-            Start time index for slicing
-        time_end_idx : int, optional
-            End time index for slicing
-
-        Returns:
-        --------
-        Dict
-            Dictionary with mapped variables
+        :param time_info: Time information.
+        :type time_info: dict
+        :param time_start_idx: Start time index for slicing.
+        :type time_start_idx: int | None
+        :param time_end_idx: End time index for slicing.
+        :type time_end_idx: int | None
+        :returns: Dictionary with mapped variables.
+        :rtype: dict
         """
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call read_data() first.')
@@ -493,21 +475,13 @@ def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, star
     """
     Compute face centroids from UGRID mesh node coordinates and face->node connectivity.
 
-    Parameters
-    ----------
-    mesh2d_node_x : array-like, shape (nnode,)
-    mesh2d_node_y : array-like, shape (nnode,)
-    mesh2d_face_nodes : array-like, shape (nface, max_nodes_per_face)
-        Node indices per face; may be padded with fill_value.
-    start_index : int
-        0 or 1 depending on file convention.
-    fill_value : int
-        Padding value in mesh2d_face_nodes.
-
-    Returns
-    -------
-    face_x : np.ndarray, shape (nface,)
-    face_y : np.ndarray, shape (nface,)
+    :param mesh2d_node_x: Node x-coordinates.
+    :param mesh2d_node_y: Node y-coordinates.
+    :param mesh2d_face_nodes: Node indices per face; may be padded with fill_value.
+    :param start_index: 0 or 1 depending on file convention.
+    :param fill_value: Padding value in mesh2d_face_nodes.
+    :returns: Face centroid x and y arrays, shape (nface,).
+    :rtype: tuple[np.ndarray, np.ndarray]
     """
     node_x = np.asarray(mesh2d_node_x)
     node_y = np.asarray(mesh2d_node_y)
