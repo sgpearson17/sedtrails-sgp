@@ -48,12 +48,16 @@ def _release_time_to_seconds(release_time: str | int | float, reference_date: st
     elif isinstance(release_time, (int, float)):
         release_seconds = float(release_time)
     else:
-        release_datetime = convert_datetime_string_to_datetime64(str(release_time))
-        if isinstance(reference_date, np.datetime64):
-            reference_datetime = reference_date.astype('datetime64[s]')
-        else:
-            reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
-        release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+        release_time_str = str(release_time).strip()
+        try:
+            release_seconds = float(release_time_str)
+        except ValueError:
+            release_datetime = convert_datetime_string_to_datetime64(release_time_str)
+            if isinstance(reference_date, np.datetime64):
+                reference_datetime = reference_date.astype('datetime64[s]')
+            else:
+                reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
+            release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
 
     if release_seconds < 0:
         warnings.warn(
@@ -639,42 +643,42 @@ class ParticlePopulation:
         """
         n_particles = len(self.particles['x'])
 
-        # Compute whether particles are picked up (or trapped) based on transport probability
+        # Compute whether particles are transported (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
         # Compute whether particles are inside (or outside) the domain envelope
-        self.particles['is_inside'] = self._outer_envelope.contains_points(
+        self.particles['status_domain'] = self._outer_envelope.contains_points(
             np.column_stack((self.particles['x'], self.particles['y']))
         )
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
-            # For no_probability method, all particles are considered exposed (always mobile)
-            self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
+            # For no_probability method, all particles are considered exposed (not buried)
+            self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
 
             # if van westen method:
-            # a particle is considered exposed if it is buried at a shallower depth compared to the mixing depth
-            self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+            # a particle is considered buried if it is deeper than or equal to the mixing depth
+            self.particles['status_buried'] = self.particles['burial_depth'] >= self.particles['mixing_depth']
 
             # if soulsby method:
-            # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
+            # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        self.particles['is_released'] = self._current_time >= self.particles['release_time']
+        self.particles['status_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
-        self.particles['is_alive'] = np.ones(n_particles, dtype=bool)
+        self.particles['status_alive'] = np.ones(n_particles, dtype=bool)
 
         # Compute whether particles are mobile (or static) - combination of all status flags
-        self.particles['is_mobile'] = (
-            self.particles['is_inside']
-            & self.particles['is_alive']
-            & self.particles['is_exposed']
-            & self.particles['is_released']
-            & self.particles['is_picked_up']
+        self.particles['status_mobile'] = (
+            self.particles['status_domain']
+            & self.particles['status_alive']
+            & ~self.particles['status_buried']
+            & self.particles['status_released']
+            & self.particles['status_transported']
         )
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:
@@ -690,7 +694,7 @@ class ParticlePopulation:
 
         """
 
-        ix = self.particles['is_mobile']  # Get indices of mobile particles
+        ix = self.particles['status_mobile']  # Get indices of mobile particles
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
             return
