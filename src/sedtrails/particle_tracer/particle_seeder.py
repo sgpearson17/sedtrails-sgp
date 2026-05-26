@@ -17,6 +17,7 @@ Random: Release particles at random locations (x,y) within an area
 import logging
 import os
 import random
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, Tuple, Union
@@ -29,6 +30,7 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +257,39 @@ class HasFieldCoordinates(Protocol):
     y: ndarray
 
 
+DEFAULT_REFERENCE_DATE = '1970-01-01 00:00:00'
+DEFAULT_RELEASE_START = '__SIMULATION_START__'
+
+
+def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
+    """Convert a release time to seconds since the model reference date."""
+
+    if release_time == DEFAULT_RELEASE_START:
+        release_seconds = 0.0
+    elif isinstance(release_time, (int, float)):
+        release_seconds = float(release_time)
+    else:
+        release_time_str = str(release_time).strip()
+        try:
+            release_seconds = float(release_time_str)
+        except ValueError:
+            release_datetime = convert_datetime_string_to_datetime64(release_time_str)
+            if isinstance(reference_date, np.datetime64):
+                reference_datetime = reference_date.astype('datetime64[s]')
+            else:
+                reference_datetime = convert_reference_date_to_datetime64(str(reference_date))
+            release_seconds = float((release_datetime - reference_datetime).astype('timedelta64[s]').astype(int))
+
+    if release_seconds < 0:
+        warnings.warn(
+            'Computed release time is negative. Particles may be released from simulation start; '
+            'check seeding.release_start and general.input_model.reference_date.',
+            UserWarning,
+            stacklevel=2,
+        )
+    return release_seconds
+
+
 def _is_temporal_field(field_value: Any) -> bool:
     return isinstance(field_value, dict) and {'lower', 'upper', 'weight'}.issubset(field_value)
 
@@ -275,8 +310,9 @@ class PopulationConfig:
             The configuration dictionary containing the seeding paraameters for a population.
         particle_type : str
             The type of particles to be seeded (e.g., 'sand', 'mud', 'passive').
-        release_start : str
+        release_start : str | int | float
             The time at which the particles for a given population are released.
+            If omitted, particles are released from simulation start.
         quantity : int
             The number of particles to release per release location.
     s    strategy_settings : Dict
@@ -290,7 +326,7 @@ class PopulationConfig:
     population_config: Dict  # configuration for a single population
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
-    release_start: str = field(init=False)  # particle for a given population are released at this time
+    release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
     quantity: int = field(init=False)  # number of particles to release per release location
     burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
@@ -308,10 +344,8 @@ class PopulationConfig:
         if not _quantity:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
-        _release_start = find_value(self.population_config, 'seeding.release_start', {})
-        if not _release_start:
-            raise MissingConfigurationParameter('"release_start" is not defined in the population configuration.')
-        self.release_start = _release_start
+        _release_start = find_value(self.population_config, 'seeding.release_start', None)
+        self.release_start = DEFAULT_RELEASE_START if _release_start is None else _release_start
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
@@ -759,6 +793,7 @@ class ParticlePopulation:
     field_y: ndarray
     population_config: PopulationConfig
     grid_geometry: Any = None
+    reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
@@ -784,7 +819,10 @@ class ParticlePopulation:
         self.particles = {
             'x': np.array([p.x for p in _particles]),
             'y': np.array([p.y for p in _particles]),
-            'release_time': np.array([p.release_time for p in _particles]),
+            'release_time': np.array(
+                [_release_time_to_seconds(p.release_time, self.reference_date) for p in _particles],
+                dtype=float,
+            ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
@@ -980,44 +1018,42 @@ class ParticlePopulation:
         """
         n_particles = len(self.particles['x'])
 
-        # Compute whether particles are picked up (or trapped) based on transport probability
+        # Compute whether particles are transported (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['is_picked_up'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
         # Compute whether particles are inside (or outside) the domain envelope
-        self.particles['is_inside'] = self._outer_envelope.contains_points(
+        self.particles['status_domain'] = self._outer_envelope.contains_points(
             np.column_stack((self.particles['x'], self.particles['y']))
         )
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
-            # For no_probability method, all particles are considered exposed (always mobile)
-            self.particles['is_exposed'] = np.ones(n_particles, dtype=bool)
+            # For no_probability method, all particles are considered exposed (not buried)
+            self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
         else:
             # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
 
             # if van westen method:
-            # a particle is considered exposed if it is buried at a shallower depth compared to the mixing depth
-            self.particles['is_exposed'] = self.particles['burial_depth'] < self.particles['mixing_depth']
+            # a particle is considered buried if it is deeper than or equal to the mixing depth
+            self.particles['status_buried'] = self.particles['burial_depth'] >= self.particles['mixing_depth']
 
             # if soulsby method:
-            # self.particles['is_exposed'] = (this is where we implement Soulsby's F based on a and b)
+            # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
-        # FIXME: Temporary implementation
-        self.particles['release_time'] = np.zeros_like(self.particles['x'])
-        self.particles['is_released'] = self._current_time >= self.particles['release_time']
+        self.particles['status_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
-        self.particles['is_alive'] = np.ones(n_particles, dtype=bool)
+        self.particles['status_alive'] = np.ones(n_particles, dtype=bool)
 
         # Compute whether particles are mobile (or static) - combination of all status flags
-        self.particles['is_mobile'] = (
-            self.particles['is_inside']
-            & self.particles['is_alive']
-            & self.particles['is_exposed']
-            & self.particles['is_released']
-            & self.particles['is_picked_up']
+        self.particles['status_mobile'] = (
+            self.particles['status_domain']
+            & self.particles['status_alive']
+            & ~self.particles['status_buried']
+            & self.particles['status_released']
+            & self.particles['status_transported']
         )
 
     def update_position(self, flow_field: Dict, current_timestep: float) -> None:
@@ -1033,7 +1069,7 @@ class ParticlePopulation:
 
         """
 
-        ix = self.particles['is_mobile']  # Get indices of mobile particles
+        ix = self.particles['status_mobile']  # Get indices of mobile particles
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
             return
@@ -1119,6 +1155,7 @@ class ParticleSeeder:
                 field_y=sedtrails_data.y,
                 population_config=config,
                 grid_geometry=grid_geometry,
+                reference_date=getattr(sedtrails_data, 'reference_date', DEFAULT_REFERENCE_DATE),
             )
             populations.append(pop)
         return populations

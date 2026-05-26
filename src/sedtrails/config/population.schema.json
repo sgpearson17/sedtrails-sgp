@@ -100,6 +100,7 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
@@ -117,6 +118,9 @@
                     "description": "Method for computing suspended sediment velocity. 'soulsby_2011': Rouse-profile ratio (van Westen et al. 2025). 'macdonald_2006': log-profile at suspended sediment centroid height (MacDonald 2006, Eqs. 27-29)."
                 }
             },
+            "required": [
+                "flow_field_name"
+            ],
             "description": "van Westen method for particle tracking"
         },
         "soulsby_method": {
@@ -125,6 +129,7 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
@@ -166,6 +171,9 @@
                     "description": "Initial state of Freedom Factor (0 = trapped, 1 = free) [-]"
                 }
             },
+            "required": [
+                "flow_field_name"
+            ],
             "description": "Soulsby method for particle tracking"
         },
         "passive_method": {
@@ -223,6 +231,7 @@
                 }
             },
             "minProperties": 1,
+            "maxProperties": 1,
             "default": {
                 "soulsby": {
                     "f": 0.1,

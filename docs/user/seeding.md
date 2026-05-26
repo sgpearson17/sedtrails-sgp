@@ -15,6 +15,45 @@ This section needs to be rethought and rewritten. Currently, it sounds more like
 
 Seeding is the process of adding the particle(s) to the model. In SedTRAILS, the type and initial position(s) of the sediment(s) are set as separate populations. The options for particle types are sand, mud, and passive tracer. Multiple strategies are available to locate the paticles as initial conditions. They can be added as either a single particle (point strategy) or more. In case of adding many particles, they can be located along a spcified line (transect strategy), or within a polygon (grid and random strategies). 
 
+### Release timing and `release_start`
+
+Particle release timing is controlled by `seeding.release_start` per population.
+
+- `release_start` is optional.
+- If omitted, particles are released from simulation start.
+- If provided, it must use format `YYYY-MM-DD HH:MM:SS` (for example: `2020-01-01 00:10:00`).
+- The configured value is converted to seconds relative to `general.input_model.reference_date`.
+- A particle only becomes mobile once simulation time is greater than or equal to its converted release time.
+
+This means you can define multiple populations with different delayed release times in one run.
+
+Example:
+
+```yaml
+general:
+  input_model:
+    reference_date: "2020-01-01 00:00:00"
+
+particles:
+  populations:
+    - name: early-release
+      particle_type: sand
+      seeding:
+        quantity: 10
+        release_start: "2020-01-01 00:05:00"
+        strategy:
+          point:
+            locations: ["1000,2000"]
+    - name: delayed-release
+      particle_type: sand
+      seeding:
+        quantity: 10
+        release_start: "2020-01-01 02:00:00"
+        strategy:
+          point:
+            locations: ["1000,2000"]
+```
+
 Inputs required for particle types:
 | Sand       | Mud        | Passive    |
 | ---------- | ---------- | ---------- |

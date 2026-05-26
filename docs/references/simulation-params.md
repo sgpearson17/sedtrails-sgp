@@ -42,7 +42,7 @@ Nested under `general.input_model`:
 | Parameter        | Type   | Required | Default      | Description                                                                                                          |
 | ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4` (Delft3D-4), `xbeach`, `aeolis`.                        |
-| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data (format: `YYYY-MM-DD HH`). Used to convert model times to actual dates. |
+| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
 | `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
 
 **Example:**
@@ -54,7 +54,7 @@ general:
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
-    reference_date: "2020-01-01 00"
+    reference_date: "2020-01-01 00:00:00"
     morfac: 1.0
 ```
 
@@ -317,7 +317,7 @@ Controls where, when, and how particles are released.
 | `per_timestep`  | boolean | Optional     | `false`         | Release particles every time step (continuous release).                                       |
 | `release_type`  | string  | Optional     | `instantaneous` | Release timing. Options: `instantaneous`, `continuous`.                                       |
 | `lifespan`      | number  | Optional     | `9e+99`         | Maximum particle lifetime [seconds]. Use very large value for unlimited.                      |
-| `release_start` | string  | Optional     | -               | Release start time (format: `YYYY-MM-DD HH:MM:SS`). Defaults to simulation start.             |
+| `release_start` | string  | Optional     | simulation start | Release start time for the population (format: `YYYY-MM-DD HH:MM:SS`). Converted to seconds relative to `general.input_model.reference_date`. |
 | `release_stop`  | string  | Optional     | -               | Release stop time for continuous release. Defaults to immediate stop after first release.     |
 | `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration. See [Burial Depth](#burial-depth).                        |
 | `strategy`      | object  | **Required** | -               | Spatial release strategy. See [Release Strategies](#release-strategies).                      |

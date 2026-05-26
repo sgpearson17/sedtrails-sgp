@@ -53,28 +53,35 @@ class PhysicsConfig:
         """
         # Start from defaults
         obj = cls()
+
         # Apply base config
         if config:
             if isinstance(config, cls):
-                base = asdict(config)  # deep copy dataclass fields
+                base = asdict(config)
             elif isinstance(config, dict):
                 base = config
             else:
                 base = {k: v for k, v in vars(config).items() if not k.startswith('_')}
             for k, v in base.items():
                 setattr(obj, k, v)
+
         # Apply method-specific (flatten) from tracer_config
         if tracer_config:
-            method = getattr(config, 'tracer_method', 'vanwesten')
-            # If tracer_config is nested like {"soulsby": {...}}, pick the active method
-            if isinstance(tracer_config.get(method, None), dict):
+            method = obj.tracer_method
+            if isinstance(tracer_config.get(method), dict):
                 method_params = tracer_config[method]
-                for k, v in method_params.items():
-                    setattr(obj, k, v)
+            elif any(isinstance(value, dict) for value in tracer_config.values()):
+                available_methods = sorted(key for key, value in tracer_config.items() if isinstance(value, dict))
+                raise ValueError(
+                    f'Nested tracer_config was provided, but it does not contain settings '
+                    f"for the active tracer_method '{method}'. "
+                    f'Available method keys: {available_methods}'
+                )
             else:
-                # Otherwise assume tracer_config is already flat
-                for k, v in tracer_config.items():
-                    setattr(obj, k, v)
+                method_params = tracer_config
+
+            for k, v in method_params.items():
+                setattr(obj, k, v)
         return obj
 
     # Optional: expose a dict view when needed
@@ -159,9 +166,7 @@ class PhysicsConverter:
                     f'Ensure the module exists and is correctly named.'
                 ) from e
             else:
-                self._physics_plugin = plugin_module.PhysicsPlugin(
-                    self.config, self.tracer_config
-                )  # all classes should be called the PhysicsPlugin
+                self._physics_plugin = plugin_module.PhysicsPlugin(self.config, self.tracer_config)
         return self._physics_plugin
 
     def convert_physics(self, sedtrails_data, transport_probability_method: str = None) -> None:
@@ -182,4 +187,4 @@ class PhysicsConverter:
             plugin = self._physics_plugin
 
         # Use empty dict as default if no config provided
-        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or {})
+        plugin.add_physics(sedtrails_data, self.grain_properties, transport_probability_method or 'no_probability')
