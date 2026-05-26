@@ -25,6 +25,7 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     unique_flow_field_names,
 )
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
+from sedtrails.transport_converter.physics_converter import PhysicsConverter
 
 
 class Simulation:
@@ -79,6 +80,7 @@ class Simulation:
             raise
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
+        self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
@@ -607,7 +609,7 @@ class Simulation:
                         population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
                     # Update particle bed level based on new position to inform burial depth in the next iteration
-                    if tracer_method == 'vanwesten':
+                    if tracer_plan.method_name == 'vanwesten':
                         population.update_bed_level_change_after_movement(bed_level)
 
             # Collect data from all populations for this timestep using DataManager
