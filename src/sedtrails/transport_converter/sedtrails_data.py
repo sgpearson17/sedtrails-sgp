@@ -279,7 +279,7 @@ class SedtrailsData:
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'bed_level': self.bed_level,  # typically time-independent
+            'bed_level': self.bed_level[time_index] if np.ndim(self.bed_level) > 1 else self.bed_level,
             'fractions': self.fractions,
         }
 
