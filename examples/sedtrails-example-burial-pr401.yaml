@@ -1,19 +1,19 @@
 general:
   input_model: 
     format: fm_netcdf
-    reference_date: 2011-08-01  # Default reference date for the input model
+    reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ././sandengine_dfm_data/sandengine_sedtrails.nc
+  data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
 time:
-  start:  2011-08-01 00:00:00
-  timestep: 3600S
-  duration: 250D
-  cfl_condition: 0.9  # CFL condition for adaptive timestep (0 = disabled)
+  start:  2016-09-21 19:20:00
+  timestep: 60S
+  duration: 3D
+  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
-    - name: population_1
+    - name: populaton_1
       particle_type: sand
       characteristics:
         grain_size: 0.00025 
@@ -27,24 +27,25 @@ particles:
       transport_probability: reduced_velocity  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
         burial_depth:
-          random: 5.
-        release_start: 2011-08-01 00:00:00
+          random: 1.
+        release_start: 2016-09-21 19:30:00
         quantity: 1
         remove_permanently_buried: true
-        strategy:
+        strategy: 
           random:
+            bbox: "39400,16800 40600,17800"
             poly:
-              - "70280,448980"
-              - "68440,450690"
-              - "74170,455400"
-              - "75080,454360"
+              - "39400,16800"
+              - "40600,16800"
+              - "40600,17800"
+              - "39400,17800"
             seed: 42
-            nlocations: 100000
+            nlocations: 100
 outputs:
-  directory: ./results
+  directory: ./results/PR401
   store_tracks: true
-  save_interval: 10D
+  save_interval: 1H
 visualization:
   dashboard:
-    enable: false
-    update_interval: 1D
+    enable: true
+    update_interval: 1H

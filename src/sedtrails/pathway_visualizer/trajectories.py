@@ -116,11 +116,13 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
             )
 
             # Mark start and end points
+            # start point marker
             ax1.scatter(
-                x_traj[0], y_traj[0], color=colors[i], marker='o', s=50, edgecolor='black', linewidth=1, zorder=5
+                x_traj[0], y_traj[0], color=colors[i], marker='x', s=50, edgecolor='black', linewidth=1, zorder=5
             )
+            # end point marker
             ax1.scatter(
-                x_traj[-1], y_traj[-1], color=colors[i], marker='s', s=50, edgecolor='black', linewidth=1, zorder=5
+                x_traj[-1], y_traj[-1], color=colors[i], marker='o', s=50, edgecolor='black', linewidth=1, zorder=5
             )
 
     # Add legend if few particles
@@ -194,7 +196,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     x_traj[0],
                     y_traj[0],
                     color=pop_colors[pop_idx],
-                    marker='o',
+                    marker='x',
                     s=50,
                     edgecolor='black',
                     linewidth=1,
@@ -204,7 +206,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     x_traj[-1],
                     y_traj[-1],
                     color=pop_colors[pop_idx],
-                    marker='s',
+                    marker='o',
                     s=50,
                     edgecolor='black',
                     linewidth=1,
