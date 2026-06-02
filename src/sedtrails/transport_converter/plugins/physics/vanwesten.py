@@ -179,14 +179,18 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             suspended_velocity_x = suspended_velocity_x[:, np.newaxis, :]
             suspended_velocity_y = suspended_velocity_y[:, np.newaxis, :]
 
-        # Compute transport probabilities
+        # Compute transport probabilities (clamped to [0, 1]: transport layer
+        # cannot exceed the mixing layer, and floating-point blow-up at nodes
+        # where sus_vel → 0 would otherwise corrupt the CFL velocity bound)
         with np.errstate(divide='ignore', invalid='ignore'):
-            bed_load_probability = np.where(
-                mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0
+            bed_load_probability = np.clip(
+                np.where(mixing_layer_thickness > 0, bed_load_layer_thickness / mixing_layer_thickness, 0.0),
+                0.0, 1.0,
             )
 
-            suspended_probability = np.where(
-                mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0
+            suspended_probability = np.clip(
+                np.where(mixing_layer_thickness > 0, suspended_layer_thickness / mixing_layer_thickness, 0.0),
+                0.0, 1.0,
             )
 
         # Depending on transport_probability_method; apply transport probabilities
