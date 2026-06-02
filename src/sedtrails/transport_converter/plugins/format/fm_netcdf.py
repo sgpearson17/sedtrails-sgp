@@ -10,6 +10,7 @@ import xugrid as xu
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
+from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -77,23 +78,7 @@ class FormatPlugin(BaseFormatPlugin):
         Dict
             Time information with decompressed time values
         """
-        decompressed_info = time_info.copy()
-
-        # Apply morfac decompression to time values
-        time_start = time_info['time_start']
-        decompressed_time_values = time_start + (time_info['time_values'] - time_start) * self.morfac
-
-        # Update time info with decompressed values
-        decompressed_info['time_values'] = decompressed_time_values
-        decompressed_info['time_start'] = decompressed_time_values[0]
-        decompressed_info['time_end'] = decompressed_time_values[-1]
-
-        # Recalculate seconds since reference with decompressed times
-        decompressed_info['seconds_since_reference'] = np.array(
-            [float((t - time_info['reference_date']) / np.timedelta64(1, 's')) for t in decompressed_time_values]
-        )
-
-        return decompressed_info
+        return decompress_time_info(time_info, self.morfac)
 
     def convert(
         self, current_time=None, reading_interval=None, reference_date: Optional[np.datetime64] = None
@@ -221,6 +206,37 @@ class FormatPlugin(BaseFormatPlugin):
             raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
 
         return self.input_data['net_xcc'].values, self.input_data['net_ycc'].values
+
+    def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
+        """
+        Return input time bounds in seconds since the configured reference date.
+
+        Parameters
+        ----------
+        reference_date : np.datetime64, optional
+            Reference date used to convert the input time coordinate to seconds.
+            If omitted, the Unix epoch is used.
+
+        Returns
+        -------
+        tuple of float
+            First and last input timestamps, in seconds since `reference_date`.
+
+        Raises
+        ------
+        ValueError
+            If the input data contains no time values.
+        """
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
+
+        self.load()
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times.size == 0:
+            raise ValueError('Input data contains no time values')
+        return float(times[0]), float(times[-1])
 
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""

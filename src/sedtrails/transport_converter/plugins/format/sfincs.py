@@ -7,6 +7,7 @@ import xugrid as xu
 
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData, SedtrailsMetadata
+from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -22,11 +23,15 @@ class FormatPlugin(BaseFormatPlugin):
         -----------
         input_file : str
             Path to the SFINCS NetCDF file.
+        morfac : float, optional
+            Morphological acceleration factor for time decompression. The
+            default is 1.0, which leaves input times unchanged.
         """
         super().__init__()
         self.input_file = Path(input_file)
         if not self.input_file.exists():
             raise FileNotFoundError(f'Input file not found: {self.input_file}')
+        self.morfac = morfac
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
 
@@ -93,6 +98,7 @@ class FormatPlugin(BaseFormatPlugin):
         # Read the NetCDF file
         self.load()
         time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
 
         # Determine if we need to slice based on current_time and reading_interval
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
@@ -178,6 +184,54 @@ class FormatPlugin(BaseFormatPlugin):
             start_index=start_index,
             fill_value=fill_value,
         )
+
+    def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
+        """
+        Return input time bounds in seconds since the configured reference date.
+
+        Parameters
+        ----------
+        reference_date : np.datetime64, optional
+            Reference date used to convert the input time coordinate to seconds.
+            If omitted, the Unix epoch is used.
+
+        Returns
+        -------
+        tuple of float
+            First and last input timestamps, in seconds since `reference_date`.
+
+        Raises
+        ------
+        ValueError
+            If the input data contains no time values.
+        """
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
+
+        self.load()
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times.size == 0:
+            raise ValueError('Input data contains no time values')
+        return float(times[0]), float(times[-1])
+
+    def _decompress_time(self, time_info: Dict) -> Dict:
+        """
+        Apply morfac decompression to time values.
+
+        Parameters
+        ----------
+        time_info : dict
+            Time information returned by `_get_time_info`.
+
+        Returns
+        -------
+        dict
+            Time information with decompressed time values and seconds since
+            reference.
+        """
+        return decompress_time_info(time_info, self.morfac)
 
     def load(self) -> Any:
         """
