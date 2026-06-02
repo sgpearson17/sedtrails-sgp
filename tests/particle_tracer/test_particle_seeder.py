@@ -2,19 +2,21 @@
 Unit tests for particle seeding strategies.
 """
 
+import numpy as np
 import pytest
+
+from sedtrails.exceptions import MissingConfigurationParameter
+from sedtrails.exceptions.exceptions import DateFormatError
 from sedtrails.particle_tracer.particle_seeder import (
-    PopulationConfig,
-    PointStrategy,
-    RandomStrategy,
-    GridStrategy,
-    TransectStrategy,
     FilePointsStrategy,
+    GridStrategy,
     ParticleFactory,
     ParticlePopulation,
+    PointStrategy,
+    PopulationConfig,
+    RandomStrategy,
+    TransectStrategy,
 )
-from sedtrails.exceptions import MissingConfigurationParameter
-import numpy as np
 
 
 # Strategy fixtures
@@ -212,9 +214,9 @@ def transect_config_multi():
 def file_points_config_basic(tmp_path):
     """Basic file_points config with CSV file."""
     # Create a temporary CSV file
-    csv_file = tmp_path / "test_points.csv"
-    csv_file.write_text("x,y\n1.0,2.0\n3.0,4.0\n5.0,6.0\n")
-    
+    csv_file = tmp_path / 'test_points.csv'
+    csv_file.write_text('x,y\n1.0,2.0\n3.0,4.0\n5.0,6.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config',
@@ -242,9 +244,9 @@ def file_points_config_basic(tmp_path):
 def file_points_config_no_header(tmp_path):
     """File_points config with no header."""
     # Create a temporary file without header
-    txt_file = tmp_path / "test_points_no_header.txt"
-    txt_file.write_text("1.0 2.0\n3.0 4.0\n")
-    
+    txt_file = tmp_path / 'test_points_no_header.txt'
+    txt_file.write_text('1.0 2.0\n3.0 4.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config No Header',
@@ -272,9 +274,9 @@ def file_points_config_no_header(tmp_path):
 def file_points_config_with_bbox(tmp_path):
     """File_points config with bounding box filtering."""
     # Create a file with points both inside and outside bbox
-    csv_file = tmp_path / "test_points_bbox.csv"
-    csv_file.write_text("longitude,latitude\n1.0,1.0\n2.0,2.0\n5.0,5.0\n10.0,10.0\n")
-    
+    csv_file = tmp_path / 'test_points_bbox.csv'
+    csv_file.write_text('longitude,latitude\n1.0,1.0\n2.0,2.0\n5.0,5.0\n10.0,10.0\n')
+
     return PopulationConfig(
         {
             'name': 'File Points Config With BBox',
@@ -302,7 +304,7 @@ def file_points_config_with_bbox(tmp_path):
 # Particle classes fixture
 @pytest.fixture
 def particle_classes():
-    from sedtrails.particle_tracer.particle import Sand, Mud, Passive
+    from sedtrails.particle_tracer.particle import Mud, Passive, Sand
 
     return {'Sand': Sand, 'Mud': Mud, 'Passive': Passive}
 
@@ -621,9 +623,9 @@ class TestFilePointsStrategy:
     def test_file_points_strategy_stride(self, file_points_strategy, tmp_path):
         """Test file_points strategy with stride parameter."""
         # Create a file with many points
-        csv_file = tmp_path / "test_stride.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n3,3\n4,4\n5,5\n6,6\n")
-        
+        csv_file = tmp_path / 'test_stride.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n3,3\n4,4\n5,5\n6,6\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Stride Config',
@@ -653,9 +655,9 @@ class TestFilePointsStrategy:
     def test_file_points_strategy_deduplicate(self, file_points_strategy, tmp_path):
         """Test file_points strategy with deduplication."""
         # Create a file with duplicate points
-        csv_file = tmp_path / "test_duplicates.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n1,1\n3,3\n2,2\n")
-        
+        csv_file = tmp_path / 'test_duplicates.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n1,1\n3,3\n2,2\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Dedupe Config',
@@ -723,9 +725,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_invalid_columns(self, file_points_strategy, tmp_path):
         """Test file_points strategy with invalid column specification."""
-        csv_file = tmp_path / "test_invalid_cols.csv"
-        csv_file.write_text("a,b\n1,2\n")
-        
+        csv_file = tmp_path / 'test_invalid_cols.csv'
+        csv_file.write_text('a,b\n1,2\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Invalid Cols',
@@ -750,9 +752,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_bbox_object_format(self, file_points_strategy, tmp_path):
         """Test file_points strategy with bbox as object."""
-        csv_file = tmp_path / "test_bbox_obj.csv"
-        csv_file.write_text("x,y\n1,1\n2,2\n5,5\n")
-        
+        csv_file = tmp_path / 'test_bbox_obj.csv'
+        csv_file.write_text('x,y\n1,1\n2,2\n5,5\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points BBox Object',
@@ -766,7 +768,7 @@ class TestFilePointsStrategy:
                                 'ymin': 0.5,
                                 'xmax': 2.5,
                                 'ymax': 2.5,
-                            }
+                            },
                         }
                     },
                     'quantity': 2,
@@ -785,9 +787,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_invalid_stride(self, file_points_strategy, tmp_path):
         """Test file_points strategy with invalid stride."""
-        csv_file = tmp_path / "test_stride.csv"
-        csv_file.write_text("x,y\n1,1\n")
-        
+        csv_file = tmp_path / 'test_stride.csv'
+        csv_file.write_text('x,y\n1,1\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Invalid Stride',
@@ -811,9 +813,9 @@ class TestFilePointsStrategy:
 
     def test_file_points_strategy_empty_after_filtering(self, file_points_strategy, tmp_path):
         """Test file_points strategy when all points are filtered out."""
-        csv_file = tmp_path / "test_empty_filter.csv"
-        csv_file.write_text("x,y\n10,10\n20,20\n")
-        
+        csv_file = tmp_path / 'test_empty_filter.csv'
+        csv_file.write_text('x,y\n10,10\n20,20\n')
+
         config = PopulationConfig(
             {
                 'name': 'File Points Empty Filter',
@@ -1045,8 +1047,8 @@ class TestParticleFactory:
         Passive = particle_classes['Passive']
 
         # Create a temporary CSV file
-        csv_file = tmp_path / "test_particles.csv"
-        csv_file.write_text("x,y\n1.5,2.5\n3.5,4.5\n")
+        csv_file = tmp_path / 'test_particles.csv'
+        csv_file.write_text('x,y\n1.5,2.5\n3.5,4.5\n')
 
         config = PopulationConfig(
             {
@@ -1100,6 +1102,36 @@ def population_config():
 
 
 class TestParticlePopulation:
+    @staticmethod
+    def _status_test_population(current_time=0.0):
+        config = PopulationConfig(
+            {
+                'name': 'Status Test Config',
+                'particle_type': 'sand',
+                'transport_probability': 'stochastic_transport',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 4,
+                    'release_start': '0',
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population._current_time = current_time
+        population.particles['x'] = np.array([0.5, 0.5, 2.0, 0.5])
+        population.particles['y'] = np.array([0.5, 0.5, 2.0, 0.5])
+        population.particles['burial_depth'] = np.array([0.1, 2.0, 0.1, 0.1])
+        population.particles['mixing_depth'] = np.ones(4)
+        population.particles['transport_probability'] = np.array([1.0, 1.0, 1.0, 0.0])
+        return population
+
     def test_create_population(self, population_config):
         """Test creating a ParticlePopulation with a valid configuration."""
         population = ParticlePopulation(
@@ -1150,6 +1182,43 @@ class TestParticlePopulation:
 
         np.testing.assert_allclose(population.particles['bed_level'], 0.5)
 
+    def test_update_status_uses_status_keys_and_mobile_mask_composition(self, monkeypatch):
+        """Only particles that satisfy every status flag should be mobile."""
+        population = self._status_test_population(current_time=0.0)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.array([0.0, 0.0, 0.0, 1.0]))
+
+        population.update_status()
+
+        expected_keys = {
+            'status_alive',
+            'status_buried',
+            'status_domain',
+            'status_released',
+            'status_transported',
+            'status_mobile',
+        }
+        assert expected_keys.issubset(population.particles)
+        assert not any(
+            key in population.particles
+            for key in {'is_alive', 'is_exposed', 'is_inside', 'is_mobile', 'is_picked_up', 'is_released'}
+        )
+        np.testing.assert_array_equal(population.particles['status_alive'], np.array([True, True, True, True]))
+        np.testing.assert_array_equal(population.particles['status_buried'], np.array([False, True, False, False]))
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, True, False, True]))
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([True, True, True, True]))
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True, True, True, False]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True, False, False, False]))
+
+    def test_update_status_requires_released_particles_for_mobile_mask(self, monkeypatch):
+        """Particles that are otherwise mobile should not move before release."""
+        population = self._status_test_population(current_time=-1.0)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([False, False, False, False]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False, False, False]))
+
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""
         population = ParticlePopulation(
@@ -1158,7 +1227,7 @@ class TestParticlePopulation:
             population_config=point_config_simple,
         )
         old_simplices = population._particle_simplices.copy()
-        population.particles['is_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
+        population.particles['status_mobile'] = np.ones(len(population.particles['x']), dtype=bool)
 
         population.update_position(
             flow_field={'u': np.ones(4), 'v': np.zeros(4)},
@@ -1173,3 +1242,84 @@ class TestParticlePopulation:
             old_simplices,
         )
         np.testing.assert_array_equal(population._particle_simplices, expected_simplices)
+
+    def test_release_time_is_converted_to_seconds_since_reference_date(self):
+        population = _single_particle_population(release_start='1970-01-01 00:10:00')
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+    def test_update_status_respects_release_time(self):
+        population = _single_particle_population(release_start='1970-01-01 00:10:00')
+        population.particles['transport_probability'] = np.ones_like(population.particles['x'])
+
+        population._current_time = 599.0
+        population.update_status()
+
+        assert population.particles['status_released'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+        population._current_time = 600.0
+        population.update_status()
+
+        assert population.particles['status_released'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [True]
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([600.0]))
+
+    def test_invalid_release_time_raises_date_format_error(self):
+        with pytest.raises(DateFormatError):
+            _single_particle_population(release_start='1970/01/01 00:10:00')
+
+    def test_release_time_before_reference_date_warns(self):
+        with pytest.warns(UserWarning, match='Computed release time is negative'):
+            population = _single_particle_population(release_start='1969-12-31 23:50:00')
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([-600.0]))
+
+    def test_missing_release_start_defaults_to_simulation_start(self):
+        config = PopulationConfig(
+            {
+                'name': 'Release Time Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 1,
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+                'transport_probability': 'no_probability',
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+            reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+        )
+
+        np.testing.assert_array_equal(population.particles['release_time'], np.array([0.0]))
+
+
+def _single_particle_population(release_start):
+    config = PopulationConfig(
+        {
+            'name': 'Release Time Config',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1,
+                'release_start': release_start,
+                'burial_depth': {
+                    'constant': 0.0,
+                },
+            },
+            'transport_probability': 'no_probability',
+        }
+    )
+    return ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+        reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
