@@ -112,7 +112,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             raise ValueError(
                 f"Unknown suspended_velocity_method '{suspended_velocity_method_str}'. "
                 f"Valid options: {[m.value for m in physics_lib.SuspendedVelocityMethod]}"
-            )
+            ) from None
 
         suspended_velocity_kwargs = {}
         if suspended_velocity_method == physics_lib.SuspendedVelocityMethod.MACDONALD_2006:
