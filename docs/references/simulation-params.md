@@ -189,7 +189,7 @@ Nested under `physics.constants`:
 | `rho_w`                 | number | Optional | `1027.0`  | Water density [kg/m³]. Default valid for 10°C and 35 ppt salinity.               |
 | `rho_s`                 | number | Optional | `2650.0`  | Sediment particle density [kg/m³]. Default is quartz density.                    |
 | `friction_angle`        | number | Optional | `30.0`    | Friction angle of sediment [degrees].                                            |
-| `diffusion_coefficient` | number | Optional | `0.1`     | Random walk diffusion coefficient for turbulent dispersion.                      |
+| `diffusion_coefficient` | number | Optional | `0.1`     | Random walk diffusion coefficient (horizontal diffusivity $K_h$) for turbulent dispersion. |
 
 ### Bed Shear Stress
 
@@ -257,7 +257,7 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient. |
+| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
 
 #### Sand Particles
 

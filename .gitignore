@@ -17,6 +17,9 @@ CLAUDE.md
 # AutoDocs
 docs/apidocs/sedtrails/*
 
+# Analytical benchmark outputs
+tests/analytical/output/
+
 
 # Mac OS X metadata files
 **/.DS_Store

@@ -394,7 +394,7 @@
             "diffusion_coefficient": {
               "type": "number",
               "default": 0.1,
-              "description": "random walk diffusion coefficient"
+              "description": "random walk diffusion coefficient (horizontal diffusivity K_h)"
             }
           }
         },

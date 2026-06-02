@@ -71,6 +71,7 @@ Features
    developer/contribution
    developer/dev-environment
    developer/plugins
+   developer/benchmarks
    developer/adding-unit-tests
    developer/architecture
 
