@@ -1005,33 +1005,30 @@ class ParticlePopulation:
 
     def update_burial_depth(self) -> None:
         """Updates the burial depth of particles in the population.
+
+        Invariant: ``particles['bed_level_previous']`` always holds the bed level
+        at the particle's *current* position at the *previous* timestep, because
+        ``update_bed_level_change_after_movement`` re-samples bed level at the new
+        position after every move.  The difference below is therefore a pure
+        temporal change (zero for a static bed; equal to local morphodynamic
+        accretion/erosion for a dynamic bed).  No spatial correction is needed.
         """
-
-        # Update burial depth
-        bed_level_change_total  = self.particles['bed_level'] - self.particles['bed_level_previous']
-        bed_level_change_position = self.particles.get('bed_level_change_position', np.zeros_like(bed_level_change_total))
-        bed_level_change_time = bed_level_change_total - bed_level_change_position
-        self.particles['burial_depth'] += bed_level_change_time
-
-        # Prevent negative burial depth (particles cannot be above the bed level)
-        i_negative_burial = self.particles['burial_depth'] < 0
-        self.particles['burial_depth'][i_negative_burial] = 0.
-
-        # Update vertical position ('z') based on bed level and burial depth
-        # TODO: add to top attributes. This must go to netcdf for every timestep.
-        # BART: WHAT IS MEANT BY THIS??
-        self.particles['z'] = (
-            self.particles['bed_level'] - self.particles['burial_depth']
-        )  
+        bed_level_change = self.particles['bed_level'] - self.particles['bed_level_previous']
+        self.particles['burial_depth'] += bed_level_change
+        self.particles['burial_depth'] = np.maximum(self.particles['burial_depth'], 0.0)
+        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
     def update_bed_level_change_after_movement(self, bed_level) -> None:
-        """Updates the bed level change due to particle movement (not due to bed level changes in model).
-        """
+        """Re-samples bed level at the new particle positions after movement.
 
-        # Update bed level change based on particle movement 
-        bed_level_old = self.particles['bed_level'].copy()  # store old bed level for next update
+        This preserves the invariant required by ``update_burial_depth``: after
+        this call ``particles['bed_level']`` holds BL at the *new* position at the
+        *current* timestep, so it becomes the correct ``bed_level_previous``
+        reference in the next iteration.  ``z`` is also updated here so that the
+        value written to output reflects the post-move position.
+        """
         self._update_particle_field('bed_level', bed_level)
-        self.particles['bed_level_change_position'] = self.particles['bed_level'] - bed_level_old
+        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
 
     def update_status(self) -> None:
