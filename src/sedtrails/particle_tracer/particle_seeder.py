@@ -197,6 +197,24 @@ def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float 
     return None
 
 
+def _compute_repr_volume(config, n_particles: int) -> float | None:
+    """Return representative volume [m³/particle], or None if not applicable.
+
+    Only defined when burial depth is a random-uniform distribution and the
+    seeding strategy has a computable 2-D footprint area.
+    """
+    burial_depth = getattr(config, 'burial_depth', None)
+    if not isinstance(burial_depth, dict) or 'random' not in burial_depth:
+        return None
+    max_depth = float(burial_depth['random'])
+    strategy_name = getattr(config, 'strategy', '')
+    strategy_settings = getattr(config, 'strategy_settings', {})
+    area = _compute_seeding_area(strategy_name, strategy_settings)
+    if area is None or n_particles == 0:
+        return None
+    return area * max_depth / n_particles
+
+
 def _log_seeding_box_volume(config, positions: list) -> None:
     """Log the seeding box volume and representative particle volume.
 
@@ -795,6 +813,7 @@ class ParticlePopulation:
     grid_geometry: Any = None
     reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE
     particles: Dict = field(init=False, default_factory=dict)  # a dictionary with arrays
+    repr_volume: float = field(init=False, default=np.nan)  # representative volume [m³/particle]
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
     _position_calculator_with_simplex: Any = field(init=False)
@@ -826,6 +845,9 @@ class ParticlePopulation:
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+
+        rv = _compute_repr_volume(self.population_config, len(self.particles['x']))
+        self.repr_volume = rv if rv is not None else np.nan
 
         # Store the outer envelope of the domain using shared grid geometry.
         self._outer_envelope = Path(self.grid_geometry.outer_envelope)

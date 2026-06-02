@@ -18,11 +18,12 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 @dataclass
 class SeederFieldData:
     """
-    Minimal field data needed by ParticleSeeder: only spatial coordinates.
+    Minimal field data needed by ParticleSeeder: spatial coordinates and reference date.
     """
 
     x: np.ndarray
     y: np.ndarray
+    reference_date: str = '1970-01-01 00:00:00'
 
 
 class FormatConverter:
@@ -162,7 +163,7 @@ class FormatConverter:
             sedtrails_data = plugin.convert(None, None, self.reference_date)
             x, y = sedtrails_data.x, sedtrails_data.y
 
-        return SeederFieldData(x=np.asarray(x), y=np.asarray(y))
+        return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=str(self.reference_date))
 
     def get_max_exposure_depth(self, physics_converter) -> np.ndarray:
         """

@@ -10,6 +10,7 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'population_particle_type': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_start_idx': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_count': ('n_populations', np.zeros(N_populations, dtype=int)),
+            'population_repr_volume': ('n_populations', np.full(N_populations, np.nan)),
             # Trajectory metadata
             'trajectory_id': (('n_particles', 'name_strlen'), np.empty((N_particles, name_strlen), dtype='S1')),
             'population_id': ('n_particles', np.zeros(N_particles, dtype=int)),
@@ -70,6 +71,7 @@ def populate_population_metadata(ds, populations):
         ds['population_particle_type'][pop_idx] = getattr(population, 'particle_type', 0)
         ds['population_start_idx'][pop_idx] = particle_offset
         ds['population_count'][pop_idx] = len(population.particles['x'])
+        ds['population_repr_volume'][pop_idx] = getattr(population, 'repr_volume', np.nan)
 
         # Assign population ID to particles
         num_particles = len(population.particles['x'])
