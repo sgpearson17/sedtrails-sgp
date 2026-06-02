@@ -10,7 +10,7 @@ time:
   start:  2011-08-01 00:00:00
   timestep: 3600S
   duration: 250D
-  cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
+  cfl_condition: 0.9  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
     - name: populaton_1
