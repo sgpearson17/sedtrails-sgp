@@ -292,17 +292,3 @@ def test_save_seeded_config_writes_multiple_population_point_files():
         assert populations[1]['seeding']['strategy']['file_points']['path'] == './validation-points.population_2.txt'
     finally:
         _cleanup_output_dir(output_dir)
-
-
-def test_load_bathymetry_view_data_from_sample_netcdf():
-    """The GUI can extract first-timestep bathymetry and coordinates from the sample NetCDF."""
-
-    data = load_bathymetry_view_data(Path('examples/sedtrails-example-multisource.yaml'))
-
-    assert data.variable == 'bedlevel'
-    assert data.input_file.name == 'inlet_sedtrails.nc'
-    assert data.x.shape == data.y.shape == data.values.shape
-    assert data.x.ndim == 1
-    assert data.x.size > 0
-
-

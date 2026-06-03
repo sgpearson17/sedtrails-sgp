@@ -417,6 +417,7 @@ class SeedingGuiApp:
         self.colormap_name = 'SEAWAD'
         self._bathymetry_vmin = -20.0
         self._bathymetry_vmax = 10.0
+        self._max_display_points = 500_000
 
         self.config = load_config(self.config_path)
         self.population_names = get_population_names(self.config)
@@ -613,7 +614,7 @@ class SeedingGuiApp:
             self._refresh_points()
 
     def _refresh_points(self) -> None:
-        if self.points:
+        if self._should_display_points() and self.points:
             self.point_artist.set_offsets(np.asarray(self.points))
         else:
             self.point_artist.set_offsets(np.empty((0, 2)))
@@ -898,11 +899,17 @@ class SeedingGuiApp:
             'random': 'Left click polygon vertices; right click closes; Generate samples random points inside.',
             'grid': 'Left click polygon vertices; right click closes; Generate creates a dx/dy grid inside.',
         }
+        warning = ''
+        if not self._should_display_points() and self.points:
+            warning = f' Warning: >{self._max_display_points:,} points, particles not displayed.'
         return (
             f'Mode: {self.strategy_mode}. {hints.get(self.strategy_mode, "")} '
             f'{len(self.points)} seed point(s), {len(self.draft_vertices)} draft vertex/vertices. '
-            f'Population: {self.population_name}.'
+            f'Population: {self.population_name}.{warning}'
         )
+
+    def _should_display_points(self) -> bool:
+        return len(self.points) <= self._max_display_points
 
     def _show_error(self, message: str) -> None:
         self._show_dialog('SedTRAILS seeding setup error', message, error=True)
