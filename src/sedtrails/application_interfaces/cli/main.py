@@ -154,6 +154,64 @@ def create_config_template_cmd(
         raise typer.Exit(code=1) from e
 
 
+@config_app.command('gui')
+def seeding_gui_cmd(
+    config_file: str = typer.Option(
+        'sedtrails.yml',
+        '--config',
+        '-c',
+        help='Path to the source SedTRAILS configuration file.',
+    ),
+    output_file: str | None = typer.Option(
+        None,
+        '--output',
+        '-o',
+        help='Path to the copied configuration file to write from the GUI. Defaults beside --config.',
+    ),
+    points_output: str | None = typer.Option(
+        None,
+        '--points-output',
+        help='Path to the generated x/y seed-point text file. Defaults next to --output.',
+    ),
+    population: str | None = typer.Option(
+        None,
+        '--population',
+        '-p',
+        help='Population name to update. Defaults to the first configured population.',
+    ),
+    input_format: str | None = typer.Option(
+        None,
+        '--format',
+        help='Override general.input_model.format. Only fm_netcdf is supported in v1.',
+    ),
+    variable: str | None = typer.Option(
+        None,
+        '--variable',
+        help="Bathymetry variable to display. Defaults to 'bedlevel' or 'bed_level'.",
+    ),
+):
+    """
+    Open a small GUI for choosing seed points and writing a copied config.
+    """
+    from sedtrails.application_interfaces.seeding_gui import SeedingGuiError, launch_seeding_gui
+
+    try:
+        launch_seeding_gui(
+            config_path=config_file,
+            output_path=output_file,
+            points_output_path=points_output,
+            population_name=population,
+            format_override=input_format,
+            variable=variable,
+        )
+    except SeedingGuiError as e:
+        typer.echo(f'Error opening seeding GUI: {e}')
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        typer.echo(f'Unexpected error opening seeding GUI: {e}')
+        raise typer.Exit(code=1) from e
+
+
 ######################################################################################################
 # ANALYZER subcommands
 ######################################################################################################
