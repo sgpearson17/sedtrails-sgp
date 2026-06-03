@@ -14,7 +14,6 @@ from sedtrails.application_interfaces.seeding_gui import (
     generate_random_points_in_polygon,
     generate_transect_points,
     load_config,
-    load_bathymetry_view_data,
     remove_population,
     rename_population,
     save_seeded_config,
