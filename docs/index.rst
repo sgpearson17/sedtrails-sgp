@@ -64,6 +64,7 @@ Features
    :caption: Tutorials
 
    tutorials/tutorial1
+   tutorials/loop-simulations
 
 .. toctree::
    :maxdepth: 2
