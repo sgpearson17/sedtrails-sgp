@@ -55,6 +55,7 @@ Features
    user/installation
    user/simulations
    user/output
+   user/visualization
    user/dashboard
    user/seeding
 
