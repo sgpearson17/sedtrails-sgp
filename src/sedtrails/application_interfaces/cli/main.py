@@ -168,7 +168,7 @@ def seeding_gui_cmd(
         '-o',
         help='Path to the copied configuration file to write from the GUI. Defaults beside --config.',
     ),
-    points_output: str | None = typer.Option(
+    points_output_path: str | None = typer.Option(
         None,
         '--points-output',
         help='Path to the generated x/y seed-point text file. Defaults next to --output.',
@@ -199,7 +199,7 @@ def seeding_gui_cmd(
         launch_seeding_gui(
             config_path=config_file,
             output_path=output_file,
-            points_output_path=points_output,
+            points_output_path=points_output_path,
             population_name=population,
             format_override=input_format,
             variable=variable,
