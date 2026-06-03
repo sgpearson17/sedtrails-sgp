@@ -4,9 +4,7 @@ import shutil
 import numpy as np
 import pytest
 import yaml
-from typer.testing import CliRunner
 
-from sedtrails.application_interfaces.cli import app
 from sedtrails.application_interfaces.seeding_gui import (
     SeedingGuiError,
     add_population_from_existing,
