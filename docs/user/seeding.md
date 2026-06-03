@@ -86,7 +86,7 @@ sedtrails config gui \
   --config examples/sedtrails-example-multisource.yaml \
   --output examples/my-case.yaml \
   --points-output examples/my-case.points.txt \
-  --population population_1 \
+  --population populaton_1 \
   --variable bedlevel
 ```
 
