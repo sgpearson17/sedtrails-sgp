@@ -83,6 +83,7 @@ class TestYAMLConfigValidator:
         # Create a temporary YAML configuration file containing only "path"
         config_data = {
             'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc', 'repeat_eulerian_fields': True},
         }
         config_file = tmp_path / 'valid_config.yml'
         config_file.write_text(yaml.dump(config_data))
@@ -93,6 +94,22 @@ class TestYAMLConfigValidator:
 
         assert result['general']['input_model']['format'] == 'fm_netcdf'
         assert result['general']['input_model']['reference_date'] == '2023-01-01'  # Default applied
+        assert result['inputs']['repeat_eulerian_fields'] is True
+
+    def test_validate_yaml_applies_repeat_eulerian_fields_default(self, tmp_path):
+        """The Eulerian forcing loop option defaults to disabled."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['inputs']['repeat_eulerian_fields'] is False
 
     def test_validate_yaml_validation_error(self, tmp_path):
         """

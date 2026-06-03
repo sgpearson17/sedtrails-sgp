@@ -8,7 +8,7 @@ use in the SedTRAILS particle tracking system.
 
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -143,6 +143,36 @@ class FormatConverter:
         sedtrails_data = plugin.convert(current_time, reading_interval, self.reference_date)
 
         return sedtrails_data
+
+    def get_time_bounds(self) -> Tuple[float, float]:
+        """
+        Return the first and last input timestamps in seconds since the reference date.
+
+        Format plugins can provide this without converting the full dataset. The fallback
+        keeps older plugins compatible by performing a full conversion and reading its
+        time coordinate.
+
+        Returns
+        -------
+        tuple of float
+            First and last input timestamps, in seconds since the configured
+            reference date.
+
+        Raises
+        ------
+        ValueError
+            If the input data contains no time values.
+        """
+        plugin = self.format_plugin
+
+        if hasattr(plugin, 'get_time_bounds'):
+            return plugin.get_time_bounds(self.reference_date)
+
+        sedtrails_data = plugin.convert(None, None, self.reference_date)
+        times = np.asarray(sedtrails_data.times, dtype=float)
+        if times.size == 0:
+            raise ValueError('Input data contains no time values')
+        return float(times[0]), float(times[-1])
 
     def get_seeding_field_data(self) -> SeederFieldData:
         """

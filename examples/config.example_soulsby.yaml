@@ -6,6 +6,7 @@ general:
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+  repeat_eulerian_fields: false  # Set true to loop forcing from the first input timestamp
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S

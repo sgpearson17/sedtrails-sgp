@@ -1,10 +1,11 @@
 """
-Unit tests for the SedTRAILS CLI commands using Typer's CliRunner.
+Unit tests for the SedTRAILS CLI commands.
 """
 
 import pytest
 import yaml
-from typer.testing import CliRunner
+from click.testing import CliRunner
+from typer.main import get_command
 from unittest.mock import patch
 from sedtrails.application_interfaces.cli import app
 
@@ -18,6 +19,11 @@ class TestSedtrailsCLI:
     def runner(self):
         """Create a CLI test runner."""
         return CliRunner()
+
+    @pytest.fixture
+    def cli_command(self):
+        """Create a Click command from the Typer app."""
+        return get_command(app)
 
     @pytest.fixture
     def sample_config_data(self):
@@ -36,14 +42,14 @@ class TestSedtrailsCLI:
             mock.return_value = 'output'
             yield mock
 
-    def test_run_simulation_default_success(self, runner, sample_config_data, mock_run_simulation):
+    def test_run_simulation_default_success(self, runner, cli_command, sample_config_data, mock_run_simulation):
         """Test successful run with default config file name."""
         with runner.isolated_filesystem():
             # Create default config file
             with open('sedtrails.yml', 'w') as f:
                 yaml.dump(sample_config_data, f)
 
-            result = runner.invoke(app, ['run'])
+            result = runner.invoke(cli_command, ['run'])
 
             assert result.exit_code == 0
             assert "Starting simulation from 'sedtrails.yml'..." in result.stdout
@@ -55,7 +61,7 @@ class TestSedtrailsCLI:
                 verbose=True
             )
 
-    def test_run_simulation_custom_config(self, runner, sample_config_data, mock_run_simulation):
+    def test_run_simulation_custom_config(self, runner, cli_command, sample_config_data, mock_run_simulation):
         """Test run with custom config file."""
         with runner.isolated_filesystem():
             custom_config = 'my_config.yml'
@@ -64,7 +70,7 @@ class TestSedtrailsCLI:
             with open(custom_config, 'w') as f:
                 yaml.dump(sample_config_data, f)
 
-            result = runner.invoke(app, ['run', '--config', custom_config])
+            result = runner.invoke(cli_command, ['run', '--config', custom_config])
 
             assert result.exit_code == 0
             assert f"Starting simulation from '{custom_config}'..." in result.stdout
@@ -76,7 +82,7 @@ class TestSedtrailsCLI:
                 verbose=True
             )
 
-    def test_run_simulation_short_option(self, runner, sample_config_data, mock_run_simulation):
+    def test_run_simulation_short_option(self, runner, cli_command, sample_config_data, mock_run_simulation):
         """Test run with short option flag."""
         with runner.isolated_filesystem():
             custom_config = 'config.yml'
@@ -85,7 +91,7 @@ class TestSedtrailsCLI:
             with open(custom_config, 'w') as f:
                 yaml.dump(sample_config_data, f)
 
-            result = runner.invoke(app, ['run', '-c', custom_config])
+            result = runner.invoke(cli_command, ['run', '-c', custom_config])
 
             assert result.exit_code == 0
             assert f"Starting simulation from '{custom_config}'..." in result.stdout
@@ -97,7 +103,7 @@ class TestSedtrailsCLI:
                 verbose=True
             )
 
-    def test_run_simulation_error(self, runner, sample_config_data, mock_run_simulation):
+    def test_run_simulation_error(self, runner, cli_command, sample_config_data, mock_run_simulation):
         """Test run when simulation fails."""
         with runner.isolated_filesystem():
             # Create config file
@@ -107,7 +113,7 @@ class TestSedtrailsCLI:
             # Mock run_simulation to raise an exception
             mock_run_simulation.side_effect = Exception('Simulation failed')
 
-            result = runner.invoke(app, ['run'])
+            result = runner.invoke(cli_command, ['run'])
 
             assert result.exit_code == 1
             assert 'Error running simulation: Simulation failed' in result.stdout

@@ -71,6 +71,59 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=False)
         assert not Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=True)
 
+    def test_eulerian_time_is_unchanged_when_repeat_disabled(self):
+        """Without looping, field lookups use the simulation clock."""
+
+        mapped_time = Simulation._map_eulerian_field_time(
+            current_time_seconds=25.0,
+            repeat_eulerian_fields=False,
+            input_time_bounds=(0.0, 10.0),
+        )
+
+        assert mapped_time == 25.0
+
+    @pytest.mark.parametrize(
+        'current_time,expected_time',
+        [
+            (5.0, 5.0),
+            (10.0, 10.0),
+            (12.5, 2.5),
+            (25.0, 5.0),
+        ],
+    )
+    def test_eulerian_time_repeats_from_input_start(self, current_time, expected_time):
+        """When looping is enabled, times after forcing end wrap to the first input timestamp."""
+
+        mapped_time = Simulation._map_eulerian_field_time(
+            current_time_seconds=current_time,
+            repeat_eulerian_fields=True,
+            input_time_bounds=(0.0, 10.0),
+        )
+
+        assert mapped_time == expected_time
+
+    def test_eulerian_time_repeats_with_nonzero_input_start(self):
+        """Looping preserves input-series offsets when the forcing does not start at zero seconds."""
+
+        mapped_time = Simulation._map_eulerian_field_time(
+            current_time_seconds=125.0,
+            repeat_eulerian_fields=True,
+            input_time_bounds=(100.0, 110.0),
+        )
+
+        assert mapped_time == 105.0
+
+    def test_eulerian_time_repeat_uses_morfac_decompressed_bounds(self):
+        """Looping should use the already-decompressed forcing span reported by the converter."""
+
+        mapped_time = Simulation._map_eulerian_field_time(
+            current_time_seconds=250.0,
+            repeat_eulerian_fields=True,
+            input_time_bounds=(100.0, 220.0),
+        )
+
+        assert mapped_time == 130.0
+
 
 class TestSimulationManagerExpandTimeDimension:
     """Tests for the _expand_time_dimension method."""
