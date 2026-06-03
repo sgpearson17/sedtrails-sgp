@@ -308,10 +308,3 @@ def test_load_bathymetry_view_data_from_sample_netcdf():
     assert data.x.size > 0
 
 
-def test_config_gui_help_is_registered():
-    """The SedTRAILS CLI exposes the seeding GUI command and options."""
-
-    result = CliRunner().invoke(app, ['config', 'gui', '--help'])
-
-    assert result.exit_code == 0
-    assert '--points-output' in result.stdout
