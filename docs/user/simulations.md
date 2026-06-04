@@ -11,6 +11,9 @@ Simulations are configured using YAML files. These files define the parameters a
 
 For a detailed reference of all available parameters, please refer to the [Simulation Parameters Reference](../references/simulation-params.md).
 
+`seeding.release_start` is interpreted relative to `general.input_model.reference_date`.
+For example, if `reference_date` is `2016-09-21 19:20:00` and `release_start` is `2016-09-21 19:30:00`, particles are released 600 seconds after simulation start.
+
 
 ### Example Configuration File
 
