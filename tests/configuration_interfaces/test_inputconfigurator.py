@@ -111,6 +111,43 @@ class TestYAMLConfigValidator:
 
         assert result['inputs']['repeat_eulerian_fields'] is False
 
+    def test_validate_yaml_accepts_inner_boundary_pol_files(self, tmp_path):
+        """Domain config accepts one or more island/cutout polygon files."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'inner_boundary_pol_files': ['island_01.pol', 'island_02.pol'],
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['domain']['inner_boundary_pol_files'] == ['island_01.pol', 'island_02.pol']
+
+    def test_validate_yaml_rejects_non_string_inner_boundary_pol_files(self, tmp_path):
+        """Inner boundary file entries must be paths encoded as strings."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'inner_boundary_pol_files': [123],
+            },
+        }
+        config_file = tmp_path / 'invalid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        with pytest.raises(YamlValidationError, match='YAML config validation error'):
+            validator.validate_yaml(str(config_file))
+
     def test_validate_yaml_validation_error(self, tmp_path):
         """
         Test YAML file validation error is generated

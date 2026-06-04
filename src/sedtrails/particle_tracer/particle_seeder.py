@@ -647,10 +647,15 @@ class ParticlePopulation:
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
         self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
-        # Compute whether particles are inside (or outside) the domain envelope
-        self.particles['status_domain'] = self._outer_envelope.contains_points(
-            np.column_stack((self.particles['x'], self.particles['y']))
+        # Compute whether particles are inside the active mesh. This respects
+        # any masked-out inner-boundary triangles in shared grid geometry.
+        simplex_seeds = self._particle_simplices if self._particle_simplices.shape == (n_particles,) else None
+        self._particle_simplices = self.grid_geometry.locate_points(
+            self.particles['x'],
+            self.particles['y'],
+            simplex_seeds,
         )
+        self.particles['status_domain'] = self._particle_simplices >= 0
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
@@ -772,7 +777,11 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
-        grid_geometry = create_grid_geometry(sedtrails_data.x, sedtrails_data.y)
+        grid_geometry = create_grid_geometry(
+            sedtrails_data.x,
+            sedtrails_data.y,
+            triangles=_geometry_triangles_from_field_data(sedtrails_data),
+        )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
             pop = ParticlePopulation(
@@ -784,6 +793,28 @@ class ParticleSeeder:
             )
             populations.append(pop)
         return populations
+
+
+def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> np.ndarray | None:
+    """Return triangle connectivity compatible with the provided x/y coordinates."""
+
+    connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
+    if connectivity is None:
+        connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
+    if connectivity is None:
+        return None
+
+    triangles = np.asarray(connectivity, dtype=np.int64)
+    if triangles.ndim != 2 or triangles.shape[1] != 3 or triangles.size == 0:
+        return None
+
+    n_points = np.asarray(sedtrails_data.x).size
+    valid = triangles >= 0
+    if np.any(valid) and int(np.max(triangles[valid])) >= n_points:
+        return None
+    if np.any(np.sum(valid, axis=1) != 3):
+        return None
+    return triangles
 
 
 # if __name__ == '__main__':

@@ -309,9 +309,28 @@ class Simulation:
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
+            'domain_config': self._get_domain_config(),
         }
 
         return format_config
+
+    def _get_domain_config(self):
+        """Return domain config with relative inner-boundary files resolved."""
+
+        domain_config = dict(self._controller.get('domain', {}) or {})
+        inner_files = domain_config.get('inner_boundary_pol_files')
+        if not inner_files:
+            return domain_config
+
+        config_dir = Path(self._config_file).parent
+        resolved_files = []
+        for pol_file in inner_files:
+            path = Path(pol_file)
+            if not path.is_absolute():
+                path = config_dir / path
+            resolved_files.append(str(path))
+        domain_config['inner_boundary_pol_files'] = resolved_files
+        return domain_config
 
     def _get_output_dir(self):
         """

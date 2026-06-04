@@ -218,6 +218,14 @@
           "type": "string",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
         },
+        "inner_boundary_pol_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "paths to Deltares/Tekal '.pol' files containing island or cutout polygons to exclude from the active particle-tracking mesh."
+        },
         "subset_m": {
           "type": "integer",
           "default": 0,

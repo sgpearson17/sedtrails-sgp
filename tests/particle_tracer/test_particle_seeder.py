@@ -2,6 +2,8 @@
 Unit tests for particle seeding strategies.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -12,6 +14,7 @@ from sedtrails.particle_tracer.particle_seeder import (
     GridStrategy,
     ParticleFactory,
     ParticlePopulation,
+    ParticleSeeder,
     PointStrategy,
     PopulationConfig,
     RandomStrategy,
@@ -1218,6 +1221,46 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_released'], np.array([False, False, False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False, False, False]))
+
+    def test_update_status_uses_active_connectivity_holes_for_domain_mask(self, monkeypatch):
+        """Particles inside a mesh hole should be outside the active domain."""
+
+        config = {
+            'name': 'Hole Domain Config',
+            'particle_type': 'sand',
+            'transport_probability': 'no_probability',
+            'seeding': {
+                'strategy': {'point': {'locations': ['1.0,1.0', '1.0,0.4']}},
+                'quantity': 1,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+        field_data = SimpleNamespace(
+            x=np.array([0.0, 2.0, 2.0, 0.0, 0.8, 1.2, 1.2, 0.8]),
+            y=np.array([0.0, 0.0, 2.0, 2.0, 0.8, 0.8, 1.2, 1.2]),
+            face_node_connectivity=np.array(
+                [
+                    [0, 1, 5],
+                    [0, 5, 4],
+                    [1, 2, 6],
+                    [1, 6, 5],
+                    [2, 3, 7],
+                    [2, 7, 6],
+                    [3, 0, 4],
+                    [3, 4, 7],
+                ],
+                dtype=np.int64,
+            ),
+        )
+        population = ParticleSeeder([config]).seed(field_data)[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(2)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([False, True]))
 
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""

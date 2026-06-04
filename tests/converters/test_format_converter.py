@@ -4,13 +4,59 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
 from sedtrails.transport_converter.format_converter import FormatConverter
-from sedtrails.transport_converter.plugins.format import sfincs
+from sedtrails.transport_converter.plugins.format import fm_netcdf, sfincs
 
 
 def _existing_input_path():
     """Returns a guaranteed-existing file path for plugin constructor inputs."""
     return __file__
+
+
+def _write_square_pol(path, xmin, ymin, xmax, ymax):
+    """Write a single-block Tekal polygon around a square."""
+    path.write_text(
+        f"""
+island
+4 2
+{xmin} {ymin}
+{xmax} {ymin}
+{xmax} {ymax}
+{xmin} {ymax}
+""".strip()
+    )
+
+
+def _sfincs_dataset_from_face_centers(face_centers):
+    """Build a small SFINCS-like UGRID dataset with quad faces at requested centroids."""
+    centers = np.asarray(face_centers, dtype=float)
+    node_x = []
+    node_y = []
+    faces = []
+    half_size = 0.05
+    for center_x, center_y in centers:
+        start = len(node_x)
+        node_x.extend([center_x - half_size, center_x + half_size, center_x + half_size, center_x - half_size])
+        node_y.extend([center_y - half_size, center_y - half_size, center_y + half_size, center_y + half_size])
+        faces.append([start, start + 1, start + 2, start + 3])
+
+    n_faces = centers.shape[0]
+    ds = xr.Dataset(
+        data_vars={
+            'mesh2d_node_x': (('node',), np.asarray(node_x)),
+            'mesh2d_node_y': (('node',), np.asarray(node_y)),
+            'mesh2d_face_nodes': (('face', 'nmax'), np.asarray(faces, dtype=np.int64)),
+            'zb': (('face',), -np.arange(1, n_faces + 1, dtype=float)),
+            'h': (('time', 'face'), np.vstack((np.arange(n_faces), np.arange(n_faces) + 10.0))),
+            'u': (('time', 'face'), np.full((2, n_faces), 0.1)),
+            'v': (('time', 'face'), np.zeros((2, n_faces))),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['mesh2d_face_nodes'].attrs['start_index'] = 0
+    ds['mesh2d_face_nodes'].encoding['_FillValue'] = -1
+    return ds
 
 
 class _PluginWithCoordinateReader:
@@ -68,6 +114,46 @@ def test_get_seeding_field_data_falls_back_to_convert():
 
     np.testing.assert_array_equal(field_data.x, np.array([10.0, 20.0]))
     np.testing.assert_array_equal(field_data.y, np.array([30.0, 40.0]))
+
+
+def test_fm_convert_masks_inner_boundary_faces_from_domain_config(monkeypatch, tmp_path):
+    """FM conversion excludes source faces whose centroids fall inside island polygons."""
+
+    island_file = tmp_path / 'island.pol'
+    island_file.write_text(
+        """
+island
+4 2
+9 9
+12 9
+12 12
+9 12
+""".strip()
+    )
+    ds = xr.Dataset(
+        data_vars={
+            'net_xcc': (('node',), np.array([0.0, 1.0, 0.0, 10.0, 11.0, 10.0])),
+            'net_ycc': (('node',), np.array([0.0, 0.0, 1.0, 10.0, 10.0, 11.0])),
+            'NetElemNode': (('face', 'nmax'), np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int64)),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['NetElemNode'].attrs['start_index'] = 0
+
+    def fake_load(self):
+        self.input_data = ds
+
+    monkeypatch.setattr(fm_netcdf.FormatPlugin, 'load', fake_load)
+    plugin = fm_netcdf.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'inner_boundary_pol_files': [str(island_file)]}
+
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
+    seeding_data = plugin.get_seeding_field_data()
+
+    np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, np.array([[0, 1, 2]], dtype=np.int64))
+    np.testing.assert_array_equal(seeding_data.face_node_connectivity, np.array([[0, 1, 2]], dtype=np.int64))
+    assert sedtrails_data.metadata.inner_boundary_polygon_count == 1
+    assert sedtrails_data.metadata.inner_boundary_masked_face_count == 1
 
 
 def test_sfincs_get_seeding_coordinates_uses_ugrid_face_coordinates(monkeypatch):
@@ -156,6 +242,76 @@ def test_sfincs_convert_stores_face_node_mesh_geometry(monkeypatch):
     np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, np.array([[0, 1, 2, 3]]))
     assert sedtrails_data.face_node_fill_value == -1
     assert sedtrails_data.mesh_geometry()['face_node_connectivity'].shape == (1, 4)
+
+
+def test_sfincs_convert_masks_inner_boundary_faces_from_domain_config(monkeypatch, tmp_path):
+    """SFINCS conversion excludes faces whose centroids fall inside island polygons."""
+    island_file = tmp_path / 'island.pol'
+    _write_square_pol(island_file, 0.8, 0.8, 1.2, 1.2)
+    ds = _sfincs_dataset_from_face_centers([(0.0, 0.0), (1.0, 1.0)])
+
+    def fake_load(self):
+        """Injects synthetic SFINCS dataset for conversion testing."""
+        self.input_data = ds
+
+    monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
+
+    plugin = sfincs.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'inner_boundary_pol_files': [str(island_file)]}
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
+
+    np.testing.assert_allclose(sedtrails_data.x, np.array([0.0]))
+    np.testing.assert_allclose(sedtrails_data.y, np.array([0.0]))
+    np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, np.array([[0, 1, 2, 3]]))
+    np.testing.assert_array_equal(sedtrails_data.water_depth, np.array([[0.0], [10.0]]))
+    np.testing.assert_allclose(sedtrails_data.depth_avg_flow_velocity['x'], np.full((2, 1), 0.1))
+    assert sedtrails_data.node_x.shape == (8,)
+    assert sedtrails_data.metadata.inner_boundary_polygon_count == 1
+    assert sedtrails_data.metadata.inner_boundary_masked_face_count == 1
+    assert sedtrails_data.metadata.inner_boundary_active_face_count == 1
+
+
+def test_sfincs_seeding_geometry_respects_inner_boundary_holes(monkeypatch, tmp_path):
+    """SFINCS seeding triangles should leave configured island interiors outside the mesh."""
+    island_file = tmp_path / 'island.pol'
+    _write_square_pol(island_file, 0.85, 0.85, 1.15, 1.15)
+    face_centers = [
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (2.0, 2.0),
+        (0.0, 2.0),
+        (0.8, 0.8),
+        (1.2, 0.8),
+        (1.2, 1.2),
+        (0.8, 1.2),
+        (1.0, 1.0),
+    ]
+    ds = _sfincs_dataset_from_face_centers(face_centers)
+
+    def fake_load(self):
+        """Injects synthetic SFINCS dataset for seeding-geometry testing."""
+        self.input_data = ds
+
+    monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
+
+    plugin = sfincs.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'inner_boundary_pol_files': [str(island_file)]}
+    field_data = plugin.get_seeding_field_data()
+    grid_geometry = create_grid_geometry(
+        field_data.x,
+        field_data.y,
+        triangles=field_data.particle_face_connectivity,
+    )
+
+    assert field_data.x.shape == (8,)
+    assert field_data.particle_face_connectivity.shape[1] == 3
+    simplices = grid_geometry.locate_points(
+        np.array([1.0, 1.0, 1.0]),
+        np.array([1.0, 0.4, 1.6]),
+    )
+    assert simplices[0] == -1
+    assert simplices[1] >= 0
+    assert simplices[2] >= 0
 
 
 def test_sfincs_get_seeding_coordinates_raises_on_non_ugrid2d(monkeypatch):
