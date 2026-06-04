@@ -1,6 +1,8 @@
 import numpy as np
 
 from sedtrails.transport_converter.domain_mask import (
+    classify_boundary_edges,
+    extract_boundary_edges,
     filter_connectivity_by_inner_polygons,
     triangulate_face_connectivity,
 )
@@ -71,3 +73,58 @@ def test_triangulate_face_connectivity_splits_quads_without_reindexing_nodes():
     triangles = triangulate_face_connectivity(connectivity)
 
     np.testing.assert_array_equal(triangles, np.array([[0, 1, 2], [0, 2, 3], [4, 5, 6]], dtype=np.int64))
+
+
+def test_extract_boundary_edges_returns_edges_used_once():
+    """Internal triangle edges are excluded from the active boundary edge table."""
+
+    connectivity = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+
+    edges = extract_boundary_edges(connectivity)
+
+    assert {tuple(sorted(edge)) for edge in edges.tolist()} == {(0, 1), (1, 2), (2, 3), (0, 3)}
+
+
+def test_classify_boundary_edges_uses_open_and_land_override_polygons():
+    """Boundary edge midpoints inside override polygons receive the configured class."""
+
+    node_x = np.array([0.0, 1.0, 1.0, 0.0])
+    node_y = np.array([0.0, 0.0, 1.0, 1.0])
+    connectivity = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+    open_polygons = [
+        np.array([[0.25, -0.10], [0.75, -0.10], [0.75, 0.10], [0.25, 0.10]]),
+        np.array([[0.90, 0.25], [1.10, 0.25], [1.10, 0.75], [0.90, 0.75]]),
+    ]
+    land_polygons = [np.array([[-0.10, 0.25], [0.10, 0.25], [0.10, 0.75], [-0.10, 0.75]])]
+
+    classification = classify_boundary_edges(
+        node_x,
+        node_y,
+        connectivity,
+        {'open': open_polygons, 'land': land_polygons},
+        class_files={'open': ['open_a.pol', 'open_b.pol'], 'land': ['land.pol']},
+    )
+
+    assert classification.class_counts == {'open': 2, 'land': 1, 'unclassified': 1, 'ambiguous': 0}
+    assert classification.polygon_counts == {'open': 2, 'land': 1}
+    assert classification.to_metadata()['class_pol_files']['open'] == ['open_a.pol', 'open_b.pol']
+
+
+def test_classify_boundary_edges_marks_overlapping_override_polygons_as_land():
+    """Land wins when an edge is selected by both open and land override polygons."""
+
+    node_x = np.array([0.0, 1.0, 0.0])
+    node_y = np.array([0.0, 0.0, 1.0])
+    connectivity = np.array([[0, 1, 2]], dtype=np.int64)
+    selector = np.array([[0.25, -0.10], [0.75, -0.10], [0.75, 0.10], [0.25, 0.10]])
+
+    classification = classify_boundary_edges(
+        node_x,
+        node_y,
+        connectivity,
+        {'open': [selector], 'land': [selector]},
+    )
+
+    assert classification.class_counts['land'] == 1
+    assert classification.class_counts['ambiguous'] == 0
+    assert ('open', 'land') in classification.class_sources

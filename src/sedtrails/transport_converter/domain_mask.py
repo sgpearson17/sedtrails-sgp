@@ -1,4 +1,4 @@
-"""Domain masking helpers for polygon-defined inner boundaries."""
+"""Domain masking and boundary classification helpers."""
 
 from __future__ import annotations
 
@@ -22,6 +22,34 @@ class ConnectivityMaskResult:
     removed_count: int
 
 
+@dataclass(frozen=True)
+class BoundaryEdgeClassification:
+    """Boundary edge classes and diagnostics from polygon overrides."""
+
+    edges: np.ndarray
+    midpoints: np.ndarray
+    classes: np.ndarray
+    class_sources: tuple[tuple[str, ...], ...]
+    class_counts: dict[str, int]
+    polygon_counts: dict[str, int]
+    class_files: dict[str, list[str]]
+
+    def to_metadata(self) -> dict[str, Any]:
+        """Return a metadata-friendly boundary edge classification table."""
+        return {
+            'edge_nodes': self.edges.tolist(),
+            'edge_midpoints': self.midpoints.tolist(),
+            'edge_classes': self.classes.tolist(),
+            'edge_class_sources': [list(sources) for sources in self.class_sources],
+            'class_counts': dict(self.class_counts),
+            'polygon_counts': dict(self.polygon_counts),
+            'class_pol_files': {name: list(files) for name, files in self.class_files.items()},
+        }
+
+
+BOUNDARY_CLASS_NAMES = ('open', 'land')
+
+
 def inner_boundary_files_from_config(domain_config: Mapping[str, Any] | None) -> list[str]:
     """Return configured inner-boundary Tekal files as strings."""
 
@@ -40,6 +68,34 @@ def load_inner_boundary_polygons(domain_config: Mapping[str, Any] | None) -> lis
     """Load inner-boundary polygons from a domain configuration mapping."""
 
     return read_tekal_polygons(inner_boundary_files_from_config(domain_config))
+
+
+def boundary_class_files_from_config(domain_config: Mapping[str, Any] | None) -> dict[str, list[str]]:
+    """Return configured boundary-class Tekal files by class."""
+
+    class_files = {class_name: [] for class_name in BOUNDARY_CLASS_NAMES}
+    if not domain_config:
+        return class_files
+
+    configured = domain_config.get('boundary_class_pol_files', {}) or {}
+    for class_name in BOUNDARY_CLASS_NAMES:
+        pol_files = configured.get(class_name, [])
+        if pol_files is None:
+            continue
+        if isinstance(pol_files, (str, Path)):
+            class_files[class_name] = [str(pol_files)]
+        else:
+            class_files[class_name] = [str(pol_file) for pol_file in pol_files]
+    return class_files
+
+
+def load_boundary_class_polygons(domain_config: Mapping[str, Any] | None) -> dict[str, list[np.ndarray]]:
+    """Load boundary-class override polygons by class from domain configuration."""
+
+    return {
+        class_name: read_tekal_polygons(pol_files)
+        for class_name, pol_files in boundary_class_files_from_config(domain_config).items()
+    }
 
 
 def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
@@ -103,6 +159,112 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
     if not triangles:
         return np.empty((0, 3), dtype=np.int64)
     return np.asarray(triangles, dtype=np.int64)
+
+
+def extract_boundary_edges(connectivity: np.ndarray) -> np.ndarray:
+    """Return edges used by exactly one face/triangle in a connectivity table."""
+
+    faces = np.asarray(connectivity, dtype=np.int64)
+    edge_counts: dict[tuple[int, int], int] = {}
+    oriented_edges: dict[tuple[int, int], tuple[int, int]] = {}
+
+    for face in faces:
+        valid = [int(index) for index in face if index >= 0]
+        if len(valid) < 2:
+            continue
+        for index, start in enumerate(valid):
+            end = valid[(index + 1) % len(valid)]
+            if start == end:
+                continue
+            key = tuple(sorted((start, end)))
+            edge_counts[key] = edge_counts.get(key, 0) + 1
+            oriented_edges.setdefault(key, (start, end))
+
+    boundary_edges = [oriented_edges[key] for key, count in edge_counts.items() if count == 1]
+    if not boundary_edges:
+        return np.empty((0, 2), dtype=np.int64)
+    return np.asarray(boundary_edges, dtype=np.int64)
+
+
+def classify_boundary_edges_from_config(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    connectivity: np.ndarray,
+    domain_config: Mapping[str, Any] | None,
+) -> BoundaryEdgeClassification | None:
+    """Classify active boundary edges using configured open/land polygon overrides."""
+
+    class_files = boundary_class_files_from_config(domain_config)
+    if not any(class_files.values()):
+        return None
+    class_polygons = load_boundary_class_polygons(domain_config)
+    return classify_boundary_edges(node_x, node_y, connectivity, class_polygons, class_files=class_files)
+
+
+def classify_boundary_edges(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    connectivity: np.ndarray,
+    class_polygons: Mapping[str, Iterable[np.ndarray]],
+    class_files: Mapping[str, list[str]] | None = None,
+) -> BoundaryEdgeClassification:
+    """Classify active boundary edges by testing edge midpoints against class polygons."""
+
+    x = np.asarray(node_x, dtype=float).ravel()
+    y = np.asarray(node_y, dtype=float).ravel()
+    edges = extract_boundary_edges(connectivity)
+    midpoints = np.full((edges.shape[0], 2), np.nan, dtype=float)
+    if edges.size:
+        valid = (edges >= 0) & (edges < x.size) & (edges < y.size)
+        valid_edges = valid.all(axis=1)
+        midpoints[valid_edges, 0] = np.mean(x[edges[valid_edges]], axis=1)
+        midpoints[valid_edges, 1] = np.mean(y[edges[valid_edges]], axis=1)
+
+    matches_by_class = {
+        class_name: points_inside_any_polygon(midpoints, polygons)
+        for class_name, polygons in class_polygons.items()
+        if class_name in BOUNDARY_CLASS_NAMES
+    }
+
+    edge_classes: list[str] = []
+    class_sources: list[tuple[str, ...]] = []
+    for edge_index in range(edges.shape[0]):
+        matches = tuple(
+            class_name
+            for class_name in BOUNDARY_CLASS_NAMES
+            if matches_by_class.get(class_name, np.zeros(edges.shape[0], dtype=bool))[edge_index]
+        )
+        class_sources.append(matches)
+        if not matches:
+            edge_classes.append('unclassified')
+        elif 'land' in matches:
+            edge_classes.append('land')
+        elif len(matches) == 1:
+            edge_classes.append(matches[0])
+        else:
+            edge_classes.append('ambiguous')
+
+    class_array = np.asarray(edge_classes, dtype=object)
+    class_counts = {class_name: int(np.count_nonzero(class_array == class_name)) for class_name in BOUNDARY_CLASS_NAMES}
+    class_counts['unclassified'] = int(np.count_nonzero(class_array == 'unclassified'))
+    class_counts['ambiguous'] = int(np.count_nonzero(class_array == 'ambiguous'))
+    polygon_counts = {
+        class_name: len([polygon for polygon in polygons if np.asarray(polygon).shape[0] >= 3])
+        for class_name, polygons in class_polygons.items()
+        if class_name in BOUNDARY_CLASS_NAMES
+    }
+    for class_name in BOUNDARY_CLASS_NAMES:
+        polygon_counts.setdefault(class_name, 0)
+
+    return BoundaryEdgeClassification(
+        edges=edges,
+        midpoints=midpoints,
+        classes=class_array,
+        class_sources=tuple(class_sources),
+        class_counts=class_counts,
+        polygon_counts=polygon_counts,
+        class_files={class_name: list(files) for class_name, files in (class_files or {}).items()},
+    )
 
 
 def face_centroids(node_x: np.ndarray, node_y: np.ndarray, connectivity: np.ndarray) -> np.ndarray:

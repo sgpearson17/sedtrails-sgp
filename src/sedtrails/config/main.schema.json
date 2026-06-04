@@ -226,6 +226,30 @@
           "default": [],
           "description": "paths to Deltares/Tekal '.pol' files containing island or cutout polygons to exclude from the active particle-tracking mesh."
         },
+        "boundary_class_pol_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "open": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as open/offshore boundaries."
+            },
+            "land": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as land/cutout boundaries."
+            }
+          },
+          "default": {},
+          "description": "User override polygons for active boundary edge classes. Edge midpoints inside these polygons are classified by boundary class."
+        },
         "subset_m": {
           "type": "integer",
           "default": 0,

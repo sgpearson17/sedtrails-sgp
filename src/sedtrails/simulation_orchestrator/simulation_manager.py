@@ -315,22 +315,37 @@ class Simulation:
         return format_config
 
     def _get_domain_config(self):
-        """Return domain config with relative inner-boundary files resolved."""
+        """Return domain config with relative Tekal polygon files resolved."""
 
         domain_config = dict(self._controller.get('domain', {}) or {})
-        inner_files = domain_config.get('inner_boundary_pol_files')
-        if not inner_files:
-            return domain_config
-
         config_dir = Path(self._config_file).parent
+
+        inner_files = domain_config.get('inner_boundary_pol_files')
+        if inner_files:
+            domain_config['inner_boundary_pol_files'] = self._resolve_polygon_files(inner_files, config_dir)
+
+        boundary_class_files = domain_config.get('boundary_class_pol_files')
+        if boundary_class_files:
+            domain_config['boundary_class_pol_files'] = {
+                boundary_class: self._resolve_polygon_files(pol_files, config_dir)
+                for boundary_class, pol_files in boundary_class_files.items()
+            }
+        return domain_config
+
+    @staticmethod
+    def _resolve_polygon_files(pol_files, config_dir: Path) -> list[str]:
+        """Resolve one or more polygon file paths relative to the config file."""
+
+        if isinstance(pol_files, (str, Path)):
+            pol_files = [pol_files]
+
         resolved_files = []
-        for pol_file in inner_files:
+        for pol_file in pol_files:
             path = Path(pol_file)
             if not path.is_absolute():
                 path = config_dir / path
             resolved_files.append(str(path))
-        domain_config['inner_boundary_pol_files'] = resolved_files
-        return domain_config
+        return resolved_files
 
     def _get_output_dir(self):
         """

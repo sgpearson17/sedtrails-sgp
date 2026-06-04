@@ -148,6 +148,49 @@ class TestYAMLConfigValidator:
         with pytest.raises(YamlValidationError, match='YAML config validation error'):
             validator.validate_yaml(str(config_file))
 
+    def test_validate_yaml_accepts_boundary_class_pol_files(self, tmp_path):
+        """Domain config accepts open and land boundary override polygon files."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'boundary_class_pol_files': {
+                    'open': ['offshore_01.pol', 'offshore_02.pol'],
+                    'land': ['coastline.pol'],
+                },
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['domain']['boundary_class_pol_files']['open'] == ['offshore_01.pol', 'offshore_02.pol']
+        assert result['domain']['boundary_class_pol_files']['land'] == ['coastline.pol']
+
+    def test_validate_yaml_rejects_non_string_boundary_class_pol_files(self, tmp_path):
+        """Boundary override file entries must be paths encoded as strings."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'boundary_class_pol_files': {
+                    'open': [123],
+                },
+            },
+        }
+        config_file = tmp_path / 'invalid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        with pytest.raises(YamlValidationError, match='YAML config validation error'):
+            validator.validate_yaml(str(config_file))
+
     def test_validate_yaml_validation_error(self, tmp_path):
         """
         Test YAML file validation error is generated

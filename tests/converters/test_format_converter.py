@@ -156,6 +156,38 @@ island
     assert sedtrails_data.metadata.inner_boundary_masked_face_count == 1
 
 
+def test_fm_convert_stores_boundary_edge_class_overrides(monkeypatch, tmp_path):
+    """FM conversion stores user override classes for active boundary edges."""
+
+    open_file = tmp_path / 'open.pol'
+    land_file = tmp_path / 'land.pol'
+    _write_square_pol(open_file, 0.25, -0.10, 0.75, 0.10)
+    _write_square_pol(land_file, -0.10, 0.25, 0.10, 0.75)
+    ds = xr.Dataset(
+        data_vars={
+            'net_xcc': (('node',), np.array([0.0, 1.0, 0.0])),
+            'net_ycc': (('node',), np.array([0.0, 0.0, 1.0])),
+            'NetElemNode': (('face', 'nmax'), np.array([[0, 1, 2]], dtype=np.int64)),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['NetElemNode'].attrs['start_index'] = 0
+
+    def fake_load(self):
+        self.input_data = ds
+
+    monkeypatch.setattr(fm_netcdf.FormatPlugin, 'load', fake_load)
+    plugin = fm_netcdf.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'boundary_class_pol_files': {'open': [str(open_file)], 'land': [str(land_file)]}}
+
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
+
+    edge_classes = sedtrails_data.metadata.boundary_edge_classification
+    assert edge_classes['class_counts'] == {'open': 1, 'land': 1, 'unclassified': 1, 'ambiguous': 0}
+    assert edge_classes['polygon_counts'] == {'open': 1, 'land': 1}
+    assert edge_classes['class_pol_files']['open'] == [str(open_file)]
+
+
 def test_sfincs_get_seeding_coordinates_uses_ugrid_face_coordinates(monkeypatch):
     """Checks SFINCS seeding coordinates come directly from UGRID face centers."""
     class FakeUgrid2d:
@@ -312,6 +344,31 @@ def test_sfincs_seeding_geometry_respects_inner_boundary_holes(monkeypatch, tmp_
     assert simplices[0] == -1
     assert simplices[1] >= 0
     assert simplices[2] >= 0
+
+
+def test_sfincs_convert_stores_boundary_edge_class_overrides(monkeypatch, tmp_path):
+    """SFINCS conversion stores user override classes for active particle-domain edges."""
+    open_file = tmp_path / 'open.pol'
+    land_file = tmp_path / 'land.pol'
+    _write_square_pol(open_file, 0.75, -0.10, 1.25, 0.10)
+    _write_square_pol(land_file, -0.10, 0.75, 0.10, 1.25)
+    ds = _sfincs_dataset_from_face_centers([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)])
+
+    def fake_load(self):
+        """Injects synthetic SFINCS dataset for boundary-class testing."""
+        self.input_data = ds
+
+    monkeypatch.setattr(sfincs.FormatPlugin, 'load', fake_load)
+
+    plugin = sfincs.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'boundary_class_pol_files': {'open': [str(open_file)], 'land': [str(land_file)]}}
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('2024-01-01T00:00:00'))
+
+    edge_classes = sedtrails_data.metadata.boundary_edge_classification
+    assert edge_classes['class_counts']['open'] == 1
+    assert edge_classes['class_counts']['land'] == 1
+    assert edge_classes['class_counts']['ambiguous'] == 0
+    assert edge_classes['polygon_counts'] == {'open': 1, 'land': 1}
 
 
 def test_sfincs_get_seeding_coordinates_raises_on_non_ugrid2d(monkeypatch):

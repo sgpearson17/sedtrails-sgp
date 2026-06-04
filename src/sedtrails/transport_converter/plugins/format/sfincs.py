@@ -7,6 +7,7 @@ import xarray as xr
 import xugrid as xu
 
 from sedtrails.transport_converter.domain_mask import (
+    classify_boundary_edges_from_config,
     delaunay_connectivity,
     filter_connectivity_by_inner_polygons,
     inner_boundary_files_from_config,
@@ -173,6 +174,12 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
         self._add_inner_boundary_metadata(sedtrails_data.metadata)
+        self._add_boundary_edge_metadata(
+            sedtrails_data.metadata,
+            sedtrails_data.x,
+            sedtrails_data.y,
+            sedtrails_data.particle_face_connectivity,
+        )
 
         return sedtrails_data
 
@@ -585,6 +592,25 @@ class FormatPlugin(BaseFormatPlugin):
         if self._last_inner_boundary_mask is not None:
             metadata.add('inner_boundary_masked_face_count', self._last_inner_boundary_mask.removed_count)
             metadata.add('inner_boundary_active_face_count', self._last_inner_boundary_mask.active_count)
+
+    def _add_boundary_edge_metadata(
+        self,
+        metadata: SedtrailsMetadata,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> None:
+        if connectivity is None:
+            return
+
+        classification = classify_boundary_edges_from_config(
+            node_x,
+            node_y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        if classification is not None:
+            metadata.add('boundary_edge_classification', classification.to_metadata())
 
     def _get_face_node_mesh_variables(self):
         """Return UGRID node coordinates and face-node connectivity with indexing metadata."""
