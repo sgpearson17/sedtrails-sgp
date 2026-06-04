@@ -141,12 +141,7 @@ def load_bathymetry_view_data(
     if not input_file.exists():
         raise SeedingGuiError(f'Input data file not found: {input_file}')
 
-    try:
-        import xarray as xr
-
-        dataset = xr.open_dataset(input_file, decode_timedelta=True)
-    except Exception as exc:
-        raise SeedingGuiError(f'Could not load input data: {exc}') from exc
+    dataset = _open_netcdf_dataset(input_file)
 
     missing_coordinates = [name for name in ('net_xcc', 'net_ycc') if name not in dataset]
     if missing_coordinates:
@@ -172,6 +167,23 @@ def load_bathymetry_view_data(
         )
 
     return BathymetryViewData(x=x, y=y, values=values, variable=variable_name, input_file=input_file)
+
+
+def _open_netcdf_dataset(input_file: Path) -> Any:
+    try:
+        import xarray as xr
+    except Exception as exc:
+        raise SeedingGuiError(f'Could not import xarray: {exc}') from exc
+
+    errors: list[str] = []
+    for engine in ('netcdf4', 'h5netcdf', 'scipy'):
+        try:
+            return xr.open_dataset(input_file, engine=engine, decode_timedelta=True)
+        except Exception as exc:
+            errors.append(f'{engine}: {exc}')
+
+    details = '; '.join(errors)
+    raise SeedingGuiError(f'Could not load input data with an explicit NetCDF engine: {details}')
 
 
 def update_config_for_file_points(
@@ -397,6 +409,113 @@ def _clip_points_with_elevation_index(
     return [(float(x), float(y)) for (x, y), keep_point in zip(points, keep, strict=True) if keep_point]
 
 
+class _Dropdown:
+    """Small Matplotlib dropdown widget for compact in-figure selections."""
+
+    def __init__(
+        self,
+        fig: Any,
+        rect: tuple[float, float, float, float],
+        *,
+        label: str,
+        options: tuple[str, ...] | list[str],
+        selected: str,
+        on_select: Any,
+        option_height: float = 0.035,
+    ) -> None:
+        self.fig = fig
+        self.rect = rect
+        self.label = label
+        self.on_select = on_select
+        self.option_height = option_height
+        self.options = [str(option) for option in options]
+        self.selected = str(selected)
+        self._open = False
+        self._option_axes: list[Any] = []
+
+        x, y, width, height = rect
+        self.label_artist = fig.text(x - 0.010, y + height * 0.5, f'{label}:', ha='right', va='center', fontsize=9)
+        self.ax = fig.add_axes(rect)
+        self.ax.set_zorder(20)
+        self.ax.set_facecolor('#f2f2f2')
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.ax.set_xlim(0, 1)
+        self.ax.set_ylim(0, 1)
+        self.value_artist = self.ax.text(0.05, 0.5, self.selected, ha='left', va='center', fontsize=9)
+        self.arrow_artist = self.ax.text(0.95, 0.5, 'v', ha='right', va='center', fontsize=8)
+        self._rebuild_option_axes()
+        self._connection_id = fig.canvas.mpl_connect('button_press_event', self._on_click)
+
+    def set_options(self, options: tuple[str, ...] | list[str], *, selected: str) -> None:
+        self.options = [str(option) for option in options]
+        self.selected = str(selected)
+        self.value_artist.set_text(self.selected)
+        self._close()
+        self._remove_option_axes()
+        self._rebuild_option_axes()
+
+    def set_selected(self, selected: str) -> None:
+        self.selected = str(selected)
+        self.value_artist.set_text(self.selected)
+        self.fig.canvas.draw_idle()
+
+    def _rebuild_option_axes(self) -> None:
+        x, y, width, height = self.rect
+        option_count = len(self.options)
+        open_upward = y - option_count * self.option_height < 0.02
+        for idx, option in enumerate(self.options):
+            option_y = y + height + idx * self.option_height if open_upward else y - (idx + 1) * self.option_height
+            option_ax = self.fig.add_axes((x, option_y, width, self.option_height))
+            option_ax.set_zorder(30)
+            option_ax.set_facecolor('#ffffff')
+            option_ax.set_xticks([])
+            option_ax.set_yticks([])
+            option_ax.set_xlim(0, 1)
+            option_ax.set_ylim(0, 1)
+            option_ax.text(0.05, 0.5, option, ha='left', va='center', fontsize=9)
+            option_ax.set_visible(False)
+            self._option_axes.append(option_ax)
+
+    def _remove_option_axes(self) -> None:
+        for option_ax in self._option_axes:
+            option_ax.remove()
+        self._option_axes = []
+
+    def _on_click(self, event: Any) -> None:
+        if event.inaxes is self.ax:
+            self._toggle()
+            return
+
+        if not self._open:
+            return
+
+        for idx, option_ax in enumerate(self._option_axes):
+            if event.inaxes is option_ax:
+                self.selected = self.options[idx]
+                self.value_artist.set_text(self.selected)
+                self._close()
+                self.on_select(self.selected)
+                return
+
+        self._close()
+
+    def _toggle(self) -> None:
+        if self._open:
+            self._close()
+        else:
+            self._open = True
+            for option_ax in self._option_axes:
+                option_ax.set_visible(True)
+            self.fig.canvas.draw_idle()
+
+    def _close(self) -> None:
+        self._open = False
+        for option_ax in self._option_axes:
+            option_ax.set_visible(False)
+        self.fig.canvas.draw_idle()
+
+
 def save_seeded_config(
     *,
     source_config_path: str | Path,
@@ -524,11 +643,11 @@ class SeedingGuiApp:
     def _build_ui(self) -> None:
         import matplotlib.pyplot as plt
         import matplotlib.tri as mtri
-        from matplotlib.widgets import Button, RadioButtons, TextBox
+        from matplotlib.widgets import Button, TextBox
         from sedtrails.pathway_visualizer.colormaps import bathymetry_colormap
 
-        self.fig, self.ax = plt.subplots(figsize=(12, 7.5))
-        self.fig.subplots_adjust(left=0.07, right=0.70, bottom=0.18)
+        self.fig, self.ax = plt.subplots(figsize=(12.4, 7.0))
+        self.fig.subplots_adjust(left=0.07, right=0.66, bottom=0.22, top=0.90)
 
         self.triangulation = mtri.Triangulation(self.view_data.x, self.view_data.y)
         self.bathymetry_cmap, self.bathymetry_norm = bathymetry_colormap(
@@ -566,11 +685,11 @@ class SeedingGuiApp:
         self.fig.canvas.mpl_connect('button_press_event', self._on_map_click)
 
         axes = {
-            'save': self.fig.add_axes((0.08, 0.05, 0.12, 0.06)),
-            'save_as': self.fig.add_axes((0.22, 0.05, 0.12, 0.06)),
-            'validate': self.fig.add_axes((0.36, 0.05, 0.12, 0.06)),
-            'undo': self.fig.add_axes((0.50, 0.05, 0.12, 0.06)),
-            'clear': self.fig.add_axes((0.64, 0.05, 0.12, 0.06)),
+            'save': self.fig.add_axes((0.07, 0.055, 0.105, 0.055)),
+            'save_as': self.fig.add_axes((0.19, 0.055, 0.105, 0.055)),
+            'validate': self.fig.add_axes((0.31, 0.055, 0.105, 0.055)),
+            'undo': self.fig.add_axes((0.43, 0.055, 0.105, 0.055)),
+            'clear': self.fig.add_axes((0.55, 0.055, 0.105, 0.055)),
         }
         self._buttons = [
             Button(axes['save'], 'Save'),
@@ -585,53 +704,81 @@ class SeedingGuiApp:
         self._buttons[3].on_clicked(self._undo)
         self._buttons[4].on_clicked(self._clear)
 
-        mode_ax = self.fig.add_axes((0.73, 0.74, 0.11, 0.18))
-        self._mode_radio = RadioButtons(mode_ax, SEEDING_MODES, active=0)
-        self._mode_radio.on_clicked(self._set_strategy_mode)
+        panel_x = 0.79
+        panel_w = 0.17
+        small_w = 0.060
+        right_x = 0.915
+        right_w = 0.045
+        field_h = 0.040
 
-        self._population_radio_ax = self.fig.add_axes((0.86, 0.74, 0.12, 0.18))
-        self._population_radio = None
+        self._mode_dropdown = _Dropdown(
+            self.fig,
+            (panel_x, 0.855, panel_w, field_h),
+            label='mode',
+            options=SEEDING_MODES,
+            selected=self.strategy_mode,
+            on_select=self._set_strategy_mode,
+        )
+        self._population_dropdown = None
         self._rebuild_population_selector()
-
-        cmap_ax = self.fig.add_axes((0.86, 0.62, 0.12, 0.10))
-        self._colormap_radio = RadioButtons(cmap_ax, ('SEAWAD', 'Vintage'), active=0)
-        self._colormap_radio.on_clicked(self._set_colormap)
+        self._colormap_dropdown = _Dropdown(
+            self.fig,
+            (panel_x, 0.735, panel_w, field_h),
+            label='colors',
+            options=('SEAWAD', 'Vintage'),
+            selected=self.colormap_name,
+            on_select=self._set_colormap,
+        )
 
         self._population_name_box = TextBox(
-            self.fig.add_axes((0.75, 0.57, 0.20, 0.04)),
-            'pop ',
+            self.fig.add_axes((panel_x, 0.660, panel_w, field_h)),
+            '',
             initial=self.population_name,
         )
-        self._add_population_button = Button(self.fig.add_axes((0.75, 0.51, 0.06, 0.04)), 'Add')
-        self._rename_population_button = Button(self.fig.add_axes((0.82, 0.51, 0.06, 0.04)), 'Rename')
-        self._remove_population_button = Button(self.fig.add_axes((0.89, 0.51, 0.06, 0.04)), 'Remove')
+        self.fig.text(panel_x - 0.010, 0.680, 'edit pop:', ha='right', va='center', fontsize=9)
+        self._add_population_button = Button(self.fig.add_axes((0.735, 0.600, 0.065, field_h)), 'Add')
+        self._rename_population_button = Button(self.fig.add_axes((0.812, 0.600, 0.070, field_h)), 'Rename')
+        self._remove_population_button = Button(self.fig.add_axes((0.895, 0.600, 0.065, field_h)), 'Remove')
         self._add_population_button.on_clicked(self._add_population)
         self._rename_population_button.on_clicked(self._rename_population)
         self._remove_population_button.on_clicked(self._remove_population)
 
-        self._transect_k_box = TextBox(self.fig.add_axes((0.75, 0.44, 0.08, 0.04)), 'k ', initial='20')
-        self._random_n_box = TextBox(self.fig.add_axes((0.75, 0.38, 0.08, 0.04)), 'n ', initial='20')
-        self._seed_box = TextBox(self.fig.add_axes((0.90, 0.38, 0.07, 0.04)), 'seed ', initial='42')
-        self._dx_box = TextBox(self.fig.add_axes((0.75, 0.32, 0.08, 0.04)), 'dx ', initial='100')
-        self._dy_box = TextBox(self.fig.add_axes((0.90, 0.32, 0.07, 0.04)), 'dy ', initial='100')
+        self._transect_k_box = TextBox(self.fig.add_axes((panel_x, 0.520, small_w, field_h)), '', initial='20')
+        self.fig.text(panel_x - 0.010, 0.540, 'k:', ha='right', va='center', fontsize=9)
+        self._random_n_box = TextBox(self.fig.add_axes((panel_x, 0.460, small_w, field_h)), '', initial='20')
+        self.fig.text(panel_x - 0.010, 0.480, 'n:', ha='right', va='center', fontsize=9)
+        self._seed_box = TextBox(self.fig.add_axes((right_x, 0.460, right_w, field_h)), '', initial='42')
+        self.fig.text(right_x - 0.010, 0.480, 'seed:', ha='right', va='center', fontsize=9)
+        self._dx_box = TextBox(self.fig.add_axes((panel_x, 0.400, small_w, field_h)), '', initial='100')
+        self.fig.text(panel_x - 0.010, 0.420, 'dx:', ha='right', va='center', fontsize=9)
+        self._dy_box = TextBox(self.fig.add_axes((right_x, 0.400, right_w, field_h)), '', initial='100')
+        self.fig.text(right_x - 0.010, 0.420, 'dy:', ha='right', va='center', fontsize=9)
 
-        self._generate_button = Button(self.fig.add_axes((0.75, 0.26, 0.20, 0.05)), 'Generate')
+        self._generate_button = Button(self.fig.add_axes((panel_x, 0.335, panel_w, 0.045)), 'Generate')
         self._generate_button.on_clicked(self._generate_from_strategy)
 
-        self._cmin_box = TextBox(self.fig.add_axes((0.75, 0.19, 0.08, 0.04)), 'cmin ', initial=str(self._bathymetry_vmin))
-        self._cmax_box = TextBox(self.fig.add_axes((0.90, 0.19, 0.07, 0.04)), 'cmax ', initial=str(self._bathymetry_vmax))
-        self._color_button = Button(self.fig.add_axes((0.75, 0.13, 0.20, 0.05)), 'Apply color limits')
+        self._cmin_box = TextBox(self.fig.add_axes((panel_x, 0.255, small_w, field_h)), '', initial=str(self._bathymetry_vmin))
+        self.fig.text(panel_x - 0.010, 0.275, 'cmin:', ha='right', va='center', fontsize=9)
+        self._cmax_box = TextBox(self.fig.add_axes((right_x, 0.255, right_w, field_h)), '', initial=str(self._bathymetry_vmax))
+        self.fig.text(right_x - 0.010, 0.275, 'cmax:', ha='right', va='center', fontsize=9)
+        self._color_button = Button(self.fig.add_axes((panel_x, 0.190, panel_w, 0.045)), 'Apply color limits')
         self._color_button.on_clicked(self._apply_color_limits)
 
         self._clip_mode = 'above'
-        clip_mode_ax = self.fig.add_axes((0.74, 0.01, 0.12, 0.09))
-        self._clip_radio = RadioButtons(clip_mode_ax, ('above', 'below'), active=0)
-        self._clip_radio.on_clicked(self._set_clip_mode)
-        self._clip_elevation_box = TextBox(self.fig.add_axes((0.90, 0.05, 0.07, 0.04)), 'z ', initial='0')
-        self._clip_button = Button(self.fig.add_axes((0.75, 0.00, 0.20, 0.04)), 'Clip points')
+        self._clip_dropdown = _Dropdown(
+            self.fig,
+            (panel_x, 0.125, 0.080, field_h),
+            label='clip',
+            options=('above', 'below'),
+            selected=self._clip_mode,
+            on_select=self._set_clip_mode,
+        )
+        self._clip_elevation_box = TextBox(self.fig.add_axes((right_x, 0.125, right_w, field_h)), '', initial='0')
+        self.fig.text(right_x - 0.010, 0.145, 'z:', ha='right', va='center', fontsize=9)
+        self._clip_button = Button(self.fig.add_axes((panel_x, 0.060, panel_w, 0.045)), 'Clip points')
         self._clip_button.on_clicked(self._clip_selected_points)
 
-        self.status_text = self.fig.text(0.08, 0.13, self._status_message(), fontsize=9)
+        self.status_text = self.fig.text(0.07, 0.145, self._status_message(), fontsize=8)
 
     def show(self) -> None:
         import matplotlib.pyplot as plt
@@ -724,17 +871,22 @@ class SeedingGuiApp:
         self._refresh_points()
 
     def _rebuild_population_selector(self) -> None:
-        from matplotlib.widgets import RadioButtons
-
-        self._population_radio_ax.clear()
         self.population_names = get_population_names(self.config)
         for population_name in self.population_names:
             self.population_points.setdefault(population_name, [])
         if self.population_name not in self.population_names:
             self.population_name = self.population_names[0]
-        active_idx = self.population_names.index(self.population_name)
-        self._population_radio = RadioButtons(self._population_radio_ax, self.population_names, active=active_idx)
-        self._population_radio.on_clicked(self._set_population)
+        if self._population_dropdown is None:
+            self._population_dropdown = _Dropdown(
+                self.fig,
+                (0.79, 0.795, 0.17, 0.040),
+                label='population',
+                options=self.population_names,
+                selected=self.population_name,
+                on_select=self._set_population,
+            )
+        else:
+            self._population_dropdown.set_options(self.population_names, selected=self.population_name)
         self.fig.canvas.draw_idle()
 
     def _set_strategy_mode(self, label: str) -> None:
@@ -749,6 +901,8 @@ class SeedingGuiApp:
         self.population_name = label
         self.points = self.population_points[label]
         self._population_name_box.set_val(label)
+        if self._population_dropdown is not None:
+            self._population_dropdown.set_selected(label)
         self._refresh_points()
         self.status_text.set_text(self._status_message())
         self.fig.canvas.draw_idle()
@@ -993,18 +1147,17 @@ class SeedingGuiApp:
 
     def _status_message(self) -> str:
         hints = {
-            'points': 'Left click adds a seed point; right click near a point removes it.',
-            'transect': 'Left click transect endpoints in pairs; Generate creates points along each segment.',
-            'random': 'Left click polygon vertices; right click closes; Generate samples random points inside.',
-            'grid': 'Left click polygon vertices; right click closes; Generate creates a dx/dy grid inside.',
+            'points': 'left add, right remove',
+            'transect': 'click endpoint pairs, then Generate',
+            'random': 'click polygon, right close, then Generate',
+            'grid': 'click polygon, right close, then Generate',
         }
         warning = ''
         if not self._should_display_points() and self.points:
-            warning = f' Warning: >{self._max_display_points:,} points, particles not displayed.'
+            warning = f' >{self._max_display_points:,} not displayed.'
         return (
-            f'Mode: {self.strategy_mode}. {hints.get(self.strategy_mode, "")} '
-            f'{len(self.points)} seed point(s), {len(self.draft_vertices)} draft vertex/vertices. '
-            f'Population: {self.population_name}.{warning}'
+            f'Mode: {self.strategy_mode} | Pop: {self.population_name} | Seeds: {len(self.points)} | '
+            f'Draft: {len(self.draft_vertices)} | {hints.get(self.strategy_mode, "")}.{warning}'
         )
 
     def _should_display_points(self) -> bool:
