@@ -41,7 +41,7 @@ Nested under `general.input_model`:
 
 | Parameter        | Type   | Required | Default      | Description                                                                                                          |
 | ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4` (Delft3D-4), `xbeach`, `aeolis`.                        |
+| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4` (Delft3D-4), `xbeach`, `aeolis`, `sfincs`.               |
 | `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
 | `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
 
@@ -94,17 +94,61 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
 - **Method 3**: `subset_m` and `subset_n` - Use grid indices (Delft3D-4 only)
 
-| Parameter         | Type    | Required     | Default | Description                                                                                               |
-| ----------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
-| `pol_file`        | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
-| `subset_x`        | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
-| `subset_y`        | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
-| `subset_m`        | integer | Conditional* | `0`     | M-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_n`        | integer | Conditional* | `0`     | N-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_t`        | string  | Optional     | -       | Time range as `min:max` indices (e.g., `49:124`).                                                         |
-| `flow_field_data` | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
+| Parameter                  | Type    | Required     | Default | Description                                                                                               |
+| -------------------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
+| `pol_file`                 | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
+| `subset_x`                 | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
+| `subset_y`                 | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
+| `subset_m`                 | integer | Conditional* | `0`     | M-direction limits for Delft3D-4 models (`0` = all).                                                      |
+| `subset_n`                 | integer | Conditional* | `0`     | N-direction limits for Delft3D-4 models (`0` = all).                                                      |
+| `subset_t`                 | string  | Optional     | -       | Time range as `min:max` indices (e.g., `49:124`).                                                         |
+| `inner_boundary_pol_files` | array   | Optional     | `[]`    | Tekal `.pol` files with island or cutout polygons to remove from the active particle-tracking mesh.       |
+| `boundary_class_pol_files` | object  | Optional     | `{}`    | User override Tekal `.pol` files that classify active boundary edges as `open` or `land`.                 |
+| `flow_field_data`          | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
 
 *Conditional: One method must be specified.
+
+### Inner Boundaries and Boundary Actions
+
+For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to distinguish islands/cutouts from open offshore boundaries.
+
+`inner_boundary_pol_files` removes candidate faces or triangles whose centroids fall inside any configured polygon. This creates holes in the active particle mesh. Particles inside those holes are not treated as valid in-domain particles.
+
+`boundary_class_pol_files` classifies active mesh boundary edges. Each class can point to one or more Tekal `.pol` files, and each file may contain multiple polygon blocks. Boundary edge classification uses the midpoint of each active boundary edge:
+
+- `open`: particles crossing this edge are marked as having left the model domain and are removed from later movement calculations.
+- `land`: particles crossing this edge are marked as beached for that timestep, remain at their last valid in-domain position, and can become mobile again on a later timestep if hydrodynamic and transport conditions permit.
+
+If an edge midpoint is selected by both `open` and `land` override polygons, `land` takes priority. The source match is still kept in diagnostics.
+
+**Example:**
+
+```yaml
+domain:
+  pol_file: ./outer_domain.pol
+  inner_boundary_pol_files:
+    - ./islands.pol
+    - ./harbour_cutouts.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+      - ./lateral_open_edges.pol
+    land:
+      - ./coastline_edges.pol
+      - ./island_edges.pol
+```
+
+Relative polygon paths are resolved relative to the YAML configuration file.
+
+The converted flow field metadata stores diagnostics under:
+
+- `inner_boundary_pol_files`
+- `inner_boundary_polygon_count`
+- `inner_boundary_masked_face_count`
+- `inner_boundary_active_face_count`
+- `boundary_edge_classification`
+
+The `boundary_edge_classification` metadata contains edge node ids, edge midpoints, assigned edge classes, source matches, polygon counts, and class counts.
 
 (flow-field-data-configuration)=
 ### Flow Field Data Configuration
@@ -623,6 +667,13 @@ inputs:
 domain:
   subset_x: "35000:65000"
   subset_y: "12000:45000"
+  inner_boundary_pol_files:
+    - ./islands.pol
+  boundary_class_pol_files:
+    open:
+      - ./offshore_boundary_edges.pol
+    land:
+      - ./coastline_boundary_edges.pol
   flow_field_data:
     fm: sedtrails_nc
 
@@ -702,6 +753,10 @@ visualization:
 
 - Use `pol_file` for complex, irregular domains
 - Use `subset_x` and `subset_y` for simple rectangular domains
+- Use `inner_boundary_pol_files` when the flow grid contains island or cutout regions that should not be valid water for particle tracking
+- Use `boundary_class_pol_files.open` for offshore boundaries where particles should leave the model
+- Use `boundary_class_pol_files.land` for coastlines, islands, and cutouts where particles should beach temporarily and remain available for later remobilization
+- Keep open and land override polygons narrow enough to select the intended boundary-edge midpoints only
 - Always visualize your domain boundary before running long simulations
 
 

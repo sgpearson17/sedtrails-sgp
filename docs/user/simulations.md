@@ -14,6 +14,8 @@ For a detailed reference of all available parameters, please refer to the [Simul
 `seeding.release_start` is interpreted relative to `general.input_model.reference_date`.
 For example, if `reference_date` is `2016-09-21 19:20:00` and `release_start` is `2016-09-21 19:30:00`, particles are released 600 seconds after simulation start.
 
+For FM and SFINCS models, the optional `domain.inner_boundary_pol_files` and `domain.boundary_class_pol_files` settings can use Tekal polygons to mask islands/cutouts and classify boundary crossings as `open` or `land`. See the domain section of the parameter reference for the full behavior.
+
 
 ### Example Configuration File
 
@@ -27,6 +29,17 @@ general:
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+# Optional domain controls for islands/cutouts and boundary actions.
+# Tekal .pol paths are resolved relative to this configuration file.
+# domain:
+#   pol_file: ./outer_domain.pol
+#   inner_boundary_pol_files:
+#     - ./islands.pol
+#   boundary_class_pol_files:
+#     open:
+#       - ./offshore_boundary_edges.pol
+#     land:
+#       - ./coastline_boundary_edges.pol
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S

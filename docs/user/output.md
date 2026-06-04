@@ -61,6 +61,8 @@ DATA VARIABLES:
   status_transported: ('n_particles', 'n_timesteps') int64 (15, 880)
   status_released: ('n_particles', 'n_timesteps') int64 (15, 880)
   status_mobile: ('n_particles', 'n_timesteps') int64 (15, 880)
+  status_beached: ('n_particles', 'n_timesteps') int64 (15, 880)
+  status_left_domain: ('n_particles', 'n_timesteps') int64 (15, 880)
   covered_distance: ('n_flowfields', 'n_particles', 'n_timesteps') float64 (2, 15, 880)
   flowfield_name: ('n_flowfields', 'name_strlen') |S1 (2, 24)
 
@@ -128,17 +130,21 @@ These are the main output variables that will be of primary interest for users w
  - ``mixing_depth: ('n_particles', 'n_timesteps') float64 (15, 880)``
     - The mixing depth $\delta_{mixing}$ of each particle at each timestep.
  - ``status_alive: ('n_particles', 'n_timesteps') int64 (15, 880)``
-    - A binary status indicator showing whether a particle is "alive" and therefore capable of being transported (``1``), or dead and (permanently) removed from consideration (``0``). This variable is primarily intended for biological particles (e.g., coral larvae or mangrove propagules), and has not yet been fully implemented in the current version of the model. For all abiotic particles (e.g., sediment or passive tracers), ``status_alive = 1``, since it concerns their availability for transport.
+    - A binary status indicator showing whether a particle is "alive" and therefore capable of being transported (``1``), or dead and permanently removed from consideration (``0``). For abiotic particles, this normally remains ``1`` unless the particle crosses a boundary edge classified as ``open``.
  - ``status_buried: ('n_particles', 'n_timesteps') int64 (15, 880)``
     - A binary status indicator showing whether a particle is buried (and therefore capable of being transported) (``1``), or not buried and (temporarily) removed from consideration (``0``).
  - ``status_domain: ('n_particles', 'n_timesteps') int64 (15, 880)``
-    - A binary status indicator showing whether a particle is in the domain (and therefore capable of being transported)  (``1``), or has exited the domain and therefore been removed from consideration (``0``).
+    - A binary status indicator showing whether a particle is in the active particle-tracking mesh (``1``), or outside that mesh (``0``). The active mesh excludes holes created by ``domain.inner_boundary_pol_files``. Particles crossing a classified ``land`` edge are held at their last valid in-domain position and keep ``status_domain = 1`` for that timestep.
  - ``status_transported: ('n_particles', 'n_timesteps') int64 (15, 880)``
     - A binary status indicator showing whether a particle has been transported (``1``), or not (``0``).
  - ``status_released: ('n_particles', 'n_timesteps') int64 (15, 880)``
     - A binary status indicator showing whether a particle has already been released (``1``) or is waiting to be released (``0``).
  - ``status_mobile: ('n_particles', 'n_timesteps') int64 (15, 880)``
     - A binary status indicator showing whether a particle is mobile (``1``) or static (``0``).
+ - ``status_beached: ('n_particles', 'n_timesteps') int64 (15, 880)``
+    - A binary status indicator showing whether a particle touched or crossed a boundary edge classified as ``land`` during that timestep (``1``). Beached particles remain at their last valid in-domain position, are not permanently removed, and can become mobile again later if hydrodynamic and transport conditions permit.
+ - ``status_left_domain: ('n_particles', 'n_timesteps') int64 (15, 880)``
+    - A binary status indicator showing whether a particle has crossed a boundary edge classified as ``open`` (``1``). This state is persistent: after crossing an open boundary, the particle is marked with ``status_alive = 0``, ``status_domain = 0``, and is removed from subsequent movement calculations.
  - ``covered_distance: ('n_flowfields', 'n_particles', 'n_timesteps') float64 (2, 15, 880)``
     - The distance travelled by each particle in a given output timestep ($distance=\sqrt{\Delta x^2 + \Delta y^2}$)
  - ``flowfield_name: ('n_flowfields', 'name_strlen') |S1 (2, 24)``

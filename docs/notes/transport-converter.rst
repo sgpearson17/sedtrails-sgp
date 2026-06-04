@@ -11,6 +11,33 @@ Format Converter
 .. automodule:: sedtrails.transport_converter.format_converter
                     :members:
 
+Domain Masks and Boundary Classes
+---------------------------------
+
+FM and SFINCS converters accept the optional ``domain.inner_boundary_pol_files``
+and ``domain.boundary_class_pol_files`` settings from the simulation
+configuration.
+
+``inner_boundary_pol_files`` points to one or more Tekal ``.pol`` files. Each
+file may contain multiple polygon blocks. Candidate mesh faces or triangles with
+centroids inside these polygons are excluded from the active particle-location
+connectivity, while the original node coordinate arrays are left unchanged. This
+turns islands and grid cutouts into holes for particle-domain checks.
+
+``boundary_class_pol_files`` assigns classes to active boundary edges by testing
+edge midpoints against class-specific polygons. Supported classes are
+``open`` and ``land``. Land takes priority when an edge is selected by both
+classes. The resulting edge ids, midpoints, assigned classes, source matches,
+and counts are stored in ``boundary_edge_classification`` metadata and are used
+by the particle tracer to decide whether a boundary crossing means leaving the
+domain or temporary beaching.
+
+.. automodule:: sedtrails.transport_converter.tekal
+                    :members:
+
+.. automodule:: sedtrails.transport_converter.domain_mask
+                    :members:
+
 Physics Library
 ---------------
 
@@ -33,6 +60,11 @@ Delft3D-4 (trim-*.dat)
 D-Flow FM (netcdf)
 ^^^^^^^^^^^^^^^^^^
 .. automodule:: sedtrails.transport_converter.plugins.format.fm_netcdf
+                    :members:
+
+SFINCS (netcdf)
+^^^^^^^^^^^^^^^
+.. automodule:: sedtrails.transport_converter.plugins.format.sfincs
                     :members:
 
 
