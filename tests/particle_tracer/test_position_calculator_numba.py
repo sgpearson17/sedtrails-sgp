@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry, create_numba_particle_calculator
 
@@ -208,3 +209,50 @@ def test_velocity_arrays_do_not_copy_non_geographic_float32_fields():
 
     assert np.shares_memory(grid_u_adj, grid_u)
     assert np.shares_memory(grid_v_adj, grid_v)
+
+
+def test_boundary_crossing_classification_uses_cached_edge_geometry():
+    """Boundary crossing classes should use cached edge endpoints and preserve labels."""
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(
+        grid_x,
+        grid_y,
+        triangles=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64),
+        boundary_edge_classification={
+            'edge_nodes': [[0, 1], [1, 2], [2, 3], [3, 0]],
+            'edge_classes': ['open', 'land', 'unclassified', 'land'],
+        },
+    )
+
+    classes = geometry.classify_boundary_crossings(
+        np.array([0.5, 0.8, 0.5]),
+        np.array([0.2, 0.5, 0.8]),
+        np.array([0.5, 1.3, 0.5]),
+        np.array([-0.3, 0.5, 1.3]),
+    )
+
+    assert geometry.boundary_edge_start_x is not None
+    assert geometry.boundary_edge_end_x is not None
+    np.testing.assert_array_equal(classes, np.array(['open', 'land', 'unclassified'], dtype=object))
+
+
+def test_boundary_crossing_classification_rejects_mismatched_segments():
+    """Boundary crossing classification should validate segment array lengths before numba execution."""
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(
+        grid_x,
+        grid_y,
+        triangles=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64),
+        boundary_edge_classification={
+            'edge_nodes': [[0, 1]],
+            'edge_classes': ['open'],
+        },
+    )
+
+    with pytest.raises(ValueError, match='start and end coordinates'):
+        geometry.classify_boundary_crossings(
+            np.array([0.5, 0.6]),
+            np.array([0.2, 0.2]),
+            np.array([0.5]),
+            np.array([-0.3]),
+        )

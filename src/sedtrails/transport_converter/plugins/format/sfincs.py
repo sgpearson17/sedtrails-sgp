@@ -45,7 +45,11 @@ class FormatPlugin(BaseFormatPlugin):
         self._input_variables: List[str] = []
         self.domain_config: Dict[str, Any] = {}
         self._inner_boundary_polygons: list[np.ndarray] | None = None
+        self._inner_boundary_polygons_signature: str | None = None
         self._last_inner_boundary_mask: SimpleNamespace | None = None
+        self._active_face_mask_cache: dict[str, Any] | None = None
+        self._active_face_center_triangles_cache: dict[str, Any] | None = None
+        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -565,6 +569,11 @@ class FormatPlugin(BaseFormatPlugin):
         if x.shape != y.shape:
             raise ValueError(f'face_x and face_y must have the same shape, got {x.shape} and {y.shape}')
 
+        cache = self._active_face_mask_cache
+        if self._geometry_cache_matches(cache, x, y):
+            self._last_inner_boundary_mask = cache['mask_result']
+            return cache['active_mask']
+
         polygons = self._get_inner_boundary_polygons()
         if not polygons:
             active_mask = np.ones(x.shape[0], dtype=bool)
@@ -582,17 +591,35 @@ class FormatPlugin(BaseFormatPlugin):
         )
         if x.size and active_count == 0:
             raise ValueError('All SFINCS faces were masked by domain.inner_boundary_pol_files')
+        self._active_face_mask_cache = {
+            'node_x': x,
+            'node_y': y,
+            'domain_signature': self._domain_config_signature(),
+            'active_mask': active_mask,
+            'mask_result': self._last_inner_boundary_mask,
+        }
         return active_mask
 
     def _active_face_center_triangles(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
         """Build active particle-location triangles over SFINCS face-centre coordinates."""
+        cache = self._active_face_center_triangles_cache
+        if self._geometry_cache_matches(cache, face_x, face_y):
+            return cache['triangles']
+
         candidate_connectivity = delaunay_connectivity(face_x, face_y)
-        return filter_connectivity_by_inner_polygons(
+        triangles = filter_connectivity_by_inner_polygons(
             face_x,
             face_y,
             candidate_connectivity,
             self._get_inner_boundary_polygons(),
         ).connectivity
+        self._active_face_center_triangles_cache = {
+            'node_x': np.asarray(face_x),
+            'node_y': np.asarray(face_y),
+            'domain_signature': self._domain_config_signature(),
+            'triangles': triangles,
+        }
+        return triangles
 
     def _filter_face_field(self, field_value: np.ndarray, active_face_mask: np.ndarray) -> np.ndarray:
         """Filter arrays with a trailing face dimension by the active-face mask."""
@@ -602,8 +629,10 @@ class FormatPlugin(BaseFormatPlugin):
         return values
 
     def _get_inner_boundary_polygons(self) -> list[np.ndarray]:
-        if self._inner_boundary_polygons is None:
+        domain_signature = self._domain_config_signature()
+        if self._inner_boundary_polygons is None or self._inner_boundary_polygons_signature != domain_signature:
             self._inner_boundary_polygons = load_inner_boundary_polygons(getattr(self, 'domain_config', {}))
+            self._inner_boundary_polygons_signature = domain_signature
         return self._inner_boundary_polygons
 
     def _add_inner_boundary_metadata(self, metadata: SedtrailsMetadata) -> None:
@@ -627,14 +656,9 @@ class FormatPlugin(BaseFormatPlugin):
         if connectivity is None:
             return
 
-        classification = classify_boundary_edges_from_config(
-            node_x,
-            node_y,
-            connectivity,
-            getattr(self, 'domain_config', {}),
-        )
-        if classification is not None:
-            metadata.add('boundary_edge_classification', classification.to_metadata())
+        classification_metadata = self._boundary_edge_classification(node_x, node_y, connectivity)
+        if classification_metadata is not None:
+            metadata.add('boundary_edge_classification', classification_metadata)
 
     def _boundary_edge_classification(
         self,
@@ -645,13 +669,50 @@ class FormatPlugin(BaseFormatPlugin):
         if connectivity is None:
             return None
 
+        cache = self._boundary_edge_classification_cache
+        if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
+            return cache['metadata']
+
         classification = classify_boundary_edges_from_config(
             node_x,
             node_y,
             connectivity,
             getattr(self, 'domain_config', {}),
         )
-        return None if classification is None else classification.to_metadata()
+        classification_metadata = None if classification is None else classification.to_metadata()
+        self._boundary_edge_classification_cache = {
+            'node_x': np.asarray(node_x),
+            'node_y': np.asarray(node_y),
+            'connectivity': np.asarray(connectivity),
+            'domain_signature': self._domain_config_signature(),
+            'metadata': classification_metadata,
+        }
+        return classification_metadata
+
+    def _domain_config_signature(self) -> str:
+        return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _geometry_cache_matches(
+        self,
+        cache: dict[str, Any] | None,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None = None,
+    ) -> bool:
+        if cache is None or cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
+            return False
+        if connectivity is None:
+            return True
+        return self._arrays_equal(cache.get('connectivity'), connectivity)
+
+    @staticmethod
+    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
+        if left is None:
+            return False
+        right_array = np.asarray(right)
+        return left.shape == right_array.shape and np.array_equal(left, right_array)
 
     def _get_face_node_mesh_variables(self):
         """Return UGRID node coordinates and face-node connectivity with indexing metadata."""

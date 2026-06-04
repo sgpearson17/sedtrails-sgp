@@ -38,6 +38,10 @@ class GridGeometry:
     triangle_finder: Any = None
     boundary_edges: np.ndarray | None = None
     boundary_edge_classes: np.ndarray | None = None
+    boundary_edge_start_x: np.ndarray | None = None
+    boundary_edge_start_y: np.ndarray | None = None
+    boundary_edge_end_x: np.ndarray | None = None
+    boundary_edge_end_y: np.ndarray | None = None
 
     @classmethod
     def from_points(cls, grid_x, grid_y, triangles=None, boundary_edge_classification=None):
@@ -82,6 +86,14 @@ class GridGeometry:
         p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(x, y, triangle_array)
 
         boundary_edges, boundary_edge_classes = _parse_boundary_edge_classification(boundary_edge_classification)
+        (
+            boundary_edges,
+            boundary_edge_classes,
+            boundary_edge_start_x,
+            boundary_edge_start_y,
+            boundary_edge_end_x,
+            boundary_edge_end_y,
+        ) = _prepare_boundary_edge_geometry(x, y, boundary_edges, boundary_edge_classes)
 
         return cls(
             grid_x=x,
@@ -99,6 +111,10 @@ class GridGeometry:
             triangle_finder=triangle_finder,
             boundary_edges=boundary_edges,
             boundary_edge_classes=boundary_edge_classes,
+            boundary_edge_start_x=boundary_edge_start_x,
+            boundary_edge_start_y=boundary_edge_start_y,
+            boundary_edge_end_x=boundary_edge_end_x,
+            boundary_edge_end_y=boundary_edge_end_y,
         )
 
     def find_triangle(self, x, y) -> int:
@@ -348,29 +364,36 @@ class GridGeometry:
         """
         start_points = _points_array(x0, y0)
         end_points = _points_array(x1, y1)
+        if start_points.shape != end_points.shape:
+            raise ValueError(
+                f'start and end coordinates must have the same flattened shape, '
+                f'got {start_points.shape} and {end_points.shape}'
+            )
         classes = np.full(start_points.shape[0], 'unclassified', dtype=object)
 
-        if self.boundary_edges is None or self.boundary_edge_classes is None or self.boundary_edges.size == 0:
+        if (
+            self.boundary_edge_classes is None
+            or self.boundary_edge_start_x is None
+            or self.boundary_edge_start_y is None
+            or self.boundary_edge_end_x is None
+            or self.boundary_edge_end_y is None
+            or self.boundary_edge_classes.size == 0
+        ):
             return classes.reshape(np.asarray(x0).shape)
 
-        valid_edges = (
-            (self.boundary_edges >= 0)
-            & (self.boundary_edges < self.grid_x.size)
-            & (self.boundary_edges < self.grid_y.size)
-        ).all(axis=1)
-        if not np.any(valid_edges):
-            return classes.reshape(np.asarray(x0).shape)
-
-        edge_nodes = self.boundary_edges[valid_edges]
-        edge_classes = self.boundary_edge_classes[valid_edges]
-        edge_a = np.column_stack((self.grid_x[edge_nodes[:, 0]], self.grid_y[edge_nodes[:, 0]]))
-        edge_b = np.column_stack((self.grid_x[edge_nodes[:, 1]], self.grid_y[edge_nodes[:, 1]]))
-
-        for index, (start, end) in enumerate(zip(start_points, end_points, strict=True)):
-            distances = np.array(
-                [_segment_distance_squared(start, end, a, b) for a, b in zip(edge_a, edge_b, strict=True)]
-            )
-            classes[index] = edge_classes[int(np.argmin(distances))]
+        edge_indices = _nearest_boundary_edge_indices_numba(
+            start_points[:, 0],
+            start_points[:, 1],
+            end_points[:, 0],
+            end_points[:, 1],
+            self.boundary_edge_start_x,
+            self.boundary_edge_start_y,
+            self.boundary_edge_end_x,
+            self.boundary_edge_end_y,
+            TRIANGLE_TOLERANCE,
+        )
+        valid = edge_indices >= 0
+        classes[valid] = self.boundary_edge_classes[edge_indices[valid]]
 
         return classes.reshape(np.asarray(x0).shape)
 
@@ -482,6 +505,30 @@ def _parse_boundary_edge_classification(boundary_edge_classification):
     return edges, classes
 
 
+def _prepare_boundary_edge_geometry(grid_x, grid_y, boundary_edges, boundary_edge_classes):
+    if boundary_edges is None or boundary_edge_classes is None or boundary_edges.size == 0:
+        return None, None, None, None, None, None
+
+    valid_edges = (
+        (boundary_edges >= 0)
+        & (boundary_edges < grid_x.size)
+        & (boundary_edges < grid_y.size)
+    ).all(axis=1)
+    if not np.any(valid_edges):
+        return None, None, None, None, None, None
+
+    edges = np.asarray(boundary_edges[valid_edges], dtype=np.int64)
+    classes = np.asarray(boundary_edge_classes[valid_edges], dtype=object)
+    return (
+        edges,
+        classes,
+        np.asarray(grid_x[edges[:, 0]], dtype=np.float64),
+        np.asarray(grid_y[edges[:, 0]], dtype=np.float64),
+        np.asarray(grid_x[edges[:, 1]], dtype=np.float64),
+        np.asarray(grid_y[edges[:, 1]], dtype=np.float64),
+    )
+
+
 def _segment_distance_squared(p0, p1, q0, q1) -> float:
     """Return squared distance between 2-D line segments."""
     if _segments_intersect(p0, p1, q0, q1):
@@ -534,6 +581,106 @@ def _segments_intersect(p0, p1, q0, q1) -> bool:
         or (o2 == 0 and on_segment(p0, q1, p1))
         or (o3 == 0 and on_segment(q0, p0, q1))
         or (o4 == 0 and on_segment(q0, p1, q1))
+    )
+
+
+@njit(cache=True, parallel=True)
+def _nearest_boundary_edge_indices_numba(
+    x0,
+    y0,
+    x1,
+    y1,
+    edge_start_x,
+    edge_start_y,
+    edge_end_x,
+    edge_end_y,
+    tolerance,
+):
+    nearest = np.empty(x0.shape[0], dtype=np.int64)
+    for i in prange(x0.shape[0]):
+        best_index = -1
+        best_distance = np.inf
+        for edge_index in range(edge_start_x.shape[0]):
+            distance = _segment_distance_squared_numba(
+                x0[i],
+                y0[i],
+                x1[i],
+                y1[i],
+                edge_start_x[edge_index],
+                edge_start_y[edge_index],
+                edge_end_x[edge_index],
+                edge_end_y[edge_index],
+                tolerance,
+            )
+            if best_index < 0 or distance < best_distance:
+                best_index = edge_index
+                best_distance = distance
+        nearest[i] = best_index
+    return nearest
+
+
+@njit(cache=True)
+def _segment_distance_squared_numba(p0_x, p0_y, p1_x, p1_y, q0_x, q0_y, q1_x, q1_y, tolerance):
+    if _segments_intersect_numba(p0_x, p0_y, p1_x, p1_y, q0_x, q0_y, q1_x, q1_y, tolerance):
+        return 0.0
+    d0 = _point_to_segment_distance_squared_numba(p0_x, p0_y, q0_x, q0_y, q1_x, q1_y)
+    d1 = _point_to_segment_distance_squared_numba(p1_x, p1_y, q0_x, q0_y, q1_x, q1_y)
+    d2 = _point_to_segment_distance_squared_numba(q0_x, q0_y, p0_x, p0_y, p1_x, p1_y)
+    d3 = _point_to_segment_distance_squared_numba(q1_x, q1_y, p0_x, p0_y, p1_x, p1_y)
+    return min(d0, d1, d2, d3)
+
+
+@njit(cache=True)
+def _point_to_segment_distance_squared_numba(point_x, point_y, seg_start_x, seg_start_y, seg_end_x, seg_end_y):
+    segment_x = seg_end_x - seg_start_x
+    segment_y = seg_end_y - seg_start_y
+    length_squared = segment_x * segment_x + segment_y * segment_y
+    if length_squared <= 0.0:
+        delta_x = point_x - seg_start_x
+        delta_y = point_y - seg_start_y
+        return delta_x * delta_x + delta_y * delta_y
+
+    projection = ((point_x - seg_start_x) * segment_x + (point_y - seg_start_y) * segment_y) / length_squared
+    projection = min(1.0, max(0.0, projection))
+    closest_x = seg_start_x + projection * segment_x
+    closest_y = seg_start_y + projection * segment_y
+    delta_x = point_x - closest_x
+    delta_y = point_y - closest_y
+    return delta_x * delta_x + delta_y * delta_y
+
+
+@njit(cache=True)
+def _segments_intersect_numba(p0_x, p0_y, p1_x, p1_y, q0_x, q0_y, q1_x, q1_y, tolerance):
+    o1 = _orientation_numba(p0_x, p0_y, p1_x, p1_y, q0_x, q0_y, tolerance)
+    o2 = _orientation_numba(p0_x, p0_y, p1_x, p1_y, q1_x, q1_y, tolerance)
+    o3 = _orientation_numba(q0_x, q0_y, q1_x, q1_y, p0_x, p0_y, tolerance)
+    o4 = _orientation_numba(q0_x, q0_y, q1_x, q1_y, p1_x, p1_y, tolerance)
+
+    if o1 != o2 and o3 != o4:
+        return True
+    return (
+        (o1 == 0 and _on_segment_numba(p0_x, p0_y, q0_x, q0_y, p1_x, p1_y, tolerance))
+        or (o2 == 0 and _on_segment_numba(p0_x, p0_y, q1_x, q1_y, p1_x, p1_y, tolerance))
+        or (o3 == 0 and _on_segment_numba(q0_x, q0_y, p0_x, p0_y, q1_x, q1_y, tolerance))
+        or (o4 == 0 and _on_segment_numba(q0_x, q0_y, p1_x, p1_y, q1_x, q1_y, tolerance))
+    )
+
+
+@njit(cache=True)
+def _orientation_numba(a_x, a_y, b_x, b_y, c_x, c_y, tolerance):
+    value = (b_x - a_x) * (c_y - a_y) - (b_y - a_y) * (c_x - a_x)
+    if abs(value) <= tolerance:
+        return 0
+    if value > 0.0:
+        return 1
+    return -1
+
+
+@njit(cache=True)
+def _on_segment_numba(a_x, a_y, b_x, b_y, c_x, c_y, tolerance):
+    return (
+        min(a_x, c_x) - tolerance <= b_x <= max(a_x, c_x) + tolerance
+        and min(a_y, c_y) - tolerance <= b_y <= max(a_y, c_y) + tolerance
     )
 
 

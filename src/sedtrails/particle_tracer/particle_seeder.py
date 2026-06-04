@@ -658,12 +658,20 @@ class ParticlePopulation:
 
         # Compute whether particles are inside the active mesh. This respects
         # any masked-out inner-boundary triangles in shared grid geometry.
-        simplex_seeds = self._particle_simplices if self._particle_simplices.shape == (n_particles,) else None
-        self._particle_simplices = self.grid_geometry.locate_points(
-            self.particles['x'],
-            self.particles['y'],
-            simplex_seeds,
+        current_simplices = (
+            self._particle_simplices.copy()
+            if self._particle_simplices.shape == (n_particles,)
+            else np.full(n_particles, -1, dtype=np.int64)
         )
+        current_simplices[left_domain] = -1
+        active_domain_candidates = ~left_domain
+        if np.any(active_domain_candidates):
+            current_simplices[active_domain_candidates] = self.grid_geometry.locate_points(
+                self.particles['x'][active_domain_candidates],
+                self.particles['y'][active_domain_candidates],
+                current_simplices[active_domain_candidates],
+            )
+        self._particle_simplices = current_simplices
         self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method

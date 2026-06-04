@@ -188,6 +188,41 @@ def test_fm_convert_stores_boundary_edge_class_overrides(monkeypatch, tmp_path):
     assert edge_classes['class_pol_files']['open'] == [str(open_file)]
 
 
+def test_fm_active_geometry_and_boundary_classification_are_cached(monkeypatch):
+    """Repeated FM geometry requests should reuse static connectivity and edge classes."""
+    plugin = fm_netcdf.FormatPlugin(_existing_input_path())
+    plugin.input_data = xr.Dataset()
+    node_x = np.array([0.0, 1.0, 0.0])
+    node_y = np.array([0.0, 0.0, 1.0])
+    connectivity = np.array([[0, 1, 2]], dtype=np.int64)
+    call_counts = {'delaunay': 0, 'classify': 0}
+
+    def fake_delaunay(_node_x, _node_y):
+        call_counts['delaunay'] += 1
+        return connectivity
+
+    class FakeClassification:
+        def to_metadata(self):
+            return {'edge_nodes': [[0, 1]], 'edge_classes': ['open']}
+
+    def fake_classify(*_args, **_kwargs):
+        call_counts['classify'] += 1
+        return FakeClassification()
+
+    monkeypatch.setattr(fm_netcdf, 'delaunay_connectivity', fake_delaunay)
+    monkeypatch.setattr(fm_netcdf, 'classify_boundary_edges_from_config', fake_classify)
+
+    first_connectivity = plugin._active_triangular_connectivity(node_x, node_y)
+    second_connectivity = plugin._active_triangular_connectivity(node_x, node_y)
+    first_classes = plugin._boundary_edge_classification(node_x, node_y, first_connectivity)
+    second_classes = plugin._boundary_edge_classification(node_x, node_y, second_connectivity)
+
+    assert call_counts == {'delaunay': 1, 'classify': 1}
+    np.testing.assert_array_equal(first_connectivity, connectivity)
+    np.testing.assert_array_equal(second_connectivity, connectivity)
+    assert first_classes == second_classes == {'edge_nodes': [[0, 1]], 'edge_classes': ['open']}
+
+
 def test_sfincs_get_seeding_coordinates_uses_ugrid_face_coordinates(monkeypatch):
     """Checks SFINCS seeding coordinates come directly from UGRID face centers."""
     class FakeUgrid2d:
@@ -369,6 +404,29 @@ def test_sfincs_convert_stores_boundary_edge_class_overrides(monkeypatch, tmp_pa
     assert edge_classes['class_counts']['land'] == 1
     assert edge_classes['class_counts']['ambiguous'] == 0
     assert edge_classes['polygon_counts'] == {'open': 1, 'land': 1}
+
+
+def test_sfincs_active_face_mask_is_cached(monkeypatch, tmp_path):
+    """Repeated SFINCS active-mask requests should reuse polygon containment results."""
+    island_file = tmp_path / 'island.pol'
+    _write_square_pol(island_file, 0.8, 0.8, 1.2, 1.2)
+    plugin = sfincs.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'inner_boundary_pol_files': [str(island_file)]}
+    call_count = 0
+
+    def fake_points_inside_any_polygon(_points, _polygons):
+        nonlocal call_count
+        call_count += 1
+        return np.array([False, True])
+
+    monkeypatch.setattr(sfincs, 'points_inside_any_polygon', fake_points_inside_any_polygon)
+
+    first_mask = plugin._active_face_mask(np.array([0.0, 1.0]), np.array([0.0, 1.0]))
+    second_mask = plugin._active_face_mask(np.array([0.0, 1.0]), np.array([0.0, 1.0]))
+
+    assert call_count == 1
+    np.testing.assert_array_equal(first_mask, np.array([True, False]))
+    np.testing.assert_array_equal(second_mask, np.array([True, False]))
 
 
 def test_sfincs_get_seeding_coordinates_raises_on_non_ugrid2d(monkeypatch):

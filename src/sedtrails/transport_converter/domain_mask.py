@@ -479,11 +479,20 @@ def face_centroids(node_x: np.ndarray, node_y: np.ndarray, connectivity: np.ndar
     faces = np.asarray(connectivity, dtype=np.int64)
     centroids = np.full((faces.shape[0], 2), np.nan, dtype=float)
 
-    for index, face in enumerate(faces):
-        valid = face[(face >= 0) & (face < x.size) & (face < y.size)]
-        if valid.size:
-            centroids[index, 0] = float(np.mean(x[valid]))
-            centroids[index, 1] = float(np.mean(y[valid]))
+    if faces.size == 0 or x.size == 0 or y.size == 0:
+        return centroids
+
+    valid = (faces >= 0) & (faces < x.size) & (faces < y.size)
+    counts = np.count_nonzero(valid, axis=1)
+    has_valid_nodes = counts > 0
+    if not np.any(has_valid_nodes):
+        return centroids
+
+    clipped = np.clip(faces, 0, min(x.size, y.size) - 1)
+    face_x = np.where(valid, x[clipped], 0.0)
+    face_y = np.where(valid, y[clipped], 0.0)
+    centroids[has_valid_nodes, 0] = np.sum(face_x[has_valid_nodes], axis=1) / counts[has_valid_nodes]
+    centroids[has_valid_nodes, 1] = np.sum(face_y[has_valid_nodes], axis=1) / counts[has_valid_nodes]
 
     return centroids
 
@@ -518,7 +527,18 @@ def points_inside_any_polygon(points: np.ndarray, polygons: Iterable[np.ndarray]
         polygon_array = np.asarray(polygon, dtype=float)
         if polygon_array.shape[0] < 3:
             continue
-        finite_inside |= MplPath(polygon_array[:, :2]).contains_points(finite_points)
+        polygon_xy = polygon_array[:, :2]
+        min_x, min_y = np.min(polygon_xy, axis=0)
+        max_x, max_y = np.max(polygon_xy, axis=0)
+        candidate = (
+            (finite_points[:, 0] >= min_x)
+            & (finite_points[:, 0] <= max_x)
+            & (finite_points[:, 1] >= min_y)
+            & (finite_points[:, 1] <= max_y)
+        )
+        if not np.any(candidate):
+            continue
+        finite_inside[candidate] |= MplPath(polygon_xy).contains_points(finite_points[candidate])
 
     inside[finite] = finite_inside
     return inside
