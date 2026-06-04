@@ -229,10 +229,13 @@ class FormatPlugin(BaseFormatPlugin):
 
         x = self.input_data['net_xcc'].values
         y = self.input_data['net_ycc'].values
+        connectivity = self._active_triangular_connectivity(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, connectivity)
         return SimpleNamespace(
             x=x,
             y=y,
-            face_node_connectivity=self._active_triangular_connectivity(x, y),
+            face_node_connectivity=connectivity,
+            boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
         )
 
@@ -540,6 +543,23 @@ class FormatPlugin(BaseFormatPlugin):
         )
         if classification is not None:
             metadata.add('boundary_edge_classification', classification.to_metadata())
+
+    def _boundary_edge_classification(
+        self,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        if connectivity is None:
+            return None
+
+        classification = classify_boundary_edges_from_config(
+            node_x,
+            node_y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        return None if classification is None else classification.to_metadata()
 
     def _source_face_node_connectivity(self, node_count: int) -> np.ndarray | None:
         for variable_name in _FACE_NODE_CONNECTIVITY_CANDIDATES:

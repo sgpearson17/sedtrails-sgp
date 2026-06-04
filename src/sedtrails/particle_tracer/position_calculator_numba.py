@@ -36,9 +36,11 @@ class GridGeometry:
     inv10: np.ndarray
     inv11: np.ndarray
     triangle_finder: Any = None
+    boundary_edges: np.ndarray | None = None
+    boundary_edge_classes: np.ndarray | None = None
 
     @classmethod
-    def from_points(cls, grid_x, grid_y, triangles=None):
+    def from_points(cls, grid_x, grid_y, triangles=None, boundary_edge_classification=None):
         x = np.asarray(grid_x, dtype=np.float64).ravel()
         y = np.asarray(grid_y, dtype=np.float64).ravel()
 
@@ -79,6 +81,8 @@ class GridGeometry:
 
         p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(x, y, triangle_array)
 
+        boundary_edges, boundary_edge_classes = _parse_boundary_edge_classification(boundary_edge_classification)
+
         return cls(
             grid_x=x,
             grid_y=y,
@@ -93,6 +97,8 @@ class GridGeometry:
             inv10=inv10,
             inv11=inv11,
             triangle_finder=triangle_finder,
+            boundary_edges=boundary_edges,
+            boundary_edge_classes=boundary_edge_classes,
         )
 
     def find_triangle(self, x, y) -> int:
@@ -316,6 +322,36 @@ class GridGeometry:
         cos_lat = np.cos(np.deg2rad(self.grid_y))
         return grid_u.astype(np.float64, copy=False) / (geofac * cos_lat), grid_v.astype(np.float64, copy=False) / geofac
 
+    def classify_boundary_crossings(self, x0, y0, x1, y1) -> np.ndarray:
+        """Return nearest boundary-edge class for each movement segment."""
+        start_points = _points_array(x0, y0)
+        end_points = _points_array(x1, y1)
+        classes = np.full(start_points.shape[0], 'unclassified', dtype=object)
+
+        if self.boundary_edges is None or self.boundary_edge_classes is None or self.boundary_edges.size == 0:
+            return classes.reshape(np.asarray(x0).shape)
+
+        valid_edges = (
+            (self.boundary_edges >= 0)
+            & (self.boundary_edges < self.grid_x.size)
+            & (self.boundary_edges < self.grid_y.size)
+        ).all(axis=1)
+        if not np.any(valid_edges):
+            return classes.reshape(np.asarray(x0).shape)
+
+        edge_nodes = self.boundary_edges[valid_edges]
+        edge_classes = self.boundary_edge_classes[valid_edges]
+        edge_a = np.column_stack((self.grid_x[edge_nodes[:, 0]], self.grid_y[edge_nodes[:, 0]]))
+        edge_b = np.column_stack((self.grid_x[edge_nodes[:, 1]], self.grid_y[edge_nodes[:, 1]]))
+
+        for index, (start, end) in enumerate(zip(start_points, end_points, strict=True)):
+            distances = np.array(
+                [_segment_distance_squared(start, end, a, b) for a, b in zip(edge_a, edge_b, strict=True)]
+            )
+            classes[index] = edge_classes[int(np.argmin(distances))]
+
+        return classes.reshape(np.asarray(x0).shape)
+
 
 def _bounding_box(points):
     if points.size == 0:
@@ -406,6 +442,77 @@ def _compute_triangle_neighbors(triangles):
                 neighbors[tri_index, vertex_index] = other_tri
                 neighbors[other_tri, other_vertex] = tri_index
     return neighbors
+
+
+def _parse_boundary_edge_classification(boundary_edge_classification):
+    if not boundary_edge_classification:
+        return None, None
+
+    edge_nodes = boundary_edge_classification.get('edge_nodes')
+    edge_classes = boundary_edge_classification.get('edge_classes')
+    if edge_nodes is None or edge_classes is None:
+        return None, None
+
+    edges = np.asarray(edge_nodes, dtype=np.int64)
+    classes = np.asarray(edge_classes, dtype=object)
+    if edges.ndim != 2 or edges.shape[1] != 2 or classes.shape != (edges.shape[0],):
+        return None, None
+    return edges, classes
+
+
+def _segment_distance_squared(p0, p1, q0, q1) -> float:
+    """Return squared distance between 2-D line segments."""
+    if _segments_intersect(p0, p1, q0, q1):
+        return 0.0
+    return float(
+        min(
+            _point_to_segment_distance_squared(p0, q0, q1),
+            _point_to_segment_distance_squared(p1, q0, q1),
+            _point_to_segment_distance_squared(q0, p0, p1),
+            _point_to_segment_distance_squared(q1, p0, p1),
+        )
+    )
+
+
+def _point_to_segment_distance_squared(point, seg_start, seg_end) -> float:
+    segment = seg_end - seg_start
+    length_squared = float(np.dot(segment, segment))
+    if length_squared <= 0.0:
+        delta = point - seg_start
+        return float(np.dot(delta, delta))
+    projection = float(np.dot(point - seg_start, segment) / length_squared)
+    projection = min(1.0, max(0.0, projection))
+    closest = seg_start + projection * segment
+    delta = point - closest
+    return float(np.dot(delta, delta))
+
+
+def _segments_intersect(p0, p1, q0, q1) -> bool:
+    def orientation(a, b, c):
+        value = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        if abs(value) <= TRIANGLE_TOLERANCE:
+            return 0
+        return 1 if value > 0 else -1
+
+    def on_segment(a, b, c):
+        return (
+            min(a[0], c[0]) - TRIANGLE_TOLERANCE <= b[0] <= max(a[0], c[0]) + TRIANGLE_TOLERANCE
+            and min(a[1], c[1]) - TRIANGLE_TOLERANCE <= b[1] <= max(a[1], c[1]) + TRIANGLE_TOLERANCE
+        )
+
+    o1 = orientation(p0, p1, q0)
+    o2 = orientation(p0, p1, q1)
+    o3 = orientation(q0, q1, p0)
+    o4 = orientation(q0, q1, p1)
+
+    if o1 != o2 and o3 != o4:
+        return True
+    return (
+        (o1 == 0 and on_segment(p0, q0, p1))
+        or (o2 == 0 and on_segment(p0, q1, p1))
+        or (o3 == 0 and on_segment(q0, p0, q1))
+        or (o4 == 0 and on_segment(q0, p1, q1))
+    )
 
 
 @njit(cache=True)
@@ -687,9 +794,14 @@ def _update_particles_temporal_numba(
     return x_new, y_new, simplex_new
 
 
-def create_grid_geometry(grid_x, grid_y, triangles=None) -> GridGeometry:
+def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classification=None) -> GridGeometry:
     """Create cached grid geometry for repeated particle interpolation."""
-    return GridGeometry.from_points(grid_x, grid_y, triangles=triangles)
+    return GridGeometry.from_points(
+        grid_x,
+        grid_y,
+        triangles=triangles,
+        boundary_edge_classification=boundary_edge_classification,
+    )
 
 
 def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geometry=None):

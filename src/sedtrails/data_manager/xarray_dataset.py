@@ -27,6 +27,8 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'status_transported': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'status_released': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             'status_mobile': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'status_beached': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
+            'status_left_domain': (('n_particles', 'n_timesteps'), np.zeros((N_particles, N_timesteps), dtype=int)),
             # Transport distances per flow field
             'covered_distance': (
                 ('n_flowfields', 'n_particles', 'n_timesteps'),
@@ -161,5 +163,11 @@ def collect_timestep_data(ds, populations, timestep, current_time):
             'status_released', np.ones(num_particles, dtype=int)
         )
         ds['status_mobile'][particle_slice, timestep] = _require_population_field(population, 'status_mobile')
+        ds['status_beached'][particle_slice, timestep] = population.particles.get(
+            'status_beached', np.zeros(num_particles, dtype=int)
+        )
+        ds['status_left_domain'][particle_slice, timestep] = population.particles.get(
+            'status_left_domain', np.zeros(num_particles, dtype=int)
+        )
 
         particle_offset += num_particles

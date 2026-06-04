@@ -25,6 +25,7 @@ class SeederFieldData:
     y: np.ndarray
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
+    boundary_edge_classification: dict | None = None
     face_node_fill_value: int = -1
 
 
@@ -212,6 +213,7 @@ class FormatConverter:
                     if getattr(field_data, 'particle_face_connectivity', None) is None
                     else np.asarray(field_data.particle_face_connectivity, dtype=np.int64)
                 ),
+                boundary_edge_classification=getattr(field_data, 'boundary_edge_classification', None),
                 face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
             )
 
@@ -219,6 +221,7 @@ class FormatConverter:
             x, y = plugin.get_seeding_coordinates()
             face_node_connectivity = None
             particle_face_connectivity = None
+            boundary_edge_classification = None
             face_node_fill_value = -1
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
@@ -226,6 +229,8 @@ class FormatConverter:
             x, y = sedtrails_data.x, sedtrails_data.y
             face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
             particle_face_connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
+            metadata = getattr(sedtrails_data, 'metadata', None)
+            boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
             face_node_fill_value = getattr(sedtrails_data, 'face_node_fill_value', -1)
 
         return SeederFieldData(
@@ -237,6 +242,7 @@ class FormatConverter:
             particle_face_connectivity=(
                 None if particle_face_connectivity is None else np.asarray(particle_face_connectivity, dtype=np.int64)
             ),
+            boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=face_node_fill_value,
         )
 

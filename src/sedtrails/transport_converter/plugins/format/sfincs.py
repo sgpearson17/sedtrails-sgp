@@ -188,11 +188,13 @@ class FormatPlugin(BaseFormatPlugin):
         self.load()
         x, y = self._active_face_coordinates()
         particle_triangles = self._active_face_center_triangles(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, particle_triangles)
         return SimpleNamespace(
             x=x,
             y=y,
             face_node_connectivity=particle_triangles,
             particle_face_connectivity=particle_triangles,
+            boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
         )
 
@@ -611,6 +613,23 @@ class FormatPlugin(BaseFormatPlugin):
         )
         if classification is not None:
             metadata.add('boundary_edge_classification', classification.to_metadata())
+
+    def _boundary_edge_classification(
+        self,
+        node_x: np.ndarray,
+        node_y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        if connectivity is None:
+            return None
+
+        classification = classify_boundary_edges_from_config(
+            node_x,
+            node_y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        return None if classification is None else classification.to_metadata()
 
     def _get_face_node_mesh_variables(self):
         """Return UGRID node coordinates and face-node connectivity with indexing metadata."""

@@ -1262,6 +1262,56 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([False, True]))
 
+    def test_open_boundary_exit_marks_particle_left_domain(self, monkeypatch):
+        """Particles crossing open boundary edges are removed from later movement."""
+        population = ParticleSeeder([_boundary_action_config('0.2,0.2')]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(1)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
+            current_timestep=0.5,
+        )
+
+        assert population.particles['status_left_domain'].tolist() == [True]
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_domain'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+        population.update_status()
+
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+    def test_land_boundary_contact_marks_beached_without_removing_particle(self, monkeypatch):
+        """Particles crossing land boundary edges stay put and can reactivate later."""
+        population = ParticleSeeder([_boundary_action_config('0.2,0.2')]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(1)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': -np.ones(3), 'v': np.zeros(3)},
+            current_timestep=0.5,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], np.array([0.2]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.2]))
+        assert population.particles['status_beached'].tolist() == [True]
+        assert population.particles['status_left_domain'].tolist() == [False]
+        assert population.particles['status_alive'].tolist() == [True]
+        assert population.particles['status_domain'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+        population.update_status()
+
+        assert population.particles['status_beached'].tolist() == [False]
+        assert population.particles['status_alive'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [True]
+
     def test_update_position_carries_cached_simplex_ids(self, point_config_simple):
         """Position updates should reuse and refresh particle simplex ids."""
         population = ParticlePopulation(
@@ -1365,4 +1415,30 @@ def _single_particle_population(release_start):
         field_y=np.array([0.0, 0.0, 1.0, 1.0]),
         population_config=config,
         reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
+
+
+def _boundary_action_config(location):
+    return {
+        'name': 'Boundary Action Config',
+        'particle_type': 'sand',
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': [location]}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+
+
+def _boundary_action_field_data():
+    return SimpleNamespace(
+        x=np.array([0.0, 1.0, 0.0]),
+        y=np.array([0.0, 0.0, 1.0]),
+        face_node_connectivity=np.array([[0, 1, 2]], dtype=np.int64),
+        boundary_edge_classification={
+            'edge_nodes': [[0, 1], [2, 0], [1, 2]],
+            'edge_classes': ['open', 'land', 'unclassified'],
+        },
     )

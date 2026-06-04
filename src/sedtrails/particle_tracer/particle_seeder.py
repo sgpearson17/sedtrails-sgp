@@ -547,6 +547,8 @@ class ParticlePopulation:
                 dtype=float,
             ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
+            'status_left_domain': np.zeros(len(_particles), dtype=bool),
+            'status_beached': np.zeros(len(_particles), dtype=bool),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
 
@@ -642,6 +644,13 @@ class ParticlePopulation:
         updates status of particles in the population.
         """
         n_particles = len(self.particles['x'])
+        left_domain = self.particles.get('status_left_domain')
+        if left_domain is None or left_domain.shape != (n_particles,):
+            left_domain = np.zeros(n_particles, dtype=bool)
+        else:
+            left_domain = np.asarray(left_domain, dtype=bool)
+        self.particles['status_left_domain'] = left_domain
+        self.particles['status_beached'] = np.zeros(n_particles, dtype=bool)
 
         # Compute whether particles are transported (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
@@ -655,7 +664,7 @@ class ParticlePopulation:
             self.particles['y'],
             simplex_seeds,
         )
-        self.particles['status_domain'] = self._particle_simplices >= 0
+        self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
@@ -675,7 +684,7 @@ class ParticlePopulation:
         self.particles['status_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
-        self.particles['status_alive'] = np.ones(n_particles, dtype=bool)
+        self.particles['status_alive'] = ~left_domain
 
         # Compute whether particles are mobile (or static) - combination of all status flags
         self.particles['status_mobile'] = (
@@ -703,6 +712,9 @@ class ParticlePopulation:
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
             return
+        old_x = self.particles['x'][ix].copy()
+        old_y = self.particles['y'][ix].copy()
+        old_simplices = self._particle_simplices[particle_indices].copy()
 
         if _is_temporal_flow_field(flow_field):
             new_x, new_y, new_simplices = self._position_calculator_temporal_with_simplex(
@@ -727,6 +739,33 @@ class ParticlePopulation:
             )
 
         # TODO: implement Bart's solution for gross/net values here. Add
+        outside_domain = new_simplices < 0
+        if np.any(outside_domain):
+            boundary_classes = self.grid_geometry.classify_boundary_crossings(
+                old_x[outside_domain],
+                old_y[outside_domain],
+                new_x[outside_domain],
+                new_y[outside_domain],
+            )
+            outside_particle_indices = particle_indices[outside_domain]
+            self.particles['status_domain'][outside_particle_indices] = False
+            self.particles['status_mobile'][outside_particle_indices] = False
+
+            open_boundary = boundary_classes == 'open'
+            if np.any(open_boundary):
+                open_indices = outside_particle_indices[open_boundary]
+                self.particles['status_left_domain'][open_indices] = True
+                self.particles['status_alive'][open_indices] = False
+
+            land_boundary = boundary_classes == 'land'
+            if np.any(land_boundary):
+                land_local_indices = np.flatnonzero(outside_domain)[land_boundary]
+                land_particle_indices = outside_particle_indices[land_boundary]
+                new_x[land_local_indices] = old_x[land_local_indices]
+                new_y[land_local_indices] = old_y[land_local_indices]
+                new_simplices[land_local_indices] = old_simplices[land_local_indices]
+                self.particles['status_beached'][land_particle_indices] = True
+                self.particles['status_domain'][land_particle_indices] = True
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
@@ -781,6 +820,7 @@ class ParticleSeeder:
             sedtrails_data.x,
             sedtrails_data.y,
             triangles=_geometry_triangles_from_field_data(sedtrails_data),
+            boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
         )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
