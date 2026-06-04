@@ -72,7 +72,7 @@ sedtrails --version
 We welcome contributions from the community! Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take part in developing SedTRAILS. 
 
 ## License
-SetTRAILS is licensed under the [MIT License](LICENSE).
+SetTRAILS is licensed under the [GPL 3.0 License](LICENSE).
 &copy; (2025) SedTRAILS Team, Delft, The Netherlands. 
 
 ## Citation
