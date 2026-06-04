@@ -14,6 +14,7 @@ from typing import Any, Dict, Tuple
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap
 from matplotlib.path import Path as MplPath
 from scipy.spatial import ConvexHull, QhullError, cKDTree
@@ -392,6 +393,28 @@ class SimulationDashboard:
         if status.shape != (n_particles,):
             return np.full(n_particles, default, dtype=bool)
         return status
+
+    def _particle_trajectory_history(self, n_particles: int) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return stored particle trajectory arrays when all snapshots match the current particle count."""
+        trajectories = getattr(self, 'trajectories', {})
+        x_history = trajectories.get('x', [])
+        y_history = trajectories.get('y', [])
+        if len(x_history) < 2 or len(x_history) != len(y_history):
+            return None
+
+        x_arrays = [np.asarray(values, dtype=float).ravel() for values in x_history]
+        y_arrays = [np.asarray(values, dtype=float).ravel() for values in y_history]
+        if any(values.shape != (n_particles,) for values in x_arrays + y_arrays):
+            return None
+
+        return np.vstack(x_arrays), np.vstack(y_arrays)
+
+    @staticmethod
+    def _particle_trail_segments(trail_x: np.ndarray, trail_y: np.ndarray, particle_indices: np.ndarray) -> np.ndarray:
+        """Return line-collection segments for selected particle trajectory columns."""
+        if particle_indices.size == 0:
+            return np.empty((0, 0, 2), dtype=float)
+        return np.stack((trail_x[:, particle_indices], trail_y[:, particle_indices]), axis=-1).transpose(1, 0, 2)
 
     def _geometry_key(self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None) -> tuple:
         extent = self._spatial_extent(x, y, mesh_geometry)
@@ -819,17 +842,25 @@ class SimulationDashboard:
                     )
                 )
 
-                # Connect visible particles with lines.
-                for i in visible_indices:
-                    (line,) = ax.plot(
-                        [initial_x[i], particle_x[i]],
-                        [initial_y[i], particle_y[i]],
-                        'w-',
+                trajectory_history = self._particle_trajectory_history(n_particles)
+                if trajectory_history is None:
+                    trail_x = np.vstack((initial_x, particle_x))
+                    trail_y = np.vstack((initial_y, particle_y))
+                else:
+                    trail_x, trail_y = trajectory_history
+
+                segments = self._particle_trail_segments(trail_x, trail_y, visible_indices)
+                if segments.size:
+                    trails = LineCollection(
+                        segments,
+                        colors='white',
+                        linewidths=1,
                         alpha=0.7,
-                        linewidth=1,
                         zorder=4,
+                        label='_particle_trails',
                     )
-                    particle_artists.append(line)
+                    ax.add_collection(trails)
+                    particle_artists.append(trails)
 
             if particle_artists:
                 ax.legend(loc='upper right')

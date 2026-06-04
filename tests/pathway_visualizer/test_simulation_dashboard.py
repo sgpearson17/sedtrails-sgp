@@ -47,6 +47,7 @@ class FakeAxis:
         self.scatter_sizes = []
         self.scatter_calls = []
         self.plot_lines = []
+        self.line_collections = []
         self.quiver_size = None
         self.imshow_shapes = []
         self.tricontourf_called = False
@@ -67,6 +68,16 @@ class FakeAxis:
         y = np.asarray(y)
         self.plot_lines.append({'x': x.copy(), 'y': y.copy(), 'args': args, 'kwargs': kwargs})
         return (FakeArtist(self),)
+
+    def add_collection(self, collection):
+        self.line_collections.append(
+            {
+                'segments': np.asarray(collection.get_segments(), dtype=float),
+                'alpha': collection.get_alpha(),
+                'label': collection.get_label(),
+            }
+        )
+        return collection
 
     def quiver(self, x, y, u, v, *args, **kwargs):
         self.quiver_size = len(x)
@@ -207,8 +218,38 @@ def test_bathymetry_plot_hides_left_domain_and_marks_stranded_particles():
     np.testing.assert_array_equal(axis.scatter_calls[2]['x'], np.array([10.0, 12.0, 13.0]))
     assert axis.scatter_calls[1]['kwargs']['color'] == SimulationDashboard.STRANDED_PARTICLE_COLOR
     assert axis.scatter_calls[1]['kwargs']['label'] == 'Stranded'
-    assert len(axis.plot_lines) == 3
-    assert all(1.0 not in line['x'] for line in axis.plot_lines)
+    assert axis.plot_lines == []
+    assert len(axis.line_collections) == 1
+    assert axis.line_collections[0]['segments'].shape == (3, 2, 2)
+    assert np.all(axis.line_collections[0]['segments'][:, :, 0] != 1.0)
+
+
+def test_bathymetry_plot_draws_visible_particle_trajectory_history():
+    """Visible particles use stored dashboard snapshots for trajectory trails."""
+    axis = FakeAxis()
+    dashboard = _dashboard_with_axis('bathymetry', axis)
+    dashboard.trajectories = {
+        'x': [np.array([0.0, 10.0]), np.array([1.0, 11.0]), np.array([2.0, 12.0])],
+        'y': [np.array([0.0, 20.0]), np.array([1.0, 21.0]), np.array([2.0, 22.0])],
+        'time': [0.0, 1.0, 2.0],
+    }
+    particles = {
+        'x': np.array([2.0, 12.0]),
+        'y': np.array([2.0, 22.0]),
+        'x_initial': np.array([0.0, 10.0]),
+        'y_initial': np.array([0.0, 20.0]),
+        'status_left_domain': np.array([False, True]),
+        'status_beached': np.array([False, False]),
+    }
+
+    dashboard._update_bathymetry_plot(_flow_field(4), np.zeros(4), particles)
+
+    assert axis.plot_lines == []
+    assert len(axis.line_collections) == 1
+    segments = axis.line_collections[0]['segments']
+    np.testing.assert_array_equal(segments[0, :, 0], np.array([0.0, 1.0, 2.0]))
+    np.testing.assert_array_equal(segments[0, :, 1], np.array([0.0, 1.0, 2.0]))
+    assert 10.0 not in segments[:, :, 0]
 
 
 def test_rasterization_reuses_cached_weights_for_same_grid():
