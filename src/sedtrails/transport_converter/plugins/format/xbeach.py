@@ -1,33 +1,47 @@
+"""A plugin for converting XBeach NetCDF mean output to SedTRAILS format."""
+
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import xarray as xr
-import xugrid as xu
 
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
-from sedtrails.transport_converter.sedtrails_data import SedtrailsData, SedtrailsMetadata
+from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
+from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
     """
-    Plugin for converting XBeach NetCDF to SedTRAILS format.
+    Plugin for converting XBeach NetCDF mean variables to SedTRAILS format.
+
+    XBeach writes instantaneous variables on ``globaltime`` and averaged
+    variables on ``meantime``. This plugin deliberately maps only ``*_mean``
+    variables and uses ``meantime`` as the SedTRAILS time coordinate.
     """
+
+    TIME_DIM = 'meantime'
+    FRACTION_DIM = 'sediment_classes'
 
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
         Initialize the plugin with the input file.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         input_file : str
             Path to the XBeach NetCDF file.
+        morfac : float, optional
+            Morphological acceleration factor for time decompression. The
+            default is 1.0, which leaves input times unchanged.
         """
         super().__init__()
         self.input_file = Path(input_file)
         if not self.input_file.exists():
             raise FileNotFoundError(f'Input file not found: {self.input_file}')
-        self.input_data = None  # holds Dataset after reading
+        self.morfac = morfac
+        self.input_data: xr.Dataset | None = None
         self._input_variables: List[str] = []
 
     @property
@@ -35,27 +49,17 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get the variables in the input dataset.
 
-        Returns:
-        --------
-        List
+        Returns
+        -------
+        list[str]
             List of variable names in the input dataset.
         """
-
-        if self.input_data is None:  # Ensure input_data is loaded
+        if self.input_data is None:
             self.load()
 
-        if not self._input_variables:  # Ensures variables are only loaded once
+        if not self._input_variables:
             try:
-                ds = self.input_data
-                if isinstance(self.input_data, xu.UgridDataset):
-                    ds = (
-                        getattr(self.input_data, 'dataset', None)
-                        or getattr(self.input_data, '_dataset', None)
-                        or getattr(self.input_data, 'ds', None)
-                    )
-                    if ds is None:
-                        raise ValueError('Underlying xarray Dataset not found on UgridDataset')
-                self._input_variables = list(ds.data_vars)
+                self._input_variables = list(self.input_data.data_vars)
             except AttributeError as e:
                 raise ValueError('Input data could not retrieve variables') from e
             else:
@@ -70,274 +74,200 @@ class FormatPlugin(BaseFormatPlugin):
         reference_date: Optional[np.datetime64] = None,
     ) -> SedtrailsData:
         """
-        SedtrailsData from XBeach Netcdf.
+        Convert XBeach NetCDF mean output to SedtrailsData.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
-            Current simulation time in seconds
+            Current simulation time in seconds.
         reading_interval : float, optional
-            Reading interval in seconds
+            Reading interval in seconds.
         reference_date : np.datetime64, optional
-            Reference date for converting time values
+            Reference date for converting time values.
 
-        Returns:
-        --------
+        Returns
+        -------
         SedtrailsData
             The converted SedtrailsData object.
         """
-
         if reference_date is None:
             reference_date = np.datetime64('1970-01-01T00:00:00')
 
-        # Read the NetCDF file
         self.load()
         time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
 
-        # Determine if we need to slice based on current_time and reading_interval
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
-
-        # Apply time slicing if needed
         if time_start_idx is not None or time_end_idx is not None:
             time_slice = slice(time_start_idx, time_end_idx)
             time_info = self._slice_time_info(time_info, time_slice)
 
-        # Map the variables to SedtrailsData structure
         mapped_data = self._map_xbeach_variables(time_info, time_start_idx, time_end_idx)
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
-        # Calculate magnitudes for vector quantities
-        # Flow velocity magnitude
         depth_avg_velocity_magnitude = np.sqrt(
             mapped_data['flow_velocity_x'] ** 2 + mapped_data['flow_velocity_y'] ** 2
         )
-
-        # Bed load magnitude
         bed_load_magnitude = np.sqrt(
             mapped_data['bed_load_transport_x'] ** 2 + mapped_data['bed_load_transport_y'] ** 2
         )
-
-        # Suspended sediment magnitude
         suspended_transport_magnitude = np.sqrt(
             mapped_data['suspended_transport_x'] ** 2 + mapped_data['suspended_transport_y'] ** 2
         )
 
-        # Create dictionaries for vector quantities
         depth_avg_flow_velocity = {
             'x': mapped_data['flow_velocity_x'],
             'y': mapped_data['flow_velocity_y'],
             'magnitude': depth_avg_velocity_magnitude,
         }
-
         bed_load_transport = {
             'x': mapped_data['bed_load_transport_x'],
             'y': mapped_data['bed_load_transport_y'],
             'magnitude': bed_load_magnitude,
         }
-
         suspended_transport = {
             'x': mapped_data['suspended_transport_x'],
             'y': mapped_data['suspended_transport_y'],
             'magnitude': suspended_transport_magnitude,
         }
-
-        # Create nonlinear wave velocity dictionary with zeros
-        # Using the same shape as other vector quantities
         nonlinear_wave_velocity = {
-            'x': np.zeros_like(mapped_data['flow_velocity_x']),
-            'y': np.zeros_like(mapped_data['flow_velocity_y']),
-            'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
+            'x': mapped_data['nonlinear_wave_velocity_x'],
+            'y': mapped_data['nonlinear_wave_velocity_y'],
+            'magnitude': np.sqrt(
+                mapped_data['nonlinear_wave_velocity_x'] ** 2 + mapped_data['nonlinear_wave_velocity_y'] ** 2
+            ),
         }
 
-        # Create SedtrailsMetadata object
         metadata = SedtrailsMetadata(
             flowfield_domain={
-                'x_min': np.min(mapped_data['x']),
-                'x_max': np.max(mapped_data['x']),
-                'y_min': np.min(mapped_data['y']),
-                'y_max': np.max(mapped_data['y']),
+                'x_min': np.nanmin(mapped_data['x']),
+                'x_max': np.nanmax(mapped_data['x']),
+                'y_min': np.nanmin(mapped_data['y']),
+                'y_max': np.nanmax(mapped_data['y']),
+            }
+        )
+        metadata.update(
+            {
+                'model': 'xbeach',
+                'time_coordinate': self.TIME_DIM,
+                'uses_mean_variables': True,
+                'source_sediment_classes': mapped_data['source_sediment_classes'],
+                'sediment_transport_fraction_handling': 'sum_over_source_sediment_classes',
+                'max_bed_shear_stress_source': 'taubx_mean/tauby_mean magnitude',
             }
         )
 
-        # Create SedtrailsData object
-        sedtrails_data = SedtrailsData(
+        return SedtrailsData(
             times=seconds_since_ref,
             reference_date=self.reference_date,
             x=mapped_data['x'],
             y=mapped_data['y'],
             bed_level=mapped_data['bed_level'],
             depth_avg_flow_velocity=depth_avg_flow_velocity,
-            fractions=1,  # Default to 1 fraction
+            fractions=1,
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
             water_depth=mapped_data['water_depth'],
             mean_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
-            max_bed_shear_stress=None,  # does not exist in XBeach; could be back-calculated
+            # XBeach sample output has taub*_mean but no *_mean maximum. Use the
+            # mean magnitude so downstream physics can run without reading *_max.
+            max_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
             metadata=metadata,
         )
 
-        return sedtrails_data
-
     def get_seeding_coordinates(self):
-        """
-        Return only the spatial coordinates required for particle seeding.
-        """
+        """Return only the spatial coordinates required for particle seeding."""
         self.load()
+        return self._get_grid_coordinates()
 
-        # Fast path: xugrid already provides face centroids.
-        if isinstance(self.input_data, xu.UgridDataset):
-            grid = self.input_data.grid
-            if not isinstance(grid, xu.Ugrid2d):
-                raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}')
-            return grid.face_x, grid.face_y
+    def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
+        """
+        Return input mean-time bounds in seconds since the reference date.
 
-        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
+        Parameters
+        ----------
+        reference_date : np.datetime64, optional
+            Reference date used to convert the input time coordinate to seconds.
+            If omitted, the Unix epoch is used.
 
-        return compute_face_centroids(
-            node_x_var,
-            node_y_var,
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
-        )
+        Returns
+        -------
+        tuple[float, float]
+            First and last input timestamps in seconds since `reference_date`.
+        """
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
+
+        self.load()
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times.size == 0:
+            raise ValueError('Input data contains no mean time values')
+        return float(times[0]), float(times[-1])
 
     def load(self) -> Any:
-        """
-        Reads and loads a XBeach NetCDF file using xugrid.
-        """
-
+        """Read and load an XBeach NetCDF file with xarray."""
         if self.input_data is None:
             try:
-                # First try using xugrid's open_dataset which handles UGRID conventions
-                self.input_data = xu.load_dataset(
-                    self.input_file,
-                    decode_times=True,
-                    decode_timedelta=True,
-                )
+                self.input_data = xr.open_dataset(self.input_file, decode_times=False, decode_timedelta=False)
             except Exception as e:
-                print(f'Could not open file with xugrid: {e} \n Trying with Xarray...')
-                # Fallback to regular xarray
-                try:
-                    try:
-                        self.input_data = xr.open_dataset(
-                            self.input_file, decode_times=True, use_cftime=True, decode_timedelta=True
-                        )
-                    except TypeError:
-                        # Older xarray versions may not support use_cftime
-                        self.input_data = xr.open_dataset(self.input_file, decode_times=True, decode_timedelta=True)
-                except Exception as e:
-                    # If time decoding fails, retry without decoding
-                    msg = str(e)
-                    if 'decode time' in msg or 'decode_times' in msg or 'cftime' in msg:
-                        try:
-                            self.input_data = xr.open_dataset(
-                                self.input_file, decode_times=False, decode_timedelta=False
-                            )
-                        except Exception as e:
-                            raise IOError(f'Failed to open NetCDF file: {e}') from e
-                        else:
-                            print(f'Successfully loaded (Xarray, decode_times=False): {self.input_file}')
-                    else:
-                        raise IOError(f'Failed to open NetCDF file: {e}') from e
-                else:
-                    print(f'Successfully loaded (Xarray): {self.input_file}')
+                raise IOError(f'Failed to open XBeach NetCDF file: {e}') from e
             else:
-                print(f'Successfully loaded (Xugrid): {self.input_file}')
+                print(f'Successfully loaded (Xarray): {self.input_file}')
+        return self.input_data
 
-    def _get_variable(self, name: str):
-        """
-        Return an xarray DataArray for variable `name` for either xr.Dataset or xu.UgridDataset.
-        """
-        if self.input_data is None:
-            raise ValueError('Dataset not loaded. Call load() first.')
+    def _decompress_time(self, time_info: Dict) -> Dict:
+        """Apply morfac decompression to time values."""
+        return decompress_time_info(time_info, self.morfac)
 
-        ds = self.input_data
-        #   if isinstance(self.input_data, xu.UgridDataset):
-        #       ds = (
-        #           getattr(self.input_data, 'dataset', None)
-        #           or getattr(self.input_data, '_dataset', None)
-        #           or getattr(self.input_data, 'ds', None)
-        #       )
-        #       if ds is None:
-        #           raise KeyError(f"Underlying xarray Dataset not found on UgridDataset for variable '{name}'")
-
-        if name in ds:
-            return ds[name]
-        raise KeyError(f"Variable '{name}' not found in dataset")
-
-    def _get_time_info(self, input_data: Union[xu.UgridDataset, xr.Dataset], reference_date: np.datetime64) -> Dict:
-        """
-        Get and transforms time information of a dataset.
-
-        Parameters:
-        -----------
-        input_data : xu.UgridDataset
-            The input dataset containing time information.
-
-        reference_data : np.datetime64
-            The reference date to calculate time in seconds.
-
-        Returns:
-        --------
-        Dict
-            Dictionary containing time values, start time, end time,
-            and time in seconds since reference date
-        """
-
-        # check reference_date is a numpy datetime64
+    def _get_time_info(self, input_data: xr.Dataset, reference_date: np.datetime64) -> Dict:
+        """Get XBeach mean-time information in seconds since `reference_date`."""
         if not isinstance(reference_date, np.datetime64):
             raise TypeError('reference_date must be a numpy datetime64 object')
-
         if input_data is None:
-            raise ValueError('Dataset not loaded. Call read_netcdf_dfm() first.')
+            raise ValueError('Dataset not loaded. Call load() first.')
+        if self.TIME_DIM not in input_data:
+            raise KeyError(
+                f"Required mean time coordinate '{self.TIME_DIM}' not found. "
+                'XBeach conversion requires *_mean output on the meantime axis.'
+            )
 
-        # Get the time variable
-        time_var = input_data['time']
-        time_values = time_var.values
-        time_start = time_values[0]
-        time_end = time_values[-1]
+        time_var = input_data[self.TIME_DIM]
+        raw_time_values = np.asarray(time_var.values)
+        orig_units = time_var.attrs.get('units')
+        orig_calendar = time_var.attrs.get('calendar', 'standard')
 
-        # Get original time units and calendar from the attributes
-        orig_units = getattr(time_var, 'units', None)
-        orig_calendar = getattr(time_var, 'calendar', 'standard')
-
-        # Normalize time values if they are not already datetime-like
-        if not np.issubdtype(np.asarray(time_values).dtype, np.datetime64):
-            decoded = None
-            if orig_units is not None:
-                try:
-                    decoded = xr.coding.times.decode_cf_datetime(time_values, orig_units, orig_calendar)
-                except Exception:
-                    decoded = None
-            if decoded is not None:
-                try:
-                    decoded = xr.coding.times.cftime_to_nptime(decoded)
-                except Exception:
-                    pass
-                time_values = decoded
-            else:
-                # Fallback: treat numeric values as seconds since reference_date
-                time_values = reference_date + np.asarray(time_values, dtype=float) * np.timedelta64(1, 's')
-
-        # Convert time values to seconds since reference_date
-        try:
-            seconds_since_ref = np.array([float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values])
-        except Exception:
+        if np.issubdtype(raw_time_values.dtype, np.datetime64):
+            time_values = raw_time_values
+            seconds_since_ref = np.array(
+                [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values],
+                dtype=float,
+            )
+        elif orig_units and 'since' in orig_units:
+            decoded = xr.coding.times.decode_cf_datetime(raw_time_values, orig_units, orig_calendar)
             try:
-                time_values = xr.coding.times.cftime_to_nptime(time_values)
-                seconds_since_ref = np.array(
-                    [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values]
-                )
-            except Exception as inner_e:
-                raise TypeError('Time values could not be converted to seconds since reference_date') from inner_e
+                decoded = xr.coding.times.cftime_to_nptime(decoded)
+            except Exception:
+                pass
+            time_values = np.asarray(decoded)
+            seconds_since_ref = np.array(
+                [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values],
+                dtype=float,
+            )
+        else:
+            seconds_since_ref = np.asarray(raw_time_values, dtype=float)
+            time_values = np.array(
+                [reference_date + np.timedelta64(int(round(seconds * 1_000_000)), 'us') for seconds in seconds_since_ref]
+            )
 
         return {
             'time_values': time_values,
-            'time_start': time_start,
-            'time_end': time_end,
+            'time_start': time_values[0],
+            'time_end': time_values[-1],
             'original_units': orig_units,
             'original_calendar': orig_calendar,
             'seconds_since_reference': seconds_since_ref,
@@ -360,26 +290,15 @@ class FormatPlugin(BaseFormatPlugin):
         self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
     ) -> Dict:
         """
-        Map XBeach variables to SedtrailsData structure.
+        Map XBeach ``*_mean`` variables to SedtrailsData fields.
 
-        Parameters:
-        -----------
-        time_info : Dict
-            Time information
-        time_start_idx : int, optional
-            Start time index for slicing
-        time_end_idx : int, optional
-            End time index for slicing
-
-        Returns:
-        --------
-        Dict
-            Dictionary with mapped variables
+        Spatial ``ny,nx`` dimensions are flattened to a single SedTRAILS
+        spatial axis. XBeach sediment transport variables are summed over the
+        source ``sediment_classes`` dimension before entering SedTRAILS.
         """
         if self.input_data is None:
-            raise ValueError('Dataset not loaded. Call read_data() first.')
+            raise ValueError('Dataset not loaded. Call load() first.')
 
-        # Get time information
         num_times = time_info['num_times']
         time_slice = (
             slice(time_start_idx, time_end_idx)
@@ -387,174 +306,138 @@ class FormatPlugin(BaseFormatPlugin):
             else slice(None)
         )
 
-        # Derive face coordinates and keep generic UGRID geometry for visualization.
-        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
+        x, y = self._get_grid_coordinates()
+        grid_size = x.size
 
-        face_x, face_y = compute_face_centroids(
-            node_x_var,
-            node_y_var,
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
+        bed_load_transport_x = self._mean_fractional('Subg_mean', time_slice, num_times, grid_size)
+        bed_load_transport_y = self._mean_fractional('Svbg_mean', time_slice, num_times, grid_size)
+        suspended_transport_x = self._mean_fractional('Susg_mean', time_slice, num_times, grid_size)
+        suspended_transport_y = self._mean_fractional('Svsg_mean', time_slice, num_times, grid_size)
+
+        source_sediment_classes = self._detect_source_fraction_count(
+            bed_load_transport_x,
+            bed_load_transport_y,
+            suspended_transport_x,
+            suspended_transport_y,
         )
 
-        # Variable mapping for XBeach files
-        variable_map = {
-            'x': 'globalx',  # X-coordinates
-            'y': 'globaly',  # Y-coordinates
-            'bed_level': 'zb',  # Bed level
-            'water_depth': 'hh_mean',  # Water depth
-            'flow_velocity_x': 'ue_mean',  # X-component of flow velocity
-            'flow_velocity_y': 've_mean',  # Y-component of flow velocity
-            'mean_bed_shear_stress': 'mean_bss_magnitude',  # Mean bed shear stress
-            'total_load_transport_x': 'sutot_mean',  # X-component of total load sediment transport
-            'total_load_transport_y': 'svtot_mean',  # Y-component of total load sediment transport
-            'sediment_concentration': 'cctot_mean',  # Suspended sediment concentration
+        data = {
+            'x': x,
+            'y': y,
+            'bed_level': self._mean_scalar('zb_mean', time_slice, num_times, grid_size),
+            'water_depth': self._mean_scalar('hh_mean', time_slice, num_times, grid_size),
+            'flow_velocity_x': self._mean_scalar('ue_mean', time_slice, num_times, grid_size),
+            'flow_velocity_y': self._mean_scalar('ve_mean', time_slice, num_times, grid_size),
+            'sediment_concentration': self._mean_scalar('cctot_mean', time_slice, num_times, grid_size),
+            'bed_load_transport_x': self._sum_source_fractions(bed_load_transport_x),
+            'bed_load_transport_y': self._sum_source_fractions(bed_load_transport_y),
+            'suspended_transport_x': self._sum_source_fractions(suspended_transport_x),
+            'suspended_transport_y': self._sum_source_fractions(suspended_transport_y),
+            'source_sediment_classes': source_sediment_classes,
         }
 
-        # Extract data from dataset
-        data = {}
+        taubx = self._mean_scalar('taubx_mean', time_slice, num_times, grid_size)
+        tauby = self._mean_scalar('tauby_mean', time_slice, num_times, grid_size)
+        data['mean_bed_shear_stress'] = np.sqrt(taubx**2 + tauby**2)
 
-        # First, get spatial coordinates (typically not time-dependent)
-        data['x'] = face_x
-        data['y'] = face_y
-        data['node_x'] = np.asarray(node_x_var)
-        data['node_y'] = np.asarray(node_y_var)
-        data['face_node_connectivity'] = normalize_face_node_connectivity(
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
-        )
-
-        # Determine the spatial grid dimensions
-        grid_shape = data['x'].shape
-
-        # Extract time-dependent variables
-        time_dependent_vars = [
-            'bed_level',
-            'water_depth',
-            'flow_velocity_x',
-            'flow_velocity_y',
-        ]
-
-        for key in time_dependent_vars:
-            var_name = variable_map.get(key, key)
-            try:
-                var = self._get_variable(var_name)
-            except KeyError:
-                # Default to zeros if not found
-                data[key] = np.zeros((num_times, *grid_shape))
-                print(f"Warning: Variable '{var_name}' not found, using zeros")
-                continue
-
-            # Check if variable has time dimension
-            if 'time' in var.dims:
-                # Check if variable has layer dimension
-                if 'layer' in var.dims:
-                    # For variables with time and layer, select layer 0 and apply time slice
-                    data[key] = var.isel(layer=0, time=time_slice).values
-                else:
-                    # For variables with time but no layer, apply time slice
-                    data[key] = var.isel(time=time_slice).values
-            else:
-                # For variables without time dimension, broadcast to all time steps
-                data[key] = np.broadcast_to(var.values, (num_times, *var.shape))
+        if 'ua_mean' in self.input_data:
+            data['nonlinear_wave_velocity_x'] = self._mean_scalar('ua_mean', time_slice, num_times, grid_size)
+        else:
+            data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
+            print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
+        data['nonlinear_wave_velocity_y'] = np.zeros_like(data['nonlinear_wave_velocity_x'])
 
         return data
 
-    def _get_face_node_mesh_variables(self):
-        """Return UGRID node coordinates and face-node connectivity with indexing metadata."""
-        node_x_var = self._get_variable('mesh2d_node_x')
-        node_y_var = self._get_variable('mesh2d_node_y')
+    def _get_grid_coordinates(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return flattened XBeach cell-center coordinates."""
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+        if 'globalx' not in self.input_data or 'globaly' not in self.input_data:
+            raise KeyError("Required XBeach coordinates 'globalx' and/or 'globaly' not found")
 
-        try:
-            face_nodes_var = self._get_variable('mesh2d_face_nodes')
-        except KeyError as err:
-            if not isinstance(self.input_data, xu.UgridDataset):
-                raise
-            grid = self.input_data.grid
-            if not isinstance(grid, xu.Ugrid2d):
-                raise TypeError(f'Expected Ugrid2d, got {type(grid).__name__}') from err
-            face_nodes_var = grid.face_node_connectivity
-            return node_x_var, node_y_var, face_nodes_var, 0, -1
+        x = np.asarray(self.input_data['globalx'].values, dtype=float).ravel()
+        y = np.asarray(self.input_data['globaly'].values, dtype=float).ravel()
+        if x.shape != y.shape:
+            raise ValueError(f'globalx and globaly must have the same flattened shape, got {x.shape} and {y.shape}')
+        return x, y
 
-        start_index = face_nodes_var.attrs.get('start_index', 0)
-        fill_value = face_nodes_var.encoding.get('_FillValue', face_nodes_var.attrs.get('_FillValue', -1))
-        return node_x_var, node_y_var, face_nodes_var, start_index, fill_value
+    def _mean_scalar(self, var_name: str, time_slice: slice, num_times: int, grid_size: int) -> np.ndarray:
+        """Read a scalar ``*_mean`` variable as ``(time, spatial)``."""
+        var = self._require_mean_variable(var_name)
+        if self.FRACTION_DIM in var.dims:
+            raise ValueError(f"Expected scalar mean variable '{var_name}', found fraction dimension {var.dims}")
+        var = self._select_time(var, time_slice)
+        if self.TIME_DIM in var.dims:
+            spatial_dims = [dim for dim in var.dims if dim != self.TIME_DIM]
+            var = var.transpose(self.TIME_DIM, *spatial_dims)
+            values = np.asarray(var.values, dtype=float)
+        else:
+            values = np.broadcast_to(np.asarray(var.values, dtype=float), (num_times, *var.shape))
+        return values.reshape(num_times, grid_size)
+
+    def _mean_fractional(self, var_name: str, time_slice: slice, num_times: int, grid_size: int) -> np.ndarray:
+        """Read a fractional ``*_mean`` variable as ``(time, fractions, spatial)``."""
+        var = self._require_mean_variable(var_name)
+        var = self._select_time(var, time_slice)
+        if self.TIME_DIM in var.dims and self.FRACTION_DIM in var.dims:
+            spatial_dims = [dim for dim in var.dims if dim not in {self.TIME_DIM, self.FRACTION_DIM}]
+            var = var.transpose(self.TIME_DIM, self.FRACTION_DIM, *spatial_dims)
+            values = np.asarray(var.values, dtype=float)
+            return values.reshape(num_times, values.shape[1], grid_size)
+        if self.TIME_DIM in var.dims:
+            spatial_dims = [dim for dim in var.dims if dim != self.TIME_DIM]
+            var = var.transpose(self.TIME_DIM, *spatial_dims)
+            return np.asarray(var.values, dtype=float).reshape(num_times, grid_size)
+        if self.FRACTION_DIM in var.dims:
+            spatial_dims = [dim for dim in var.dims if dim != self.FRACTION_DIM]
+            var = var.transpose(self.FRACTION_DIM, *spatial_dims)
+            values = np.asarray(var.values, dtype=float)
+            return np.broadcast_to(values.reshape(1, values.shape[0], grid_size), (num_times, values.shape[0], grid_size))
+
+        values = np.asarray(var.values, dtype=float).reshape(grid_size)
+        return np.broadcast_to(values, (num_times, grid_size))
+
+    def _require_mean_variable(self, var_name: str) -> xr.DataArray:
+        """Return a required XBeach ``*_mean`` variable or raise a clear error."""
+        if not var_name.endswith('_mean'):
+            raise ValueError(f"XBeach plugin only reads *_mean variables, got '{var_name}'")
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+        if var_name not in self.input_data:
+            raise KeyError(f"Required XBeach mean variable '{var_name}' not found in dataset")
+        return self.input_data[var_name]
+
+    def _select_time(self, var: xr.DataArray, time_slice: slice) -> xr.DataArray:
+        """Apply the XBeach mean-time slice when present."""
+        if self.TIME_DIM in var.dims:
+            return var.isel({self.TIME_DIM: time_slice})
+        return var
+
+    def _detect_source_fraction_count(self, *arrays: np.ndarray) -> int:
+        """Infer the source XBeach sediment class count from transport arrays."""
+        for array in arrays:
+            if array.ndim >= 3:
+                return int(array.shape[1])
+        return 1
+
+    def _sum_source_fractions(self, array: np.ndarray) -> np.ndarray:
+        """Collapse XBeach source sediment classes to total transport."""
+        if array.ndim >= 3:
+            return np.sum(array, axis=1)
+        return array
 
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
-
-        # If no chunking parameters provided, load entire file
         if current_time is None or reading_interval is None:
             return None, None
-
-        # If reading_interval is 0 or very large, load entire file
         if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
             return None, None
 
         times_array = time_info['seconds_since_reference']
-
-        # Find current time index
         current_idx = np.searchsorted(times_array, current_time)
-
-        # Calculate chunk size based on reading interval and NetCDF timestep
         netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
         chunk_steps = max(10, int(reading_interval / netcdf_timestep))
-
-        # Calculate start and end indices with some buffer
         start_idx = max(0, current_idx - chunk_steps // 4)
         end_idx = min(len(times_array), current_idx + chunk_steps)
-
         return start_idx, end_idx
-
-
-def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_value=-999):
-    """Return zero-based face-node connectivity with invalid entries set to -1."""
-    faces = np.asarray(mesh2d_face_nodes)
-    normalized = faces.astype(np.int64) - int(start_index)
-    invalid = normalized < 0
-    if fill_value is not None:
-        invalid |= faces == fill_value
-    normalized[invalid] = -1
-    return normalized
-
-
-def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, start_index=1, fill_value=-999):
-    """
-    Compute face centroids from UGRID mesh node coordinates and face->node connectivity.
-
-    Parameters
-    ----------
-    mesh2d_node_x : array-like, shape (nnode,)
-    mesh2d_node_y : array-like, shape (nnode,)
-    mesh2d_face_nodes : array-like, shape (nface, max_nodes_per_face)
-        Node indices per face; may be padded with fill_value.
-    start_index : int
-        0 or 1 depending on file convention.
-    fill_value : int
-        Padding value in mesh2d_face_nodes.
-
-    Returns
-    -------
-    face_x : np.ndarray, shape (nface,)
-    face_y : np.ndarray, shape (nface,)
-    """
-    node_x = np.asarray(mesh2d_node_x)
-    node_y = np.asarray(mesh2d_node_y)
-    faces = normalize_face_node_connectivity(mesh2d_face_nodes, start_index=start_index, fill_value=fill_value)
-
-    face_x = np.empty(faces.shape[0], dtype=np.float64)
-    face_y = np.empty(faces.shape[0], dtype=np.float64)
-
-    for i, face in enumerate(faces):
-        # Drop padded indices and out-of-range
-        valid = face[face >= 0]
-        if valid.size == 0:
-            face_x[i] = np.nan
-            face_y[i] = np.nan
-            continue
-        face_x[i] = node_x[valid].mean()
-        face_y[i] = node_y[valid].mean()
-
-    return face_x, face_y
