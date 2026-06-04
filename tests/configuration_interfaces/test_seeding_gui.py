@@ -238,7 +238,7 @@ def test_save_seeded_config_writes_valid_copied_yaml():
             output_config_path=output_config,
             points_output_path=points_output,
             points=[(10.0, 20.0), (30.0, 40.0)],
-            population_name='populaton_1',
+            population_name='population_1',
         )
 
         assert saved_config == output_config
@@ -261,7 +261,7 @@ def test_save_seeded_config_writes_multiple_population_point_files():
         source_config = load_config('examples/sedtrails-example-multisource.yaml')
         source_config, second_name = add_population_from_existing(
             source_config,
-            source_population_name='populaton_1',
+            source_population_name='population_1',
             new_population_name='population_2',
         )
         output_config = output_dir / 'validation-case.yaml'
@@ -272,10 +272,10 @@ def test_save_seeded_config_writes_multiple_population_point_files():
             output_config_path=output_config,
             points_output_path=points_output,
             points=[],
-            population_name='populaton_1',
+            population_name='population_1',
             config_data=source_config,
             population_points={
-                'populaton_1': [(10.0, 20.0)],
+                'population_1': [(10.0, 20.0)],
                 second_name: [(30.0, 40.0)],
             },
         )
@@ -283,11 +283,11 @@ def test_save_seeded_config_writes_multiple_population_point_files():
         with output_config.open('r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         populations = config['particles']['populations']
-        first_file = output_dir / 'validation-points.populaton_1.txt'
+        first_file = output_dir / 'validation-points.population_1.txt'
         second_file = output_dir / 'validation-points.population_2.txt'
         assert first_file.read_text(encoding='utf-8') == '10 20\n'
         assert second_file.read_text(encoding='utf-8') == '30 40\n'
-        assert populations[0]['seeding']['strategy']['file_points']['path'] == './validation-points.populaton_1.txt'
+        assert populations[0]['seeding']['strategy']['file_points']['path'] == './validation-points.population_1.txt'
         assert populations[1]['seeding']['strategy']['file_points']['path'] == './validation-points.population_2.txt'
     finally:
         _cleanup_output_dir(output_dir)
