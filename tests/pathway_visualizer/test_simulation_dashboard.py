@@ -45,6 +45,8 @@ class FakeAxis:
     def __init__(self):
         """Initializes counters and flags used by assertions."""
         self.scatter_sizes = []
+        self.scatter_calls = []
+        self.plot_lines = []
         self.quiver_size = None
         self.imshow_shapes = []
         self.tricontourf_called = False
@@ -54,8 +56,17 @@ class FakeAxis:
         pass
 
     def scatter(self, x, y, *args, **kwargs):
+        x = np.asarray(x)
+        y = np.asarray(y)
         self.scatter_sizes.append(len(x))
+        self.scatter_calls.append({'x': x.copy(), 'y': y.copy(), 'args': args, 'kwargs': kwargs})
         return FakeArtist(self)
+
+    def plot(self, x, y, *args, **kwargs):
+        x = np.asarray(x)
+        y = np.asarray(y)
+        self.plot_lines.append({'x': x.copy(), 'y': y.copy(), 'args': args, 'kwargs': kwargs})
+        return (FakeArtist(self),)
 
     def quiver(self, x, y, u, v, *args, **kwargs):
         self.quiver_size = len(x)
@@ -173,6 +184,31 @@ def test_large_grid_bathymetry_plot_uses_raster_path():
     assert axis.scatter_sizes == []
     assert not axis.tricontourf_called
     assert not axis.tricontour_called
+
+
+def test_bathymetry_plot_hides_left_domain_and_marks_stranded_particles():
+    """Left-domain particles are hidden; stranded particles use the light-red layer."""
+    axis = FakeAxis()
+    dashboard = _dashboard_with_axis('bathymetry', axis)
+    particles = {
+        'x': np.array([0.0, 1.0, 2.0, 3.0]),
+        'y': np.array([0.0, 0.0, 0.0, 0.0]),
+        'x_initial': np.array([10.0, 11.0, 12.0, 13.0]),
+        'y_initial': np.array([1.0, 1.0, 1.0, 1.0]),
+        'status_left_domain': np.array([False, True, False, False]),
+        'status_beached': np.array([False, False, True, False]),
+    }
+
+    dashboard._update_bathymetry_plot(_flow_field(4), np.zeros(4), particles)
+
+    assert axis.scatter_sizes == [2, 1, 3]
+    np.testing.assert_array_equal(axis.scatter_calls[0]['x'], np.array([0.0, 3.0]))
+    np.testing.assert_array_equal(axis.scatter_calls[1]['x'], np.array([2.0]))
+    np.testing.assert_array_equal(axis.scatter_calls[2]['x'], np.array([10.0, 12.0, 13.0]))
+    assert axis.scatter_calls[1]['kwargs']['color'] == SimulationDashboard.STRANDED_PARTICLE_COLOR
+    assert axis.scatter_calls[1]['kwargs']['label'] == 'Stranded'
+    assert len(axis.plot_lines) == 3
+    assert all(1.0 not in line['x'] for line in axis.plot_lines)
 
 
 def test_rasterization_reuses_cached_weights_for_same_grid():

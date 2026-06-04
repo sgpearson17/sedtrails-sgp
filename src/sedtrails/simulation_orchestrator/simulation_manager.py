@@ -232,6 +232,12 @@ class Simulation:
             cls._missing_particle_field_like(particle_x) if mixing_depth is None else np.asarray(mixing_depth)
         )
 
+        for status_name in ('status_left_domain', 'status_beached'):
+            status = population.particles.get(status_name)
+            particle_data[status_name] = (
+                np.zeros(np.asarray(particle_x).shape, dtype=bool) if status is None else np.asarray(status, dtype=bool)
+            )
+
         return particle_data
 
     def _create_simulation_time(self) -> Time:

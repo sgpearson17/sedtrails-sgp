@@ -361,6 +361,21 @@ class TestSimulationDashboardThrottle:
         np.testing.assert_array_equal(particle_data['burial_depth'], np.array([0.1, 0.2]))
         np.testing.assert_array_equal(particle_data['mixing_depth'], np.array([np.nan, np.nan]))
 
+    def test_dashboard_particle_data_includes_boundary_statuses(self):
+        """Dashboard particle payload should include boundary status arrays for plotting."""
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'status_left_domain': np.array([False, True]),
+                'status_beached': np.array([True, False]),
+            }
+
+        particle_data = Simulation._dashboard_particle_data(Population())
+
+        np.testing.assert_array_equal(particle_data['status_left_domain'], np.array([False, True]))
+        np.testing.assert_array_equal(particle_data['status_beached'], np.array([True, False]))
+
     def test_large_grid_dashboard_updates_are_throttled(self):
         """Large grids should throttle dashboard refreshes to periodic steps."""
         manager = object.__new__(Simulation)

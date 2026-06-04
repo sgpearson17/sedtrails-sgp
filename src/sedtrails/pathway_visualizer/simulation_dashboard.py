@@ -39,6 +39,7 @@ class SimulationDashboard:
     LARGE_GRID_QUIVER_LIMIT = 100
     RASTER_MAX_SIDE = 700
     RASTER_K_NEIGHBORS = 4
+    STRANDED_PARTICLE_COLOR = '#ffb3b3'
 
     def __init__(self, reference_date: str = '1970-01-01'):
         """Initialize the dashboard."""
@@ -377,6 +378,20 @@ class SimulationDashboard:
     def _flatten(values: np.ndarray) -> np.ndarray:
         """Flatten field data for plotting without copying when possible."""
         return np.asarray(values).ravel()
+
+    @staticmethod
+    def _particle_status_mask(
+        particles: Dict[str, np.ndarray], status_name: str, n_particles: int, default: bool = False
+    ) -> np.ndarray:
+        """Return a boolean particle status mask with a safe fallback for older payloads."""
+        status = particles.get(status_name)
+        if status is None:
+            return np.full(n_particles, default, dtype=bool)
+
+        status = np.asarray(status, dtype=bool)
+        if status.shape != (n_particles,):
+            return np.full(n_particles, default, dtype=bool)
+        return status
 
     def _geometry_key(self, x: np.ndarray, y: np.ndarray, mesh_geometry: Dict[str, Any] | None) -> tuple:
         extent = self._spatial_extent(x, y, mesh_geometry)
@@ -738,28 +753,63 @@ class SimulationDashboard:
 
         # Plot particles
         particle_artists = getattr(self, '_particle_artists', [])
-        if len(particles['x']) > 0:
-            # Current positions (white circles)
-            particle_artists.append(
-                ax.scatter(
-                    particles['x'],
-                    particles['y'],
-                    color='white',
-                    s=50,
-                    marker='o',
-                    edgecolors='black',
-                    linewidth=1,
-                    label='Current',
-                    zorder=5,
-                )
-            )
+        particle_x = np.asarray(particles['x'])
+        particle_y = np.asarray(particles['y'])
+        n_particles = len(particle_x)
+        if n_particles > 0:
+            left_domain = self._particle_status_mask(particles, 'status_left_domain', n_particles)
+            beached = self._particle_status_mask(particles, 'status_beached', n_particles)
+            visible_particles = ~left_domain
+            active_particles = visible_particles & ~beached
+            stranded_particles = visible_particles & beached
 
-            # Initial positions (white crosses)
-            if 'x_initial' in particles:
+            # Current in-domain positions (white circles)
+            if np.any(active_particles):
                 particle_artists.append(
                     ax.scatter(
-                        particles['x_initial'],
-                        particles['y_initial'],
+                        particle_x[active_particles],
+                        particle_y[active_particles],
+                        color='white',
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Current',
+                        zorder=5,
+                    )
+                )
+
+            # Current stranded/beached positions (light-red circles)
+            if np.any(stranded_particles):
+                particle_artists.append(
+                    ax.scatter(
+                        particle_x[stranded_particles],
+                        particle_y[stranded_particles],
+                        color=self.STRANDED_PARTICLE_COLOR,
+                        s=50,
+                        marker='o',
+                        edgecolors='black',
+                        linewidth=1,
+                        label='Stranded',
+                        zorder=6,
+                    )
+                )
+
+            initial_x = particles.get('x_initial')
+            initial_y = particles.get('y_initial')
+            has_initial_positions = initial_x is not None and initial_y is not None
+            if has_initial_positions:
+                initial_x = np.asarray(initial_x)
+                initial_y = np.asarray(initial_y)
+                has_initial_positions = initial_x.shape == particle_x.shape and initial_y.shape == particle_y.shape
+
+            # Initial positions (white crosses), excluding particles that left the domain.
+            if has_initial_positions and np.any(visible_particles):
+                visible_indices = np.flatnonzero(visible_particles)
+                particle_artists.append(
+                    ax.scatter(
+                        initial_x[visible_particles],
+                        initial_y[visible_particles],
                         color='white',
                         s=50,
                         marker='x',
@@ -769,11 +819,11 @@ class SimulationDashboard:
                     )
                 )
 
-                # Connect with lines
-                for i in range(len(particles['x'])):
+                # Connect visible particles with lines.
+                for i in visible_indices:
                     (line,) = ax.plot(
-                        [particles['x_initial'][i], particles['x'][i]],
-                        [particles['y_initial'][i], particles['y'][i]],
+                        [initial_x[i], particle_x[i]],
+                        [initial_y[i], particle_y[i]],
                         'w-',
                         alpha=0.7,
                         linewidth=1,
@@ -781,7 +831,8 @@ class SimulationDashboard:
                     )
                     particle_artists.append(line)
 
-            ax.legend(loc='upper right')
+            if particle_artists:
+                ax.legend(loc='upper right')
         self._particle_artists = particle_artists
 
         ax.set_xlabel('X (m)')
