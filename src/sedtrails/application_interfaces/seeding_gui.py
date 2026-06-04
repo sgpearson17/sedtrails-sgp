@@ -13,6 +13,9 @@ import yaml
 from sedtrails.application_interfaces.validator import SedtrailsYamlLoader, YAMLConfigValidator
 
 SEEDING_MODES = ('points', 'transect', 'random', 'grid')
+RANDOM_CANDIDATE_BATCH_SIZE = 16_384
+GRID_CANDIDATE_BATCH_SIZE = 100_000
+DEFAULT_GRID_MAX_CANDIDATES = 2_000_000
 
 
 class SeedingGuiError(RuntimeError):
@@ -238,7 +241,28 @@ def generate_random_points_in_polygon(
     nlocations: int,
     seed: int,
 ) -> list[tuple[float, float]]:
-    """Generate uniformly sampled random points inside a polygon."""
+    """Generate uniformly sampled random points inside a polygon.
+
+    Parameters
+    ----------
+    polygon : list of tuple of float
+        Polygon vertices as ``(x, y)`` coordinate pairs.
+    nlocations : int
+        Number of seed points to generate.
+    seed : int
+        Seed for the NumPy random number generator.
+
+    Returns
+    -------
+    list of tuple of float
+        Random points clipped to the polygon.
+
+    Raises
+    ------
+    SeedingGuiError
+        If the requested point count is invalid or cannot be generated within
+        the attempt limit.
+    """
 
     if nlocations < 1:
         raise SeedingGuiError('Random nlocations must be at least 1.')
@@ -250,11 +274,16 @@ def generate_random_points_in_polygon(
     points: list[tuple[float, float]] = []
     attempts = 0
     max_attempts = max(1000, nlocations * 500)
+    batch_size = min(RANDOM_CANDIDATE_BATCH_SIZE, max_attempts)
     while len(points) < nlocations and attempts < max_attempts:
-        attempts += 1
-        candidate = np.array([rng.uniform(xmin, xmax), rng.uniform(ymin, ymax)])
-        if path.contains_point(candidate):
-            points.append((float(candidate[0]), float(candidate[1])))
+        candidate_count = min(batch_size, max_attempts - attempts)
+        candidates = rng.uniform((xmin, ymin), (xmax, ymax), size=(candidate_count, 2))
+        attempts += candidate_count
+        accepted = candidates[path.contains_points(candidates)]
+        if accepted.size == 0:
+            continue
+        needed = nlocations - len(points)
+        points.extend((float(x), float(y)) for x, y in accepted[:needed])
 
     if len(points) < nlocations:
         raise SeedingGuiError(f'Only generated {len(points)} of {nlocations} random points before attempt limit.')
@@ -266,8 +295,32 @@ def generate_grid_points_in_polygon(
     *,
     dx: float,
     dy: float,
+    max_candidates: int | None = DEFAULT_GRID_MAX_CANDIDATES,
 ) -> list[tuple[float, float]]:
-    """Generate a regular dx/dy grid clipped to a polygon."""
+    """Generate a regular dx/dy grid clipped to a polygon.
+
+    Parameters
+    ----------
+    polygon : list of tuple of float
+        Polygon vertices as ``(x, y)`` coordinate pairs.
+    dx : float
+        Grid spacing in the x direction.
+    dy : float
+        Grid spacing in the y direction.
+    max_candidates : int or None, default=2_000_000
+        Maximum number of candidate grid points to test before clipping.
+        Set to ``None`` to disable this guard.
+
+    Returns
+    -------
+    list of tuple of float
+        Grid points clipped to the polygon.
+
+    Raises
+    ------
+    SeedingGuiError
+        If spacing is invalid or the candidate grid exceeds ``max_candidates``.
+    """
 
     if dx <= 0 or dy <= 0:
         raise SeedingGuiError('Grid dx and dy must be positive.')
@@ -277,11 +330,24 @@ def generate_grid_points_in_polygon(
     xmax, ymax = np.max(vertices, axis=0)
     xs = np.arange(xmin, xmax + dx * 0.5, dx)
     ys = np.arange(ymin, ymax + dy * 0.5, dy)
-    candidates = np.array([(x, y) for x in xs for y in ys], dtype=float)
-    if candidates.size == 0:
+    candidate_count = int(len(xs) * len(ys))
+    if candidate_count == 0:
         return []
-    mask = path.contains_points(candidates)
-    return [(float(x), float(y)) for x, y in candidates[mask]]
+    if max_candidates is not None and candidate_count > max_candidates:
+        raise SeedingGuiError(
+            f'Grid spacing creates {candidate_count:,} candidate points, which exceeds the '
+            f'{max_candidates:,} point safety limit. Increase dx/dy or pass a larger max_candidates value.'
+        )
+
+    points: list[tuple[float, float]] = []
+    rows_per_batch = max(1, GRID_CANDIDATE_BATCH_SIZE // max(1, len(ys)))
+    for start in range(0, len(xs), rows_per_batch):
+        x_batch = xs[start : start + rows_per_batch]
+        xx, yy = np.meshgrid(x_batch, ys, indexing='ij')
+        candidates = np.column_stack((xx.ravel(), yy.ravel()))
+        accepted = candidates[path.contains_points(candidates)]
+        points.extend((float(x), float(y)) for x, y in accepted)
+    return points
 
 
 def clip_points_by_elevation(
@@ -305,6 +371,23 @@ def clip_points_by_elevation(
     source_xy = np.column_stack((np.asarray(field_x, dtype=float).reshape(-1), np.asarray(field_y, dtype=float).reshape(-1)))
     values = np.asarray(field_values, dtype=float).reshape(-1)
     tree = cKDTree(source_xy)
+    return _clip_points_with_elevation_index(
+        points,
+        tree=tree,
+        values=values,
+        threshold=threshold,
+        delete=delete,
+    )
+
+
+def _clip_points_with_elevation_index(
+    points: list[tuple[float, float]],
+    *,
+    tree: Any,
+    values: np.ndarray,
+    threshold: float,
+    delete: str,
+) -> list[tuple[float, float]]:
     _, indices = tree.query(np.asarray(points, dtype=float))
     point_values = values[indices]
     if delete == 'above':
@@ -418,6 +501,8 @@ class SeedingGuiApp:
         self._bathymetry_vmin = -20.0
         self._bathymetry_vmax = 10.0
         self._max_display_points = 500_000
+        self._clip_tree: Any | None = None
+        self._clip_values: np.ndarray | None = None
 
         self.config = load_config(self.config_path)
         self.population_names = get_population_names(self.config)
@@ -767,11 +852,11 @@ class SeedingGuiApp:
 
     def _clip_selected_points(self, _event: Any = None) -> None:
         try:
-            clipped_points = clip_points_by_elevation(
+            tree, values = self._get_clip_index()
+            clipped_points = _clip_points_with_elevation_index(
                 self.points,
-                field_x=self.view_data.x,
-                field_y=self.view_data.y,
-                field_values=self.view_data.values,
+                tree=tree,
+                values=values,
                 threshold=self._parse_float_box(self._clip_elevation_box, 'clip elevation'),
                 delete=self._clip_mode,
             )
@@ -779,6 +864,20 @@ class SeedingGuiApp:
             self._show_error(str(exc))
             return
         self._set_points(clipped_points)
+
+    def _get_clip_index(self) -> tuple[Any, np.ndarray]:
+        if self._clip_tree is None or self._clip_values is None:
+            from scipy.spatial import cKDTree
+
+            source_xy = np.column_stack(
+                (
+                    np.asarray(self.view_data.x, dtype=float).reshape(-1),
+                    np.asarray(self.view_data.y, dtype=float).reshape(-1),
+                )
+            )
+            self._clip_values = np.asarray(self.view_data.values, dtype=float).reshape(-1)
+            self._clip_tree = cKDTree(source_xy)
+        return self._clip_tree, self._clip_values
 
     def _apply_color_limits(self, _event: Any = None) -> None:
         try:

@@ -155,6 +155,17 @@ def test_generate_random_points_in_polygon_is_seeded_and_inside():
     assert all(0.0 <= x <= 2.0 and 0.0 <= y <= 2.0 for x, y in first)
 
 
+def test_generate_random_points_in_skinny_polygon_uses_vectorized_batches():
+    """Random polygon generation handles low acceptance-rate polygons."""
+
+    polygon = [(0.0, 0.0), (1000.0, 0.0), (1000.0, 10.0), (0.0, 1.0)]
+
+    points = generate_random_points_in_polygon(polygon, nlocations=50, seed=42)
+
+    assert len(points) == 50
+    assert all(0.0 <= x <= 1000.0 and 0.0 <= y <= 10.0 for x, y in points)
+
+
 def test_generate_grid_points_in_polygon_filters_to_polygon():
     """Grid generation keeps only dx/dy candidate points inside the drawn polygon."""
 
@@ -164,6 +175,15 @@ def test_generate_grid_points_in_polygon_filters_to_polygon():
 
     assert set(points).issubset({(x, y) for x in (0.0, 1.0, 2.0) for y in (0.0, 1.0, 2.0)})
     assert (1.0, 1.0) in points
+
+
+def test_generate_grid_points_in_polygon_rejects_excessive_candidates():
+    """Grid generation fails before allocating excessive candidate arrays."""
+
+    polygon = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+
+    with pytest.raises(SeedingGuiError, match='candidate points'):
+        generate_grid_points_in_polygon(polygon, dx=1.0, dy=1.0, max_candidates=100)
 
 
 def test_clip_points_by_elevation_deletes_above_or_below():
