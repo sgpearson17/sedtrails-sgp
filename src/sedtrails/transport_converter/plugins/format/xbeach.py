@@ -19,6 +19,13 @@ class FormatPlugin(BaseFormatPlugin):
     XBeach writes instantaneous variables on ``globaltime`` and averaged
     variables on ``meantime``. This plugin deliberately maps only ``*_mean``
     variables and uses ``meantime`` as the SedTRAILS time coordinate.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the XBeach NetCDF file.
+    morfac : float, default 1.0
+        Morphological acceleration factor for time decompression.
     """
 
     TIME_DIM = 'meantime'
@@ -26,15 +33,20 @@ class FormatPlugin(BaseFormatPlugin):
 
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
-        Initialize the plugin with the input file.
+        Initialize an XBeach format plugin.
 
         Parameters
         ----------
         input_file : str
             Path to the XBeach NetCDF file.
-        morfac : float, optional
+        morfac : float, default 1.0
             Morphological acceleration factor for time decompression. The
             default is 1.0, which leaves input times unchanged.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``input_file`` does not exist.
         """
         super().__init__()
         self.input_file = Path(input_file)
@@ -53,6 +65,13 @@ class FormatPlugin(BaseFormatPlugin):
         -------
         list[str]
             List of variable names in the input dataset.
+
+        Raises
+        ------
+        OSError
+            If the input NetCDF file cannot be opened.
+        ValueError
+            If the loaded dataset does not expose data variables.
         """
         if self.input_data is None:
             self.load()
@@ -88,7 +107,21 @@ class FormatPlugin(BaseFormatPlugin):
         Returns
         -------
         SedtrailsData
-            The converted SedtrailsData object.
+            Converted SedTRAILS data. Spatial ``ny,nx`` fields are flattened
+            to a single spatial axis. XBeach sediment transport components are
+            summed over source ``sediment_classes`` before being stored.
+
+        Raises
+        ------
+        KeyError
+            If a required XBeach coordinate, time coordinate, or ``*_mean``
+            variable is missing.
+        OSError
+            If the input NetCDF file cannot be opened.
+        TypeError
+            If ``reference_date`` is not a ``numpy.datetime64``.
+        ValueError
+            If required variables have incompatible dimensions.
         """
         if reference_date is None:
             reference_date = np.datetime64('1970-01-01T00:00:00')
@@ -179,7 +212,24 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
     def get_seeding_coordinates(self):
-        """Return only the spatial coordinates required for particle seeding."""
+        """
+        Return the spatial coordinates required for particle seeding.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Flattened X and Y cell-center coordinates, each with shape
+            ``(n_points,)``.
+
+        Raises
+        ------
+        KeyError
+            If ``globalx`` or ``globaly`` is missing from the input dataset.
+        OSError
+            If the input NetCDF file cannot be opened.
+        ValueError
+            If ``globalx`` and ``globaly`` have incompatible shapes.
+        """
         self.load()
         return self._get_grid_coordinates()
 
@@ -197,6 +247,17 @@ class FormatPlugin(BaseFormatPlugin):
         -------
         tuple[float, float]
             First and last input timestamps in seconds since `reference_date`.
+
+        Raises
+        ------
+        KeyError
+            If the XBeach ``meantime`` coordinate is missing.
+        OSError
+            If the input NetCDF file cannot be opened.
+        TypeError
+            If ``reference_date`` is not a ``numpy.datetime64``.
+        ValueError
+            If the input data contains no mean-time values.
         """
         if reference_date is None:
             reference_date = np.datetime64('1970-01-01T00:00:00')
@@ -210,7 +271,20 @@ class FormatPlugin(BaseFormatPlugin):
         return float(times[0]), float(times[-1])
 
     def load(self) -> Any:
-        """Read and load an XBeach NetCDF file with xarray."""
+        """
+        Read and cache the XBeach NetCDF dataset.
+
+        Returns
+        -------
+        xarray.Dataset
+            The opened XBeach dataset. Repeated calls return the cached
+            dataset.
+
+        Raises
+        ------
+        OSError
+            If the NetCDF file cannot be opened by xarray.
+        """
         if self.input_data is None:
             try:
                 self.input_data = xr.open_dataset(self.input_file, decode_times=False, decode_timedelta=False)
@@ -261,7 +335,10 @@ class FormatPlugin(BaseFormatPlugin):
         else:
             seconds_since_ref = np.asarray(raw_time_values, dtype=float)
             time_values = np.array(
-                [reference_date + np.timedelta64(int(round(seconds * 1_000_000)), 'us') for seconds in seconds_since_ref]
+                [
+                    reference_date + np.timedelta64(int(round(seconds * 1_000_000)), 'us')
+                    for seconds in seconds_since_ref
+                ]
             )
 
         return {
@@ -309,16 +386,23 @@ class FormatPlugin(BaseFormatPlugin):
         x, y = self._get_grid_coordinates()
         grid_size = x.size
 
-        bed_load_transport_x = self._mean_fractional('Subg_mean', time_slice, num_times, grid_size)
-        bed_load_transport_y = self._mean_fractional('Svbg_mean', time_slice, num_times, grid_size)
-        suspended_transport_x = self._mean_fractional('Susg_mean', time_slice, num_times, grid_size)
-        suspended_transport_y = self._mean_fractional('Svsg_mean', time_slice, num_times, grid_size)
-
-        source_sediment_classes = self._detect_source_fraction_count(
-            bed_load_transport_x,
-            bed_load_transport_y,
-            suspended_transport_x,
-            suspended_transport_y,
+        bed_load_transport_x, bed_load_classes_x = self._mean_transport_component(
+            'Subg_mean', time_slice, num_times, grid_size
+        )
+        bed_load_transport_y, bed_load_classes_y = self._mean_transport_component(
+            'Svbg_mean', time_slice, num_times, grid_size
+        )
+        suspended_transport_x, suspended_classes_x = self._mean_transport_component(
+            'Susg_mean', time_slice, num_times, grid_size
+        )
+        suspended_transport_y, suspended_classes_y = self._mean_transport_component(
+            'Svsg_mean', time_slice, num_times, grid_size
+        )
+        source_sediment_classes = max(
+            bed_load_classes_x,
+            bed_load_classes_y,
+            suspended_classes_x,
+            suspended_classes_y,
         )
 
         data = {
@@ -329,10 +413,10 @@ class FormatPlugin(BaseFormatPlugin):
             'flow_velocity_x': self._mean_scalar('ue_mean', time_slice, num_times, grid_size),
             'flow_velocity_y': self._mean_scalar('ve_mean', time_slice, num_times, grid_size),
             'sediment_concentration': self._mean_scalar('cctot_mean', time_slice, num_times, grid_size),
-            'bed_load_transport_x': self._sum_source_fractions(bed_load_transport_x),
-            'bed_load_transport_y': self._sum_source_fractions(bed_load_transport_y),
-            'suspended_transport_x': self._sum_source_fractions(suspended_transport_x),
-            'suspended_transport_y': self._sum_source_fractions(suspended_transport_y),
+            'bed_load_transport_x': bed_load_transport_x,
+            'bed_load_transport_y': bed_load_transport_y,
+            'suspended_transport_x': suspended_transport_x,
+            'suspended_transport_y': suspended_transport_y,
             'source_sediment_classes': source_sediment_classes,
         }
 
@@ -340,12 +424,15 @@ class FormatPlugin(BaseFormatPlugin):
         tauby = self._mean_scalar('tauby_mean', time_slice, num_times, grid_size)
         data['mean_bed_shear_stress'] = np.sqrt(taubx**2 + tauby**2)
 
-        if 'ua_mean' in self.input_data:
-            data['nonlinear_wave_velocity_x'] = self._mean_scalar('ua_mean', time_slice, num_times, grid_size)
+        if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
+            theta = self._mean_scalar('thetamean_mean', time_slice, num_times, grid_size)
+            ua = self._mean_scalar('ua_mean', time_slice, num_times, grid_size)
+            data['nonlinear_wave_velocity_x'] = ua * np.cos(theta)
+            data['nonlinear_wave_velocity_y'] = ua * np.sin(theta)
         else:
             data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
+            data['nonlinear_wave_velocity_y'] = np.zeros((num_times, grid_size), dtype=float)
             print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
-        data['nonlinear_wave_velocity_y'] = np.zeros_like(data['nonlinear_wave_velocity_x'])
 
         return data
 
@@ -376,25 +463,23 @@ class FormatPlugin(BaseFormatPlugin):
             values = np.broadcast_to(np.asarray(var.values, dtype=float), (num_times, *var.shape))
         return values.reshape(num_times, grid_size)
 
-    def _mean_fractional(self, var_name: str, time_slice: slice, num_times: int, grid_size: int) -> np.ndarray:
-        """Read a fractional ``*_mean`` variable as ``(time, fractions, spatial)``."""
+    def _mean_transport_component(
+        self, var_name: str, time_slice: slice, num_times: int, grid_size: int
+    ) -> tuple[np.ndarray, int]:
+        """Read a transport ``*_mean`` variable as total ``(time, spatial)`` data."""
         var = self._require_mean_variable(var_name)
         var = self._select_time(var, time_slice)
-        if self.TIME_DIM in var.dims and self.FRACTION_DIM in var.dims:
-            spatial_dims = [dim for dim in var.dims if dim not in {self.TIME_DIM, self.FRACTION_DIM}]
-            var = var.transpose(self.TIME_DIM, self.FRACTION_DIM, *spatial_dims)
-            values = np.asarray(var.values, dtype=float)
-            return values.reshape(num_times, values.shape[1], grid_size)
+        source_sediment_classes = int(var.sizes.get(self.FRACTION_DIM, 1))
+        if self.FRACTION_DIM in var.dims:
+            var = var.sum(dim=self.FRACTION_DIM)
+        return self._reshape_mean_spatial(var, num_times, grid_size), source_sediment_classes
+
+    def _reshape_mean_spatial(self, var: xr.DataArray, num_times: int, grid_size: int) -> np.ndarray:
+        """Return a mean variable with flattened spatial dimensions."""
         if self.TIME_DIM in var.dims:
             spatial_dims = [dim for dim in var.dims if dim != self.TIME_DIM]
             var = var.transpose(self.TIME_DIM, *spatial_dims)
             return np.asarray(var.values, dtype=float).reshape(num_times, grid_size)
-        if self.FRACTION_DIM in var.dims:
-            spatial_dims = [dim for dim in var.dims if dim != self.FRACTION_DIM]
-            var = var.transpose(self.FRACTION_DIM, *spatial_dims)
-            values = np.asarray(var.values, dtype=float)
-            return np.broadcast_to(values.reshape(1, values.shape[0], grid_size), (num_times, values.shape[0], grid_size))
-
         values = np.asarray(var.values, dtype=float).reshape(grid_size)
         return np.broadcast_to(values, (num_times, grid_size))
 
@@ -413,19 +498,6 @@ class FormatPlugin(BaseFormatPlugin):
         if self.TIME_DIM in var.dims:
             return var.isel({self.TIME_DIM: time_slice})
         return var
-
-    def _detect_source_fraction_count(self, *arrays: np.ndarray) -> int:
-        """Infer the source XBeach sediment class count from transport arrays."""
-        for array in arrays:
-            if array.ndim >= 3:
-                return int(array.shape[1])
-        return 1
-
-    def _sum_source_fractions(self, array: np.ndarray) -> np.ndarray:
-        """Collapse XBeach source sediment classes to total transport."""
-        if array.ndim >= 3:
-            return np.sum(array, axis=1)
-        return array
 
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""

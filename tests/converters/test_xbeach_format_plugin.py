@@ -34,6 +34,7 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
             'Svsg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), frac_y + 20.0),
             'cctot_mean': (('meantime', 'ny', 'nx'), scalar + 2.0),
             'ua_mean': (('meantime', 'ny', 'nx'), scalar + 3.0),
+            'thetamean_mean': (('meantime', 'ny', 'nx'), np.zeros((2, 2, 2))),
         },
         coords={
             'globalx': (('ny', 'nx'), globalx),
@@ -106,3 +107,31 @@ def test_xbeach_get_scalar_field_slices_time_dependent_bed_level(monkeypatch):
     field = retriever.get_scalar_field(10.0, 'bed_level')
 
     np.testing.assert_array_equal(field['magnitude'], np.array([4.0, 5.0, 6.0, 7.0]))
+
+
+def test_xbeach_transport_component_without_fraction_dim_is_not_summed(monkeypatch):
+    """Checks transport data shaped (time, y, x) is flattened, not summed over y."""
+    transport = np.arange(8, dtype=float).reshape(2, 2, 2)
+    ds = xr.Dataset(
+        data_vars={'Subg_mean': (('meantime', 'ny', 'nx'), transport)},
+        coords={'meantime': (('meantime',), np.array([0.0, 10.0]))},
+    )
+
+    def fake_load(self):
+        """Injects a synthetic transport dataset without a fraction dimension."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    plugin.load()
+    total_transport, source_sediment_classes = plugin._mean_transport_component(
+        'Subg_mean',
+        slice(None),
+        num_times=2,
+        grid_size=4,
+    )
+
+    assert source_sediment_classes == 1
+    np.testing.assert_array_equal(total_transport, transport.reshape(2, 4))
