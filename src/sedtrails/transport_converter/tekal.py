@@ -11,6 +11,29 @@ import numpy as np
 def read_tekal_polygons(pol_files: str | Path | Iterable[str | Path] | None) -> list[np.ndarray]:
     """Read one or more Tekal ``.pol`` files as polygon coordinate arrays.
 
+    Parameters
+    ----------
+    pol_files : str, pathlib.Path, Iterable[str or pathlib.Path], or None
+        Tekal polygon file path or iterable of file paths. ``None`` returns an
+        empty polygon list.
+
+    Returns
+    -------
+    list[np.ndarray]
+        Polygon coordinate arrays with shape ``(n_vertices, 2)``. Repeated
+        closing points are removed.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any input file does not exist.
+    ValueError
+        If a Tekal block is missing a size line, declares an invalid row count,
+        ends before the declared coordinates, or contains a coordinate row with
+        fewer than two columns.
+
+    Notes
+    -----
     Each polygon block is expected to contain a block name, a size line whose
     first value is the number of coordinate rows, followed by that many rows
     with at least x and y columns. Empty lines and lines starting with ``*`` are

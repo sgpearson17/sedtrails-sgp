@@ -323,7 +323,29 @@ class GridGeometry:
         return grid_u.astype(np.float64, copy=False) / (geofac * cos_lat), grid_v.astype(np.float64, copy=False) / geofac
 
     def classify_boundary_crossings(self, x0, y0, x1, y1) -> np.ndarray:
-        """Return nearest boundary-edge class for each movement segment."""
+        """Return nearest boundary-edge class for particle movement segments.
+
+        Parameters
+        ----------
+        x0, y0 : array-like
+            Starting particle coordinates.
+        x1, y1 : array-like
+            Ending particle coordinates. Shapes must match ``x0`` and ``y0``.
+
+        Returns
+        -------
+        np.ndarray
+            Boundary class labels with the same shape as ``x0``. Values are
+            drawn from the boundary-edge classification attached to this grid
+            geometry, or ``"unclassified"`` when no compatible boundary table
+            is available.
+
+        Notes
+        -----
+        The method selects the classified boundary edge with the smallest
+        segment-to-segment distance to each particle movement segment. Exact
+        segment intersections have zero distance.
+        """
         start_points = _points_array(x0, y0)
         end_points = _points_array(x1, y1)
         classes = np.full(start_points.shape[0], 'unclassified', dtype=object)

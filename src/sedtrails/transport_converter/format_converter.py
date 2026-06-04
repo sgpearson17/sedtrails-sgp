@@ -188,13 +188,24 @@ class FormatConverter:
         return float(times[0]), float(times[-1])
 
     def get_seeding_field_data(self) -> SeederFieldData:
-        """
-        Read only the data required by ParticleSeeder.seed: x and y coordinates.
+        """Read the geometry required by ``ParticleSeeder.seed``.
 
         Returns
         -------
         SeederFieldData
-            Minimal coordinate container for seeding workflows.
+            Minimal coordinate and connectivity container for seeding. When
+            supported by the format plugin, this includes particle-compatible
+            triangle connectivity and boundary-edge classification metadata.
+
+        Raises
+        ------
+        ImportError
+            If the configured format plugin cannot be imported.
+        FileNotFoundError
+            If a plugin input file or configured polygon file does not exist.
+        ValueError
+            If the plugin cannot construct a valid active particle geometry or
+            a configured polygon file is malformed.
         """
         plugin = self.format_plugin
 

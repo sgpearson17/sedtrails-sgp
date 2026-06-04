@@ -222,7 +222,26 @@ class FormatPlugin(BaseFormatPlugin):
         return sedtrails_data
 
     def get_seeding_field_data(self):
-        """Return node coordinates and active triangular connectivity for particle seeding."""
+        """Return active geometry required for particle seeding.
+
+        Returns
+        -------
+        types.SimpleNamespace
+            Object with ``x`` and ``y`` node coordinates, active triangular
+            ``face_node_connectivity``, optional
+            ``boundary_edge_classification`` metadata, and
+            ``face_node_fill_value``.
+
+        Raises
+        ------
+        KeyError
+            If the required ``net_xcc`` or ``net_ycc`` variables are missing.
+        FileNotFoundError
+            If configured inner-boundary or boundary-class polygon files do
+            not exist.
+        ValueError
+            If configured Tekal polygon blocks are malformed.
+        """
         self.load()
         if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
             raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")

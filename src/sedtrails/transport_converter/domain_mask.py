@@ -35,7 +35,16 @@ class BoundaryEdgeClassification:
     class_files: dict[str, list[str]]
 
     def to_metadata(self) -> dict[str, Any]:
-        """Return a metadata-friendly boundary edge classification table."""
+        """Return a metadata-friendly boundary edge classification table.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing edge node indices, edge midpoint
+            coordinates, edge classes, class source diagnostics, counts, and
+            configured polygon files. Arrays are converted to plain Python
+            containers so they can be stored in ``SedtrailsMetadata``.
+        """
         return {
             'edge_nodes': self.edges.tolist(),
             'edge_midpoints': self.midpoints.tolist(),
@@ -51,7 +60,21 @@ BOUNDARY_CLASS_NAMES = ('open', 'land')
 
 
 def inner_boundary_files_from_config(domain_config: Mapping[str, Any] | None) -> list[str]:
-    """Return configured inner-boundary Tekal files as strings."""
+    """Return configured inner-boundary Tekal files as strings.
+
+    Parameters
+    ----------
+    domain_config : Mapping[str, Any] or None
+        Domain configuration mapping. The ``inner_boundary_pol_files`` entry
+        may be missing, ``None``, a single path-like value, or an iterable of
+        path-like values.
+
+    Returns
+    -------
+    list[str]
+        Configured inner-boundary polygon file paths. Missing configuration
+        yields an empty list.
+    """
 
     if not domain_config:
         return []
@@ -65,13 +88,46 @@ def inner_boundary_files_from_config(domain_config: Mapping[str, Any] | None) ->
 
 
 def load_inner_boundary_polygons(domain_config: Mapping[str, Any] | None) -> list[np.ndarray]:
-    """Load inner-boundary polygons from a domain configuration mapping."""
+    """Load inner-boundary polygons from a domain configuration mapping.
+
+    Parameters
+    ----------
+    domain_config : Mapping[str, Any] or None
+        Domain configuration mapping containing optional
+        ``inner_boundary_pol_files``.
+
+    Returns
+    -------
+    list[np.ndarray]
+        Polygon coordinate arrays with shape ``(n_vertices, 2)``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any configured polygon file does not exist.
+    ValueError
+        If a configured Tekal polygon block is malformed.
+    """
 
     return read_tekal_polygons(inner_boundary_files_from_config(domain_config))
 
 
 def boundary_class_files_from_config(domain_config: Mapping[str, Any] | None) -> dict[str, list[str]]:
-    """Return configured boundary-class Tekal files by class."""
+    """Return configured boundary-class Tekal files by class.
+
+    Parameters
+    ----------
+    domain_config : Mapping[str, Any] or None
+        Domain configuration mapping. The ``boundary_class_pol_files`` entry
+        may contain ``open`` and ``land`` lists.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Mapping with keys ``"open"`` and ``"land"``. Each value is a list of
+        configured polygon file paths. Missing classes are returned with empty
+        lists.
+    """
 
     class_files = {class_name: [] for class_name in BOUNDARY_CLASS_NAMES}
     if not domain_config:
@@ -90,7 +146,26 @@ def boundary_class_files_from_config(domain_config: Mapping[str, Any] | None) ->
 
 
 def load_boundary_class_polygons(domain_config: Mapping[str, Any] | None) -> dict[str, list[np.ndarray]]:
-    """Load boundary-class override polygons by class from domain configuration."""
+    """Load boundary-class override polygons by class from domain configuration.
+
+    Parameters
+    ----------
+    domain_config : Mapping[str, Any] or None
+        Domain configuration mapping containing optional
+        ``boundary_class_pol_files``.
+
+    Returns
+    -------
+    dict[str, list[np.ndarray]]
+        Mapping from boundary class name to Tekal polygon coordinate arrays.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any configured polygon file does not exist.
+    ValueError
+        If a configured Tekal polygon block is malformed.
+    """
 
     return {
         class_name: read_tekal_polygons(pol_files)
@@ -99,7 +174,28 @@ def load_boundary_class_polygons(domain_config: Mapping[str, Any] | None) -> dic
 
 
 def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
-    """Build triangular candidate connectivity from node coordinates."""
+    """Build triangular candidate connectivity from node coordinates.
+
+    Parameters
+    ----------
+    node_x, node_y : np.ndarray
+        One-dimensional or flattenable arrays with node x and y coordinates.
+
+    Returns
+    -------
+    np.ndarray
+        Zero-based triangular connectivity with shape ``(n_triangles, 3)``.
+        If fewer than three points are provided, an empty ``(0, 3)`` array is
+        returned.
+
+    Raises
+    ------
+    ValueError
+        If ``node_x`` and ``node_y`` do not have matching shapes.
+    scipy.spatial.QhullError
+        If SciPy cannot construct a Delaunay triangulation for the supplied
+        coordinates.
+    """
 
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
@@ -116,7 +212,25 @@ def filter_connectivity_by_inner_polygons(
     connectivity: np.ndarray,
     polygons: Iterable[np.ndarray],
 ) -> ConnectivityMaskResult:
-    """Remove faces or triangles whose centroid falls inside any polygon."""
+    """Remove faces or triangles whose centroid falls inside any polygon.
+
+    Parameters
+    ----------
+    node_x, node_y : np.ndarray
+        Node coordinate arrays used by ``connectivity``.
+    connectivity : np.ndarray
+        Face-node or triangle connectivity. Invalid/padded node indices must
+        be negative.
+    polygons : Iterable[np.ndarray]
+        Polygon coordinate arrays. Polygons with fewer than three vertices are
+        ignored.
+
+    Returns
+    -------
+    ConnectivityMaskResult
+        Filtered connectivity, boolean active mask for the input connectivity,
+        and the number of removed faces or triangles.
+    """
 
     faces = np.asarray(connectivity, dtype=np.int64)
     if faces.size == 0:
@@ -142,7 +256,20 @@ def filter_connectivity_by_inner_polygons(
 
 
 def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
-    """Convert padded polygon face-node connectivity to triangles by fan split."""
+    """Convert padded polygon face-node connectivity to triangles by fan split.
+
+    Parameters
+    ----------
+    connectivity : np.ndarray
+        Face-node connectivity with shape ``(n_faces, max_nodes_per_face)``.
+        Negative entries are treated as invalid padding.
+
+    Returns
+    -------
+    np.ndarray
+        Triangular connectivity with shape ``(n_triangles, 3)``. Original node
+        indices are preserved and nodes are not reindexed.
+    """
 
     faces = np.asarray(connectivity, dtype=np.int64)
     triangles: list[list[int]] = []
@@ -162,7 +289,20 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
 
 
 def extract_boundary_edges(connectivity: np.ndarray) -> np.ndarray:
-    """Return edges used by exactly one face/triangle in a connectivity table."""
+    """Return edges used by exactly one face or triangle.
+
+    Parameters
+    ----------
+    connectivity : np.ndarray
+        Face-node or triangle connectivity. Negative entries are treated as
+        invalid padding.
+
+    Returns
+    -------
+    np.ndarray
+        Boundary edge node indices with shape ``(n_edges, 2)``. Edge
+        orientation follows the first face in which the edge appears.
+    """
 
     faces = np.asarray(connectivity, dtype=np.int64)
     edge_counts: dict[tuple[int, int], int] = {}
@@ -192,7 +332,31 @@ def classify_boundary_edges_from_config(
     connectivity: np.ndarray,
     domain_config: Mapping[str, Any] | None,
 ) -> BoundaryEdgeClassification | None:
-    """Classify active boundary edges using configured open/land polygon overrides."""
+    """Classify active boundary edges using configured polygon overrides.
+
+    Parameters
+    ----------
+    node_x, node_y : np.ndarray
+        Coordinate arrays used by ``connectivity``.
+    connectivity : np.ndarray
+        Active face-node or triangle connectivity.
+    domain_config : Mapping[str, Any] or None
+        Domain configuration mapping containing optional
+        ``boundary_class_pol_files`` entries for ``open`` and ``land``.
+
+    Returns
+    -------
+    BoundaryEdgeClassification or None
+        Classification table for active boundary edges. ``None`` is returned
+        when no boundary class polygon files are configured.
+
+    Raises
+    ------
+    FileNotFoundError
+        If any configured boundary-class polygon file does not exist.
+    ValueError
+        If a configured Tekal polygon block is malformed.
+    """
 
     class_files = boundary_class_files_from_config(domain_config)
     if not any(class_files.values()):
@@ -208,7 +372,33 @@ def classify_boundary_edges(
     class_polygons: Mapping[str, Iterable[np.ndarray]],
     class_files: Mapping[str, list[str]] | None = None,
 ) -> BoundaryEdgeClassification:
-    """Classify active boundary edges by testing edge midpoints against class polygons."""
+    """Classify active boundary edges by polygon-contained edge midpoints.
+
+    Parameters
+    ----------
+    node_x, node_y : np.ndarray
+        Coordinate arrays used by ``connectivity``.
+    connectivity : np.ndarray
+        Active face-node or triangle connectivity.
+    class_polygons : Mapping[str, Iterable[np.ndarray]]
+        Mapping from boundary class name to polygon coordinate arrays.
+        Supported classes are ``"open"`` and ``"land"``.
+    class_files : Mapping[str, list[str]], optional
+        Configured polygon file paths by class, carried through for
+        diagnostics.
+
+    Returns
+    -------
+    BoundaryEdgeClassification
+        Boundary edge node indices, edge midpoints, assigned class labels,
+        class source matches, and diagnostic counts.
+
+    Notes
+    -----
+    Edge classes are assigned from midpoint containment. If both ``open`` and
+    ``land`` polygons select the same edge, ``land`` wins while both sources
+    remain recorded in ``class_sources``.
+    """
 
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
@@ -268,7 +458,21 @@ def classify_boundary_edges(
 
 
 def face_centroids(node_x: np.ndarray, node_y: np.ndarray, connectivity: np.ndarray) -> np.ndarray:
-    """Compute centroids for padded face-node connectivity."""
+    """Compute centroids for padded face-node connectivity.
+
+    Parameters
+    ----------
+    node_x, node_y : np.ndarray
+        Node coordinate arrays used by ``connectivity``.
+    connectivity : np.ndarray
+        Face-node connectivity. Negative and out-of-range entries are ignored.
+
+    Returns
+    -------
+    np.ndarray
+        Centroid coordinates with shape ``(n_faces, 2)``. Faces without any
+        valid nodes receive ``NaN`` centroid coordinates.
+    """
 
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
@@ -285,7 +489,22 @@ def face_centroids(node_x: np.ndarray, node_y: np.ndarray, connectivity: np.ndar
 
 
 def points_inside_any_polygon(points: np.ndarray, polygons: Iterable[np.ndarray]) -> np.ndarray:
-    """Return a boolean mask for points inside at least one polygon."""
+    """Return whether points fall inside at least one polygon.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        Point coordinates with shape ``(n_points, 2)``.
+    polygons : Iterable[np.ndarray]
+        Polygon coordinate arrays. Polygons with fewer than three vertices are
+        ignored.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask with shape ``(n_points,)``. Non-finite points are always
+        marked ``False``.
+    """
 
     points_array = np.asarray(points, dtype=float)
     inside = np.zeros(points_array.shape[0], dtype=bool)

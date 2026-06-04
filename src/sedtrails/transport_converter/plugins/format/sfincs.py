@@ -184,7 +184,29 @@ class FormatPlugin(BaseFormatPlugin):
         return sedtrails_data
 
     def get_seeding_field_data(self):
-        """Return active SFINCS face centers and triangle connectivity for particle seeding."""
+        """Return active SFINCS geometry required for particle seeding.
+
+        Returns
+        -------
+        types.SimpleNamespace
+            Object with active face-centre ``x`` and ``y`` coordinates,
+            triangular particle connectivity, optional
+            ``boundary_edge_classification`` metadata, and
+            ``face_node_fill_value``.
+
+        Raises
+        ------
+        TypeError
+            If a loaded UGRID dataset does not contain a ``Ugrid2d`` grid.
+        KeyError
+            If required mesh variables are missing in the xarray fallback path.
+        FileNotFoundError
+            If configured inner-boundary or boundary-class polygon files do
+            not exist.
+        ValueError
+            If configured Tekal polygon blocks are malformed, or all SFINCS
+            faces are masked by inner-boundary polygons.
+        """
         self.load()
         x, y = self._active_face_coordinates()
         particle_triangles = self._active_face_center_triangles(x, y)
