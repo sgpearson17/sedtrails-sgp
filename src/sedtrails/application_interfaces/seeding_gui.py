@@ -531,6 +531,8 @@ def save_seeded_config(
     source_path = Path(source_config_path)
     output_path = Path(output_config_path)
     points_path = Path(points_output_path)
+    if not points_path.is_absolute() and points_path.parent == Path('.'):
+        points_path = output_path.parent / points_path.name
 
     config = deepcopy(config_data) if config_data is not None else load_config(source_path)
     nonempty_population_points = {
@@ -743,16 +745,14 @@ class SeedingGuiApp:
         self._rename_population_button.on_clicked(self._rename_population)
         self._remove_population_button.on_clicked(self._remove_population)
 
-        self._transect_k_box = TextBox(self.fig.add_axes((panel_x, 0.520, small_w, field_h)), '', initial='20')
-        self.fig.text(panel_x - 0.010, 0.540, 'k:', ha='right', va='center', fontsize=9)
-        self._random_n_box = TextBox(self.fig.add_axes((panel_x, 0.460, small_w, field_h)), '', initial='20')
-        self.fig.text(panel_x - 0.010, 0.480, 'n:', ha='right', va='center', fontsize=9)
+        self._n_box = TextBox(self.fig.add_axes((panel_x, 0.520, small_w, field_h)), '', initial='20')
+        self._n_label = self.fig.text(panel_x - 0.010, 0.540, 'n:', ha='right', va='center', fontsize=9)
         self._seed_box = TextBox(self.fig.add_axes((right_x, 0.460, right_w, field_h)), '', initial='42')
-        self.fig.text(right_x - 0.010, 0.480, 'seed:', ha='right', va='center', fontsize=9)
+        self._seed_label = self.fig.text(right_x - 0.010, 0.480, 'seed:', ha='right', va='center', fontsize=9)
         self._dx_box = TextBox(self.fig.add_axes((panel_x, 0.400, small_w, field_h)), '', initial='100')
-        self.fig.text(panel_x - 0.010, 0.420, 'dx:', ha='right', va='center', fontsize=9)
+        self._dx_label = self.fig.text(panel_x - 0.010, 0.420, 'dx:', ha='right', va='center', fontsize=9)
         self._dy_box = TextBox(self.fig.add_axes((right_x, 0.400, right_w, field_h)), '', initial='100')
-        self.fig.text(right_x - 0.010, 0.420, 'dy:', ha='right', va='center', fontsize=9)
+        self._dy_label = self.fig.text(right_x - 0.010, 0.420, 'dy:', ha='right', va='center', fontsize=9)
 
         self._generate_button = Button(self.fig.add_axes((panel_x, 0.335, panel_w, 0.045)), 'Generate')
         self._generate_button.on_clicked(self._generate_from_strategy)
@@ -778,6 +778,9 @@ class SeedingGuiApp:
         self._clip_button = Button(self.fig.add_axes((panel_x, 0.060, panel_w, 0.045)), 'Clip points')
         self._clip_button.on_clicked(self._clip_selected_points)
 
+        self._set_n_input_state()
+        self._set_random_seed_state()
+        self._set_grid_input_state()
         self.status_text = self.fig.text(0.07, 0.145, self._status_message(), fontsize=8)
 
     def show(self) -> None:
@@ -893,7 +896,34 @@ class SeedingGuiApp:
         self.strategy_mode = label
         self.draft_vertices.clear()
         self.polygon_closed = False
+        self._set_n_input_state()
+        self._set_random_seed_state()
+        self._set_grid_input_state()
         self._refresh_draft()
+
+    def _set_textbox_state(self, textbox: Any, label: Any, *, active: bool) -> None:
+        textbox.set_active(active)
+        color = 'black' if active else '0.6'
+        label.set_color(color)
+        textbox.ax.patch.set_edgecolor(color)
+        for spine in textbox.ax.spines.values():
+            spine.set_color(color)
+        text_artist = getattr(textbox, 'text_disp', None) or getattr(textbox, 'text', None)
+        if text_artist is not None:
+            text_artist.set_color(color)
+
+    def _set_n_input_state(self) -> None:
+        active = self.strategy_mode in {'transect', 'random'}
+        self._set_textbox_state(self._n_box, self._n_label, active=active)
+
+    def _set_random_seed_state(self) -> None:
+        active = self.strategy_mode == 'random'
+        self._set_textbox_state(self._seed_box, self._seed_label, active=active)
+
+    def _set_grid_input_state(self) -> None:
+        active = self.strategy_mode == 'grid'
+        self._set_textbox_state(self._dx_box, self._dx_label, active=active)
+        self._set_textbox_state(self._dy_box, self._dy_label, active=active)
 
     def _set_population(self, label: str) -> None:
         if label not in self.population_points:
@@ -978,14 +1008,14 @@ class SeedingGuiApp:
             if self.strategy_mode == 'transect':
                 generated = generate_transect_points(
                     self.draft_vertices,
-                    self._parse_int_box(self._transect_k_box, 'transect k'),
+                    self._parse_int_box(self._n_box, 'n'),
                 )
             elif self.strategy_mode == 'random':
                 if not self.polygon_closed:
                     raise SeedingGuiError('Right click to close the random polygon before generating points.')
                 generated = generate_random_points_in_polygon(
                     self.draft_vertices,
-                    nlocations=self._parse_int_box(self._random_n_box, 'random nlocations'),
+                    nlocations=self._parse_int_box(self._n_box, 'n'),
                     seed=self._parse_int_box(self._seed_box, 'random seed'),
                 )
             elif self.strategy_mode == 'grid':
@@ -1152,11 +1182,12 @@ class SeedingGuiApp:
             'random': 'click polygon, right close, then Generate',
             'grid': 'click polygon, right close, then Generate',
         }
+        total_points = sum(len(points) for points in self.population_points.values())
         warning = ''
         if not self._should_display_points() and self.points:
             warning = f' >{self._max_display_points:,} not displayed.'
         return (
-            f'Mode: {self.strategy_mode} | Pop: {self.population_name} | Seeds: {len(self.points)} | '
+            f'Mode: {self.strategy_mode} | Pop: {self.population_name} | Seeds: {len(self.points)} | Total: {total_points} | '
             f'Draft: {len(self.draft_vertices)} | {hints.get(self.strategy_mode, "")}.{warning}'
         )
 
@@ -1257,10 +1288,15 @@ def _resolve_relative_path(path: str | Path, base_dir: Path) -> Path:
 
 def _yaml_path_value(points_path: Path, output_config_dir: Path) -> str:
     try:
-        path_value = Path(points_path).resolve().relative_to(output_config_dir.resolve())
+        cwd = Path.cwd().resolve()
+        path_value = Path(points_path).resolve().relative_to(cwd)
         normalized = path_value.as_posix()
     except ValueError:
-        normalized = Path(points_path).as_posix()
+        try:
+            path_value = Path(points_path).resolve().relative_to(output_config_dir.resolve())
+            normalized = path_value.as_posix()
+        except ValueError:
+            normalized = Path(points_path).as_posix()
 
     if not normalized.startswith(('.', '/')) and ':' not in normalized:
         normalized = f'./{normalized}'
