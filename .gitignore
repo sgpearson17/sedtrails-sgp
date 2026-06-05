@@ -5,7 +5,6 @@ __pycache__/
 
 # Data files
 *.nc
-!sample-data/inlet_sedtrails.nc
 *.dat
 *.def
 

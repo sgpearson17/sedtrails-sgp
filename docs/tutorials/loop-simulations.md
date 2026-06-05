@@ -4,12 +4,6 @@
 
 SedTRAILS can run simulations longer than the available flow-model forcing by looping the input Eulerian fields in time. This mirrors a common workflow in Lagrangian particle tracking where a representative cycle (tidal, spring-neap, seasonal) is repeated to extend trajectories. This was a "widely used" feature of the old MATLAB sedtrails code.
 
-A concise statement of the approach appears in van Sebille et al. (2018): looping the model data in time “permits particles to be advected for longer time scales than available from the raw data,” provided the fields are stationary and there are no large discontinuities at the wraparound. See the paper for broader context and examples: https://doi.org/10.1016/j.ocemod.2017.11.008.
-
-OLD TEXT COPIED FROM ERIC:
-
-_"The maximum integration time in Eq. (21) is limited to the run time of a given model simulation. A number of oceanic processes, however, have time scales that exceed these run times (e.g., England, 1995, Stouffer, 2004, Danabasoglu, 2004). Using Lagrangian particles to temporally resolve for example the meridional overturning circulation (Blanke, Arhan, Madec, Roche, 1999, Thomas, Tréguier, Blanke, Deshayes, Voldoire, 2015) or inter-basin connectivity (Blanke and Speich, 2002) can be difficult with many state of the art climate models. To address this problem, a commonly employed ad hoc method is to loop the model data in time such that the velocity and tracer fields are returned to the first time step once the end has been reached (e.g., Döös, Nycander, Coward, 2008, van Sebille, Johns, Beal, 2012, Thomas, Tréguier, Blanke, Deshayes, Voldoire, 2015). This approach thus permits particles to be advected for longer time scales than available from the raw data. However, particle looping can only work if the model has no drift in the velocity or tracer fields, that there are no large unphysical jumps in the fields between the end and the beginning of the model run, and that any unphysical jumps will have a small net effect on the particle pathways."_
-
 ## When to Use Looping
 
 Use looping when:
