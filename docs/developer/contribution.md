@@ -40,7 +40,7 @@ SedTRAILS is been developed for **Python 3.11**
 
 ### Set up a local development environment to work on your changes
 
-If you are a part of the SedTRAILS team and have write access to the SedTRAILS GitHub repository, skip to the section [Develop your contribution](CONTRIBUTING.md#develop-your-contribution). If you are a first-time contributor, follow the below steps:
+If you are a part of the SedTRAILS team and have write access to the SedTRAILS GitHub repository, skip to the "Develop your contribution" section below. If you are a first-time contributor, follow the below steps:
 
 1. Go to the [SedTRAILS GitHub repository](https://github.com/sedtrails/sedtrails) and click on 'Fork'. This will create a copy of the SedTRAILS repository in your GitHub account. 
             
