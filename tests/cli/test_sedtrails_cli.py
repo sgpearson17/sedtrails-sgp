@@ -46,10 +46,13 @@ class TestSedtrailsCLI:
     def test_subcommand_help(self, runner, cli_command):
         """Test subcommand help rendering."""
         result = runner.invoke(cli_command, ['run', '--help'])
+        run_command = cli_command.get_command(None, 'run')
+        config_option = next(param for param in run_command.params if param.name == 'config_file')
 
         assert result.exit_code == 0
         assert 'Run a simulation based on a configuration file.' in result.stdout
-        assert '--config' in result.stdout
+        assert '--config' in config_option.opts
+        assert '-c' in config_option.opts
 
     @pytest.fixture
     def mock_run_simulation(self):
