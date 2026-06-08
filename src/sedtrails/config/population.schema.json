@@ -13,7 +13,7 @@
                 "diffusion_coefficient": {
                     "type": "number",
                     "default": 0.0,
-                    "description": "random walk diffusion coefficient for passive particles"
+                    "description": "random walk diffusion coefficient (horizontal diffusivity K_h) for passive particles"
                 }
             },
             "required": [

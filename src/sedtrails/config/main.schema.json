@@ -188,6 +188,11 @@
           "default": "30D12H25M0S",
           "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
         },
+        "repeat_eulerian_fields": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, Eulerian flow fields repeat from the first input timestamp after simulation time exceeds the forcing time range. If false, the final available fields are reused."
+        },
         "comp_dir": {
           "type": "string",
           "description": "path to directory where complementary validation data is stored"
@@ -394,7 +399,7 @@
             "diffusion_coefficient": {
               "type": "number",
               "default": 0.1,
-              "description": "random walk diffusion coefficient"
+              "description": "random walk diffusion coefficient (horizontal diffusivity K_h)"
             }
           }
         },

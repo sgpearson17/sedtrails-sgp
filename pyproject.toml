@@ -14,7 +14,7 @@ dependencies = [
   "pandas",
   "matplotlib",
   "xarray",
-  "typer >=0.15.0,<1.0",
+  "typer >=0.16.0,<1.0",
   "xugrid",
   "numba",
   "tqdm",
@@ -50,7 +50,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-cli = ["typer>=0.15.0,<1.0"]
+cli = ["typer>=0.16.0,<1.0"]
 dev = [
   "pytest",
   "ruff",

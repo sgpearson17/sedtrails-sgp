@@ -277,6 +277,30 @@ class Simulation:
         """Return whether the loop should try to load another SedTRAILS data chunk."""
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
 
+    @staticmethod
+    def _map_eulerian_field_time(
+        current_time_seconds: float,
+        repeat_eulerian_fields: bool,
+        input_time_bounds: tuple[float, float] | None,
+    ) -> float:
+        """
+        Map simulation time to Eulerian forcing time.
+
+        When repeat_eulerian_fields is enabled, requests after the final input
+        timestamp wrap to the first input timestamp. The returned value is used
+        only for field loading and interpolation; output still records the
+        simulation clock.
+        """
+        if not repeat_eulerian_fields or input_time_bounds is None:
+            return current_time_seconds
+
+        start, end = input_time_bounds
+        cycle_duration = end - start
+        if cycle_duration <= 0 or current_time_seconds <= end:
+            return current_time_seconds
+
+        return start + ((current_time_seconds - start) % cycle_duration)
+
     def _get_format_config(self):
         """
         Returns configuration parameters required for the format converter.
@@ -463,6 +487,15 @@ class Simulation:
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
+        repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
+        input_time_bounds = None
+        if repeat_eulerian_fields:
+            input_time_bounds = self.format_converter.get_time_bounds()
+            self.logger.info(
+                'Repeating Eulerian flow fields from %.3fs after forcing end %.3fs',
+                input_time_bounds[0],
+                input_time_bounds[1],
+            )
 
         # Permanently remove particles that can never be exposed during the simulation.
         # Only done when at least one population has remove_permanently_buried=True, to
@@ -518,15 +551,24 @@ class Simulation:
         while not timer.stop:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
-            if self._should_attempt_sedtrails_reload(sedtrails_data, current_time_seconds, input_data_exhausted):
+            field_time_seconds = self._map_eulerian_field_time(
+                current_time_seconds,
+                repeat_eulerian_fields,
+                input_time_bounds,
+            )
+            if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
                 # Avoid recreating SedTRAILS data if current time is before the first time step
-                if sedtrails_data is not None and current_time_seconds < sedtrails_data.times[0]:
+                if (
+                    sedtrails_data is not None
+                    and field_time_seconds < sedtrails_data.times[0]
+                    and not repeat_eulerian_fields
+                ):
                     timer.advance()
                     continue
                 # Convert to SedTRAILS format
                 with self._profile_section('convert_to_sedtrails'):
                     sedtrails_data = self.format_converter.convert_to_sedtrails(
-                        current_time=current_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
+                        current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                     )
                 plan_retrievers = {
                     runtime_plan.population_index: FieldDataRetriever(
@@ -535,7 +577,7 @@ class Simulation:
                     for runtime_plan in runtime_plans
                 }
 
-                if self._is_after_loaded_sedtrails_data(sedtrails_data, current_time_seconds):
+                if self._is_after_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
                     input_data_exhausted = True
                     if not input_exhaustion_warning_logged:
                         self.logger.warning(
@@ -555,7 +597,7 @@ class Simulation:
                     with self._profile_section('get_flow_max_velocity.cfl'):
                         max_velocity = max(
                             max_velocity,
-                            retriever.get_flow_max_velocity_bound(timer.current, flow_field_name),
+                            retriever.get_flow_max_velocity_bound(field_time_seconds, flow_field_name),
                         )
 
             # Compute CFL-based timestep across all flow fields
@@ -574,15 +616,15 @@ class Simulation:
                 retriever = plan_retrievers[runtime_plan.population_index]
 
                 with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                    mixing_depth = retriever.get_scalar_field(timer.current, 'mixing_layer_thickness')['magnitude']
+                    mixing_depth = retriever.get_scalar_field(field_time_seconds, 'mixing_layer_thickness')['magnitude']
                 with self._profile_section('get_scalar_field.bed_level'):
-                    bed_level = retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                    bed_level = retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
 
                 for flow_field_name in tracer_plan.flow_field_names:
                     if tracer_plan.method_name == 'vanwesten':
                         with self._profile_section('get_scalar_field.transport_probability'):
                             transport_prob = retriever.get_scalar_field(
-                                timer.current, flow_field_name.replace('velocity', 'probability')
+                                field_time_seconds, flow_field_name.replace('velocity', 'probability')
                             )['magnitude']
                     else:
                         transport_prob = np.ones_like(bed_level)
@@ -601,7 +643,7 @@ class Simulation:
                     population.update_status()
 
                     with self._profile_section('get_flow_field.update_position'):
-                        flow_field = retriever.get_flow_field(timer.current, flow_field_name)
+                        flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
                     if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
                         dashboard_flow_field = flow_field
 
@@ -631,7 +673,7 @@ class Simulation:
                     particle_data = self._dashboard_particle_data(first_population)
                     dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
                     with self._profile_section('get_scalar_field.dashboard_bed_level'):
-                        bathymetry = dashboard_retriever.get_scalar_field(timer.current, 'bed_level')['magnitude']
+                        bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
                     mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
                     self.dashboard.update(
