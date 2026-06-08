@@ -371,7 +371,6 @@ class NetCDFWriter:
             nc_handle['status_alive'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_alive', np.ones(num_particles, dtype=np.int32))
             )
-            )
             nc_handle['status_buried'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_buried', np.zeros(num_particles, dtype=np.int32))
             )
