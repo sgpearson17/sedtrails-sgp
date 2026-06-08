@@ -519,6 +519,8 @@ class Simulation:
         # Open streaming output file — pre-allocates all slots before the loop starts
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         save_interval_seconds = Duration(self._controller.get('outputs.save_interval', '1H')).seconds
+        if save_interval_seconds <= 0:
+            raise ConfigurationError('outputs.save_interval must be a positive duration')
         n_output_slots = int(np.ceil(simulation_time.duration.seconds / save_interval_seconds)) + 1
         self.logger.info(
             'Streaming output: %d slots at %gs interval -> %s',
