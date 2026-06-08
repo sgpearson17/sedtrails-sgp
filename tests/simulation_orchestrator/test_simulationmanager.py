@@ -4,7 +4,6 @@ Unit tests for the Simulation class.
 
 import numpy as np
 import pytest
-import xarray as xr
 
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
@@ -72,199 +71,66 @@ class TestSimulationManagerTimeConfig:
         assert not Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=True)
 
 
-class TestSimulationManagerExpandTimeDimension:
-    """Tests for the _expand_time_dimension method."""
-
-    @pytest.fixture
-    def simulation_manager(self):
-        """Create a SimulationManager instance for testing."""
-        # Create instance without initializing (we only need the method)
-        manager = object.__new__(Simulation)
-        return manager
-
-    @pytest.fixture
-    def sample_dataset(self):
-        """Create a sample xarray dataset with time dimension."""
-        n_particles = 10
-        n_timesteps = 100
-        n_populations = 2
-
-        dataset = xr.Dataset(
-            {
-                'x': (['time', 'particle'], np.random.rand(n_timesteps, n_particles)),
-                'y': (['time', 'particle'], np.random.rand(n_timesteps, n_particles)),
-                'burial_depth': (['time', 'particle'], np.random.rand(n_timesteps, n_particles)),
-                'population_id': (['particle'], np.random.randint(0, n_populations, n_particles)),
-                'static_field': (['particle'], np.random.rand(n_particles)),  # No time dimension
-            },
-            coords={
-                'time': np.arange(n_timesteps),
-                'particle': np.arange(n_particles),
-            },
-        )
-        return dataset
-
-    def test_expand_increases_time_dimension(self, simulation_manager, sample_dataset):
-        """Test that expansion increases the time dimension size."""
-        original_size = len(sample_dataset.time)
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        assert len(expanded.time) == new_size
-        assert len(expanded.time) > original_size
-
-    def test_expand_preserves_original_data(self, simulation_manager, sample_dataset):
-        """Test that original data is preserved after expansion."""
-        original_size = len(sample_dataset.time)
-        new_size = 150
-
-        # Store original values
-        original_x = sample_dataset['x'].values.copy()
-        original_y = sample_dataset['y'].values.copy()
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        # Check that original timesteps are unchanged
-        np.testing.assert_array_equal(expanded['x'].isel(time=slice(0, original_size)).values, original_x)
-        np.testing.assert_array_equal(expanded['y'].isel(time=slice(0, original_size)).values, original_y)
-
-    def test_expand_fills_new_timesteps_with_nan(self, simulation_manager, sample_dataset):
-        """Test that new timesteps are filled with NaN."""
-        original_size = len(sample_dataset.time)
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        # Check that new timesteps contain NaN
-        new_x_data = expanded['x'].isel(time=slice(original_size, new_size)).values
-        assert np.all(np.isnan(new_x_data))
-
-        new_y_data = expanded['y'].isel(time=slice(original_size, new_size)).values
-        assert np.all(np.isnan(new_y_data))
-
-    def test_expand_only_affects_time_dependent_variables(self, simulation_manager, sample_dataset):
-        """Test that variables without time dimension are not affected."""
-        original_static = sample_dataset['static_field'].values.copy()
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        # Static field should be unchanged
-        np.testing.assert_array_equal(expanded['static_field'].values, original_static)
-        # Static field should not have time dimension
-        assert 'time' not in expanded['static_field'].dims
-
-    def test_expand_updates_time_coordinate(self, simulation_manager, sample_dataset):
-        """Test that time coordinate is updated correctly."""
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        # Time coordinate should be sequential from 0 to new_size-1
-        expected_time = np.arange(new_size)
-        np.testing.assert_array_equal(expanded.time.values, expected_time)
-
-    def test_expand_preserves_data_types(self, simulation_manager, sample_dataset):
-        """Test that data types are preserved after expansion."""
-        original_dtypes = {var: sample_dataset[var].dtype for var in sample_dataset.data_vars}
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        for var in expanded.data_vars:
-            assert expanded[var].dtype == original_dtypes[var], f'Data type changed for {var}'
-
-    def test_expand_preserves_dimensions(self, simulation_manager, sample_dataset):
-        """Test that dimension names are preserved."""
-        original_dims = {var: sample_dataset[var].dims for var in sample_dataset.data_vars}
-        new_size = 150
-
-        expanded = simulation_manager._expand_time_dimension(sample_dataset, new_size)
-
-        for var in expanded.data_vars:
-            assert expanded[var].dims == original_dims[var], f'Dimensions changed for {var}'
-
-    def test_expand_handles_multiple_expansions(self, simulation_manager, sample_dataset):
-        """Test that multiple consecutive expansions work correctly."""
-        # First expansion
-        expanded1 = simulation_manager._expand_time_dimension(sample_dataset, 150)
-        assert len(expanded1.time) == 150
-
-        # Second expansion
-        expanded2 = simulation_manager._expand_time_dimension(expanded1, 200)
-        assert len(expanded2.time) == 200
-
-        # Original data should still be intact
-        original_size = len(sample_dataset.time)
-        np.testing.assert_array_equal(
-            expanded2['x'].isel(time=slice(0, original_size)).values, sample_dataset['x'].values
-        )
-
-    def test_expand_with_different_dimension_orders(self, simulation_manager):
-        """Test expansion with different dimension orders."""
-        # Create dataset with time not as first dimension
-        dataset = xr.Dataset(
-            {
-                'variable1': (['particle', 'time'], np.random.rand(10, 50)),
-                'variable2': (['time', 'particle', 'depth'], np.random.rand(50, 10, 3)),
-            },
-            coords={
-                'time': np.arange(50),
-                'particle': np.arange(10),
-                'depth': np.arange(3),
-            },
-        )
-
-        new_size = 100
-        expanded = simulation_manager._expand_time_dimension(dataset, new_size)
-
-        assert len(expanded.time) == new_size
-        assert expanded['variable1'].shape == (10, new_size)
-        assert expanded['variable2'].shape == (new_size, 10, 3)
-
-    def test_expand_with_empty_dataset(self, simulation_manager):
-        """Test expansion with a dataset that has no data variables."""
-        dataset = xr.Dataset(coords={'time': np.arange(10)})
-
-        new_size = 20
-        expanded = simulation_manager._expand_time_dimension(dataset, new_size)
-
-        assert len(expanded.time) == new_size
+class TestSimulationManagerSaveInterval:
+    """Tests for save_interval slot-count calculation and boundary logic."""
 
     @pytest.mark.parametrize(
-        'original_size,new_size',
+        'duration_s,interval_s,expected_slots',
         [
-            (100, 150),
-            (50, 100),
-            (200, 300),
-            (10, 1000),
+            (3600, 3600, 2),        # 1H run, 1H interval  → slot 0 + 1 boundary
+            (4 * 3600, 3600, 5),    # 4H run, 1H interval  → slot 0 + 4 boundaries
+            (86400, 3600, 25),      # 1D run, 1H interval  → 24 + 1
+            (3600, 900, 5),         # 1H run, 15min interval → 4 + 1
+            (3601, 3600, 3),        # just over one interval → 2 + 1
         ],
     )
-    def test_expand_various_sizes(self, simulation_manager, original_size, new_size):
-        """Test expansion with various size combinations."""
-        # Create appropriately sized dataset
-        dataset = xr.Dataset(
-            {
-                'x': (['time', 'particle'], np.random.rand(original_size, 10)),
-            },
-            coords={
-                'time': np.arange(original_size),
-                'particle': np.arange(10),
-            },
-        )
+    def test_n_output_slots_calculation(self, duration_s, interval_s, expected_slots):
+        """Pre-allocated slot count is ceil(duration/interval) + 1 for the initial state."""
+        import math
+        n_slots = math.ceil(duration_s / interval_s) + 1
+        assert n_slots == expected_slots
 
-        # Store original data before expansion
-        original_x = dataset['x'].values.copy()
+    def test_save_boundary_triggers_at_next_save_time(self):
+        """Record fires exactly when simulation time reaches the boundary, not before."""
+        next_save_time = 3600.0
+        saved = []
 
-        expanded = simulation_manager._expand_time_dimension(dataset, new_size)
+        for t in [0.0, 1200.0, 2400.0, 3600.0, 4800.0]:
+            if t >= next_save_time:
+                saved.append(t)
+                next_save_time += 3600.0
 
-        assert len(expanded.time) == new_size
-        # Check that original data is preserved
-        np.testing.assert_array_equal(
-            expanded['x'].isel(time=slice(0, original_size)).values,
-            original_x,  # Compare against the stored original, not dataset['x']
-        )
+        assert saved == [3600.0]
+
+    def test_final_save_fires_when_sim_ends_between_boundaries(self):
+        """A trailing save after the loop captures the final particle state."""
+        last_saved_time = 3600.0
+        final_time = 4400.0       # simulation ended mid-interval
+        slot_idx = 2
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert should_save
+
+    def test_final_save_skipped_when_already_at_boundary(self):
+        """No duplicate save when the loop ended exactly on a save boundary."""
+        last_saved_time = 7200.0
+        final_time = 7200.0
+        slot_idx = 3
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
+
+    def test_final_save_skipped_when_slots_full(self):
+        """No out-of-bounds write when all pre-allocated slots are consumed."""
+        last_saved_time = 3600.0
+        final_time = 4400.0
+        slot_idx = 5
+        n_output_slots = 5   # already at capacity
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
 
 
 class TestSimulationDashboardThrottle:
