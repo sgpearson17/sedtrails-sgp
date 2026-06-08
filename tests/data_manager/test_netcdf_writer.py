@@ -1,4 +1,3 @@
-import netCDF4 as nc4
 import numpy as np
 import pytest
 import xarray as xr
