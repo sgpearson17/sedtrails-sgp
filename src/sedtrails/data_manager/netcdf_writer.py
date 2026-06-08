@@ -365,6 +365,9 @@ class NetCDFWriter:
                 population.particles.get('z', np.zeros(num_particles))
             )
             nc_handle['burial_depth'][sl, slot_idx] = np.asarray(population.particles['burial_depth'])
+            nc_handle['mixing_depth'][sl, slot_idx] = np.asarray(
+                population.particles.get('mixing_depth', np.full(num_particles, np.nan))
+            )
             nc_handle['status_alive'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_alive', np.ones(num_particles, dtype=np.int32))
             )
