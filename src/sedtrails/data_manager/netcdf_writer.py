@@ -6,6 +6,7 @@ Writes NetCDF files produced by the SedTrails Particle Tracer System.
 
 """
 
+import netCDF4 as nc4
 import numpy as np
 import xarray as xr
 from pathlib import Path
@@ -247,6 +248,149 @@ class NetCDFWriter:
 
         # Write to file
         return self.write(dataset, filename)
+
+
+    def open_output(
+        self,
+        filename: str,
+        n_slots: int,
+        N_particles: int,
+        N_populations: int,
+        N_flowfields: int,
+        populations: list,
+        flow_field_names: list,
+        name_strlen: int = 24,
+    ):
+        """
+        Open a streaming output file with pre-allocated dimensions.
+
+        Creates the file, defines all dimensions and variables, writes static
+        population and flow-field metadata, and returns the open handle.
+        The file is kept open throughout the simulation; call close_output() when done.
+
+        Returns
+        -------
+        netCDF4.Dataset
+            Open file handle for use with record_output() and close_output().
+        """
+        self._validate_filename(filename)
+        output_path = self.output_dir / filename
+
+        ds = nc4.Dataset(str(output_path), 'w', format='NETCDF4')
+
+        # Dimensions — n_timesteps is fixed (pre-allocated, no copy work on writes)
+        ds.createDimension('n_particles', N_particles)
+        ds.createDimension('n_populations', N_populations)
+        ds.createDimension('n_timesteps', n_slots)
+        ds.createDimension('n_flowfields', N_flowfields)
+        ds.createDimension('name_strlen', name_strlen)
+
+        # Global attributes
+        ds.title = 'SedTRAILS Particle Simulation Results'
+        ds.institution = 'SedTRAILS Particle Tracer System'
+        ds.created_on = datetime.now().isoformat()
+
+        # Static metadata variables
+        ds.createVariable('population_name', 'S1', ('n_populations', 'name_strlen'))
+        ds.createVariable('population_particle_type', 'i4', ('n_populations',))
+        ds.createVariable('population_start_idx', 'i4', ('n_populations',))
+        ds.createVariable('population_count', 'i4', ('n_populations',))
+        ds.createVariable('population_repr_volume', 'f8', ('n_populations',))
+        ds.createVariable('trajectory_id', 'S1', ('n_particles', 'name_strlen'))
+        ds.createVariable('population_id', 'i4', ('n_particles',))
+        ds.createVariable('flowfield_name', 'S1', ('n_flowfields', 'name_strlen'))
+
+        # Time-varying trajectory variables — unwritten slots stay at fill value
+        ds.createVariable('time', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('x', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('y', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('z', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('burial_depth', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('mixing_depth', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
+        ds.createVariable('status_alive', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_buried', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_domain', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_transported', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_released', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_mobile', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('covered_distance', 'f8', ('n_flowfields', 'n_particles', 'n_timesteps'), fill_value=np.nan)
+
+        # Write static population metadata
+        particle_offset = 0
+        for pop_idx, population in enumerate(populations):
+            pop_name = getattr(population, 'name', f'population_{pop_idx}')
+            ds['population_name'][pop_idx, :] = np.array(
+                list(pop_name[:name_strlen].ljust(name_strlen)), dtype='S1'
+            )
+            ds['population_particle_type'][pop_idx] = int(getattr(population, 'particle_type', 0))
+            ds['population_start_idx'][pop_idx] = particle_offset
+            n_part = len(population.particles['x'])
+            ds['population_count'][pop_idx] = n_part
+            repr_vol = getattr(population, 'repr_volume', np.nan)
+            ds['population_repr_volume'][pop_idx] = float(repr_vol) if repr_vol is not None else np.nan
+            ds['population_id'][particle_offset:particle_offset + n_part] = pop_idx
+
+            for i in range(n_part):
+                traj_id = f'traj_{particle_offset + i}'
+                ds['trajectory_id'][particle_offset + i, :] = np.array(
+                    list(traj_id[:name_strlen].ljust(name_strlen)), dtype='S1'
+                )
+            particle_offset += n_part
+
+        # Write flow-field metadata
+        if flow_field_names:
+            for ff_idx, ff_name in enumerate(flow_field_names[:N_flowfields]):
+                ds['flowfield_name'][ff_idx, :] = np.array(
+                    list(ff_name[:name_strlen].ljust(name_strlen)), dtype='S1'
+                )
+
+        ds.sync()
+        return ds
+
+    def record_output(self, nc_handle, populations: list, slot_idx: int, current_time: float) -> None:
+        """
+        Write current particle state to slot_idx in the streaming output file.
+
+        Syncs to disk after writing so data is safe even if the process is interrupted.
+        """
+        particle_offset = 0
+        for population in populations:
+            num_particles = len(population.particles['x'])
+            sl = slice(particle_offset, particle_offset + num_particles)
+
+            nc_handle['time'][sl, slot_idx] = current_time
+            nc_handle['x'][sl, slot_idx] = np.asarray(population.particles['x'])
+            nc_handle['y'][sl, slot_idx] = np.asarray(population.particles['y'])
+            nc_handle['z'][sl, slot_idx] = np.asarray(
+                population.particles.get('z', np.zeros(num_particles))
+            )
+            nc_handle['burial_depth'][sl, slot_idx] = np.asarray(population.particles['burial_depth'])
+            nc_handle['status_alive'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_alive', np.ones(num_particles, dtype=np.int32))
+            )
+            nc_handle['status_buried'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_buried', np.zeros(num_particles, dtype=np.int32))
+            )
+            nc_handle['status_domain'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_domain', np.ones(num_particles, dtype=np.int32))
+            )
+            nc_handle['status_transported'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_transported', np.zeros(num_particles, dtype=np.int32))
+            )
+            nc_handle['status_released'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_released', np.ones(num_particles, dtype=np.int32))
+            )
+            nc_handle['status_mobile'][sl, slot_idx] = np.asarray(population.particles['status_mobile'])
+
+            particle_offset += num_particles
+
+        nc_handle.sync()
+
+    def close_output(self, nc_handle) -> Path:
+        """Close the streaming output file and return its path."""
+        path = Path(nc_handle.filepath())
+        nc_handle.close()
+        return path
 
 
 if __name__ == '__main__':
