@@ -515,6 +515,7 @@ class Simulation:
             desc='Computing positions',
             unit='%',
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
+            smoothing=0,
         )
         self._active_progress_bar = pbar
 
