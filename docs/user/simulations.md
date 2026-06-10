@@ -119,3 +119,125 @@ sedtrails run -c ./config-example.yaml
 The simulation will start running, and a dashboard will open to show the progress. Close the dashboard window to get back to the terminal and see the simulation results.
 :::
 
+## Restarting a Simulation
+
+If a simulation is interrupted or needs to continue from a specific point, you can generate a restart configuration that uses the last valid particle positions from a previous run as seed points for a new simulation.
+
+### When to Use Restart
+
+The restart feature is useful when:
+- A long simulation crashes or is stopped before completion
+- You want to continue a simulation without losing progress
+- You need to extend a finished simulation with additional runtime
+- You want to restart from intermediate results to test different transport parameters
+
+### Prerequisites
+
+To restart a simulation, you need:
+1. A NetCDF output file from a previous SedTRAILS run (e.g., `sedtrails_results.nc`)
+2. The original simulation configuration file used to generate that output
+3. Both files must be accessible from your working directory
+
+### Generating a Restart Configuration
+
+The restart process automatically:
+- Extracts the **last valid particle position** for each particle in the NetCDF output
+- Filters particles to include only those that were alive and in-domain at their last position
+- **Computes remaining runtime** based on the original simulation duration and elapsed time (see "Edge Case - Full Completion" in [Notes and Tips](#notes-and-tips))
+- Generates per-population seed point CSV files
+- Creates a new YAML configuration file ready to run
+
+#### Command Syntax
+
+```bash
+sedtrails config restart -f <results_file> -c <base_config> -o <output_config> [--seed-dir <seed_directory>]
+```
+
+**Parameters:**
+- `-f, --file`: Path to the NetCDF results file from the previous run (default: `sedtrails_results.nc`)
+- `-c, --config`: Path to the original YAML configuration file (default: `sedtrails.yml`)
+- `-o, --output`: Path where the new restart YAML will be written (default: `sedtrails-restart.yaml`)
+- `--seed-dir`: (Optional) Custom directory for generated seed point CSV files. If not specified, defaults to `<output_config_directory>/<output_config_stem>_seeds/`
+
+#### Example: Basic Restart
+
+If your previous run output is in `./results/sedtrails_results.nc` and the config was `./examples/sedtrails-example.yaml`:
+
+```bash
+sedtrails config restart -f ./results/sedtrails_results.nc \
+                        -c ./examples/sedtrails-example.yaml \
+                        -o ./examples/restart.yaml
+```
+
+This command will:
+1. Read the last valid position of each particle from `sedtrails_results.nc`
+2. Calculate the elapsed time and remaining duration from the original run
+3. Generate seed point files in `./examples/restart_seeds/` (one CSV per population)
+4. Create `./examples/restart.yaml` with:
+   - Updated `time.start` set to when the restart will begin
+   - Adjusted `time.duration` set to the remaining time from the original run
+   - Each population's seeding strategy replaced with `file_points` referencing the generated CSV files
+
+#### Example Output
+
+The generated restart YAML will look similar to this:
+
+```yaml
+general:
+  input_model:
+    format: fm_netcdf
+    reference_date: '1970-01-01'
+    morfac: 1
+inputs:
+  data: ./sample-data/inlet_example.nc
+time:
+  start: '2016-09-27 03:22:48'          # Updated to last valid timestamp
+  timestep: 60S
+  duration: 4D15H57M12S                 # Adjusted to remaining time from original 10D run
+particles:
+  populations:
+  - name: population_1
+    particle_type: sand
+    seeding:
+      strategy:
+        file_points:
+          path: ./examples/restart_seeds/population_1.restart_points.csv
+          x_col: x
+          y_col: y
+          has_header: true
+```
+
+The seed point CSV files contain particle coordinates from the last valid timestep:
+
+```csv
+x,y
+40293.54196405,17547.72446346
+39626.62407569,17560.15080805
+40360.98655363,17704.94651676
+```
+
+### Running the Restart
+
+Once the restart configuration is generated, run it like any other simulation:
+
+```bash
+sedtrails run -c ./examples/restart.yaml
+```
+
+The new simulation will:
+- Start from the particle positions saved in the seed point files
+- Use the adjusted `time.duration` to simulate only the remaining time
+- Output results to the same or a different output directory (configured in the restart YAML)
+
+### Notes and Tips
+
+- **Particle Retention**: Only particles that were alive and within the domain at their last position are included in the restart. Particles that escaped the domain or were trapped will not be restarted.
+
+- **Reference Date Handling**: If your original configuration used `general.input_model.reference_date`, the restart timing is automatically computed correctly using that reference date.
+
+- **Relative Paths**: Generated seed file paths in the restart YAML are relative to the current working directory (using `./` prefix). Make sure to run the restart from the same directory where the YAML was generated, or update the paths accordingly.
+
+- **Duration Precision**: The remaining duration is calculated to second precision and formatted in SedTRAILS duration syntax (e.g., `4D15H57M12S` = 4 days, 15 hours, 57 minutes, 12 seconds).
+
+- **Edge Case - Full Completion**: If the output file shows that the original simulation ran to completion (all particles reached the end time), the restart will report "No remaining duration left" and decline to create a restart file.
+

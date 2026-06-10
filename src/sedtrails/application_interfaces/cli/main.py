@@ -209,6 +209,52 @@ def seeding_gui_cmd(
         raise typer.Exit(code=1) from e
     except Exception as e:
         typer.echo(f'Unexpected error opening seeding GUI: {e}')
+
+
+@config_app.command('restart')
+def create_restart_config_cmd(
+    results_file: str = typer.Option(
+        'sedtrails_results.nc',
+        '--file',
+        '-f',
+        help='Path to the SedTRAILS netCDF results file.',
+    ),
+    base_config_file: str = typer.Option(
+        'sedtrails.yml',
+        '--config',
+        '-c',
+        help='Path to the original SedTRAILS configuration file.',
+    ),
+    output_config_file: str = typer.Option(
+        'sedtrails-restart.yaml',
+        '--output',
+        '-o',
+        help='Path to write the generated restart YAML file.',
+    ),
+    seed_points_dir: str = typer.Option(
+        None,
+        '--seed-dir',
+        help='Optional directory for generated restart seed point files.',
+    ),
+):
+    """Create a restart YAML and point files from a partial/full NetCDF output."""
+    from sedtrails.application_interfaces.api import create_restart_config
+
+    try:
+        summary = create_restart_config(
+            results_file=results_file,
+            base_config_file=base_config_file,
+            output_config_file=output_config_file,
+            seed_points_dir=seed_points_dir,
+        )
+        typer.echo(f"Restart config written to '{summary.output_config}'")
+        typer.echo(f"Restart time set to '{summary.restart_time}'")
+        typer.echo(f"Retained particles: {summary.retained_particles}")
+        typer.echo('Generated seed point files:')
+        for population_name, path in summary.seed_files.items():
+            typer.echo(f'  - {population_name}: {path}')
+    except Exception as e:
+        typer.echo(f'Error creating restart config: {e}')
         raise typer.Exit(code=1) from e
 
 
