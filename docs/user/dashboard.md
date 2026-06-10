@@ -2,7 +2,7 @@
 
 The purpose of the dashboard is to provide a real-time visualization of the simulation as it runs. It can help users to monitor the progress of the simulation, identify potential issues, and gain insights into sediment transport and deposition. 
 
-![sedtrails development workflow](../_static\img\dashboard-example.png)
+![SedTRAILS dashboard example](../_static/img/dashboard-example.png)
 
 ## Navigating the Dashboard
 

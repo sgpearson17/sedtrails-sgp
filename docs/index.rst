@@ -6,9 +6,9 @@
 SedTRAILS documentation
 =======================
 
-.. image:: https://img.shields.io/badge/License-MIT-yellow.svg
-   :target: https://opensource.org/licenses/MIT
-   :alt: License: MIT
+.. image:: https://img.shields.io/badge/License-GPLv3-blue.svg
+   :target: https://www.gnu.org/licenses/gpl-3.0
+   :alt: License: GPLv3
 
 .. image:: https://img.shields.io/badge/tu_delft-DCC-black?style=flat&label=TU%20Delft&labelColor=%23000000%20&color=%2300A6D6
    :target: https://dcc.tudelft.nl
@@ -55,6 +55,7 @@ Features
    user/installation
    user/simulations
    user/output
+   user/visualization
    user/dashboard
    user/seeding
 
@@ -63,6 +64,7 @@ Features
    :caption: Tutorials
 
    tutorials/tutorial1
+   tutorials/loop-simulations
 
 .. toctree::
    :maxdepth: 2

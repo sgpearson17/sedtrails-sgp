@@ -8,7 +8,7 @@ This document provides an overview of how to create and integrate plugins into S
 
 ## Creating a Plugin
 
-We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](./developer/dev-environment.md).
+We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](dev-environment.md).
 In essence, a plugin for the  Physics Converter must implement a class that inherits from `BasePhysicsPlugin` and implements the `add_physics` method.
 The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversiont) to the `SedtrailsData` object itself.
 To **create a physics plugin for SedTRAILS**, follow these steps:

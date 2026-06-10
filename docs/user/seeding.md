@@ -69,6 +69,63 @@ Inputs required for seeding strategies:
 | ???   | ???      | particle distance | ???           |
 | ???   | ???      | ???               | ???           |
 
+## Seeding setup GUI
+
+SedTRAILS includes a lightweight graphical helper for setting up particle release locations from an existing YAML configuration file. The GUI is intended for quick validation-case setup: it loads the configured input model data, displays first-timestep bathymetry, lets you create seed points interactively, and writes a copied YAML file plus point-file inputs.
+
+Start the GUI from the command line:
+
+```bash
+sedtrails config gui --config examples/sedtrails-example-multisource.yaml
+```
+
+Common options:
+
+```bash
+sedtrails config gui \
+  --config examples/sedtrails-example-multisource.yaml \
+  --output examples/my-case.yaml \
+  --points-output examples/my-case.points.txt \
+  --population populaton_1 \
+  --variable bedlevel
+```
+
+Useful keywords:
+
+- `--config` or `-c`: source SedTRAILS YAML file to load.
+- `--output` or `-o`: copied YAML file to write. If omitted, the GUI writes next to the source YAML using `*-seeded.yaml`.
+- `--points-output`: text file for generated x/y release locations.
+- `--population` or `-p`: initial population to edit. If omitted, the first configured population is selected.
+- `--format`: input format override. The first GUI version supports `fm_netcdf`.
+- `--variable`: bathymetry variable to display. Defaults to `bedlevel` or `bed_level`.
+
+### GUI workflow
+
+1. Open an existing YAML config with `sedtrails config gui`.
+2. Select a particle population in the population panel. The first population is selected by default.
+3. Choose a seeding mode and create points on the map.
+4. Optionally clip generated points by bathymetry elevation.
+5. Save. The original YAML is not edited; a copied YAML and one or more point files are written.
+
+The GUI saves release locations through the existing `file_points` strategy. This means points created with manual clicks, transects, random polygons, or grids all become ordinary text files referenced from the generated YAML.
+
+### GUI seeding modes
+
+- **Points**: left click on the map to add release points. Right click near an existing point to remove it.
+- **Transect**: left click endpoint pairs, set `k`, then press **Generate**. Each pair becomes a straight transect with `k` generated release locations.
+- **Random**: left click polygon vertices, right click to close the polygon, set `n` and `seed`, then press **Generate**. The GUI generates `n` random points inside the polygon.
+- **Grid**: left click polygon vertices, right click to close the polygon, set `dx` and `dy`, then press **Generate**. The GUI creates a regular grid clipped to the polygon.
+
+### Populations in the GUI
+
+The GUI can select, add, rename, and remove particle populations. Adding a population copies the currently selected population's particle settings and characteristics, then gives the copy a new name. Always inspect the generated YAML before running the simulation, especially after adding populations, because copied tracer methods, particle type, grain-size settings, and release timing may need adjustment.
+
+When multiple populations have generated points, the GUI writes one point file per population and updates each population's `seeding.strategy.file_points` entry.
+
+### Elevation clipping
+
+The clipping controls remove generated points using nearest-cell bathymetry values from the displayed input data. Choose whether to delete points above or below a threshold elevation, enter the threshold, then press **Clip points**. This is useful for quickly removing points from dry areas, channels, shoals, or other elevation-defined zones.
+
 
 Here I copy paste Manuel's comments in Github issue#267. I will revise this part of the documentation while the seeding factory is finalised.
 
