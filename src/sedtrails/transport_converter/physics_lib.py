@@ -368,6 +368,7 @@ def compute_mixing_layer_thickness(
     max_bed_shear_stress: np.ndarray,
     critical_shear_stress: float,
     method: MixingLayerMethod = MixingLayerMethod.BERTIN_2008,
+    bertin_coefficient: float = 0.041,
 ) -> np.ndarray:
     """
     Compute mixing layer thickness.
@@ -380,6 +381,10 @@ def compute_mixing_layer_thickness(
         τ_cr = Critical shear stress [N/m²]
     method : MixingLayerMethod, optional
         Method to use for calculation
+    bertin_coefficient : float, optional
+        Empirical coefficient c in the Bertin (2008) formula:
+        d_mix = c * sqrt(max(τ_max − τ_cr, 0)) [m / (N/m²)^0.5].
+        Default 0.041 matches the original publication.
 
     Returns:
     --------
@@ -389,19 +394,19 @@ def compute_mixing_layer_thickness(
     Notes:
     ------
     Bertin (2008) method:
-    d_mix = 0.041 * sqrt(max(τ_max - τ_cr, 0))
+    d_mix = c * sqrt(max(τ_max - τ_cr, 0))
 
     References:
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
 
-    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008). 
-    Improvement of sand activation depth prediction under conditions 
+    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008).
+    Improvement of sand activation depth prediction under conditions
     of oblique wave breaking. Geo-Marine Letters, 28(2), 65-75.
     """
     if method == MixingLayerMethod.BERTIN_2008:
-        return 0.041 * np.sqrt(np.maximum(max_bed_shear_stress - critical_shear_stress, 0.0))
+        return bertin_coefficient * np.sqrt(np.maximum(max_bed_shear_stress - critical_shear_stress, 0.0))
     elif method == MixingLayerMethod.HARRIS_WIBERG:
         # Placeholder for Harris & Wiberg method
         raise NotImplementedError(

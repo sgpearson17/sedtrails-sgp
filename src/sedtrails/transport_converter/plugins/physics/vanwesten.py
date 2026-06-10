@@ -162,6 +162,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             max_bed_shear_stress,
             critical_shear_stress,
             method=physics_lib.MixingLayerMethod.BERTIN_2008,
+            bertin_coefficient=self.config.bertin_coefficient,
         )
 
         # Expand dimensions if necessary

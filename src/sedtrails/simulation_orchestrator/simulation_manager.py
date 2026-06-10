@@ -362,6 +362,7 @@ class Simulation:
             porosity=self._controller.get('physics.constants.porosity', 0.4),
             grain_diameter=self._controller.get('physics.constants.grain_diameter', 2.5e-4),
             morfac=self._controller.get('physics.constants.morphology_factor', 1.0),
+            bertin_coefficient=self._controller.get('physics.constants.bertin_coefficient', 0.041),
             # trapped_exposed_method=self._controller.get('physics.trapped_exposed_method', 'reduced_velocity'), # other option; 'probabilistic_exposure'
         )
 

@@ -22,6 +22,8 @@ POROSITY = 0.4  # [-]
 GRAIN_DIAMETER = 2.5e-4  # m (250 μm)
 # Morphological acceleration factor
 MORFAC = 1.0
+# Bertin (2008) mixing layer empirical coefficient
+BERTIN_COEFFICIENT = 0.041
 
 
 @dataclass
@@ -39,6 +41,7 @@ class PhysicsConfig:
     porosity: float = POROSITY
     grain_diameter: float = GRAIN_DIAMETER
     morfac: float = MORFAC
+    bertin_coefficient: float = BERTIN_COEFFICIENT
 
     @classmethod
     def from_dict(

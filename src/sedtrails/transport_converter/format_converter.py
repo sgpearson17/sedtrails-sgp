@@ -238,7 +238,10 @@ class FormatConverter:
                 "Physics converter does not provide 'critical_shear_stress' in grain_properties."
             )
 
-        max_mixing = physics_lib.compute_mixing_layer_thickness(max_bss, critical_shear_stress)
+        max_mixing = physics_lib.compute_mixing_layer_thickness(
+            max_bss, critical_shear_stress,
+            bertin_coefficient=physics_converter.config.bertin_coefficient,
+        )
 
         return max_erosion + max_mixing
 
