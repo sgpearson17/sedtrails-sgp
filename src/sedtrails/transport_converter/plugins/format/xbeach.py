@@ -427,8 +427,8 @@ class FormatPlugin(BaseFormatPlugin):
         if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
             theta = self._mean_scalar('thetamean_mean', time_slice, num_times, grid_size)
             ua = self._mean_scalar('ua_mean', time_slice, num_times, grid_size)
-            data['nonlinear_wave_velocity_x'] = ua * np.cos(theta)
-            data['nonlinear_wave_velocity_y'] = ua * np.sin(theta)
+            data['nonlinear_wave_velocity_x'] = ua * np.cos(np.deg2rad(theta))
+            data['nonlinear_wave_velocity_y'] = ua * np.sin(np.deg2rad(theta))
         else:
             data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
             data['nonlinear_wave_velocity_y'] = np.zeros((num_times, grid_size), dtype=float)
