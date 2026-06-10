@@ -55,6 +55,7 @@ Features
    user/installation
    user/simulations
    user/output
+   user/visualization
    user/dashboard
    user/seeding
 
@@ -63,6 +64,7 @@ Features
    :caption: Tutorials
 
    tutorials/tutorial1
+   tutorials/loop-simulations
 
 .. toctree::
    :maxdepth: 2
