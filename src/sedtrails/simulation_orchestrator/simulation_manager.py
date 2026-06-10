@@ -481,7 +481,7 @@ class Simulation:
             seeding_field_data = self.format_converter.get_seeding_field_data()
 
         populations_config = self._controller.get('particles.populations', [])
-        seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
+        seeder = ParticleSeeder(populations_config, config_dir=Path(self._config_file).parent)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
