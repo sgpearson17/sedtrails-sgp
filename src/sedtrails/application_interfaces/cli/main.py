@@ -182,7 +182,7 @@ def seeding_gui_cmd(
     input_format: str | None = typer.Option(
         None,
         '--format',
-        help='Override general.input_model.format. Only fm_netcdf is supported in v1.',
+        help="Override general.input_model.format. Supported GUI formats: 'fm_netcdf' and 'xbeach'.",
     ),
     variable: str | None = typer.Option(
         None,
