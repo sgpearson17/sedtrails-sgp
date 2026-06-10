@@ -208,6 +208,23 @@ def create_config_template(output_file: str = './sedtrails-template.yml') -> Non
     validator.create_config_template(output_file)
 
 
+def create_restart_config(
+    results_file: str,
+    base_config_file: str,
+    output_config_file: str = 'sedtrails-restart.yaml',
+    seed_points_dir: str | None = None,
+) -> 'RestartSummary':
+    """Create a restart-ready YAML and seeding files from NetCDF output."""
+    from sedtrails.application_interfaces.restart import create_restart_from_netcdf
+
+    return create_restart_from_netcdf(
+        netcdf_file=results_file,
+        base_config_file=base_config_file,
+        output_config_file=output_config_file,
+        seed_points_dir=seed_points_dir,
+    )
+
+
 # ============================================================================
 # Visualization Functions
 # ============================================================================
@@ -494,6 +511,7 @@ __all__ = [
     'load_configuration',
     'validate_configuration',
     'create_config_template',
+    'create_restart_config',
     # Visualization
     'plot_trajectories',
     'inspect_netcdf',
