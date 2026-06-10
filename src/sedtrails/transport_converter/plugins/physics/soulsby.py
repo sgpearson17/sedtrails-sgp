@@ -10,6 +10,22 @@ from sedtrails.transport_converter.plugins import BasePhysicsPlugin
 logger = logging.getLogger(__name__)
 
 
+def _safe_velocity_direction(
+    flow_velocity_x: np.ndarray,
+    flow_velocity_y: np.ndarray,
+    flow_velocity_magnitude: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return flow unit vectors, using zero direction where speed is invalid."""
+    valid_speed = np.isfinite(flow_velocity_magnitude) & (flow_velocity_magnitude > 0.0)
+    direction_x = np.zeros_like(flow_velocity_magnitude, dtype=float)
+    direction_y = np.zeros_like(flow_velocity_magnitude, dtype=float)
+
+    np.divide(flow_velocity_x, flow_velocity_magnitude, out=direction_x, where=valid_speed)
+    np.divide(flow_velocity_y, flow_velocity_magnitude, out=direction_y, where=valid_speed)
+
+    return direction_x, direction_y
+
+
 class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the PhysicsPlugin
     """
     Plugin for Soulsby et al. (2011) sediment transport physics calculations.
@@ -107,7 +123,14 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             1 / 3
         ) * background_grain_size  # nd = non-dimensional
         grain_size_ratio = grain_size / background_grain_size
-        rouse_number = settling_velocity / (von_karman * max_shear_velocity)
+        rouse_denominator = von_karman * max_shear_velocity
+        rouse_number = np.full_like(max_shear_velocity, np.inf, dtype=float)
+        np.divide(
+            settling_velocity,
+            rouse_denominator,
+            out=rouse_number,
+            where=np.isfinite(rouse_denominator) & (rouse_denominator > 0.0),
+        )
 
         # Compute Soulsby et al. (2011) physical parameters
         background_theta_max = max_bed_shear_stress / (g * (rho_s - rho_w) * background_grain_size)
@@ -168,8 +191,12 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         for i in range(0, theta_max.shape[0]):
             for j in range(0, theta_max.shape[1]):
                 if theta_max[i][j] > theta_cr_exp:
-                    # print(bed_load_velocity[i][j] / flow_velocity_magnitude[i][j])
-                    Rb[i][j] = bed_load_velocity[i][j] / flow_velocity_magnitude[i][j]
+                    local_flow_velocity_magnitude = flow_velocity_magnitude[i][j]
+                    if not np.isfinite(local_flow_velocity_magnitude) or local_flow_velocity_magnitude <= 0.0:
+                        Rb[i][j] = 0
+                        continue
+
+                    Rb[i][j] = bed_load_velocity[i][j] / local_flow_velocity_magnitude
                     if Rb[i][j] > 1:
                         Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
                     elif not np.isfinite(Rb[i][j]):
@@ -204,13 +231,18 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
 
         # Compute grain velocities
         grain_velocity_magnitude = soulsby_P * soulsby_R * flow_velocity_magnitude  # (Equation 1)
-        grain_velocity_x = np.multiply((flow_velocity_x / flow_velocity_magnitude), grain_velocity_magnitude)
-        grain_velocity_y = np.multiply((flow_velocity_y / flow_velocity_magnitude), grain_velocity_magnitude)
+        flow_direction_x, flow_direction_y = _safe_velocity_direction(
+            flow_velocity_x,
+            flow_velocity_y,
+            flow_velocity_magnitude,
+        )
+        grain_velocity_x = flow_direction_x * grain_velocity_magnitude
+        grain_velocity_y = flow_direction_y * grain_velocity_magnitude
 
-        # Replace NaN values with zeros (occurs when flow velocity magnitude is zero) and inf to a huge
-        grain_velocity_magnitude = np.nan_to_num(grain_velocity_magnitude)
-        grain_velocity_x = np.nan_to_num(grain_velocity_x)
-        grain_velocity_y = np.nan_to_num(grain_velocity_y)
+        # Replace non-finite values with zero transport.
+        grain_velocity_magnitude = np.nan_to_num(grain_velocity_magnitude, nan=0.0, posinf=0.0, neginf=0.0)
+        grain_velocity_x = np.nan_to_num(grain_velocity_x, nan=0.0, posinf=0.0, neginf=0.0)
+        grain_velocity_y = np.nan_to_num(grain_velocity_y, nan=0.0, posinf=0.0, neginf=0.0)
 
         # Empty fields for Soulsby (only in van westen)
         mixing_layer_thickness = np.zeros_like(grain_velocity_magnitude)
