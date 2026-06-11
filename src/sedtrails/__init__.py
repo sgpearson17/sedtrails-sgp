@@ -39,7 +39,6 @@ from .application_interfaces.api import (
     load_configuration,
     validate_configuration,
     create_config_template,
-    create_restart_config,
     # Visualization
     plot_trajectories,
     inspect_netcdf,
@@ -62,7 +61,6 @@ __all__ = [
     'load_configuration',
     'validate_configuration',
     'create_config_template',
-    'create_restart_config',
     # Visualization
     'plot_trajectories',
     'inspect_netcdf',

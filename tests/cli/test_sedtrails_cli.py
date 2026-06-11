@@ -6,7 +6,6 @@ import pytest
 import yaml
 from click.testing import CliRunner
 from typer.main import get_command
-from types import SimpleNamespace
 from unittest.mock import patch
 from sedtrails.application_interfaces.cli import app
 
@@ -138,40 +137,3 @@ class TestSedtrailsCLI:
             assert result.exit_code == 1
             assert 'Error running simulation: Simulation failed' in result.stdout
             mock_run_simulation.assert_called_once()
-
-    def test_config_restart_command_success(self, runner, cli_command):
-        """Test successful generation of restart config via CLI."""
-        with patch('sedtrails.application_interfaces.api.create_restart_config') as mock_create_restart:
-            mock_create_restart.return_value = SimpleNamespace(
-                output_config='restart.yaml',
-                restart_time='2020-01-01 00:02:00',
-                retained_particles=10,
-                seed_files={'population_1': 'seeds/population_1.restart_points.csv'},
-            )
-
-            result = runner.invoke(
-                cli_command,
-                [
-                    'config',
-                    'restart',
-                    '--file',
-                    'results.nc',
-                    '--config',
-                    'base.yaml',
-                    '--output',
-                    'restart.yaml',
-                ],
-            )
-
-            assert result.exit_code == 0
-            assert "Restart config written to 'restart.yaml'" in result.stdout
-            assert "Restart time set to '2020-01-01 00:02:00'" in result.stdout
-            assert 'Retained particles: 10' in result.stdout
-            assert 'population_1' in result.stdout
-
-            mock_create_restart.assert_called_once_with(
-                results_file='results.nc',
-                base_config_file='base.yaml',
-                output_config_file='restart.yaml',
-                seed_points_dir=None,
-            )

@@ -8,36 +8,6 @@ import matplotlib.pyplot as plt
 import xarray as xr
 
 
-def _decode_netcdf_name(raw_value) -> str:
-    """Decode a NetCDF string value stored as bytes, fixed-width bytes, or char arrays."""
-    if raw_value is None:
-        return ''
-
-    if isinstance(raw_value, str):
-        return raw_value.strip()
-
-    if isinstance(raw_value, (bytes, np.bytes_)):
-        return raw_value.decode('utf-8', errors='ignore').strip('\x00').strip()
-
-    arr = np.asarray(raw_value)
-
-    # Char-array representation (e.g., dtype='|S1' with trailing nulls)
-    if arr.ndim > 0 and arr.size > 0 and arr.dtype.kind in ('S', 'U'):
-        flattened = arr.ravel().tolist()
-        chars = []
-        for item in flattened:
-            if isinstance(item, (bytes, np.bytes_)):
-                text = item.decode('utf-8', errors='ignore')
-            else:
-                text = str(item)
-            text = text.replace('\x00', '')
-            if text:
-                chars.append(text)
-        return ''.join(chars).strip()
-
-    return str(raw_value).strip()
-
-
 def read_netcdf(results_file_path: Path) -> xr.Dataset:
     """Read a SedTRAILS NetCDF file and return the xarray Dataset.
 
@@ -81,21 +51,10 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     # Get population names
     population_names = []
     if 'population_name' in ds:
-        population_var = ds['population_name']
-        n_available_names = int(population_var.sizes.get('n_populations', population_var.shape[0]))
-        n_to_decode = min(n_populations, n_available_names)
-
-        for i in range(n_to_decode):
-            # Handle both 1D fixed-width strings and 2D character arrays
-            if population_var.ndim == 1:
-                raw_name = population_var[i].values
-            else:
-                raw_name = population_var[i, :].values
-            decoded = _decode_netcdf_name(raw_name)
-            population_names.append(decoded or f'Population {i}')
-
-        if len(population_names) < n_populations:
-            population_names.extend([f'Population {i}' for i in range(len(population_names), n_populations)])
+        for i in range(n_populations):
+            name_bytes = ds['population_name'][i, :].values
+            name = ''.join([char.decode('utf-8') for char in name_bytes if char != b'\x00']).strip()
+            population_names.append(name)
     else:
         population_names = [f'Population {i}' for i in range(n_populations)]
 
@@ -177,7 +136,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
     ax2.set_ylabel('Distance from Initial Position [m]')
 
     # Find the minimum time across all particles to use as reference
-    min_time = np.nanmin(time_data) if np.any(np.isfinite(time_data)) else 0.0
+    min_time = np.nanmin(time_data)
 
     for i in range(n_particles):
         # Calculate distance from initial position for each timestep
