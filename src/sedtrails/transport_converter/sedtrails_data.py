@@ -282,7 +282,7 @@ class SedtrailsData:
             'reference_date': self.reference_date,
             'x': self.x,
             'y': self.y,
-            'bed_level': self.bed_level,  # typically time-independent
+            'bed_level': self._get_time_slice_or_static(self.bed_level, time_index),
             'fractions': self.fractions,
         }
 
@@ -338,3 +338,12 @@ class SedtrailsData:
                 data[name] = value[time_index]
 
         return data
+
+    def _get_time_slice_or_static(self, value: np.ndarray, time_index: int) -> np.ndarray:
+        """Return a time slice when the first axis matches times, otherwise static data."""
+        if value is None:
+            return value
+        array = np.asarray(value)
+        if array.ndim > 1 and array.shape[0] == len(self.times):
+            return array[time_index]
+        return value

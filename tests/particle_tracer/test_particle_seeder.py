@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from sedtrails.exceptions import MissingConfigurationParameter
-from sedtrails.exceptions.exceptions import DateFormatError
+from sedtrails.exceptions.exceptions import ConfigurationError, DateFormatError
 from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     GridStrategy,
@@ -1138,8 +1138,8 @@ class TestParticlePopulation:
     def test_create_population(self, population_config):
         """Test creating a ParticlePopulation with a valid configuration."""
         population = ParticlePopulation(
-            field_x=np.array([0.0, 1.0, 2.5, 5.0]),
-            field_y=np.array([0.0, 1.0, 2.0, 3.0]),
+            field_x=np.array([0.0, 5.0, 5.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 5.0, 5.0]),
             population_config=population_config,
         )
         assert population is not None
@@ -1336,6 +1336,29 @@ class TestParticlePopulation:
         )
         np.testing.assert_array_equal(population._particle_simplices, expected_simplices)
 
+    def test_all_seed_locations_outside_domain_raise_configuration_error(self):
+        config = PopulationConfig(
+            {
+                'name': 'Outside Domain Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['10.0,10.0']}},
+                    'quantity': 1,
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+                'transport_probability': 'no_probability',
+            }
+        )
+
+        with pytest.raises(ConfigurationError, match='All seeded particles are outside the input field domain'):
+            ParticlePopulation(
+                field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+                field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+                population_config=config,
+            )
+
     def test_release_time_is_converted_to_seconds_since_reference_date(self):
         population = _single_particle_population(release_start='1970-01-01 00:10:00')
 
@@ -1392,6 +1415,30 @@ class TestParticlePopulation:
         )
 
         np.testing.assert_array_equal(population.particles['release_time'], np.array([0.0]))
+
+    def test_particle_seeder_uses_field_data_reference_date_for_release_time(self):
+        class FieldData:
+            x = np.array([0.0, 1.0, 0.0, 1.0])
+            y = np.array([0.0, 0.0, 1.0, 1.0])
+            reference_date = np.datetime64('2000-01-01T00:00:00', 's')
+
+        populations = ParticleSeeder(
+            {
+                'name': 'Release Time Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 1,
+                    'release_start': '2000-01-01 01:00:00',
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+                'transport_probability': 'no_probability',
+            }
+        ).seed(FieldData())
+
+        np.testing.assert_array_equal(populations[0].particles['release_time'], np.array([3600.0]))
 
 
 def _single_particle_population(release_start):

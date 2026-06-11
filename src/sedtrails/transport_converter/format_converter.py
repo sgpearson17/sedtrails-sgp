@@ -23,6 +23,7 @@ class SeederFieldData:
 
     x: np.ndarray
     y: np.ndarray
+    reference_date: np.datetime64
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
     boundary_edge_classification: dict | None = None
@@ -56,7 +57,6 @@ class FormatConverter:
         self._input_format: Union[str, None] = None
         self._input_file: Union[str, None] = None
         self._morfac: Union[float, None] = None
-        self._domain_config: Dict | None = None
 
     def __post_init__(self):
         """
@@ -100,13 +100,6 @@ class FormatConverter:
         return self._morfac
 
     @property
-    def domain_config(self) -> Dict:
-        """Get domain-specific conversion options."""
-        if self._domain_config is None:
-            self._domain_config = dict(self.config.get('domain_config', {}))
-        return self._domain_config
-
-    @property
     def format_plugin(self):
         """
         Get the format plugin instance based on the specified format.
@@ -122,7 +115,6 @@ class FormatConverter:
                 plugin_module = importlib.import_module(plugin_module_name)
                 # Initialize the format plugin with the input file and morfac
                 self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
-                self._format_plugin.domain_config = self.domain_config
             except ImportError as e:
                 raise ImportError(
                     f'Failed to import format plugin module: {plugin_module_name} '
@@ -188,57 +180,22 @@ class FormatConverter:
         return float(times[0]), float(times[-1])
 
     def get_seeding_field_data(self) -> SeederFieldData:
-        """Read the geometry required by ``ParticleSeeder.seed``.
+        """
+        Read only the data required by ParticleSeeder.seed: x and y coordinates.
 
         Returns
         -------
         SeederFieldData
-            Minimal coordinate and connectivity container for seeding. When
-            supported by the format plugin, this includes particle-compatible
-            triangle connectivity and boundary-edge classification metadata.
-
-        Raises
-        ------
-        ImportError
-            If the configured format plugin cannot be imported.
-        FileNotFoundError
-            If a plugin input file or configured polygon file does not exist.
-        ValueError
-            If the plugin cannot construct a valid active particle geometry or
-            a configured polygon file is malformed.
+            Minimal coordinate container for seeding workflows.
         """
         plugin = self.format_plugin
 
-        if hasattr(plugin, 'get_seeding_field_data'):
-            field_data = plugin.get_seeding_field_data()
-            return SeederFieldData(
-                x=np.asarray(field_data.x),
-                y=np.asarray(field_data.y),
-                face_node_connectivity=(
-                    None
-                    if getattr(field_data, 'face_node_connectivity', None) is None
-                    else np.asarray(field_data.face_node_connectivity, dtype=np.int64)
-                ),
-                particle_face_connectivity=(
-                    None
-                    if getattr(field_data, 'particle_face_connectivity', None) is None
-                    else np.asarray(field_data.particle_face_connectivity, dtype=np.int64)
-                ),
-                boundary_edge_classification=getattr(field_data, 'boundary_edge_classification', None),
-                face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
-            )
-
         if hasattr(plugin, 'get_seeding_coordinates'):
             x, y = plugin.get_seeding_coordinates()
-            face_node_connectivity = None
-            particle_face_connectivity = None
-            boundary_edge_classification = None
-            face_node_fill_value = -1
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
             sedtrails_data = plugin.convert(None, None, self.reference_date)
-            x, y = sedtrails_data.x, sedtrails_data.y
-            face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
+            x, y = sedtrails_data.x, sedtrails_data.y            face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
             particle_face_connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
             metadata = getattr(sedtrails_data, 'metadata', None)
             boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
@@ -255,8 +212,8 @@ class FormatConverter:
             ),
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=face_node_fill_value,
+            reference_date=self.reference_date,
         )
-
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')

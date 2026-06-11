@@ -94,7 +94,7 @@ class _PluginWithConvertOnly:
 
 def test_get_seeding_field_data_prefers_coordinate_reader():
     """Ensures coordinate-reader plugins are used without calling convert."""
-    converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy'})
+    converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy', 'reference_date': '2000-01-01'})
     plugin = _PluginWithCoordinateReader()
     converter._format_plugin = plugin
 
@@ -102,18 +102,20 @@ def test_get_seeding_field_data_prefers_coordinate_reader():
 
     np.testing.assert_array_equal(field_data.x, np.array([1.0, 2.0]))
     np.testing.assert_array_equal(field_data.y, np.array([3.0, 4.0]))
+    assert field_data.reference_date == np.datetime64('2000-01-01')
     assert not plugin.convert_called
 
 
 def test_get_seeding_field_data_falls_back_to_convert():
     """Ensures convert fallback is used when no coordinate reader is available."""
-    converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy'})
+    converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy', 'reference_date': '2001-02-03'})
     converter._format_plugin = _PluginWithConvertOnly()
 
     field_data = converter.get_seeding_field_data()
 
     np.testing.assert_array_equal(field_data.x, np.array([10.0, 20.0]))
     np.testing.assert_array_equal(field_data.y, np.array([30.0, 40.0]))
+    assert field_data.reference_date == np.datetime64('2001-02-03')
 
 
 def test_fm_convert_masks_inner_boundary_faces_from_domain_config(monkeypatch, tmp_path):

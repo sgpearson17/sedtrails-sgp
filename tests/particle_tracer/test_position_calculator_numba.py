@@ -63,6 +63,16 @@ def test_multi_field_interpolation_reuses_single_point_location():
     np.testing.assert_allclose(values_b, [0.25, 1.25])
 
 
+def test_interpolation_outside_domain_returns_nan():
+    """Outside-domain particle queries should not be silently converted to zero."""
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+
+    values = geometry.interpolate_field(grid_x + grid_y, np.array([2.0]), np.array([0.5]))
+
+    assert np.isnan(values[0])
+
+
 def test_explicit_triangle_connectivity_is_preserved():
     """Confirms user-supplied triangle connectivity is used unchanged."""
     grid_x, grid_y = square_grid()

@@ -156,7 +156,7 @@ These are the main output variables that will be of primary interest for users w
 
 By entering the command ``sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc``, you can plot the trajectories of your particles and information about their distance travelled plus differences in population:
 
-![sedtrails trajectory example](../_static\img\example-trajectory-plots.png)
+![SedTRAILS trajectory example](../_static/img/example-trajectory-plots.png)
 
 The following commands can be used to save and customize output:
 - ``--file`` or ``-f``: Path to the SedTRAILS netCDF file to visualize. By default, it expects a ``sedtrails_results.nc`` file in the current directory. [default: ``sedtrails_results.nc``]
