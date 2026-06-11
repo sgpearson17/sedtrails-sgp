@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+import xarray as xr
 from tqdm import tqdm
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
@@ -516,7 +517,7 @@ class Simulation:
                 'working_directory': os.getcwd(),
             },
         )
-        # Open streaming output file — pre-allocates all slots before the loop starts
+        # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         save_interval_seconds = Duration(self._controller.get('outputs.save_interval', '1H')).seconds
         if save_interval_seconds <= 0:
@@ -539,17 +540,16 @@ class Simulation:
             flow_field_names,
         )
 
-        # Slot tracking — first save at t=start (after initial physics update)
+        # Slot tracking � first save at t=start (after initial physics update)
         slot_idx = 0
-        next_save_time = simulation_time.start
-        last_saved_time = None
-
+        next_save_time=simulation_time.start
+        last_saved_time=None
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
         plan_retrievers = {}
         dashboard_flow_field = None
-        while not timer.stop:
+        while not timer.stop and timer.current < simulation_time.end:
             # Check if current time is within loaded SedTRAILS data
             current_time_seconds = timer.current
             field_time_seconds = self._map_eulerian_field_time(
@@ -571,6 +571,7 @@ class Simulation:
                     sedtrails_data = self.format_converter.convert_to_sedtrails(
                         current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                     )
+                self._validate_simulation_time_matches_input(simulation_time, sedtrails_data)
                 plan_retrievers = {
                     runtime_plan.population_index: FieldDataRetriever(
                         build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
@@ -749,7 +750,7 @@ class Simulation:
                 self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
                 slot_idx += 1
 
-        output_file = self.data_manager.writer.close_output(nc_handle)
+        )
         print(f'Simulation results saved to: {output_file}')
         self._log_profile_summary(status='completed')
 
@@ -759,6 +760,81 @@ class Simulation:
 
         # Finalize results
         # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
+
+    def _expand_time_dimension(
+        self,
+        xr_data: xr.Dataset,
+        new_max_timesteps: int,
+    ) -> xr.Dataset:
+        time_dim = 'n_timesteps' if 'n_timesteps' in xr_data.sizes else 'time'
+
+        current_size = xr_data.sizes[time_dim]
+
+        if new_max_timesteps <= current_size:
+            raise ValueError(f'new_max_timesteps={new_max_timesteps} must be larger than current size={current_size}')
+
+        # Replace/normalize the timestep coordinate to guarantee uniqueness
+        xr_data = xr_data.assign_coords({time_dim: np.arange(current_size)})
+
+        new_coord = np.arange(new_max_timesteps)
+
+        expanded_vars = {}
+
+        for var_name, var in xr_data.data_vars.items():
+            if time_dim not in var.dims:
+                expanded_vars[var_name] = var
+                continue
+
+            time_axis = var.dims.index(time_dim)
+
+            pad_shape = list(var.shape)
+            pad_shape[time_axis] = new_max_timesteps - current_size
+
+            if np.issubdtype(var.dtype, np.floating) or np.issubdtype(var.dtype, np.complexfloating):
+                pad_data = np.full(
+                    pad_shape,
+                    np.nan,
+                    dtype=var.dtype,
+                )
+            else:
+                pad_data = np.zeros(
+                    pad_shape,
+                    dtype=var.dtype,
+                )
+
+            pad_coords = {}
+            for dim in var.dims:
+                if dim == time_dim:
+                    pad_coords[dim] = np.arange(current_size, new_max_timesteps)
+                elif dim in var.coords:
+                    pad_coords[dim] = var.coords[dim]
+
+            pad_array = xr.DataArray(
+                pad_data,
+                dims=var.dims,
+                coords=pad_coords,
+                attrs=var.attrs.copy(),
+            )
+
+            expanded_vars[var_name] = xr.concat(
+                [var, pad_array],
+                dim=time_dim,
+            )
+
+        coords = {}
+        for coord_name, coord in xr_data.coords.items():
+            if coord_name == time_dim:
+                coords[coord_name] = new_coord
+            elif time_dim not in coord.dims:
+                coords[coord_name] = coord
+
+        expanded_dataset = xr.Dataset(
+            expanded_vars,
+            coords=coords,
+            attrs=xr_data.attrs.copy(),
+        )
+
+        return expanded_dataset
 
 
 # if __name__ == '__main__':
