@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever
+from sedtrails.transport_converter.format_converter import FormatConverter
 from sedtrails.transport_converter.plugins.format import xbeach
 
 
@@ -69,6 +70,39 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     np.testing.assert_allclose(sedtrails_data.mean_bed_shear_stress, 5.0)
     np.testing.assert_allclose(sedtrails_data.max_bed_shear_stress, 5.0)
     np.testing.assert_array_equal(sedtrails_data.nonlinear_wave_velocity['x'], (scalar + 3.0).reshape(2, 4))
+
+
+def test_format_converter_get_seeding_field_data_uses_xbeach_coordinate_reader(monkeypatch):
+    """Checks FormatConverter uses the XBeach coordinate fast path."""
+    ds = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+        },
+    )
+
+    def fake_load(self):
+        """Injects synthetic XBeach grid coordinates."""
+        self.input_data = ds
+        return ds
+
+    def fail_convert(self, *_args, **_kwargs):
+        """Fails if seeding falls back to full conversion."""
+        raise RuntimeError('XBeach seeding should use get_seeding_coordinates')
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    monkeypatch.setattr(xbeach.FormatPlugin, 'convert', fail_convert)
+
+    converter = FormatConverter(
+        {'input_file': _existing_input_path(), 'input_format': 'xbeach', 'reference_date': '2000-01-01'}
+    )
+    field_data = converter.get_seeding_field_data()
+
+    np.testing.assert_array_equal(field_data.x, np.array([0.0, 1.0, 0.0, 1.0]))
+    np.testing.assert_array_equal(field_data.y, np.array([0.0, 0.0, 1.0, 1.0]))
+    assert field_data.face_node_connectivity is None
+    assert field_data.particle_face_connectivity is None
+    assert field_data.reference_date == np.datetime64('2000-01-01')
 
 
 def test_xbeach_get_scalar_field_slices_time_dependent_bed_level(monkeypatch):
