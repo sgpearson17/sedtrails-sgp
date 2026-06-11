@@ -189,32 +189,55 @@ class FormatConverter:
             Minimal coordinate container for seeding workflows.
         """
         plugin = self.format_plugin
+        seeding_field_data_reader = getattr(plugin, 'get_seeding_field_data', None)
+        seeding_coordinate_reader = getattr(plugin, 'get_seeding_coordinates', None)
 
-        if hasattr(plugin, 'get_seeding_coordinates'):
-            x, y = plugin.get_seeding_coordinates()
+        if callable(seeding_field_data_reader):
+            field_data = seeding_field_data_reader()
+        elif callable(seeding_coordinate_reader):
+            x, y = seeding_coordinate_reader()
+            field_data = SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
-            sedtrails_data = plugin.convert(None, None, self.reference_date)
-            x, y = sedtrails_data.x, sedtrails_data.y
-            face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
-            particle_face_connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
-            metadata = getattr(sedtrails_data, 'metadata', None)
+            field_data = plugin.convert(None, None, self.reference_date)
+
+        return self._coerce_seeding_field_data(field_data)
+
+    def _coerce_seeding_field_data(self, field_data) -> SeederFieldData:
+        """
+        Normalize plugin-specific seeding containers into the public dataclass.
+
+        Plugins may return ``SeederFieldData``, a ``SedtrailsData`` instance, or a
+        lightweight object such as ``SimpleNamespace``. This keeps the converter
+        boundary stable while allowing plugins to expose richer fast paths.
+        """
+        metadata = getattr(field_data, 'metadata', None)
+        boundary_edge_classification = getattr(field_data, 'boundary_edge_classification', None)
+        if boundary_edge_classification is None and metadata is not None:
             boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
-            face_node_fill_value = getattr(sedtrails_data, 'face_node_fill_value', -1)
+        reference_date = getattr(field_data, 'reference_date', None)
+        if reference_date is None:
+            reference_date = self.reference_date
 
         return SeederFieldData(
-            x=np.asarray(x),
-            y=np.asarray(y),
-            face_node_connectivity=(
-                None if face_node_connectivity is None else np.asarray(face_node_connectivity, dtype=np.int64)
+            x=np.asarray(field_data.x),
+            y=np.asarray(field_data.y),
+            face_node_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'face_node_connectivity', None)
             ),
-            particle_face_connectivity=(
-                None if particle_face_connectivity is None else np.asarray(particle_face_connectivity, dtype=np.int64)
+            particle_face_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'particle_face_connectivity', None)
             ),
             boundary_edge_classification=boundary_edge_classification,
-            face_node_fill_value=face_node_fill_value,
-            reference_date=self.reference_date,
+            face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
+            reference_date=np.datetime64(reference_date),
         )
+
+    @staticmethod
+    def _optional_connectivity_array(connectivity):
+        if connectivity is None:
+            return None
+        return np.asarray(connectivity, dtype=np.int64)
 
 
 if __name__ == '__main__':

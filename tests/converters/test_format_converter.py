@@ -1,5 +1,7 @@
 """Tests for the format converter."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -76,6 +78,36 @@ class _PluginWithCoordinateReader:
         raise RuntimeError('convert should not be called when get_seeding_coordinates is available')
 
 
+class _PluginWithSeedingFieldData:
+    """Test double exposing the rich seeding field-data fast path."""
+
+    def __init__(self):
+        """Tracks whether less specific fallbacks were called unexpectedly."""
+        self.coordinate_reader_called = False
+        self.convert_called = False
+
+    def get_seeding_field_data(self):
+        """Provides deterministic field geometry for seeding tests."""
+        return SimpleNamespace(
+            x=[1.0, 2.0, 3.0],
+            y=[4.0, 5.0, 6.0],
+            face_node_connectivity=[[0, 1, 2]],
+            particle_face_connectivity=[[0, 2, 1]],
+            boundary_edge_classification={'edge_nodes': [[0, 1]], 'edge_classes': ['open']},
+            face_node_fill_value=-99,
+        )
+
+    def get_seeding_coordinates(self):
+        """Fails if the richer field-data path is skipped."""
+        self.coordinate_reader_called = True
+        raise RuntimeError('get_seeding_coordinates should not be called when get_seeding_field_data is available')
+
+    def convert(self, *_args, **_kwargs):
+        """Fails if fallback conversion is invoked when direct field data exists."""
+        self.convert_called = True
+        raise RuntimeError('convert should not be called when get_seeding_field_data is available')
+
+
 class _PluginWithConvertOnly:
     """Test double that only supports convert-based seeding field retrieval."""
 
@@ -90,6 +122,25 @@ class _PluginWithConvertOnly:
     def convert(self, *_args, **_kwargs):
         """Returns a minimal converted object for fallback seeding logic."""
         return self._SedtrailsLike(x=(10.0, 20.0), y=(30.0, 40.0))
+
+
+def test_get_seeding_field_data_prefers_field_data_reader():
+    """Ensures rich seeding field-data plugins preserve mesh metadata."""
+    converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy', 'reference_date': '1999-12-31'})
+    plugin = _PluginWithSeedingFieldData()
+    converter._format_plugin = plugin
+
+    field_data = converter.get_seeding_field_data()
+
+    np.testing.assert_array_equal(field_data.x, np.array([1.0, 2.0, 3.0]))
+    np.testing.assert_array_equal(field_data.y, np.array([4.0, 5.0, 6.0]))
+    np.testing.assert_array_equal(field_data.face_node_connectivity, np.array([[0, 1, 2]]))
+    np.testing.assert_array_equal(field_data.particle_face_connectivity, np.array([[0, 2, 1]]))
+    assert field_data.boundary_edge_classification == {'edge_nodes': [[0, 1]], 'edge_classes': ['open']}
+    assert field_data.face_node_fill_value == -99
+    assert field_data.reference_date == np.datetime64('1999-12-31')
+    assert not plugin.coordinate_reader_called
+    assert not plugin.convert_called
 
 
 def test_get_seeding_field_data_prefers_coordinate_reader():
