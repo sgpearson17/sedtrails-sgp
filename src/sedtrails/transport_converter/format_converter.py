@@ -195,7 +195,8 @@ class FormatConverter:
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
             sedtrails_data = plugin.convert(None, None, self.reference_date)
-            x, y = sedtrails_data.x, sedtrails_data.y            face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
+            x, y = sedtrails_data.x, sedtrails_data.y
+            face_node_connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
             particle_face_connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
             metadata = getattr(sedtrails_data, 'metadata', None)
             boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
@@ -214,6 +215,7 @@ class FormatConverter:
             face_node_fill_value=face_node_fill_value,
             reference_date=self.reference_date,
         )
+
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')
