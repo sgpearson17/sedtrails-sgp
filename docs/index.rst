@@ -57,6 +57,7 @@ Features
    user/output
    user/visualization
    user/dashboard
+   user/input-formats
    user/seeding
 
 .. toctree::

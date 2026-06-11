@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -61,6 +62,47 @@ class TestSimulationManagerTimeConfig:
 
         assert Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.1)
         assert not Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.0)
+
+    def test_simulation_window_must_reach_first_input_time(self):
+        """A simulation that ends before input forcing starts should fail clearly."""
+
+        class SimulationTime:
+            start = 0.0
+            end = 3600.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        with pytest.raises(ConfigurationError, match='ends before the first available input field timestamp'):
+            Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
+
+    def test_simulation_window_must_not_start_before_first_input_time(self):
+        """A simulation may not spend CFL steps before forcing data exists."""
+
+        class SimulationTime:
+            start = 0.0
+            end = 7200.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        with pytest.raises(ConfigurationError, match='starts before the first available input field timestamp'):
+            Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
+
+    def test_simulation_window_may_end_at_first_input_time(self):
+        """The first forcing timestamp is a valid simulation endpoint."""
+
+        class SimulationTime:
+            start = 4600.0
+            end = 4600.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
 
     def test_exhausted_input_suppresses_further_reload_attempts(self):
         """After input exhaustion, later timesteps should reuse the last loaded fields."""
@@ -123,6 +165,126 @@ class TestSimulationManagerTimeConfig:
         )
 
         assert mapped_time == 130.0
+
+    def test_output_save_interval_uses_outputs_config(self):
+        """Trajectory output cadence should be read from outputs.save_interval."""
+
+        class Controller:
+            def get(self, key, default=None):
+                if key == 'outputs.save_interval':
+                    return '30M'
+                return default
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        assert manager._output_save_interval_seconds() == 1800
+
+    def test_output_save_interval_defaults_to_one_hour(self):
+        """When unset, saved trajectory samples should default to one-hour spacing."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
+
+        assert manager._output_save_interval_seconds() == 3600
+
+    def test_output_save_interval_rejects_zero_duration(self):
+        """A zero save interval would make output scheduling ambiguous."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: '0S'})()
+
+        with pytest.raises(ConfigurationError, match='outputs.save_interval'):
+            manager._output_save_interval_seconds()
+
+    @pytest.mark.parametrize(
+        'duration,save_interval,expected_count',
+        [
+            ('3H', 3600, 4),
+            ('30M', 3600, 2),
+            ('2H 30M', 3600, 4),
+        ],
+    )
+    def test_estimate_output_timesteps_counts_initial_and_final(self, duration, save_interval, expected_count):
+        """The output dataset should allocate slots for start, configured samples, and final time."""
+        from sedtrails.particle_tracer.timer import Duration, Time
+
+        simulation_time = Time(
+            _start='2000-01-01 00:00:00',
+            duration=Duration(duration),
+            reference_date='2000-01-01',
+        )
+
+        assert Simulation._estimate_output_timesteps(simulation_time, save_interval) == expected_count
+
+    def test_next_scheduled_output_time_caps_at_simulation_end(self):
+        """The final output target should be the simulation end, not a time after it."""
+
+        class SimulationTime:
+            start = 0.0
+            end = 9000.0
+
+        assert Simulation._next_scheduled_output_time(SimulationTime(), 3600, 1) == 3600.0
+        assert Simulation._next_scheduled_output_time(SimulationTime(), 3600, 3) == 9000.0
+
+    def test_limit_timestep_to_output_schedule_hits_save_boundary(self):
+        """A CFL step that would cross an output boundary should be shortened to that boundary."""
+        limited = Simulation._limit_timestep_to_output_schedule(
+            current_time=3598.0,
+            current_timestep=10.0,
+            next_output_time=3600.0,
+        )
+
+        assert limited == 2.0
+
+    def test_limit_timestep_to_output_schedule_keeps_short_cfl_step(self):
+        """CFL steps shorter than the remaining save interval should not be changed."""
+        limited = Simulation._limit_timestep_to_output_schedule(
+            current_time=10.0,
+            current_timestep=2.0,
+            next_output_time=3600.0,
+        )
+
+        assert limited == 2.0
+
+    @pytest.mark.parametrize(
+        'sample_time,next_output_time,end_time,expected',
+        [
+            (3599.0, 3600.0, 7200.0, False),
+            (3600.0, 3600.0, 7200.0, True),
+            (7200.0, 10800.0, 7200.0, True),
+        ],
+    )
+    def test_output_sample_due_on_interval_or_final_time(self, sample_time, next_output_time, end_time, expected):
+        """Samples should be saved only on configured boundaries or at final time."""
+        assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
+
+    def test_initialize_population_output_status_supplies_required_fields(self):
+        """The seeded initial sample should have status fields before the first physics update."""
+
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'release_time': np.array([0.0, 10.0]),
+                'burial_depth': np.array([0.0, 0.0]),
+            }
+            _particle_simplices = np.array([5, -1])
+
+        population = Population()
+
+        Simulation._initialize_population_output_status([population], current_time=5.0)
+
+        expected_keys = {
+            'status_alive',
+            'status_buried',
+            'status_domain',
+            'status_transported',
+            'status_released',
+            'status_mobile',
+        }
+        assert expected_keys.issubset(population.particles)
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, False]))
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
 
 
 class TestSimulationManagerExpandTimeDimension:
@@ -253,6 +415,32 @@ class TestSimulationManagerExpandTimeDimension:
         np.testing.assert_array_equal(
             expanded2['x'].isel(time=slice(0, original_size)).values, sample_dataset['x'].values
         )
+
+    def test_ensure_time_capacity_expands_before_out_of_range_write(self, simulation_manager, sample_dataset):
+        """Output storage should grow before collecting an adaptive timestep beyond capacity."""
+        simulation_manager.logger = type('Logger', (), {'info': lambda self, *args, **kwargs: None})()
+
+        expanded, max_timesteps = simulation_manager._ensure_time_capacity(
+            sample_dataset,
+            timestep_index=2638,
+            max_timesteps=100,
+        )
+
+        assert max_timesteps >= 2639
+        assert len(expanded.time) == max_timesteps
+        np.testing.assert_array_equal(expanded['x'].isel(time=slice(0, 100)).values, sample_dataset['x'].values)
+
+    def test_ensure_time_capacity_reuses_dataset_when_index_fits(self, simulation_manager, sample_dataset):
+        """No expansion is needed while the target timestep is inside the allocated dimension."""
+
+        same_dataset, max_timesteps = simulation_manager._ensure_time_capacity(
+            sample_dataset,
+            timestep_index=99,
+            max_timesteps=100,
+        )
+
+        assert same_dataset is sample_dataset
+        assert max_timesteps == 100
 
     def test_expand_with_different_dimension_orders(self, simulation_manager):
         """Test expansion with different dimension orders."""
