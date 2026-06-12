@@ -333,7 +333,7 @@ def _seconds_to_duration_string(total_seconds: int) -> str:
 
 def _open_restart_dataset(netcdf_path: Path) -> xr.Dataset:
     """Open a SedTRAILS result NetCDF without xarray backend plugin discovery."""
-    return xr.open_dataset(netcdf_path, engine='netcdf4')
+    return xr.open_dataset(netcdf_path, engine='netcdf4', decode_times=False)
 
 
 def _validate_restart_dataset_schema(ds: xr.Dataset, netcdf_path: Path) -> None:

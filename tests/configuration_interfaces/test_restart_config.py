@@ -56,6 +56,7 @@ def test_open_restart_dataset_uses_netcdf4_engine(monkeypatch, tmp_path):
     assert isinstance(ds, xr.Dataset)
     assert observed['path'] == netcdf_file
     assert observed['kwargs']['engine'] == 'netcdf4'
+    assert observed['kwargs']['decode_times'] is False
 
 
 def test_create_restart_rejects_forcing_file_with_clear_message(tmp_path):
@@ -408,6 +409,50 @@ def test_create_restart_uses_reference_date_for_netcdf_time(tmp_path):
         restart_cfg = yaml.safe_load(handle)
     assert restart_cfg['time']['duration'] == '23H39M32S'
     assert restart_cfg['general']['input_model']['reference_date'] == '1970-01-01'
+
+
+def test_create_restart_keeps_cf_time_values_as_seconds(tmp_path):
+    base_config = {
+        'general': {'input_model': {'reference_date': '1970-01-01'}},
+        'time': {'start': '2016-09-21 19:20:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2016-09-21 19:20:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                }
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = _trajectory_dataset(
+        x=np.array([[0.0], [1.0]]),
+        y=np.array([[0.0], [1.0]]),
+        time=np.array([1474485600.0, 1474489200.0]),
+        population_id=np.array([0], dtype=int),
+        attrs={'reference_date': '1970-01-01', 'time_units': 'seconds since 1970-01-01'},
+    )
+    ds['time'].attrs['units'] = 'seconds since 1970-01-01'
+    ds['time'].attrs['reference_date'] = '1970-01-01'
+    netcdf_file = tmp_path / 'results.nc'
+    ds.to_netcdf(netcdf_file)
+
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(tmp_path / 'restart.yaml'),
+    )
+
+    assert summary.restart_time == '2016-09-21 20:20:00'
 
 
 def test_create_restart_validates_generated_time_against_original_forcing(tmp_path, monkeypatch):
