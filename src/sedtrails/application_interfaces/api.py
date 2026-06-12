@@ -14,6 +14,8 @@ programmatically rather than through the CLI.
 import logging
 from typing import Any, Dict, Optional
 
+from sedtrails.application_interfaces.restart import RestartSummary, create_restart_from_netcdf
+
 from .nc_inspector import NetCDFInspector
 
 # ============================================================================
@@ -213,9 +215,52 @@ def create_restart_config(
     base_config_file: str,
     output_config_file: str = 'sedtrails-restart.yaml',
     seed_points_dir: str | None = None,
-) -> 'RestartSummary':
-    """Create a restart-ready YAML and seeding files from NetCDF output."""
-    from sedtrails.application_interfaces.restart import create_restart_from_netcdf
+) -> RestartSummary:
+    """
+    Create a restart-ready configuration from SedTRAILS NetCDF output.
+
+    This function writes a new YAML configuration file and per-population seed
+    point files using the last valid particle positions in an existing results
+    file. The generated configuration can be used to continue a completed or
+    interrupted simulation from the retained particle locations.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file to restart from.
+    base_config_file : str
+        Path to the original SedTRAILS configuration YAML file.
+    output_config_file : str, optional
+        Path where the restart configuration file will be written.
+        Default is 'sedtrails-restart.yaml'.
+    seed_points_dir : str or None, optional
+        Directory where restart seed point CSV files will be written. If None,
+        a directory is created next to ``output_config_file``.
+
+    Returns
+    -------
+    RestartSummary
+        Summary of the generated restart configuration, seed files, restart
+        time, and number of retained particles.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``results_file`` or ``base_config_file`` does not exist.
+    ValueError
+        If the input files do not contain the data required to build restart
+        files, or no valid particles remain for restart seeding.
+
+    Examples
+    --------
+    >>> import sedtrails
+    >>> summary = sedtrails.create_restart_config(
+    ...     'results.nc',
+    ...     'config.yml',
+    ...     output_config_file='restart.yml',
+    ... )
+    >>> print(summary.output_config)
+    """
 
     return create_restart_from_netcdf(
         netcdf_file=results_file,
