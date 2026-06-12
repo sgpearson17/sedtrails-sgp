@@ -1025,6 +1025,26 @@ class TestParticleFactory:
         with pytest.raises(ValueError, match='Unknown particle type'):
             ParticleFactory.create_particles(config)
 
+    def test_zero_quantity_creates_no_particles_without_strategy_seeding(self):
+        """Zero quantity disables seeding for restart populations."""
+        config = PopulationConfig(
+            {
+                'name': 'Disabled Restart Population',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'nlocations': 1}},
+                    'quantity': 0,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+            }
+        )
+
+        assert config.quantity == 0
+        assert ParticleFactory.create_particles(config) == []
+
     def test_create_particles_release_time_set(self):
         """Test that release time is set correctly."""
         config = PopulationConfig(
@@ -1146,6 +1166,41 @@ class TestParticlePopulation:
         assert population is not None
         assert len(population.particles['x']) == 10  # 2 nlocations * 5 quantity
         assert len(population.particles['y']) == 10  # 2 nlocations * 5 quantity
+
+    def test_zero_particle_population_updates_are_noops(self):
+        """Disabled restart populations should not require particle fields."""
+        config = PopulationConfig(
+            {
+                'name': 'Disabled Restart Population',
+                'particle_type': 'sand',
+                'transport_probability': 'stochastic_transport',
+                'seeding': {
+                    'strategy': {'random': {'nlocations': 1}},
+                    'quantity': 0,
+                    'release_start': '0',
+                    'burial_depth': {
+                        'constant': 0.0,
+                    },
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+
+        population.update_burial_depth()
+        population.update_status()
+        population.update_position(
+            flow_field={'u': np.ones(4), 'v': np.zeros(4)},
+            current_timestep=1.0,
+        )
+
+        assert len(population.particles['x']) == 0
+        assert len(population.particles['y']) == 0
+        assert population.particles['status_mobile'].dtype == bool
+        assert len(population.particles['status_mobile']) == 0
 
     def test_update_information_accepts_scalar_transport_probability(self, point_config_simple):
         """Scalar fields should update particles without allocating full grid fields."""
