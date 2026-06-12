@@ -40,15 +40,10 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get the variables in the input dataset.
 
-        Returns:
-        --------
-        List
-            List of variable names in the input dataset.
-
         Returns
         -------
-        List[str]
-            The variables value.
+        List
+            List of variable names in the input dataset.
         """
 
         if self.input_data is None:  # Ensure input_data is loaded
@@ -82,8 +77,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         SedtrailsData from SFINCS Netcdf.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
@@ -91,24 +86,11 @@ class FormatPlugin(BaseFormatPlugin):
         reference_date : np.datetime64, optional
             Reference date for converting time values
 
-        Returns:
-        --------
-        SedtrailsData
-            The converted SedtrailsData object.
-
-        Parameters
-        ----------
-        current_time : object
-            Current simulation time in seconds.
-        reading_interval : object
-            The reading interval value.
-        reference_date : Optional[np.datetime64]
-            Reference date for converting model times.
-
         Returns
         -------
         SedtrailsData
-            Converted SedTRAILS data object.
+            The converted SedtrailsData object.
+
         """
 
         if reference_date is None:

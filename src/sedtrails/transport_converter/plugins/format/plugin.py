@@ -17,8 +17,8 @@ class BaseFormatPlugin(ABC):
         """
         Converts flow-field data from varios formats to the sedtrails format.
 
-        Returns:
-        --------
+        Returns
+        -------
         SedtrailsData
             The converted SedtrailsData object.
 
@@ -28,10 +28,5 @@ class BaseFormatPlugin(ABC):
             Additional positional arguments passed through to the implementation.
         **kwargs : object
             Additional keyword arguments passed through to the implementation.
-
-        Returns
-        -------
-        SedtrailsData
-            Converted SedTRAILS data object.
         """
         pass

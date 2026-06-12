@@ -172,15 +172,10 @@ class PhysicsConverter:
         """
         Get the physics plugin instance based on the configured method.
 
-        Parameters:
-        -----------
-        tracer_method : str, optional
-            The tracer method to use for physics calculations. If None, uses the configured method.
-
         Parameters
         ----------
-        tracer_method : Optional[str]
-            Tracer method name to use.
+        tracer_method : str, optional
+            The tracer method to use for physics calculations. If None, uses the configured method.
 
         Returns
         -------
@@ -210,19 +205,12 @@ class PhysicsConverter:
         """
         Converts and adds physics calculations to existing SedtrailsData object using the tracer method.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         sedtrails_data : SedtrailsData
             Existing SedtrailsData object to be enhanced with physics calculations.
         transport_probability_method : str, optional
             Method to use for transport probability effects
-
-        Parameters
-        ----------
-        sedtrails_data : object
-            SedTRAILS data object to process.
-        transport_probability_method : str
-            Transport probability method name.
         """
 
         if self._physics_plugin is None:

@@ -16,8 +16,8 @@ def plot_flow_field(
     """
     Plot flow field with magnitude as contour and vectors for direction.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_data : dict
         Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
     title : str, optional
@@ -33,32 +33,10 @@ def plot_flow_field(
     save_path : str, optional
         Path to save the figure. If None, figure is not saved.
 
-    Returns:
-    --------
-    tuple
-        (fig, ax) matplotlib figure and axis objects
-
-    Parameters
-    ----------
-    flow_data : object
-        Flow-field data used for plotting.
-    title : object
-        Optional plot title.
-    downsample : object
-        Vector downsampling factor for plotting.
-    figsize : object
-        Figure size in inches.
-    cmap : object
-        Matplotlib colormap name.
-    vector_color : object
-        Color for plotted velocity vectors.
-    save_path : object
-        Path where the figure or output file is saved.
-
     Returns
     -------
-    tuple[plt.Figure, plt.Axes]
-        Matplotlib figure and axes containing the flow-field plot.
+    tuple
+        (fig, ax) matplotlib figure and axis objects
     """
     # Extract data
     x = flow_data['x']
@@ -128,8 +106,8 @@ def plot_particle_trajectory(
     """
     Plot flow field with particle trajectory overlay.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_data : dict
         Dictionary containing 'x', 'y', 'u', 'v', and 'magnitude' arrays
     trajectory_x, trajectory_y : array_like
@@ -149,38 +127,10 @@ def plot_particle_trajectory(
     save_path : str, optional
         Path to save the figure. If None, figure is not saved.
 
-    Returns:
-    --------
-    tuple
-        (fig, ax) matplotlib figure and axis objects
-
-    Parameters
-    ----------
-    flow_data : object
-        Flow-field data used for plotting.
-    trajectory_x : object
-        Particle trajectory x coordinates.
-    trajectory_y : object
-        Particle trajectory y coordinates.
-    title : object
-        Optional plot title.
-    downsample : object
-        Vector downsampling factor for plotting.
-    figsize : object
-        Figure size in inches.
-    cmap : object
-        Matplotlib colormap name.
-    vector_color : object
-        Color for plotted velocity vectors.
-    trajectory_color : object
-        Color used for the trajectory line.
-    save_path : object
-        Path where the figure or output file is saved.
-
     Returns
     -------
-    tuple[plt.Figure, plt.Axes]
-        Matplotlib figure and axes containing the trajectory plot.
+    tuple
+        (fig, ax) matplotlib figure and axis objects
     """
     # First create the flow field plot using existing function
     fig, ax = plot_flow_field(

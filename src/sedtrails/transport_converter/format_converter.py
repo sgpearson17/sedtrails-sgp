@@ -156,29 +156,17 @@ class FormatConverter:
         """
         Converts dataset to SedtrailsData format.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
             Reading interval in seconds
 
-        Returns:
-        --------
-        SedtrailsData:
-            Data in SedtrailsData format
-
-        Parameters
-        ----------
-        current_time : object
-            Current simulation time in seconds.
-        reading_interval : object
-            The reading interval value.
-
         Returns
         -------
-        SedtrailsData
-            Converted SedTRAILS data object.
+        SedtrailsData:
+            Data in SedtrailsData format
         """
 
         if self._format_plugin is None:

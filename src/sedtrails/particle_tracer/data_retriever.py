@@ -43,25 +43,15 @@ class FieldDataRetriever:
         """
         Get indices for interpolation between two time steps.
 
-        Parameters:
-        -----------
-        target_time : float
-            Target time in seconds since reference_date
-
-        Returns:
-        --------
-        Tuple[int, int, float]
-            (lower_index, upper_index, weight) where weight is the interpolation factor [0-1]
-
         Parameters
         ----------
         target_time : float
-            Target simulation time in seconds.
+            Target time in seconds since reference_date
 
         Returns
         -------
         Tuple[int, int, float]
-            Integer result of the calculation.
+            (lower_index, upper_index, weight) where weight is the interpolation factor [0-1]
         """
         times = self.sedtrails_data.times
 
@@ -158,16 +148,16 @@ class FieldDataRetriever:
         This method performs temporal interpolation between the two closest time steps
         in the SedtrailsData object to obtain the flow field at the requested time.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         time : float
             Time in seconds since the reference date of the SedtrailsData object
         flow_field_name : str
             Name of the flow field to retrieve (e.g., 'depth_avg_flow_velocity',
             'bed_load_velocity', 'suspended_velocity')
 
-        Returns:
-        --------
+        Returns
+        -------
         Dict[str, np.ndarray]
             Dictionary containing coordinates and flow components:
             - 'x': X-coordinates of the grid cells
@@ -175,18 +165,6 @@ class FieldDataRetriever:
             - 'u': X-component of the flow velocity
             - 'v': Y-component of the flow velocity
             - 'magnitude': Magnitude of the flow velocity
-
-        Parameters
-        ----------
-        time : float
-            Simulation time in seconds.
-        flow_field_name : str
-            Name of the vector flow field to retrieve.
-
-        Returns
-        -------
-        Dict[str, np.ndarray]
-            Array containing the computed values.
         """
         # Get indices for interpolation
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
@@ -352,8 +330,8 @@ class FieldDataRetriever:
         This method performs temporal interpolation between the two closest time steps
         in the SedtrailsData object to obtain the scalar field at the requested time.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         time : float
             Time in seconds since the reference date of the SedtrailsData object
         scalar_field_name : str
@@ -361,25 +339,13 @@ class FieldDataRetriever:
             'bed_load_layer_thickness', 'suspended_layer_thickness', 'mixing_layer_thickness',
             'mean_bed_shear_stress', 'max_bed_shear_stress', 'sediment_concentration')
 
-        Returns:
-        --------
+        Returns
+        -------
         Dict[str, np.ndarray]
             Dictionary containing coordinates and scalar field:
             - 'x': X-coordinates of the grid cells
             - 'y': Y-coordinates of the grid cells
             - 'magnitude': Scalar field values
-
-        Parameters
-        ----------
-        time : float
-            Simulation time in seconds.
-        scalar_field_name : str
-            Name of the scalar field to retrieve.
-
-        Returns
-        -------
-        Dict[str, np.ndarray]
-            Array containing the computed values.
         """
         # Get indices for interpolation
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
