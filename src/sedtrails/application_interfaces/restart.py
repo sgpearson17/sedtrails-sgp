@@ -243,6 +243,7 @@ def create_restart_from_netcdf(
                     'x_col': 'x',
                     'y_col': 'y',
                     'has_header': True,
+                    'deduplicate': False,
                 }
             }
 
