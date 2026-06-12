@@ -9,6 +9,62 @@ import sedtrails.application_interfaces.restart as restart_module
 from sedtrails.application_interfaces.restart import create_restart_from_netcdf
 
 
+def test_open_restart_dataset_uses_netcdf4_engine(monkeypatch, tmp_path):
+    observed = {}
+
+    def fake_open_dataset(path, **kwargs):
+        observed['path'] = path
+        observed['kwargs'] = kwargs
+        return xr.Dataset()
+
+    monkeypatch.setattr(restart_module.xr, 'open_dataset', fake_open_dataset)
+    netcdf_file = tmp_path / 'results.nc'
+
+    ds = restart_module._open_restart_dataset(netcdf_file)
+
+    assert isinstance(ds, xr.Dataset)
+    assert observed['path'] == netcdf_file
+    assert observed['kwargs']['engine'] == 'netcdf4'
+
+
+def test_create_restart_rejects_forcing_file_with_clear_message(tmp_path):
+    base_config = {
+        'time': {'start': '2020-01-01 00:00:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2020-01-01 00:00:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                }
+            ]
+        },
+    }
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    forcing = xr.Dataset(
+        data_vars={
+            'bedlevel': (('time', 'mesh2d_nFaces'), np.zeros((1, 2))),
+            'sea_water_x_velocity': (('time', 'mesh2d_nFaces'), np.ones((1, 2))),
+        }
+    )
+    forcing_file = tmp_path / 'forcing.nc'
+    forcing.to_netcdf(forcing_file)
+
+    with pytest.raises(ValueError, match='not a SedTRAILS trajectory output file.*Eulerian forcing files'):
+        create_restart_from_netcdf(
+            netcdf_file=str(forcing_file),
+            base_config_file=str(config_file),
+            output_config_file=str(tmp_path / 'restart.yaml'),
+        )
+
+
 def test_create_restart_from_netcdf_generates_yaml_and_seed_files(tmp_path):
     base_config = {
         'time': {'start': '2020-01-01 00:00:00', 'timestep': '60S', 'duration': '1D'},

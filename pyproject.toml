@@ -86,4 +86,5 @@ markers = ["integration: mark a test as an integration test."]
 filterwarnings = [
   'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._fontconfig_pattern',
   'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._mathtext',
+  'ignore:numpy\.ndarray size changed, may indicate binary incompatibility\..*:RuntimeWarning',
 ]

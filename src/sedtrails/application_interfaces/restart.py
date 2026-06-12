@@ -200,6 +200,30 @@ def _seconds_to_duration_string(total_seconds: int) -> str:
     return ''.join(parts) if parts else '0S'
 
 
+def _open_restart_dataset(netcdf_path: Path) -> xr.Dataset:
+    """Open a SedTRAILS result NetCDF without xarray backend plugin discovery."""
+    return xr.open_dataset(netcdf_path, engine='netcdf4')
+
+
+def _validate_restart_dataset_schema(ds: xr.Dataset, netcdf_path: Path) -> None:
+    """Validate that the input file has the particle trajectory fields needed for restart."""
+    missing = [name for name in ('x', 'y') if name not in ds]
+    if not missing:
+        return
+
+    available = ', '.join(map(str, list(ds.data_vars)[:10])) or 'none'
+    if len(ds.data_vars) > 10:
+        available = f'{available}, ...'
+    raise ValueError(
+        f"'{netcdf_path}' is not a SedTRAILS trajectory output file. "
+        "Restart generation expects the NetCDF file written by `sedtrails run` "
+        "(usually `results/sedtrails_results.nc`) passed with `--file`. "
+        f"Missing required particle variable(s): {', '.join(missing)}. "
+        f'Available data variables: {available}. '
+        'Eulerian forcing files belong in `inputs.data` of the base config, not in `--file`.'
+    )
+
+
 def create_restart_from_netcdf(
     netcdf_file: str,
     base_config_file: str,
@@ -232,10 +256,9 @@ def create_restart_from_netcdf(
     if not populations:
         raise ValueError('Base configuration has no particles.populations entries.')
 
-    ds = xr.open_dataset(netcdf_path)
+    ds = _open_restart_dataset(netcdf_path)
     try:
-        if 'x' not in ds or 'y' not in ds:
-            raise ValueError("NetCDF output must contain 'x' and 'y' variables.")
+        _validate_restart_dataset_schema(ds, netcdf_path)
 
         x_data = np.asarray(ds['x'].values, dtype=float)
         y_data = np.asarray(ds['y'].values, dtype=float)
