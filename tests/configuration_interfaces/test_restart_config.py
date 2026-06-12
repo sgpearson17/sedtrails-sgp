@@ -5,6 +5,7 @@ import pytest
 import xarray as xr
 import yaml
 
+import sedtrails.application_interfaces.restart as restart_module
 from sedtrails.application_interfaces.restart import create_restart_from_netcdf
 
 
@@ -182,6 +183,181 @@ def test_create_restart_uses_reference_date_for_netcdf_time(tmp_path):
     with open(out_config, 'r', encoding='utf-8') as handle:
         restart_cfg = yaml.safe_load(handle)
     assert restart_cfg['time']['duration'] == '23H39M32S'
+    assert restart_cfg['general']['input_model']['reference_date'] == '1970-01-01'
+
+
+def test_create_restart_validates_generated_time_against_original_forcing(tmp_path, monkeypatch):
+    """A 1970 restart generated for 2016 forcing should fail before writing a bad config."""
+
+    class FakeFormatConverter:
+        def __init__(self, config):
+            self.config = config
+
+        def get_time_bounds(self):
+            return 1474485600.0, 1474489200.0
+
+    monkeypatch.setattr(restart_module, 'FormatConverter', FakeFormatConverter)
+
+    base_config = {
+        'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '1970-01-01'}},
+        'inputs': {'data': 'forcing.nc'},
+        'time': {'start': '2016-09-21 19:20:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2016-09-21 19:20:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                }
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles', 'n_timesteps'), np.array([[0.0]])),
+            'y': (('n_particles', 'n_timesteps'), np.array([[0.0]])),
+            'time': (('n_particles', 'n_timesteps'), np.array([[15400.0]])),
+            'population_id': (('n_particles',), np.array([0], dtype=int)),
+        }
+    )
+    netcdf_file = tmp_path / 'results.nc'
+    ds.to_netcdf(netcdf_file)
+
+    out_config = tmp_path / 'restart.yaml'
+    with pytest.raises(ValueError, match='outside the original input forcing window'):
+        create_restart_from_netcdf(
+            netcdf_file=str(netcdf_file),
+            base_config_file=str(config_file),
+            output_config_file=str(out_config),
+        )
+
+    assert not out_config.exists()
+
+
+def test_create_restart_with_valid_forcing_preserves_original_reference_date(tmp_path, monkeypatch):
+    """Valid restart generation should keep the base input-model reference date unchanged."""
+
+    class FakeFormatConverter:
+        def __init__(self, config):
+            self.config = config
+
+        def get_time_bounds(self):
+            return 1474485600.0, 1474489200.0
+
+    monkeypatch.setattr(restart_module, 'FormatConverter', FakeFormatConverter)
+
+    base_config = {
+        'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '1970-01-01'}},
+        'inputs': {'data': 'forcing.nc'},
+        'time': {'start': '2016-09-21 19:20:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2016-09-21 19:20:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                }
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'y': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'time': (('n_particles', 'n_timesteps'), np.array([[1474485600.0, 1474486828.0]])),
+            'population_id': (('n_particles',), np.array([0], dtype=int)),
+        }
+    )
+    netcdf_file = tmp_path / 'results.nc'
+    ds.to_netcdf(netcdf_file)
+
+    out_config = tmp_path / 'restart.yaml'
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(out_config),
+    )
+
+    assert summary.restart_time == '2016-09-21 19:40:28'
+
+    with open(out_config, 'r', encoding='utf-8') as handle:
+        restart_cfg = yaml.safe_load(handle)
+    assert restart_cfg['time']['start'] == '2016-09-21 19:40:28'
+    assert restart_cfg['general']['input_model']['reference_date'] == '1970-01-01'
+
+
+def test_create_restart_prefers_output_time_units_reference_date(tmp_path, monkeypatch):
+    """Future output metadata can define the time axis reference date explicitly."""
+
+    class FakeFormatConverter:
+        def __init__(self, config):
+            self.config = config
+
+        def get_time_bounds(self):
+            return 1474485600.0, 1474489200.0
+
+    monkeypatch.setattr(restart_module, 'FormatConverter', FakeFormatConverter)
+
+    base_config = {
+        'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '1970-01-01'}},
+        'inputs': {'data': 'forcing.nc'},
+        'time': {'start': '2016-09-21 19:20:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2016-09-21 19:20:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                }
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'y': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'time': (('n_particles', 'n_timesteps'), np.array([[0.0, 1228.0]])),
+            'population_id': (('n_particles',), np.array([0], dtype=int)),
+        },
+        attrs={'time_units': 'seconds since 2016-09-21 19:20:00'},
+    )
+    netcdf_file = tmp_path / 'results.nc'
+    ds.to_netcdf(netcdf_file)
+
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(tmp_path / 'restart.yaml'),
+    )
+
+    assert summary.restart_time == '2016-09-21 19:40:28'
 
 
 def test_create_restart_writes_seed_paths_relative_to_cwd(tmp_path, monkeypatch):

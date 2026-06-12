@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 import os
+import re
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,7 @@ import yaml
 
 from sedtrails.application_interfaces.validator import SedtrailsYamlLoader
 from sedtrails.particle_tracer.timer import convert_duration_string_to_seconds
+from sedtrails.transport_converter.format_converter import FormatConverter
 
 
 @dataclass
@@ -31,22 +33,69 @@ def _to_datetime(value: Any) -> datetime:
         return value
     if value is None:
         raise ValueError('Missing time.start in base configuration.')
-    return datetime.fromisoformat(str(value))
+    text = str(value).strip()
+    if text.endswith('Z'):
+        text = text[:-1]
+    return datetime.fromisoformat(text)
 
 
 def _format_datetime(value: datetime) -> str:
     return value.strftime('%Y-%m-%d %H:%M:%S')
 
 
-def _infer_restart_datetime(config: dict[str, Any], restart_seconds: float | None) -> datetime:
+def _config_reference_date(config: dict[str, Any], default: str | None = None) -> datetime | None:
+    reference_date_value = config.get('general', {}).get('input_model', {}).get('reference_date', default)
+    if reference_date_value is None:
+        return None
+    return _to_datetime(reference_date_value)
+
+
+def _parse_time_units_reference_date(units: Any) -> datetime | None:
+    if units is None:
+        return None
+
+    match = re.match(r'^\s*seconds\s+since\s+(.+?)\s*$', str(units), flags=re.IGNORECASE)
+    if not match:
+        return None
+
+    return _to_datetime(match.group(1))
+
+
+def _dataset_reference_date(ds: xr.Dataset, config: dict[str, Any]) -> datetime | None:
+    """Return the reference date used by output time values."""
+    for attr_name in ('reference_date', 'time_reference_date'):
+        if attr_name in ds.attrs:
+            return _to_datetime(ds.attrs[attr_name])
+
+    for attr_name in ('time_units', 'units'):
+        reference_date = _parse_time_units_reference_date(ds.attrs.get(attr_name))
+        if reference_date is not None:
+            return reference_date
+
+    if 'time' in ds:
+        for attr_name in ('time_units', 'units'):
+            reference_date = _parse_time_units_reference_date(ds['time'].attrs.get(attr_name))
+            if reference_date is not None:
+                return reference_date
+
+    return _config_reference_date(config)
+
+
+def _infer_restart_datetime(
+    config: dict[str, Any],
+    restart_seconds: float | None,
+    dataset_reference_date: datetime | None = None,
+) -> datetime:
     """Infer restart datetime from NetCDF time semantics and config."""
     base_start = _to_datetime(config.get('time', {}).get('start'))
     if restart_seconds is None:
         return base_start
 
-    reference_date_value = config.get('general', {}).get('input_model', {}).get('reference_date')
-    if reference_date_value is not None:
-        reference_date = _to_datetime(reference_date_value)
+    if dataset_reference_date is not None:
+        return dataset_reference_date + timedelta(seconds=restart_seconds)
+
+    reference_date = _config_reference_date(config)
+    if reference_date is not None:
         return reference_date + timedelta(seconds=restart_seconds)
 
     # Heuristic fallback: very large values usually indicate absolute epoch seconds.
@@ -54,6 +103,54 @@ def _infer_restart_datetime(config: dict[str, Any], restart_seconds: float | Non
         return datetime.utcfromtimestamp(restart_seconds)
 
     return base_start + timedelta(seconds=restart_seconds)
+
+
+def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[str, Any] | None:
+    input_model = config.get('general', {}).get('input_model', {})
+    inputs = config.get('inputs', {})
+    input_file = inputs.get('data')
+    input_format = input_model.get('format')
+    if not input_file or not input_format:
+        return None
+
+    input_path = Path(str(input_file))
+    if not input_path.is_absolute():
+        input_path = config_path.parent / input_path
+
+    return {
+        'input_file': str(input_path),
+        'input_format': input_format,
+        'reference_date': input_model.get('reference_date', '1970-01-01'),
+        'morfac': input_model.get('morfac', 1.0),
+    }
+
+
+def _validate_restart_time_matches_input(
+    config: dict[str, Any],
+    config_path: Path,
+    restart_dt: datetime,
+) -> None:
+    """Validate that the generated restart start is covered by the original forcing."""
+    format_config = _restart_format_config(config, config_path)
+    if format_config is None:
+        return
+
+    reference_date = _config_reference_date(config, default='1970-01-01')
+    if reference_date is None:
+        return
+
+    forcing_start, forcing_end = FormatConverter(format_config).get_time_bounds()
+    restart_seconds = (restart_dt - reference_date).total_seconds()
+    if forcing_start <= restart_seconds <= forcing_end:
+        return
+
+    restart_time = _format_datetime(restart_dt)
+    raise ValueError(
+        f'Restart time {restart_time} ({restart_seconds:.3f}s since reference_date '
+        f'{_format_datetime(reference_date)}) is outside the original input forcing window '
+        f'[{forcing_start:.3f}, {forcing_end:.3f}]s. '
+        'The generated restart would start before or after available forcing data.'
+    )
 
 
 def _last_valid_index_per_particle(x_data: np.ndarray, y_data: np.ndarray) -> np.ndarray:
@@ -189,7 +286,8 @@ def create_restart_from_netcdf(
             if finite_times.size:
                 restart_seconds = float(np.max(finite_times))
 
-        restart_dt = _infer_restart_datetime(config, restart_seconds)
+        restart_dt = _infer_restart_datetime(config, restart_seconds, _dataset_reference_date(ds, config))
+        _validate_restart_time_matches_input(config, config_path, restart_dt)
         restart_time = _format_datetime(restart_dt)
 
         original_duration = config.get('time', {}).get('duration')

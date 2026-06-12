@@ -69,7 +69,7 @@ Specifies paths to input data and reading parameters.
 | ------------------------- | ------- | ------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data`                    | string  | **Required** | -             | Path to the flow field data file (e.g., D-Flow FM NetCDF output).                                                                             |
 | `read_interval`           | string  | Optional     | `30D12H25M0S` | Time chunk size for reading input data. Format: `DDdHHhMMmSSs` (e.g., `30D` for 30 days, `12H` for 12 hours).                                 |
-| `repeat_eulerian_fields`  | boolean | Optional     | `false`       | Repeat Eulerian flow fields from the first input timestamp when the simulation runtime exceeds the forcing time range. If `false`, reuse the final fields. |
+| `repeat_eulerian_fields`  | boolean | Optional     | `false`       | Repeat Eulerian flow fields only after a valid simulation start inside the forcing window. If `false`, reuse the final fields after the forcing period is exhausted. |
 | `comp_dir`                | string  | Optional     | -             | Path to directory containing complementary validation data.                                                                                   |
 
 **Example:**
@@ -497,7 +497,7 @@ Controls what results are saved and where.
 | Parameter             | Type    | Required    | Default    | Description                                                                                             |
 | --------------------- | ------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
-| `save_interval`       | string  | Optional    | `1H`       | How often to save output during simulation (format: `DDdHHhMMmSSs`).                                    |
+| `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
 | `store_tracks`        | boolean | Conditional | `true`     | Store complete particle trajectories over time. Creates larger files but enables full pathway analysis. |
 | `store_end_positions` | boolean | Conditional | `false`    | Store only final particle positions. Creates smaller files but limits analysis options.                 |
 

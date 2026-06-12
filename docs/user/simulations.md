@@ -233,7 +233,9 @@ The new simulation will:
 
 - **Particle Retention**: Only particles that were alive and within the domain at their last position are included in the restart. Particles that escaped the domain or were trapped will not be restarted.
 
-- **Reference Date Handling**: If your original configuration used `general.input_model.reference_date`, the restart timing is automatically computed correctly using that reference date.
+- **Reference Date Handling**: If your original configuration used `general.input_model.reference_date`, the restart YAML preserves that reference date and computes `time.start` from output times using the same time origin. Newer output files can also provide explicit `reference_date` or `time_units` metadata.
+
+- **Forcing Window Validation**: A generated restart must start inside the original input forcing window. If the output time would create a restart such as `1970-01-01 04:16:40` for forcing that starts in 2016, restart generation raises an error instead of writing an invalid YAML.
 
 - **Relative Paths**: Generated seed file paths in the restart YAML are relative to the current working directory (using `./` prefix). Make sure to run the restart from the same directory where the YAML was generated, or update the paths accordingly.
 
