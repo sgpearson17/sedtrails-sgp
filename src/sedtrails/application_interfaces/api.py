@@ -11,10 +11,10 @@ This is the primary interface for Python users who want to use SedTRAILS
 programmatically rather than through the CLI.
 """
 
-from typing import Any, Dict, Optional
 import logging
-from .nc_inspector import NetCDFInspector
+from typing import Any, Dict, Optional
 
+from .nc_inspector import NetCDFInspector
 
 # ============================================================================
 # Simulation Functions
@@ -60,8 +60,8 @@ def run_simulation(
     >>> # Run with dashboard enabled regardless of config
     >>> sedtrails.run_simulation('config.yml', enable_dashboard=True)
     """
-    from sedtrails.simulation_orchestrator.simulation_manager import Simulation
     from sedtrails.exceptions.exceptions import ConfigurationError
+    from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
     # Set up logging if verbose
     if verbose:
@@ -256,7 +256,8 @@ def plot_trajectories(
     >>> # Display without saving
     >>> sedtrails.plot_trajectories('results.nc')
     """
-    from sedtrails.pathway_visualizer import plot_trajectories as _plot, read_netcdf
+    from sedtrails.pathway_visualizer import plot_trajectories as _plot
+    from sedtrails.pathway_visualizer import read_netcdf
 
     ds = read_netcdf(results_file)
     _plot(ds, save_plot=save, output_dir=output_dir)
