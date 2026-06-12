@@ -6,12 +6,20 @@ Writes NetCDF files produced by the SedTrails Particle Tracer System.
 
 """
 
+import logging
 import netCDF4 as nc4
 import numpy as np
 import xarray as xr
 from pathlib import Path
 from datetime import datetime
 from .xarray_dataset import create_sedtrails_dataset, populate_population_metadata, populate_flowfield_metadata
+
+logger = logging.getLogger(__name__)
+
+# Proactively close+reopen the streaming file every N successful writes to
+# refresh the OS file descriptor — critical on network drives (SMB/NFS) where
+# long-lived HDF5 handles become stale after network reconnects or idle timeouts.
+_REOPEN_INTERVAL = 10
 
 
 class NetCDFWriter:
@@ -344,50 +352,104 @@ class NetCDFWriter:
                     list(ff_name[:name_strlen].ljust(name_strlen)), dtype='S1'
                 )
 
+        # Store path so record_output can reopen on network/HDF errors
+        self._streaming_path = str(output_path)
+        self._write_count = 0
+
         ds.sync()
         return ds
 
-    def record_output(self, nc_handle, populations: list, slot_idx: int, current_time: float) -> None:
-        """
-        Write current particle state to slot_idx in the streaming output file.
-
-        Syncs to disk after writing so data is safe even if the process is interrupted.
-        """
+    @staticmethod
+    def _write_slot(h, populations: list, slot_idx: int, current_time: float) -> None:
+        """Write one save-interval slot to an open netCDF4 handle."""
         particle_offset = 0
         for population in populations:
             num_particles = len(population.particles['x'])
             sl = slice(particle_offset, particle_offset + num_particles)
 
-            nc_handle['time'][sl, slot_idx] = current_time
-            nc_handle['x'][sl, slot_idx] = np.asarray(population.particles['x'])
-            nc_handle['y'][sl, slot_idx] = np.asarray(population.particles['y'])
-            nc_handle['z'][sl, slot_idx] = np.asarray(
+            h['time'][sl, slot_idx] = current_time
+            h['x'][sl, slot_idx] = np.asarray(population.particles['x'])
+            h['y'][sl, slot_idx] = np.asarray(population.particles['y'])
+            h['z'][sl, slot_idx] = np.asarray(
                 population.particles.get('z', np.zeros(num_particles))
             )
-            nc_handle['burial_depth'][sl, slot_idx] = np.asarray(population.particles['burial_depth'])
-            nc_handle['mixing_depth'][sl, slot_idx] = np.asarray(
+            h['burial_depth'][sl, slot_idx] = np.asarray(population.particles['burial_depth'])
+            h['mixing_depth'][sl, slot_idx] = np.asarray(
                 population.particles.get('mixing_depth', np.full(num_particles, np.nan))
             )
-            nc_handle['status_alive'][sl, slot_idx] = np.asarray(
+            h['status_alive'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_alive', np.ones(num_particles, dtype=np.int32))
             )
-            nc_handle['status_buried'][sl, slot_idx] = np.asarray(
+            h['status_buried'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_buried', np.zeros(num_particles, dtype=np.int32))
             )
-            nc_handle['status_domain'][sl, slot_idx] = np.asarray(
+            h['status_domain'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_domain', np.ones(num_particles, dtype=np.int32))
             )
-            nc_handle['status_transported'][sl, slot_idx] = np.asarray(
+            h['status_transported'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_transported', np.zeros(num_particles, dtype=np.int32))
             )
-            nc_handle['status_released'][sl, slot_idx] = np.asarray(
+            h['status_released'][sl, slot_idx] = np.asarray(
                 population.particles.get('status_released', np.ones(num_particles, dtype=np.int32))
             )
-            nc_handle['status_mobile'][sl, slot_idx] = np.asarray(population.particles['status_mobile'])
+            h['status_mobile'][sl, slot_idx] = np.asarray(population.particles['status_mobile'])
 
             particle_offset += num_particles
 
-        nc_handle.sync()
+        h.sync()
+
+    def _reopen_handle(self, nc_handle) -> 'nc4.Dataset':
+        """Close a broken/stale handle and reopen the file in read-write mode."""
+        path = getattr(self, '_streaming_path', None) or nc_handle.filepath()
+        try:
+            nc_handle.close()
+        except Exception:
+            pass
+        return nc4.Dataset(str(path), 'r+', format='NETCDF4')
+
+    def record_output(
+        self, nc_handle, populations: list, slot_idx: int, current_time: float
+    ) -> 'nc4.Dataset':
+        """
+        Write current particle state to slot_idx in the streaming output file.
+
+        Syncs to disk after writing so data is safe even if the process is interrupted.
+
+        On network drives the HDF5 file descriptor can go stale after a network
+        reconnect or server-side idle timeout.  Two defences are applied:
+          1. Proactive reopen every _REOPEN_INTERVAL writes (refreshes the OS FD).
+          2. Reactive reopen: on any HDF/IO error, the handle is closed, reopened,
+             and the write is retried once.
+
+        Returns
+        -------
+        nc4.Dataset
+            The (possibly refreshed) file handle — callers must reassign:
+            ``nc_handle = writer.record_output(nc_handle, ...)``
+        """
+        # Proactive reopen — prevents stale FD on long-running network-drive writes
+        self._write_count = getattr(self, '_write_count', 0) + 1
+        if self._write_count % _REOPEN_INTERVAL == 0:
+            logger.debug('Proactive netCDF handle reopen at slot %d (write #%d)',
+                         slot_idx, self._write_count)
+            nc_handle = self._reopen_handle(nc_handle)
+
+        # Attempt write; on HDF/IO error reopen and retry once
+        try:
+            self._write_slot(nc_handle, populations, slot_idx, current_time)
+        except (RuntimeError, OSError) as exc:
+            err_str = str(exc)
+            if not any(kw in err_str for kw in ('HDF', 'NetCDF', 'errno', 'I/O')):
+                raise
+            logger.warning(
+                'HDF/network error writing slot %d: %r — reopening output file and retrying',
+                slot_idx, exc,
+            )
+            nc_handle = self._reopen_handle(nc_handle)
+            self._write_slot(nc_handle, populations, slot_idx, current_time)
+            logger.info('Retry succeeded for slot %d', slot_idx)
+
+        return nc_handle
 
     def close_output(self, nc_handle) -> Path:
         """Close the streaming output file and return its path."""
