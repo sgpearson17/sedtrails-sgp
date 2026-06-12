@@ -60,6 +60,7 @@ MIT (c) 2025 SedTRAILS contributors.
 from __future__ import annotations
 
 import csv
+import re
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
@@ -719,6 +720,45 @@ def plot_density_heatmap(
 # -----------------------------------------------------------------------------
 
 
+def _reference_datetime64(ds, time_var) -> np.datetime64 | None:
+    for value in (
+        time_var.attrs.get('reference_date'),
+        ds.attrs.get('reference_date'),
+    ):
+        if value is not None:
+            return np.datetime64(str(value), 'ns')
+
+    for units in (
+        time_var.attrs.get('units'),
+        time_var.encoding.get('units'),
+        ds.attrs.get('time_units'),
+        ds.attrs.get('units'),
+    ):
+        match = re.match(r'^\s*seconds\s+since\s+(.+?)\s*$', str(units), flags=re.IGNORECASE)
+        if match:
+            return np.datetime64(match.group(1), 'ns')
+
+    return None
+
+
+def _time_values_as_seconds(ds, time_var) -> np.ndarray:
+    values = np.asarray(time_var.values)
+    if np.issubdtype(values.dtype, np.datetime64):
+        values_ns = values.astype('datetime64[ns]')
+        valid = ~np.isnat(values_ns)
+        reference = _reference_datetime64(ds, time_var)
+        if reference is None and np.any(valid):
+            reference = values_ns[valid].min()
+        if reference is None:
+            return np.full(values_ns.shape, np.nan, dtype=float)
+
+        seconds = np.full(values_ns.shape, np.nan, dtype=float)
+        seconds[valid] = (values_ns[valid] - reference) / np.timedelta64(1, 's')
+        return seconds
+
+    return np.asarray(values, dtype=float)
+
+
 def load_from_xarray(ds) -> TrajectoryArrays:
     """Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables."""
     x_var = ds['x']
@@ -731,7 +771,7 @@ def load_from_xarray(ds) -> TrajectoryArrays:
         if time_var is None:
             time = np.zeros_like(x, dtype=float)
         else:
-            time = np.full_like(x, float(np.asarray(time_var, dtype=float)))
+            time = np.full_like(x, float(_time_values_as_seconds(ds, time_var)))
 
         def status_array(name: str):
             return np.asarray(ds[name])[:, np.newaxis] if name in ds else None
@@ -739,7 +779,7 @@ def load_from_xarray(ds) -> TrajectoryArrays:
     elif time_var is not None and time_var.ndim == 1 and x_var.ndim == 2 and x_var.dims[0] == time_var.dims[0]:
         x = np.asarray(x_var, dtype=float).T
         y = np.asarray(y_var, dtype=float).T
-        time_values = np.asarray(time_var, dtype=float)
+        time_values = _time_values_as_seconds(ds, time_var)
         time = np.broadcast_to(time_values, x.shape)
 
         def status_array(name: str):

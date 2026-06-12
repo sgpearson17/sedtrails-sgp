@@ -3,6 +3,7 @@ Module for visualizing particle trajectories from SedTRAILS NetCDF output files.
 """
 
 from pathlib import Path
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -55,8 +56,47 @@ def read_netcdf(results_file_path: Path) -> xr.Dataset:
     results_file_path = Path(results_file_path)
     if not results_file_path.exists():
         raise FileNotFoundError(f"NetCDF file '{results_file_path}' not found.")
-    ds = xr.open_dataset(results_file_path, engine='netcdf4')
+    ds = xr.open_dataset(results_file_path, engine='netcdf4', decode_times=False)
     return ds
+
+
+def _reference_datetime64(ds: xr.Dataset, time_var: xr.DataArray) -> np.datetime64 | None:
+    for value in (
+        time_var.attrs.get('reference_date'),
+        ds.attrs.get('reference_date'),
+    ):
+        if value is not None:
+            return np.datetime64(str(value), 'ns')
+
+    for units in (
+        time_var.attrs.get('units'),
+        time_var.encoding.get('units'),
+        ds.attrs.get('time_units'),
+        ds.attrs.get('units'),
+    ):
+        match = re.match(r'^\s*seconds\s+since\s+(.+?)\s*$', str(units), flags=re.IGNORECASE)
+        if match:
+            return np.datetime64(match.group(1), 'ns')
+
+    return None
+
+
+def _time_values_as_seconds(ds: xr.Dataset, time_var: xr.DataArray) -> np.ndarray:
+    values = np.asarray(time_var.values)
+    if np.issubdtype(values.dtype, np.datetime64):
+        values_ns = values.astype('datetime64[ns]')
+        valid = ~np.isnat(values_ns)
+        reference = _reference_datetime64(ds, time_var)
+        if reference is None and np.any(valid):
+            reference = values_ns[valid].min()
+        if reference is None:
+            return np.full(values_ns.shape, np.nan, dtype=float)
+
+        seconds = np.full(values_ns.shape, np.nan, dtype=float)
+        seconds[valid] = (values_ns[valid] - reference) / np.timedelta64(1, 's')
+        return seconds
+
+    return np.asarray(values, dtype=float)
 
 
 def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -80,9 +120,10 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
     if 'time' not in ds:
         time_data = np.broadcast_to(np.arange(n_timesteps, dtype=float), (n_particles, n_timesteps))
     elif ds['time'].ndim == 0:
-        time_data = np.full((n_particles, n_timesteps), float(ds['time'].values))
+        time_value = _time_values_as_seconds(ds, ds['time'])
+        time_data = np.full((n_particles, n_timesteps), float(time_value))
     elif ds['time'].ndim == 1:
-        time_values = np.asarray(ds['time'].values, dtype=float)
+        time_values = _time_values_as_seconds(ds, ds['time'])
         if time_values.size == n_timesteps:
             time_data = np.broadcast_to(time_values, (n_particles, n_timesteps))
         else:
@@ -130,23 +171,6 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
             population_names.extend([f'Population {i}' for i in range(len(population_names), n_populations)])
     else:
         population_names = [f'Population {i}' for i in range(n_populations)]
-
-    # Define colors for populations
-    pop_colors = plt.cm.Set1(np.linspace(0, 1, n_populations))
-
-    # Plot 1: All trajectories on spatial map (individual particle colors)
-    ax1.set_title(f'(a) Particle Trajectories - Individual Colors (n={n_particles})')
-    ax1.set_xlabel('X [m]')
-    ax1.set_ylabel('Y [m]')
-
-    # Plot each particle trajectory
-    try:
-        cmap = plt.get_cmap('viridis')
-        colors = cmap(np.linspace(0, 1, n_particles))
-    except (AttributeError, ValueError):
-        # Fallback to a basic color cycle
-        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        colors = [color_cycle[i % len(color_cycle)] for i in range(n_particles)]
 
     # Define colors for populations
     try:

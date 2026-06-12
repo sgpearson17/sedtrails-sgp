@@ -27,6 +27,31 @@ def test_load_from_xarray_accepts_time_major_layout():
     assert tr.trajectory_id == ['0', '1']
 
 
+def test_load_from_xarray_converts_decoded_datetime_time_to_seconds():
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0], [2.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [0.5], [1.0]])),
+            'time': (
+                ('n_timesteps',),
+                np.array(
+                    [
+                        '2020-01-01T00:00:00',
+                        '2020-01-01T00:01:00',
+                        '2020-01-01T00:02:00',
+                    ],
+                    dtype='datetime64[ns]',
+                ),
+            ),
+        },
+        attrs={'reference_date': '2020-01-01 00:00:00'},
+    )
+
+    tr = load_from_xarray(ds)
+
+    np.testing.assert_array_equal(tr.time[0], np.array([0.0, 60.0, 120.0]))
+
+
 def test_load_from_xarray_accepts_checkpoint_layout():
     ds = xr.Dataset(
         data_vars={

@@ -202,14 +202,6 @@ class Simulation:
         update_interval = self._controller.get('visualization.dashboard.update_interval', '1H')
         return Duration(update_interval).seconds
 
-    def _output_save_interval_seconds(self) -> int:
-        """Return the configured trajectory save interval in seconds."""
-        save_interval = self._controller.get('outputs.save_interval', '1H')
-        seconds = Duration(save_interval).seconds
-        if seconds <= 0:
-            raise ConfigurationError('`outputs.save_interval` must be greater than zero.')
-        return seconds
-
     @staticmethod
     def _missing_particle_field_like(particle_x: np.ndarray) -> np.ndarray:
         """Return a same-shaped NaN particle field for unavailable dashboard data."""
