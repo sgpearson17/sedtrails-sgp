@@ -180,7 +180,6 @@ class NetCDFWriter:
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
         sync_interval: int | None = DEFAULT_SYNC_INTERVAL,
         reopen_interval: int | None = None,
-        include_covered_distance: bool = False,
     ):
         """
         Open a streaming output file with pre-allocated dimensions.
@@ -228,11 +227,6 @@ class NetCDFWriter:
         reopen_interval : int or None, optional
             Proactively close and reopen the output file every N writes. This is
             useful on unstable network filesystems but is disabled by default.
-        include_covered_distance : bool, optional
-            Create the legacy ``covered_distance`` variable. It is disabled by
-            default because it is not written by the simulation and can be very
-            large.
-
         Returns
         -------
         netCDF4.Dataset
@@ -308,20 +302,6 @@ class NetCDFWriter:
                 ('n_timesteps', 'n_particles'),
                 fill_value=status_fill,
                 chunksizes=time_particle_chunks,
-                **compression_kwargs,
-            )
-
-        if include_covered_distance:
-            ds.createVariable(
-                'covered_distance',
-                coordinate_dtype,
-                ('n_flowfields', 'n_timesteps', 'n_particles'),
-                fill_value=np.nan,
-                chunksizes=(
-                    1,
-                    time_particle_chunks[0],
-                    time_particle_chunks[1],
-                ),
                 **compression_kwargs,
             )
 

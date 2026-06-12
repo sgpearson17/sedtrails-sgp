@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import numpy as np
+import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.trajectories import plot_trajectories
@@ -13,9 +14,9 @@ def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
 
     ds = xr.Dataset(
         data_vars={
-            'x': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])),
-            'y': (('n_particles', 'n_timesteps'), np.array([[0.0, 0.5, 1.0], [0.0, 0.25, 0.5]])),
-            'time': (('n_particles', 'n_timesteps'), np.array([[0.0, 60.0, 120.0], [0.0, 60.0, 120.0]])),
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [1.0, 1.5], [2.0, 3.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [0.5, 0.25], [1.0, 0.5]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0, 120.0])),
             'population_id': (('n_particles',), np.array([0, 1], dtype=int)),
             # 1D fixed-width byte strings as produced by current writer path
             'population_name': (('n_populations',), np.array([b'pop_A', b'pop_B'], dtype='S24')),
@@ -56,3 +57,18 @@ def test_plot_trajectories_accepts_time_major_layout(monkeypatch):
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
     plot_trajectories(ds)
+
+
+def test_plot_trajectories_rejects_particle_major_layout(monkeypatch):
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'y': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'time': (('n_particles', 'n_timesteps'), np.array([[0.0, 60.0]])),
+        }
+    )
+
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    with pytest.raises(ValueError, match='time-major trajectory arrays'):
+        plot_trajectories(ds)

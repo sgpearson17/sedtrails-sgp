@@ -60,7 +60,7 @@ def read_netcdf(results_file_path: Path) -> xr.Dataset:
 
 
 def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return x/y/time arrays in legacy plotting shape: (n_particles, n_timesteps)."""
+    """Return x/y/time arrays in plotting shape: (n_particles, n_timesteps)."""
     x_var = ds['x']
     y_var = ds['y']
 
@@ -70,11 +70,11 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
     elif x_var.ndim == 2 and 'time' in ds and ds['time'].ndim == 1 and x_var.dims[0] == ds['time'].dims[0]:
         x_data = np.asarray(x_var.values, dtype=float).T
         y_data = np.asarray(y_var.values, dtype=float).T
-    elif x_var.ndim == 2:
-        x_data = np.asarray(x_var.values, dtype=float)
-        y_data = np.asarray(y_var.values, dtype=float)
     else:
-        raise ValueError("Expected 'x' and 'y' trajectory arrays to be 1D or 2D.")
+        raise ValueError(
+            "Expected SedTRAILS time-major trajectory arrays shaped as "
+            "(n_timesteps, n_particles), or 1D checkpoint arrays."
+        )
 
     n_particles, n_timesteps = x_data.shape
     if 'time' not in ds:
@@ -85,14 +85,8 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
         time_values = np.asarray(ds['time'].values, dtype=float)
         if time_values.size == n_timesteps:
             time_data = np.broadcast_to(time_values, (n_particles, n_timesteps))
-        elif time_values.size == n_particles:
-            time_data = np.broadcast_to(time_values[:, np.newaxis], (n_particles, n_timesteps))
         else:
-            raise ValueError("'time' length does not match particles or timesteps.")
-    elif ds['time'].ndim == 2:
-        time_data = np.asarray(ds['time'].values, dtype=float)
-        if time_data.shape != (n_particles, n_timesteps):
-            time_data = time_data.T
+            raise ValueError("'time' length does not match the timestep dimension.")
     else:
         raise ValueError("Unsupported 'time' variable shape for trajectory plotting.")
 

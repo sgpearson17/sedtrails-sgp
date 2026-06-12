@@ -746,18 +746,10 @@ def load_from_xarray(ds) -> TrajectoryArrays:
             return np.asarray(ds[name]).T if name in ds else None
 
     else:
-        x = np.asarray(x_var, dtype=float)
-        y = np.asarray(y_var, dtype=float)
-        if time_var is None:
-            time = np.broadcast_to(np.arange(x.shape[1], dtype=float), x.shape)
-        elif time_var.ndim == 1:
-            time_values = np.asarray(time_var, dtype=float)
-            time = np.broadcast_to(time_values, x.shape)
-        else:
-            time = np.asarray(time_var, dtype=float)
-
-        def status_array(name: str):
-            return np.asarray(ds[name]) if name in ds else None
+        raise ValueError(
+            "Expected SedTRAILS time-major trajectory arrays shaped as "
+            "(n_timesteps, n_particles), or 1D checkpoint arrays."
+        )
 
     tr = TrajectoryArrays(
         time=time,

@@ -165,16 +165,6 @@ def _validate_restart_time_matches_input(
     )
 
 
-def _last_valid_index_per_particle(x_data: np.ndarray, y_data: np.ndarray) -> np.ndarray:
-    valid_xy = np.isfinite(x_data) & np.isfinite(y_data)
-    has_valid = valid_xy.any(axis=1)
-    indices = np.full(x_data.shape[0], -1, dtype=int)
-    if np.any(has_valid):
-        rev_idx = np.argmax(valid_xy[:, ::-1], axis=1)
-        indices[has_valid] = x_data.shape[1] - 1 - rev_idx[has_valid]
-    return indices
-
-
 def _status_values_to_mask(values: Any, default: bool = True) -> np.ndarray:
     """Convert status values to a boolean mask while treating NaN fill values as false."""
     arr = np.asarray(values)
@@ -290,73 +280,18 @@ def _extract_time_particle_state(ds: xr.Dataset) -> RestartParticleState:
     )
 
 
-def _extract_particle_time_state(ds: xr.Dataset) -> RestartParticleState:
-    x_data = np.asarray(ds['x'].values, dtype=float)
-    y_data = np.asarray(ds['y'].values, dtype=float)
-    if x_data.ndim != 2 or y_data.ndim != 2:
-        raise ValueError("Expected 'x' and 'y' to be 2D arrays (n_particles, n_timesteps).")
-
-    n_particles = x_data.shape[0]
-    pop_ids = _population_ids(ds, n_particles)
-    last_indices = _last_valid_index_per_particle(x_data, y_data)
-
-    alive_mask = np.ones(n_particles, dtype=bool)
-    if 'status_alive' in ds:
-        alive = np.asarray(ds['status_alive'].values)
-        for particle_idx, timestep_idx in enumerate(last_indices):
-            if timestep_idx >= 0:
-                alive_mask[particle_idx] = bool(_status_values_to_mask(alive[particle_idx, timestep_idx]))
-
-    in_domain_mask = np.ones(n_particles, dtype=bool)
-    if 'status_domain' in ds:
-        status_domain = np.asarray(ds['status_domain'].values)
-        for particle_idx, timestep_idx in enumerate(last_indices):
-            if timestep_idx >= 0:
-                in_domain_mask[particle_idx] = bool(_status_values_to_mask(status_domain[particle_idx, timestep_idx]))
-
-    finite_position_mask = last_indices >= 0
-    x_last = np.full(n_particles, np.nan, dtype=float)
-    y_last = np.full(n_particles, np.nan, dtype=float)
-    x_last[finite_position_mask] = x_data[np.flatnonzero(finite_position_mask), last_indices[finite_position_mask]]
-    y_last[finite_position_mask] = y_data[np.flatnonzero(finite_position_mask), last_indices[finite_position_mask]]
-
-    restart_seconds = None
-    if 'time' in ds:
-        time_values = np.asarray(ds['time'].values, dtype=float)
-        if time_values.ndim == 2:
-            selected_times = np.array(
-                [
-                    time_values[i, last_indices[i]]
-                    for i in range(n_particles)
-                    if finite_position_mask[i] and alive_mask[i] and in_domain_mask[i]
-                ],
-                dtype=float,
-            )
-            finite_times = selected_times[np.isfinite(selected_times)]
-            if finite_times.size:
-                restart_seconds = float(np.max(finite_times))
-        elif time_values.ndim == 1:
-            finite_times = time_values[np.isfinite(time_values)]
-            if finite_times.size:
-                restart_seconds = float(finite_times[-1])
-
-    return RestartParticleState(
-        x=x_last,
-        y=y_last,
-        pop_ids=pop_ids,
-        alive_mask=alive_mask,
-        in_domain_mask=in_domain_mask,
-        restart_seconds=restart_seconds,
-    )
-
-
 def _extract_restart_state(ds: xr.Dataset) -> RestartParticleState:
-    """Extract restart particle state from checkpoint, v2, or legacy v1 outputs."""
+    """Extract restart particle state from v2 trajectory output or a checkpoint."""
     if ds.attrs.get('sedtrails_file_kind') == 'checkpoint' or (ds['x'].ndim == 1 and ds['y'].ndim == 1):
         return _extract_checkpoint_state(ds)
     if _is_time_particle_layout(ds):
         return _extract_time_particle_state(ds)
-    return _extract_particle_time_state(ds)
+
+    raise ValueError(
+        'Restart generation requires SedTRAILS time-major trajectory output '
+        "('x'/'y' shaped as n_timesteps x n_particles with 1D 'time') "
+        'or sedtrails_checkpoint.nc. Legacy particle-major trajectory files are not supported.'
+    )
 
 
 def _path_relative_to_cwd(path: Path) -> str:

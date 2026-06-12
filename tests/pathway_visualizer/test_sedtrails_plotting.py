@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.sedtrails_plotting import load_from_xarray
@@ -44,3 +45,16 @@ def test_load_from_xarray_accepts_checkpoint_layout():
     np.testing.assert_array_equal(tr.x[:, 0], np.array([2.0, 12.0]))
     np.testing.assert_array_equal(tr.time[:, 0], np.array([180.0, 180.0]))
     np.testing.assert_array_equal(tr.status_alive[:, 0], np.array([1, 1], dtype=np.uint8))
+
+
+def test_load_from_xarray_rejects_particle_major_layout():
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'y': (('n_particles', 'n_timesteps'), np.array([[0.0, 1.0]])),
+            'time': (('n_particles', 'n_timesteps'), np.array([[0.0, 60.0]])),
+        }
+    )
+
+    with pytest.raises(ValueError, match='time-major trajectory arrays'):
+        load_from_xarray(ds)

@@ -591,11 +591,6 @@
               "default": null,
               "description": "proactively close and reopen NetCDF output every N saved samples; null or 0 disables this"
             },
-            "include_covered_distance": {
-              "type": "boolean",
-              "default": false,
-              "description": "write the legacy covered_distance variable"
-            },
             "checkpoint": {
               "type": "boolean",
               "default": true,

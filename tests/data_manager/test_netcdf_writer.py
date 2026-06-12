@@ -91,20 +91,6 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_array_equal(open_handle['trajectory_id'][:], np.arange(self.N_PARTICLES))
         assert open_handle['x'].chunking() == [1, self.N_PARTICLES]
 
-    def test_open_can_include_legacy_covered_distance(self, writer, population):
-        handle = writer.open_output(
-            'covered.nc',
-            self.N_SLOTS,
-            self.N_PARTICLES,
-            self.N_POPULATIONS,
-            self.N_FLOWFIELDS,
-            [population],
-            ['water_velocity'],
-            include_covered_distance=True,
-        )
-        assert handle['covered_distance'].dimensions == ('n_flowfields', 'n_timesteps', 'n_particles')
-        handle.close()
-
     def test_open_writes_population_metadata(self, open_handle):
         assert open_handle['population_count'][0] == self.N_PARTICLES
         assert open_handle['population_start_idx'][0] == 0

@@ -376,7 +376,6 @@ class Simulation:
             'particle_chunk': int(netcdf_config.get('particle_chunk', 65_536)),
             'sync_interval': netcdf_config.get('sync_interval', 10),
             'reopen_interval': netcdf_config.get('reopen_interval', None),
-            'include_covered_distance': bool(netcdf_config.get('include_covered_distance', False)),
         }
 
     def _output_checkpoint_options(self) -> dict[str, Any]:
