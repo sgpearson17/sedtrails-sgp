@@ -216,9 +216,7 @@ def plot_trajectories_by_age(
         last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
         end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
         end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-        ax.scatter(
-            end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end'
-        )
+        ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')
@@ -292,7 +290,7 @@ def plot_trajectories_by_baseline(
     last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
     end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
     end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end')
+    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')

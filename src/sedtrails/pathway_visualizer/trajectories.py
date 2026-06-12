@@ -159,7 +159,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
             # Mark start and end points
             # start point marker
             ax1.scatter(
-                x_traj[0], y_traj[0], color=colors[i], marker='x', s=50, edgecolor='black', linewidth=1, zorder=5
+                x_traj[0], y_traj[0], color=colors[i], marker='x', s=50, linewidth=1, zorder=5
             )
             # end point marker
             ax1.scatter(
@@ -239,7 +239,6 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     color=pop_colors[pop_idx],
                     marker='x',
                     s=50,
-                    edgecolor='black',
                     linewidth=1,
                     zorder=5,
                 )
