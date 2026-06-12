@@ -1,12 +1,11 @@
 import matplotlib
+
+matplotlib.use('Agg')
+
 import numpy as np
 import xarray as xr
 
 from sedtrails.pathway_visualizer.trajectories import plot_trajectories
-
-
-matplotlib.use('Agg')
-
 
 def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
     n_particles = 2
