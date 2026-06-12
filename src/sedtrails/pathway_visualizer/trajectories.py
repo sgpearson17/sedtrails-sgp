@@ -109,7 +109,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
 
     # Plot each particle trajectory
     try:
-        cmap = plt.cm.get_cmap('viridis')
+        cmap = plt.get_cmap('viridis')
         colors = cmap(np.linspace(0, 1, n_particles))
     except (AttributeError, ValueError):
         # Fallback to a basic color cycle
@@ -118,7 +118,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
 
     # Define colors for populations
     try:
-        pop_cmap = plt.cm.get_cmap('Set1')
+        pop_cmap = plt.get_cmap('Set1')
         pop_colors = pop_cmap(np.linspace(0, 1, n_populations))
     except (AttributeError, ValueError):
         # Fallback to basic colors
@@ -132,7 +132,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
 
     # Plot each particle trajectory
     try:
-        cmap = plt.cm.get_cmap('viridis')
+        cmap = plt.get_cmap('viridis')
         colors = cmap(np.linspace(0, 1, n_particles))
     except (AttributeError, ValueError):
         # Fallback to a basic color cycle

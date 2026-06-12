@@ -6,7 +6,7 @@ general:
 inputs:
   data: ./sample-data/inlet_example.nc
   read_interval: 10D  # Time chunk size for reading input data
-  repeat_eulerian_fields: true  # Whether to repeat the last available Eulerian fields when the simulation time exceeds the input data time range
+  repeat_eulerian_fields: true  # Repeat forcing after a valid start inside the input time range
 time:
   start:  2016-09-21 19:20:00
   timestep: 60S
