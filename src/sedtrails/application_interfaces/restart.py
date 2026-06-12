@@ -222,7 +222,12 @@ def create_restart_from_netcdf(
                 if keep_mask[i] and int(pop_ids[i]) == pop_idx
             ]
 
+            population.setdefault('seeding', {})
+            population['seeding']['release_start'] = restart_time
+
             if not selected:
+                # Disable seeding for this population on restart (avoid reseeding new particles).
+                population['seeding']['quantity'] = 0
                 continue
 
             points_file = seeds_dir / f'{pop_name}.restart_points.csv'
@@ -231,8 +236,6 @@ def create_restart_from_netcdf(
                 for x_coord, y_coord in selected:
                     handle.write(f'{x_coord:.8f},{y_coord:.8f}\n')
 
-            population.setdefault('seeding', {})
-            population['seeding']['release_start'] = restart_time
             population['seeding']['quantity'] = 1
             population['seeding']['strategy'] = {
                 'file_points': {
