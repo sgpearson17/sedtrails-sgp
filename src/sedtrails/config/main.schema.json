@@ -524,6 +524,91 @@
           "default": "./output",
           "description": "path to directory for storing the results of the simulation"
         },
+        "netcdf": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "coordinate_dtype": {
+              "type": "string",
+              "enum": [
+                "float32",
+                "float64"
+              ],
+              "default": "float32",
+              "description": "floating point precision for trajectory coordinate variables"
+            },
+            "status_dtype": {
+              "type": "string",
+              "enum": [
+                "uint8",
+                "int32"
+              ],
+              "default": "uint8",
+              "description": "integer precision for trajectory status flag variables"
+            },
+            "compression": {
+              "type": "boolean",
+              "default": true,
+              "description": "compress chunked NetCDF trajectory variables"
+            },
+            "compression_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9,
+              "default": 1,
+              "description": "zlib compression level for NetCDF output; 0 disables compression"
+            },
+            "shuffle": {
+              "type": "boolean",
+              "default": true,
+              "description": "enable HDF5 shuffle filter when NetCDF compression is enabled"
+            },
+            "time_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "number of saved timesteps per NetCDF chunk"
+            },
+            "particle_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 65536,
+              "description": "number of particles per NetCDF chunk"
+            },
+            "sync_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10,
+              "description": "flush NetCDF output every N saved samples; 0 flushes only on close"
+            },
+            "reopen_interval": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": null,
+              "description": "proactively close and reopen NetCDF output every N saved samples; null or 0 disables this"
+            },
+            "include_covered_distance": {
+              "type": "boolean",
+              "default": false,
+              "description": "write the legacy covered_distance variable"
+            },
+            "checkpoint": {
+              "type": "boolean",
+              "default": true,
+              "description": "write a compact sedtrails_checkpoint.nc restart file"
+            },
+            "checkpoint_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "refresh checkpoint every N saved samples; 0 writes only the final checkpoint"
+            }
+          }
+        },
         "store_end_positions": {
           "type": "boolean",
           "default": false,

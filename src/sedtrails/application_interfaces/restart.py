@@ -28,6 +28,18 @@ class RestartSummary:
     retained_particles: int
 
 
+@dataclass
+class RestartParticleState:
+    """Particle state extracted from a SedTRAILS output file for restart seeding."""
+
+    x: np.ndarray
+    y: np.ndarray
+    pop_ids: np.ndarray
+    alive_mask: np.ndarray
+    in_domain_mask: np.ndarray
+    restart_seconds: float | None
+
+
 def _to_datetime(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value
@@ -163,6 +175,190 @@ def _last_valid_index_per_particle(x_data: np.ndarray, y_data: np.ndarray) -> np
     return indices
 
 
+def _status_values_to_mask(values: Any, default: bool = True) -> np.ndarray:
+    """Convert status values to a boolean mask while treating NaN fill values as false."""
+    arr = np.asarray(values)
+    if arr.dtype.kind in ('f', 'c'):
+        return np.isfinite(arr) & (arr != 0)
+    return arr.astype(bool)
+
+
+def _population_ids(ds: xr.Dataset, n_particles: int) -> np.ndarray:
+    if 'population_id' not in ds:
+        return np.zeros(n_particles, dtype=int)
+
+    pop_ids = np.asarray(ds['population_id'].values).astype(int)
+    if pop_ids.shape[0] != n_particles:
+        raise ValueError("'population_id' length does not match number of particles.")
+    return pop_ids
+
+
+def _last_written_time_index(ds: xr.Dataset) -> int:
+    """Return the last written v2 timestep without reading the full trajectory arrays."""
+    n_timesteps = int(ds.sizes.get('n_timesteps', ds.sizes.get('time', 0)))
+    if n_timesteps <= 0:
+        raise ValueError('NetCDF output contains no timesteps.')
+
+    written_slots = ds.attrs.get('written_slots')
+    if written_slots is not None:
+        try:
+            written_slots = int(written_slots)
+        except (TypeError, ValueError):
+            written_slots = 0
+        if written_slots > 0:
+            return min(written_slots, n_timesteps) - 1
+
+    if 'time' in ds and ds['time'].ndim == 1:
+        time_values = np.asarray(ds['time'].values, dtype=float)
+        finite = np.flatnonzero(np.isfinite(time_values))
+        if finite.size:
+            return int(finite[-1])
+
+    return n_timesteps - 1
+
+
+def _extract_checkpoint_state(ds: xr.Dataset) -> RestartParticleState:
+    x_data = np.asarray(ds['x'].values, dtype=float)
+    y_data = np.asarray(ds['y'].values, dtype=float)
+    if x_data.ndim != 1 or y_data.ndim != 1:
+        raise ValueError("Checkpoint output must contain 1D 'x' and 'y' particle arrays.")
+
+    n_particles = x_data.shape[0]
+    alive_mask = np.ones(n_particles, dtype=bool)
+    if 'status_alive' in ds:
+        alive_mask = _status_values_to_mask(ds['status_alive'].values)
+
+    in_domain_mask = np.ones(n_particles, dtype=bool)
+    if 'status_domain' in ds:
+        in_domain_mask = _status_values_to_mask(ds['status_domain'].values)
+
+    restart_seconds = None
+    if 'time' in ds:
+        time_values = np.asarray(ds['time'].values, dtype=float)
+        finite_times = time_values[np.isfinite(time_values)]
+        if finite_times.size:
+            restart_seconds = float(np.max(finite_times))
+
+    return RestartParticleState(
+        x=x_data,
+        y=y_data,
+        pop_ids=_population_ids(ds, n_particles),
+        alive_mask=np.asarray(alive_mask, dtype=bool),
+        in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
+        restart_seconds=restart_seconds,
+    )
+
+
+def _is_time_particle_layout(ds: xr.Dataset) -> bool:
+    if 'time' not in ds or ds['time'].ndim != 1:
+        return False
+    if ds['x'].ndim != 2 or ds['y'].ndim != 2:
+        return False
+    return ds['x'].dims[0] == ds['time'].dims[0] and ds['y'].dims[0] == ds['time'].dims[0]
+
+
+def _extract_time_particle_state(ds: xr.Dataset) -> RestartParticleState:
+    slot_idx = _last_written_time_index(ds)
+    time_dim = ds['time'].dims[0]
+
+    x_data = np.asarray(ds['x'].isel({time_dim: slot_idx}).values, dtype=float)
+    y_data = np.asarray(ds['y'].isel({time_dim: slot_idx}).values, dtype=float)
+    if x_data.ndim != 1 or y_data.ndim != 1:
+        raise ValueError("Expected time-major 'x' and 'y' arrays with particle slices.")
+
+    n_particles = x_data.shape[0]
+    alive_mask = np.ones(n_particles, dtype=bool)
+    if 'status_alive' in ds:
+        alive_mask = _status_values_to_mask(ds['status_alive'].isel({time_dim: slot_idx}).values)
+
+    in_domain_mask = np.ones(n_particles, dtype=bool)
+    if 'status_domain' in ds:
+        in_domain_mask = _status_values_to_mask(ds['status_domain'].isel({time_dim: slot_idx}).values)
+
+    restart_seconds = None
+    time_values = np.asarray(ds['time'].values, dtype=float)
+    if 0 <= slot_idx < time_values.size and np.isfinite(time_values[slot_idx]):
+        restart_seconds = float(time_values[slot_idx])
+
+    return RestartParticleState(
+        x=x_data,
+        y=y_data,
+        pop_ids=_population_ids(ds, n_particles),
+        alive_mask=np.asarray(alive_mask, dtype=bool),
+        in_domain_mask=np.asarray(in_domain_mask, dtype=bool),
+        restart_seconds=restart_seconds,
+    )
+
+
+def _extract_particle_time_state(ds: xr.Dataset) -> RestartParticleState:
+    x_data = np.asarray(ds['x'].values, dtype=float)
+    y_data = np.asarray(ds['y'].values, dtype=float)
+    if x_data.ndim != 2 or y_data.ndim != 2:
+        raise ValueError("Expected 'x' and 'y' to be 2D arrays (n_particles, n_timesteps).")
+
+    n_particles = x_data.shape[0]
+    pop_ids = _population_ids(ds, n_particles)
+    last_indices = _last_valid_index_per_particle(x_data, y_data)
+
+    alive_mask = np.ones(n_particles, dtype=bool)
+    if 'status_alive' in ds:
+        alive = np.asarray(ds['status_alive'].values)
+        for particle_idx, timestep_idx in enumerate(last_indices):
+            if timestep_idx >= 0:
+                alive_mask[particle_idx] = bool(_status_values_to_mask(alive[particle_idx, timestep_idx]))
+
+    in_domain_mask = np.ones(n_particles, dtype=bool)
+    if 'status_domain' in ds:
+        status_domain = np.asarray(ds['status_domain'].values)
+        for particle_idx, timestep_idx in enumerate(last_indices):
+            if timestep_idx >= 0:
+                in_domain_mask[particle_idx] = bool(_status_values_to_mask(status_domain[particle_idx, timestep_idx]))
+
+    finite_position_mask = last_indices >= 0
+    x_last = np.full(n_particles, np.nan, dtype=float)
+    y_last = np.full(n_particles, np.nan, dtype=float)
+    x_last[finite_position_mask] = x_data[np.flatnonzero(finite_position_mask), last_indices[finite_position_mask]]
+    y_last[finite_position_mask] = y_data[np.flatnonzero(finite_position_mask), last_indices[finite_position_mask]]
+
+    restart_seconds = None
+    if 'time' in ds:
+        time_values = np.asarray(ds['time'].values, dtype=float)
+        if time_values.ndim == 2:
+            selected_times = np.array(
+                [
+                    time_values[i, last_indices[i]]
+                    for i in range(n_particles)
+                    if finite_position_mask[i] and alive_mask[i] and in_domain_mask[i]
+                ],
+                dtype=float,
+            )
+            finite_times = selected_times[np.isfinite(selected_times)]
+            if finite_times.size:
+                restart_seconds = float(np.max(finite_times))
+        elif time_values.ndim == 1:
+            finite_times = time_values[np.isfinite(time_values)]
+            if finite_times.size:
+                restart_seconds = float(finite_times[-1])
+
+    return RestartParticleState(
+        x=x_last,
+        y=y_last,
+        pop_ids=pop_ids,
+        alive_mask=alive_mask,
+        in_domain_mask=in_domain_mask,
+        restart_seconds=restart_seconds,
+    )
+
+
+def _extract_restart_state(ds: xr.Dataset) -> RestartParticleState:
+    """Extract restart particle state from checkpoint, v2, or legacy v1 outputs."""
+    if ds.attrs.get('sedtrails_file_kind') == 'checkpoint' or (ds['x'].ndim == 1 and ds['y'].ndim == 1):
+        return _extract_checkpoint_state(ds)
+    if _is_time_particle_layout(ds):
+        return _extract_time_particle_state(ds)
+    return _extract_particle_time_state(ds)
+
+
 def _path_relative_to_cwd(path: Path) -> str:
     """Return path as POSIX text relative to current working directory when possible."""
     try:
@@ -260,56 +456,18 @@ def create_restart_from_netcdf(
     try:
         _validate_restart_dataset_schema(ds, netcdf_path)
 
-        x_data = np.asarray(ds['x'].values, dtype=float)
-        y_data = np.asarray(ds['y'].values, dtype=float)
-        if x_data.ndim != 2 or y_data.ndim != 2:
-            raise ValueError("Expected 'x' and 'y' to be 2D arrays (n_particles, n_timesteps).")
-
-        n_particles = x_data.shape[0]
-
-        if 'population_id' in ds:
-            pop_ids = np.asarray(ds['population_id'].values).astype(int)
-        else:
-            pop_ids = np.zeros(n_particles, dtype=int)
-
-        if pop_ids.shape[0] != n_particles:
-            raise ValueError("'population_id' length does not match number of particles.")
-
-        last_indices = _last_valid_index_per_particle(x_data, y_data)
-
-        alive_mask = np.ones(n_particles, dtype=bool)
-        if 'status_alive' in ds:
-            alive = np.asarray(ds['status_alive'].values)
-            for particle_idx, timestep_idx in enumerate(last_indices):
-                if timestep_idx >= 0:
-                    alive_mask[particle_idx] = bool(alive[particle_idx, timestep_idx])
-
-        in_domain_mask = np.ones(n_particles, dtype=bool)
-        if 'status_domain' in ds:
-            status_domain = np.asarray(ds['status_domain'].values)
-            for particle_idx, timestep_idx in enumerate(last_indices):
-                if timestep_idx >= 0:
-                    in_domain_mask[particle_idx] = bool(status_domain[particle_idx, timestep_idx])
-
-        keep_mask = (last_indices >= 0) & alive_mask & in_domain_mask
+        restart_state = _extract_restart_state(ds)
+        n_particles = restart_state.x.shape[0]
+        keep_mask = (
+            np.isfinite(restart_state.x)
+            & np.isfinite(restart_state.y)
+            & restart_state.alive_mask
+            & restart_state.in_domain_mask
+        )
         if not np.any(keep_mask):
             raise ValueError('No valid particle positions available to seed restart.')
 
-        time_values = None
-        if 'time' in ds:
-            time_values = np.asarray(ds['time'].values, dtype=float)
-
-        restart_seconds = None
-        if time_values is not None and time_values.ndim == 2:
-            selected_times = np.array(
-                [time_values[i, last_indices[i]] for i in range(n_particles) if keep_mask[i]],
-                dtype=float,
-            )
-            finite_times = selected_times[np.isfinite(selected_times)]
-            if finite_times.size:
-                restart_seconds = float(np.max(finite_times))
-
-        restart_dt = _infer_restart_datetime(config, restart_seconds, _dataset_reference_date(ds, config))
+        restart_dt = _infer_restart_datetime(config, restart_state.restart_seconds, _dataset_reference_date(ds, config))
         _validate_restart_time_matches_input(config, config_path, restart_dt)
         restart_time = _format_datetime(restart_dt)
 
@@ -338,9 +496,9 @@ def create_restart_from_netcdf(
             pop_name = str(population.get('name', f'population_{pop_idx + 1}'))
 
             selected = [
-                (float(x_data[i, last_indices[i]]), float(y_data[i, last_indices[i]]))
+                (float(restart_state.x[i]), float(restart_state.y[i]))
                 for i in range(n_particles)
-                if keep_mask[i] and int(pop_ids[i]) == pop_idx
+                if keep_mask[i] and int(restart_state.pop_ids[i]) == pop_idx
             ]
 
             population.setdefault('seeding', {})

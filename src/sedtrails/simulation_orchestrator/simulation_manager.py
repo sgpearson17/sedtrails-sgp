@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-import xarray as xr
 from tqdm import tqdm
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
@@ -282,25 +281,6 @@ class Simulation:
         """Return whether the loop should try to load another SedTRAILS data chunk."""
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
 
-    def _ensure_time_capacity(
-        self,
-        xr_data: xr.Dataset,
-        timestep_index: int,
-        max_timesteps: int,
-    ) -> tuple[xr.Dataset, int]:
-        """Expand output storage before writing a timestep index."""
-        required_size = timestep_index + 1
-        if required_size <= max_timesteps:
-            return xr_data, max_timesteps
-
-        old_max = max_timesteps
-        new_max = max_timesteps
-        while required_size > new_max:
-            new_max = max(new_max + 1, int(new_max * 2.0))
-
-        self.logger.info(f'Expanding time dimension from {old_max} to {new_max}')
-        return self._expand_time_dimension(xr_data, new_max), new_max
-
     @staticmethod
     def _map_eulerian_field_time(
         current_time_seconds: float,
@@ -382,6 +362,69 @@ class Simulation:
         if save_interval_seconds <= 0:
             raise ConfigurationError('outputs.save_interval must be a positive duration')
         return save_interval_seconds
+
+    def _output_netcdf_options(self) -> dict[str, Any]:
+        """Return NetCDF writer options, with defaults tuned for large particle tracks."""
+        netcdf_config = self._controller.get('outputs.netcdf', {}) or {}
+        return {
+            'coordinate_dtype': netcdf_config.get('coordinate_dtype', 'float32'),
+            'status_dtype': netcdf_config.get('status_dtype', 'uint8'),
+            'compression': bool(netcdf_config.get('compression', True)),
+            'compression_level': int(netcdf_config.get('compression_level', 1)),
+            'shuffle': bool(netcdf_config.get('shuffle', True)),
+            'time_chunk': int(netcdf_config.get('time_chunk', 1)),
+            'particle_chunk': int(netcdf_config.get('particle_chunk', 65_536)),
+            'sync_interval': netcdf_config.get('sync_interval', 10),
+            'reopen_interval': netcdf_config.get('reopen_interval', None),
+            'include_covered_distance': bool(netcdf_config.get('include_covered_distance', False)),
+        }
+
+    def _output_checkpoint_options(self) -> dict[str, Any]:
+        """Return checkpoint policy and shared NetCDF encoding options."""
+        netcdf_config = self._controller.get('outputs.netcdf', {}) or {}
+        writer_options = self._output_netcdf_options()
+        return {
+            'enabled': bool(netcdf_config.get('checkpoint', True)),
+            'interval': int(netcdf_config.get('checkpoint_interval', 0)),
+            'writer_kwargs': {
+                key: writer_options[key]
+                for key in (
+                    'coordinate_dtype',
+                    'status_dtype',
+                    'compression',
+                    'compression_level',
+                    'shuffle',
+                    'particle_chunk',
+                )
+            },
+        }
+
+    def _maybe_write_checkpoint(
+        self,
+        populations,
+        current_time: int | float,
+        simulation_time: Time,
+        saved_slots: int,
+        checkpoint_options: dict[str, Any],
+        *,
+        final: bool = False,
+    ) -> None:
+        """Write the compact checkpoint when the configured checkpoint policy says so."""
+        if not checkpoint_options.get('enabled', True):
+            return
+
+        interval = int(checkpoint_options.get('interval', 0))
+        if not final and (interval <= 0 or saved_slots % interval != 0):
+            return
+
+        self.data_manager.writer.write_checkpoint(
+            'sedtrails_checkpoint.nc',
+            populations,
+            float(current_time),
+            reference_date=str(simulation_time.reference_date),
+            time_units=f'seconds since {simulation_time.reference_date}',
+            **checkpoint_options.get('writer_kwargs', {}),
+        )
 
     @staticmethod
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
@@ -685,6 +728,8 @@ class Simulation:
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         save_interval_seconds = self._output_save_interval_seconds()
         n_output_slots = self._estimate_output_timesteps(simulation_time, save_interval_seconds)
+        netcdf_options = self._output_netcdf_options()
+        checkpoint_options = self._output_checkpoint_options()
         self.logger.info(
             'Streaming output: %d slots at %gs interval -> %s',
             n_output_slots,
@@ -700,12 +745,15 @@ class Simulation:
             len(flow_field_names) if flow_field_names else 1,
             populations,
             flow_field_names,
+            **netcdf_options,
         )
         nc_handle.reference_date = str(simulation_time.reference_date)
         nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
         nc_handle.time_start = self._controller.get('time.start')
         nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
         nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
+        nc_handle['time'].units = nc_handle.time_units
+        nc_handle['time'].reference_date = nc_handle.reference_date
 
         # Store the seeded initial state before the first physics update.
         self._initialize_population_output_status(populations, timer.current)
@@ -714,6 +762,13 @@ class Simulation:
             nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
         last_saved_time = timer.current
         slot_idx += 1
+        self._maybe_write_checkpoint(
+            populations,
+            timer.current,
+            simulation_time,
+            slot_idx,
+            checkpoint_options,
+        )
         next_output_time = self._next_scheduled_output_time(
             simulation_time,
             save_interval_seconds,
@@ -875,6 +930,13 @@ class Simulation:
                         )
                     last_saved_time = timer.current
                     slot_idx += 1
+                    self._maybe_write_checkpoint(
+                        populations,
+                        timer.current,
+                        simulation_time,
+                        slot_idx,
+                        checkpoint_options,
+                    )
                     if slot_idx < n_output_slots:
                         next_output_time = self._next_scheduled_output_time(
                             simulation_time,
@@ -907,6 +969,14 @@ class Simulation:
                     nc_handle = self.data_manager.writer.record_output(
                         nc_handle, populations, slot_idx, timer.current)
                     slot_idx += 1
+            self._maybe_write_checkpoint(
+                populations,
+                timer.current,
+                simulation_time,
+                slot_idx,
+                checkpoint_options,
+                final=True,
+            )
 
             output_file = self.data_manager.writer.close_output(nc_handle)
             nc_handle = None  # prevent double-close in finally
@@ -922,82 +992,6 @@ class Simulation:
                     self.data_manager.writer.close_output(nc_handle)
                 except Exception:
                     pass
-
-    def _expand_time_dimension(
-        self,
-        xr_data: xr.Dataset,
-        new_max_timesteps: int,
-    ) -> xr.Dataset:
-        time_dim = 'n_timesteps' if 'n_timesteps' in xr_data.sizes else 'time'
-
-        current_size = xr_data.sizes[time_dim]
-
-        if new_max_timesteps <= current_size:
-            raise ValueError(f'new_max_timesteps={new_max_timesteps} must be larger than current size={current_size}')
-
-        # Replace/normalize the timestep coordinate to guarantee uniqueness
-        xr_data = xr_data.assign_coords({time_dim: np.arange(current_size)})
-
-        new_coord = np.arange(new_max_timesteps)
-
-        expanded_vars = {}
-
-        for var_name, var in xr_data.data_vars.items():
-            if time_dim not in var.dims:
-                expanded_vars[var_name] = var
-                continue
-
-            time_axis = var.dims.index(time_dim)
-
-            pad_shape = list(var.shape)
-            pad_shape[time_axis] = new_max_timesteps - current_size
-
-            if np.issubdtype(var.dtype, np.floating) or np.issubdtype(var.dtype, np.complexfloating):
-                pad_data = np.full(
-                    pad_shape,
-                    np.nan,
-                    dtype=var.dtype,
-                )
-            else:
-                pad_data = np.zeros(
-                    pad_shape,
-                    dtype=var.dtype,
-                )
-
-            pad_coords = {}
-            for dim in var.dims:
-                if dim == time_dim:
-                    pad_coords[dim] = np.arange(current_size, new_max_timesteps)
-                elif dim in var.coords:
-                    pad_coords[dim] = var.coords[dim]
-
-            pad_array = xr.DataArray(
-                pad_data,
-                dims=var.dims,
-                coords=pad_coords,
-                attrs=var.attrs.copy(),
-            )
-
-            expanded_vars[var_name] = xr.concat(
-                [var, pad_array],
-                dim=time_dim,
-            )
-
-        coords = {}
-        for coord_name, coord in xr_data.coords.items():
-            if coord_name == time_dim:
-                coords[coord_name] = new_coord
-            elif time_dim not in coord.dims:
-                coords[coord_name] = coord
-
-        expanded_dataset = xr.Dataset(
-            expanded_vars,
-            coords=coords,
-            attrs=xr_data.attrs.copy(),
-        )
-
-        return expanded_dataset
-
 
 # if __name__ == '__main__':
 #     sim = Simulation(config_file='examples/config.example_natascia.yaml')

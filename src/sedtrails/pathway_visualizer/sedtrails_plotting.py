@@ -18,8 +18,8 @@ Design goals
   for point-in-polygon tests). Pandas is optional and only used if available
   for nicer CSV writing.
 
-Expected SedTRAILS array layout
--------------------------------
+Internal array layout
+---------------------
 Dimensions:
     n_timesteps = T
     n_particles = N
@@ -38,6 +38,9 @@ Variables (shapes shown in parentheses):
 
 Notes
 -----
+- Current SedTRAILS NetCDF output stores trajectory variables as time-major
+  arrays, e.g. x(T, N), and time(T). ``load_from_xarray`` normalizes those
+  files to the internal particle-major arrays above.
 - All plotters accept `units_scale` (default=1.0). Use e.g. units_scale=1e-3
   to convert meters->kilometers on the axes without modifying inputs.
 - Age is computed per-particle as time - time_of_release, where time_of_release
@@ -718,14 +721,52 @@ def plot_density_heatmap(
 
 def load_from_xarray(ds) -> TrajectoryArrays:
     """Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables."""
+    x_var = ds['x']
+    y_var = ds['y']
+    time_var = ds['time'] if 'time' in ds else None
+
+    if x_var.ndim == 1 and y_var.ndim == 1:
+        x = np.asarray(x_var, dtype=float)[:, np.newaxis]
+        y = np.asarray(y_var, dtype=float)[:, np.newaxis]
+        if time_var is None:
+            time = np.zeros_like(x, dtype=float)
+        else:
+            time = np.full_like(x, float(np.asarray(time_var, dtype=float)))
+
+        def status_array(name: str):
+            return np.asarray(ds[name])[:, np.newaxis] if name in ds else None
+
+    elif time_var is not None and time_var.ndim == 1 and x_var.ndim == 2 and x_var.dims[0] == time_var.dims[0]:
+        x = np.asarray(x_var, dtype=float).T
+        y = np.asarray(y_var, dtype=float).T
+        time_values = np.asarray(time_var, dtype=float)
+        time = np.broadcast_to(time_values, x.shape)
+
+        def status_array(name: str):
+            return np.asarray(ds[name]).T if name in ds else None
+
+    else:
+        x = np.asarray(x_var, dtype=float)
+        y = np.asarray(y_var, dtype=float)
+        if time_var is None:
+            time = np.broadcast_to(np.arange(x.shape[1], dtype=float), x.shape)
+        elif time_var.ndim == 1:
+            time_values = np.asarray(time_var, dtype=float)
+            time = np.broadcast_to(time_values, x.shape)
+        else:
+            time = np.asarray(time_var, dtype=float)
+
+        def status_array(name: str):
+            return np.asarray(ds[name]) if name in ds else None
+
     tr = TrajectoryArrays(
-        time=np.asarray(ds['time']),
-        x=np.asarray(ds['x']),
-        y=np.asarray(ds['y']),
-        status_alive=np.asarray(ds['status_alive']) if 'status_alive' in ds else None,
-        status_domain=np.asarray(ds['status_domain']) if 'status_domain' in ds else None,
-        status_released=np.asarray(ds['status_released']) if 'status_released' in ds else None,
-        status_mobile=np.asarray(ds['status_mobile']) if 'status_mobile' in ds else None,
+        time=time,
+        x=x,
+        y=y,
+        status_alive=status_array('status_alive'),
+        status_domain=status_array('status_domain'),
+        status_released=status_array('status_released'),
+        status_mobile=status_array('status_mobile'),
         population_id=np.asarray(ds['population_id']) if 'population_id' in ds else None,
         trajectory_id=list(map(str, ds['trajectory_id'].values)) if 'trajectory_id' in ds else None,
     )

@@ -14,10 +14,33 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Proactively close+reopen the streaming file every N successful writes to
-# refresh the OS file descriptor. This matters on network drives (SMB/NFS) where
-# long-lived HDF5 handles become stale after network reconnects or idle timeouts.
-_REOPEN_INTERVAL = 10
+DEFAULT_PARTICLE_CHUNK = 65_536
+DEFAULT_SYNC_INTERVAL = 10
+
+_COORDINATE_DTYPES = {
+    'float32': 'f4',
+    'f4': 'f4',
+    np.dtype('float32'): 'f4',
+    'float64': 'f8',
+    'f8': 'f8',
+    np.dtype('float64'): 'f8',
+}
+_STATUS_DTYPES = {
+    'uint8': ('u1', np.uint8(255)),
+    'u1': ('u1', np.uint8(255)),
+    np.dtype('uint8'): ('u1', np.uint8(255)),
+    'int32': ('i4', np.int32(-1)),
+    'i4': ('i4', np.int32(-1)),
+    np.dtype('int32'): ('i4', np.int32(-1)),
+}
+_STATUS_DEFAULTS = {
+    'status_alive': 1,
+    'status_buried': 0,
+    'status_domain': 1,
+    'status_transported': 0,
+    'status_released': 1,
+    'status_mobile': 0,
+}
 
 
 class NetCDFWriter:
@@ -43,6 +66,10 @@ class NetCDFWriter:
         #     output_dir = output_dir.parent / f'{output_dir.name}_{timestamp}'
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._streaming_path = None
+        self._write_count = 0
+        self._sync_interval = DEFAULT_SYNC_INTERVAL
+        self._reopen_interval = None
 
     def _validate_filename(self, filename):
         """
@@ -50,6 +77,89 @@ class NetCDFWriter:
         """
         if not filename.endswith('.nc'):
             raise ValueError('Output file must have a .nc extension.')
+
+    @staticmethod
+    def _normalize_coordinate_dtype(dtype) -> str:
+        try:
+            return _COORDINATE_DTYPES[dtype]
+        except KeyError as exc:
+            valid = ', '.join(('float32', 'float64'))
+            raise ValueError(f'Unsupported coordinate dtype {dtype!r}. Use one of: {valid}.') from exc
+
+    @staticmethod
+    def _normalize_status_dtype(dtype) -> tuple[str, np.integer]:
+        try:
+            return _STATUS_DTYPES[dtype]
+        except KeyError as exc:
+            valid = ', '.join(('uint8', 'int32'))
+            raise ValueError(f'Unsupported status dtype {dtype!r}. Use one of: {valid}.') from exc
+
+    @staticmethod
+    def _compression_kwargs(enabled: bool, compression_level: int, shuffle: bool) -> dict:
+        if not enabled or compression_level == 0:
+            return {}
+        return {
+            'zlib': True,
+            'complevel': int(compression_level),
+            'shuffle': bool(shuffle),
+        }
+
+    @staticmethod
+    def _time_particle_chunks(n_slots: int, n_particles: int, time_chunk: int, particle_chunk: int) -> tuple[int, int]:
+        return (
+            max(1, min(int(time_chunk), max(1, int(n_slots)))),
+            max(1, min(int(particle_chunk), max(1, int(n_particles)))),
+        )
+
+    @staticmethod
+    def _write_name(var, index: int, value: str, name_strlen: int) -> None:
+        var[index, :] = np.array(list(value[:name_strlen].ljust(name_strlen)), dtype='S1')
+
+    @classmethod
+    def _create_static_metadata(
+        cls,
+        ds,
+        n_particles: int,
+        n_populations: int,
+        n_flowfields: int,
+        populations: list,
+        flow_field_names: list,
+        name_strlen: int,
+    ) -> None:
+        """Create and write metadata that does not vary with output time."""
+        ds.createVariable('population_name', 'S1', ('n_populations', 'name_strlen'))
+        ds.createVariable('population_particle_type', 'i4', ('n_populations',))
+        ds.createVariable('population_start_idx', 'i8', ('n_populations',))
+        ds.createVariable('population_count', 'i8', ('n_populations',))
+        ds.createVariable('population_repr_volume', 'f8', ('n_populations',))
+        ds.createVariable('trajectory_id', 'i8', ('n_particles',))
+        ds.createVariable('population_id', 'i4', ('n_particles',))
+        ds.createVariable('flowfield_name', 'S1', ('n_flowfields', 'name_strlen'))
+
+        ds['trajectory_id'][:] = np.arange(n_particles, dtype=np.int64)
+
+        particle_offset = 0
+        for pop_idx, population in enumerate(populations):
+            pop_name = getattr(population, 'name', f'population_{pop_idx}')
+            cls._write_name(ds['population_name'], pop_idx, str(pop_name), name_strlen)
+            ds['population_particle_type'][pop_idx] = int(getattr(population, 'particle_type', 0))
+            ds['population_start_idx'][pop_idx] = particle_offset
+            n_part = len(population.particles['x'])
+            ds['population_count'][pop_idx] = n_part
+            repr_vol = getattr(population, 'repr_volume', np.nan)
+            ds['population_repr_volume'][pop_idx] = float(repr_vol) if repr_vol is not None else np.nan
+            ds['population_id'][particle_offset:particle_offset + n_part] = pop_idx
+            particle_offset += n_part
+
+        for ff_idx in range(n_flowfields):
+            ff_name = flow_field_names[ff_idx] if flow_field_names and ff_idx < len(flow_field_names) else ''
+            cls._write_name(ds['flowfield_name'], ff_idx, str(ff_name), name_strlen)
+
+    @staticmethod
+    def _particle_field(particles: dict, name: str, default):
+        if name in particles:
+            return particles[name]
+        return default
 
     def open_output(
         self,
@@ -61,6 +171,16 @@ class NetCDFWriter:
         populations: list,
         flow_field_names: list,
         name_strlen: int = 24,
+        coordinate_dtype: str = 'float32',
+        status_dtype: str = 'uint8',
+        compression: bool = True,
+        compression_level: int = 1,
+        shuffle: bool = True,
+        time_chunk: int = 1,
+        particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        sync_interval: int | None = DEFAULT_SYNC_INTERVAL,
+        reopen_interval: int | None = None,
+        include_covered_distance: bool = False,
     ):
         """
         Open a streaming output file with pre-allocated dimensions.
@@ -89,6 +209,29 @@ class NetCDFWriter:
             Names of the flow fields; written as static metadata.
         name_strlen : int, optional
             Maximum character length for string variables (default 24).
+        coordinate_dtype : {'float32', 'float64'}, optional
+            Floating point dtype for large trajectory variables. Defaults to
+            ``float32`` to reduce output volume.
+        status_dtype : {'uint8', 'int32'}, optional
+            Integer dtype for status flags. Defaults to ``uint8``.
+        compression : bool, optional
+            Whether to compress large chunked variables.
+        compression_level : int, optional
+            NetCDF/HDF5 zlib compression level, 0-9. Level 1 is intentionally
+            cheap and usually gives most of the size win for particle tracks.
+        shuffle : bool, optional
+            Whether to enable the HDF5 shuffle filter when compression is on.
+        time_chunk, particle_chunk : int, optional
+            Chunk shape for time-major trajectory variables.
+        sync_interval : int or None, optional
+            Flush every N successful writes. Use 0/None to sync only on close.
+        reopen_interval : int or None, optional
+            Proactively close and reopen the output file every N writes. This is
+            useful on unstable network filesystems but is disabled by default.
+        include_covered_distance : bool, optional
+            Create the legacy ``covered_distance`` variable. It is disabled by
+            default because it is not written by the simulation and can be very
+            large.
 
         Returns
         -------
@@ -98,9 +241,18 @@ class NetCDFWriter:
         self._validate_filename(filename)
         output_path = self.output_dir / filename
 
+        coordinate_dtype = self._normalize_coordinate_dtype(coordinate_dtype)
+        status_dtype, status_fill = self._normalize_status_dtype(status_dtype)
+        compression_level = int(compression_level)
+        if compression_level < 0 or compression_level > 9:
+            raise ValueError('compression_level must be between 0 and 9.')
+        time_particle_chunks = self._time_particle_chunks(n_slots, N_particles, time_chunk, particle_chunk)
+        compression_kwargs = self._compression_kwargs(compression, compression_level, shuffle)
+
         ds = nc4.Dataset(str(output_path), 'w', format='NETCDF4')
 
-        # Dimensions: n_timesteps is fixed (pre-allocated, no copy work on writes)
+        # Time-major layout writes one full particle slice per saved time. This
+        # matches the simulation access pattern and keeps chunk writes contiguous.
         ds.createDimension('n_particles', N_particles)
         ds.createDimension('n_populations', N_populations)
         ds.createDimension('n_timesteps', n_slots)
@@ -111,106 +263,98 @@ class NetCDFWriter:
         ds.title = 'SedTRAILS Particle Simulation Results'
         ds.institution = 'SedTRAILS Particle Tracer System'
         ds.created_on = datetime.now().isoformat()
+        ds.sedtrails_output_schema = 'trajectory_v2'
+        ds.trajectory_layout = 'time_particle'
+        ds.coordinate_dtype = coordinate_dtype
+        ds.status_dtype = status_dtype
+        ds.estimated_output_slots = int(n_slots)
+        ds.written_slots = 0
+        ds.sync_interval = 0 if sync_interval is None else int(sync_interval)
+        ds.reopen_interval = 0 if reopen_interval is None else int(reopen_interval)
 
-        # Static metadata variables
-        ds.createVariable('population_name', 'S1', ('n_populations', 'name_strlen'))
-        ds.createVariable('population_particle_type', 'i4', ('n_populations',))
-        ds.createVariable('population_start_idx', 'i4', ('n_populations',))
-        ds.createVariable('population_count', 'i4', ('n_populations',))
-        ds.createVariable('population_repr_volume', 'f8', ('n_populations',))
-        ds.createVariable('trajectory_id', 'S1', ('n_particles', 'name_strlen'))
-        ds.createVariable('population_id', 'i4', ('n_particles',))
-        ds.createVariable('flowfield_name', 'S1', ('n_flowfields', 'name_strlen'))
+        self._create_static_metadata(
+            ds,
+            N_particles,
+            N_populations,
+            N_flowfields,
+            populations,
+            flow_field_names,
+            name_strlen,
+        )
 
-        # Time-varying trajectory variables: unwritten slots stay at fill value
-        ds.createVariable('time', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('x', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('y', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('z', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('burial_depth', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('mixing_depth', 'f8', ('n_particles', 'n_timesteps'), fill_value=np.nan)
-        ds.createVariable('status_alive', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('status_buried', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('status_domain', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('status_transported', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('status_released', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('status_mobile', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
-        ds.createVariable('covered_distance', 'f8', ('n_flowfields', 'n_particles', 'n_timesteps'), fill_value=np.nan)
-
-        # Write static population metadata
-        particle_offset = 0
-        for pop_idx, population in enumerate(populations):
-            pop_name = getattr(population, 'name', f'population_{pop_idx}')
-            ds['population_name'][pop_idx, :] = np.array(
-                list(pop_name[:name_strlen].ljust(name_strlen)), dtype='S1'
+        # Time-varying trajectory variables. ``time`` is one value per saved
+        # output slot; all particles share the same simulation clock.
+        ds.createVariable(
+            'time',
+            'f8',
+            ('n_timesteps',),
+            fill_value=np.nan,
+            chunksizes=(time_particle_chunks[0],),
+            **compression_kwargs,
+        )
+        for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+            ds.createVariable(
+                var_name,
+                coordinate_dtype,
+                ('n_timesteps', 'n_particles'),
+                fill_value=np.nan,
+                chunksizes=time_particle_chunks,
+                **compression_kwargs,
             )
-            ds['population_particle_type'][pop_idx] = int(getattr(population, 'particle_type', 0))
-            ds['population_start_idx'][pop_idx] = particle_offset
-            n_part = len(population.particles['x'])
-            ds['population_count'][pop_idx] = n_part
-            repr_vol = getattr(population, 'repr_volume', np.nan)
-            ds['population_repr_volume'][pop_idx] = float(repr_vol) if repr_vol is not None else np.nan
-            ds['population_id'][particle_offset:particle_offset + n_part] = pop_idx
+        for var_name in _STATUS_DEFAULTS:
+            ds.createVariable(
+                var_name,
+                status_dtype,
+                ('n_timesteps', 'n_particles'),
+                fill_value=status_fill,
+                chunksizes=time_particle_chunks,
+                **compression_kwargs,
+            )
 
-            for i in range(n_part):
-                traj_id = f'traj_{particle_offset + i}'
-                ds['trajectory_id'][particle_offset + i, :] = np.array(
-                    list(traj_id[:name_strlen].ljust(name_strlen)), dtype='S1'
-                )
-            particle_offset += n_part
-
-        # Write flow-field metadata
-        if flow_field_names:
-            for ff_idx, ff_name in enumerate(flow_field_names[:N_flowfields]):
-                ds['flowfield_name'][ff_idx, :] = np.array(
-                    list(ff_name[:name_strlen].ljust(name_strlen)), dtype='S1'
-                )
+        if include_covered_distance:
+            ds.createVariable(
+                'covered_distance',
+                coordinate_dtype,
+                ('n_flowfields', 'n_timesteps', 'n_particles'),
+                fill_value=np.nan,
+                chunksizes=(
+                    1,
+                    time_particle_chunks[0],
+                    time_particle_chunks[1],
+                ),
+                **compression_kwargs,
+            )
 
         # Store path so record_output can reopen on network/HDF errors
         self._streaming_path = str(output_path)
         self._write_count = 0
+        self._sync_interval = 0 if sync_interval is None else int(sync_interval)
+        self._reopen_interval = None if reopen_interval is None else int(reopen_interval)
 
         ds.sync()
         return ds
 
-    @staticmethod
-    def _write_slot(h, populations: list, slot_idx: int, current_time: float) -> None:
+    @classmethod
+    def _write_slot(cls, h, populations: list, slot_idx: int, current_time: float) -> None:
         """Write one save-interval slot to an open netCDF4 handle."""
         particle_offset = 0
+        h['time'][slot_idx] = current_time
         for population in populations:
+            particles = population.particles
             num_particles = len(population.particles['x'])
             sl = slice(particle_offset, particle_offset + num_particles)
 
-            h['time'][sl, slot_idx] = current_time
-            h['x'][sl, slot_idx] = np.asarray(population.particles['x'])
-            h['y'][sl, slot_idx] = np.asarray(population.particles['y'])
-            h['z'][sl, slot_idx] = np.asarray(
-                population.particles.get('z', np.zeros(num_particles))
-            )
-            h['burial_depth'][sl, slot_idx] = np.asarray(population.particles['burial_depth'])
-            h['mixing_depth'][sl, slot_idx] = np.asarray(
-                population.particles.get('mixing_depth', np.full(num_particles, np.nan))
-            )
-            h['status_alive'][sl, slot_idx] = np.asarray(
-                population.particles.get('status_alive', np.ones(num_particles, dtype=np.int32))
-            )
-            h['status_buried'][sl, slot_idx] = np.asarray(
-                population.particles.get('status_buried', np.zeros(num_particles, dtype=np.int32))
-            )
-            h['status_domain'][sl, slot_idx] = np.asarray(
-                population.particles.get('status_domain', np.ones(num_particles, dtype=np.int32))
-            )
-            h['status_transported'][sl, slot_idx] = np.asarray(
-                population.particles.get('status_transported', np.zeros(num_particles, dtype=np.int32))
-            )
-            h['status_released'][sl, slot_idx] = np.asarray(
-                population.particles.get('status_released', np.ones(num_particles, dtype=np.int32))
-            )
-            h['status_mobile'][sl, slot_idx] = np.asarray(population.particles['status_mobile'])
+            h['x'][slot_idx, sl] = np.asarray(particles['x'])
+            h['y'][slot_idx, sl] = np.asarray(particles['y'])
+            h['z'][slot_idx, sl] = cls._particle_field(particles, 'z', 0.0)
+            h['burial_depth'][slot_idx, sl] = np.asarray(particles['burial_depth'])
+            h['mixing_depth'][slot_idx, sl] = cls._particle_field(particles, 'mixing_depth', np.nan)
+            for status_name, default in _STATUS_DEFAULTS.items():
+                h[status_name][slot_idx, sl] = cls._particle_field(particles, status_name, default)
 
             particle_offset += num_particles
 
-        h.sync()
+        h.written_slots = max(int(getattr(h, 'written_slots', 0)), int(slot_idx) + 1)
 
     def _reopen_handle(self, nc_handle) -> 'nc4.Dataset':
         """Close a broken/stale handle and reopen the file in read-write mode."""
@@ -227,14 +371,11 @@ class NetCDFWriter:
         """
         Write current particle state to one time slot in the streaming output file.
 
-        Syncs to disk after every write so data is safe even if the process is
-        interrupted mid-simulation.
-
         On network (SMB/NFS) drives the HDF5 file descriptor can go stale after
-        a reconnect or server-side idle timeout.  Two defences are applied:
+        a reconnect or server-side idle timeout.  Two defences are available:
 
-        1. **Proactive reopen** every ``_REOPEN_INTERVAL`` writes refreshes the OS
-           file descriptor before it can go stale.
+        1. **Proactive reopen** can refresh the OS file descriptor before it
+           can go stale.
         2. **Reactive reopen**: on any HDF/IO ``RuntimeError`` or ``OSError`` the
            handle is closed, the file is reopened in ``'r+'`` mode, and the write
            is retried once.
@@ -259,7 +400,8 @@ class NetCDFWriter:
         """
         # Proactive reopen prevents stale FD on long-running network-drive writes.
         self._write_count = getattr(self, '_write_count', 0) + 1
-        if self._write_count % _REOPEN_INTERVAL == 0:
+        reopen_interval = getattr(self, '_reopen_interval', None)
+        if reopen_interval and reopen_interval > 0 and self._write_count % reopen_interval == 0:
             logger.debug('Proactive netCDF handle reopen at slot %d (write #%d)',
                          slot_idx, self._write_count)
             nc_handle = self._reopen_handle(nc_handle)
@@ -279,7 +421,113 @@ class NetCDFWriter:
             self._write_slot(nc_handle, populations, slot_idx, current_time)
             logger.info('Retry succeeded for slot %d', slot_idx)
 
+        sync_interval = getattr(self, '_sync_interval', DEFAULT_SYNC_INTERVAL)
+        if sync_interval and sync_interval > 0 and self._write_count % sync_interval == 0:
+            nc_handle.sync()
+
         return nc_handle
+
+    def write_checkpoint(
+        self,
+        filename: str,
+        populations: list,
+        current_time: float,
+        *,
+        reference_date: str | None = None,
+        time_units: str | None = None,
+        name_strlen: int = 24,
+        coordinate_dtype: str = 'float32',
+        status_dtype: str = 'uint8',
+        compression: bool = True,
+        compression_level: int = 1,
+        shuffle: bool = True,
+        particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+    ) -> Path:
+        """Write a compact restart checkpoint containing only the current state."""
+        self._validate_filename(filename)
+        output_path = self.output_dir / filename
+        tmp_path = output_path.with_name(f'.{output_path.name}.tmp')
+
+        coordinate_dtype = self._normalize_coordinate_dtype(coordinate_dtype)
+        status_dtype, status_fill = self._normalize_status_dtype(status_dtype)
+        n_particles = sum(len(population.particles['x']) for population in populations)
+        n_populations = len(populations)
+        particle_chunk = max(1, min(int(particle_chunk), max(1, int(n_particles))))
+        compression_kwargs = self._compression_kwargs(compression, int(compression_level), shuffle)
+
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+        ds = nc4.Dataset(str(tmp_path), 'w', format='NETCDF4')
+        try:
+            ds.createDimension('n_particles', n_particles)
+            ds.createDimension('n_populations', n_populations)
+            ds.createDimension('n_flowfields', 1)
+            ds.createDimension('name_strlen', name_strlen)
+
+            ds.title = 'SedTRAILS Particle Simulation Checkpoint'
+            ds.institution = 'SedTRAILS Particle Tracer System'
+            ds.created_on = datetime.now().isoformat()
+            ds.sedtrails_file_kind = 'checkpoint'
+            ds.sedtrails_output_schema = 'checkpoint_v1'
+            ds.trajectory_layout = 'checkpoint'
+            if reference_date is not None:
+                ds.reference_date = str(reference_date)
+            if time_units is not None:
+                ds.time_units = str(time_units)
+
+            self._create_static_metadata(
+                ds,
+                n_particles,
+                n_populations,
+                1,
+                populations,
+                [],
+                name_strlen,
+            )
+
+            ds.createVariable('time', 'f8', (), fill_value=np.nan)
+            ds['time'][...] = float(current_time)
+
+            for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+                ds.createVariable(
+                    var_name,
+                    coordinate_dtype,
+                    ('n_particles',),
+                    fill_value=np.nan,
+                    chunksizes=(particle_chunk,),
+                    **compression_kwargs,
+                )
+            for var_name in _STATUS_DEFAULTS:
+                ds.createVariable(
+                    var_name,
+                    status_dtype,
+                    ('n_particles',),
+                    fill_value=status_fill,
+                    chunksizes=(particle_chunk,),
+                    **compression_kwargs,
+                )
+
+            particle_offset = 0
+            for population in populations:
+                particles = population.particles
+                n_part = len(particles['x'])
+                sl = slice(particle_offset, particle_offset + n_part)
+                ds['x'][sl] = np.asarray(particles['x'])
+                ds['y'][sl] = np.asarray(particles['y'])
+                ds['z'][sl] = self._particle_field(particles, 'z', 0.0)
+                ds['burial_depth'][sl] = np.asarray(particles['burial_depth'])
+                ds['mixing_depth'][sl] = self._particle_field(particles, 'mixing_depth', np.nan)
+                for status_name, default in _STATUS_DEFAULTS.items():
+                    ds[status_name][sl] = self._particle_field(particles, status_name, default)
+                particle_offset += n_part
+
+            ds.sync()
+        finally:
+            ds.close()
+
+        tmp_path.replace(output_path)
+        return output_path
 
     def close_output(self, nc_handle) -> Path:
         """
@@ -296,6 +544,7 @@ class NetCDFWriter:
             Absolute path to the closed NetCDF file.
         """
         path = Path(nc_handle.filepath())
+        nc_handle.sync()
         nc_handle.close()
         return path
 

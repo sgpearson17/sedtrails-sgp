@@ -190,6 +190,154 @@ def test_create_restart_from_netcdf_generates_yaml_and_seed_files(tmp_path):
     assert pop2_file.name == 'population_2.restart_points.csv'
 
 
+def test_create_restart_from_time_major_netcdf_reads_final_written_slot(tmp_path):
+    base_config = {
+        'time': {'start': '2020-01-01 00:00:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2020-01-01 00:00:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                },
+                {
+                    'name': 'population_2',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2020-01-01 00:00:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                },
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (
+                ('n_timesteps', 'n_particles'),
+                np.array(
+                    [
+                        [0.0, 5.0, 10.0],
+                        [1.0, 6.0, 11.0],
+                        [2.0, 7.0, 12.0],
+                        [np.nan, np.nan, np.nan],
+                    ],
+                    dtype=np.float32,
+                ),
+            ),
+            'y': (
+                ('n_timesteps', 'n_particles'),
+                np.array(
+                    [
+                        [0.0, 4.0, 7.0],
+                        [0.5, 4.5, 7.5],
+                        [1.0, 5.0, 8.0],
+                        [np.nan, np.nan, np.nan],
+                    ],
+                    dtype=np.float32,
+                ),
+            ),
+            'time': (('n_timesteps',), np.array([0.0, 60.0, 120.0, np.nan])),
+            'population_id': (('n_particles',), np.array([0, 0, 1], dtype=int)),
+            'status_alive': (
+                ('n_timesteps', 'n_particles'),
+                np.array(
+                    [
+                        [1, 1, 1],
+                        [1, 1, 1],
+                        [1, 0, 1],
+                        [0, 0, 0],
+                    ],
+                    dtype=np.uint8,
+                ),
+            ),
+            'status_domain': (
+                ('n_timesteps', 'n_particles'),
+                np.ones((4, 3), dtype=np.uint8),
+            ),
+        },
+        attrs={'trajectory_layout': 'time_particle', 'written_slots': 3},
+    )
+
+    netcdf_file = tmp_path / 'results_v2.nc'
+    ds.to_netcdf(netcdf_file)
+
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(tmp_path / 'restart.yaml'),
+    )
+
+    assert summary.restart_time == '2020-01-01 00:02:00'
+    assert summary.retained_particles == 2
+
+
+def test_create_restart_from_checkpoint_netcdf(tmp_path):
+    base_config = {
+        'time': {'start': '2020-01-01 00:00:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {
+                    'name': 'population_1',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2020-01-01 00:00:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                },
+                {
+                    'name': 'population_2',
+                    'particle_type': 'sand',
+                    'seeding': {
+                        'release_start': '2020-01-01 00:00:00',
+                        'quantity': 1,
+                        'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 1}},
+                    },
+                },
+            ]
+        },
+    }
+
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_particles',), np.array([2.0, 12.0], dtype=np.float32)),
+            'y': (('n_particles',), np.array([1.0, 8.0], dtype=np.float32)),
+            'time': ((), 180.0),
+            'population_id': (('n_particles',), np.array([0, 1], dtype=int)),
+            'status_alive': (('n_particles',), np.array([1, 1], dtype=np.uint8)),
+            'status_domain': (('n_particles',), np.array([1, 1], dtype=np.uint8)),
+        },
+        attrs={'sedtrails_file_kind': 'checkpoint'},
+    )
+
+    netcdf_file = tmp_path / 'checkpoint.nc'
+    ds.to_netcdf(netcdf_file)
+
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(tmp_path / 'restart.yaml'),
+    )
+
+    assert summary.restart_time == '2020-01-01 00:03:00'
+    assert summary.retained_particles == 2
+
+
 def test_create_restart_uses_reference_date_for_netcdf_time(tmp_path):
     base_config = {
         'general': {'input_model': {'reference_date': '1970-01-01'}},

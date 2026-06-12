@@ -55,17 +55,55 @@ def read_netcdf(results_file_path: Path) -> xr.Dataset:
     results_file_path = Path(results_file_path)
     if not results_file_path.exists():
         raise FileNotFoundError(f"NetCDF file '{results_file_path}' not found.")
-    ds = xr.open_dataset(results_file_path)
+    ds = xr.open_dataset(results_file_path, engine='netcdf4')
     return ds
+
+
+def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return x/y/time arrays in legacy plotting shape: (n_particles, n_timesteps)."""
+    x_var = ds['x']
+    y_var = ds['y']
+
+    if x_var.ndim == 1 and y_var.ndim == 1:
+        x_data = np.asarray(x_var.values, dtype=float)[:, np.newaxis]
+        y_data = np.asarray(y_var.values, dtype=float)[:, np.newaxis]
+    elif x_var.ndim == 2 and 'time' in ds and ds['time'].ndim == 1 and x_var.dims[0] == ds['time'].dims[0]:
+        x_data = np.asarray(x_var.values, dtype=float).T
+        y_data = np.asarray(y_var.values, dtype=float).T
+    elif x_var.ndim == 2:
+        x_data = np.asarray(x_var.values, dtype=float)
+        y_data = np.asarray(y_var.values, dtype=float)
+    else:
+        raise ValueError("Expected 'x' and 'y' trajectory arrays to be 1D or 2D.")
+
+    n_particles, n_timesteps = x_data.shape
+    if 'time' not in ds:
+        time_data = np.broadcast_to(np.arange(n_timesteps, dtype=float), (n_particles, n_timesteps))
+    elif ds['time'].ndim == 0:
+        time_data = np.full((n_particles, n_timesteps), float(ds['time'].values))
+    elif ds['time'].ndim == 1:
+        time_values = np.asarray(ds['time'].values, dtype=float)
+        if time_values.size == n_timesteps:
+            time_data = np.broadcast_to(time_values, (n_particles, n_timesteps))
+        elif time_values.size == n_particles:
+            time_data = np.broadcast_to(time_values[:, np.newaxis], (n_particles, n_timesteps))
+        else:
+            raise ValueError("'time' length does not match particles or timesteps.")
+    elif ds['time'].ndim == 2:
+        time_data = np.asarray(ds['time'].values, dtype=float)
+        if time_data.shape != (n_particles, n_timesteps):
+            time_data = time_data.T
+    else:
+        raise ValueError("Unsupported 'time' variable shape for trajectory plotting.")
+
+    return x_data, y_data, time_data
 
 
 def plot_trajectories(ds, save_plot=False, output_dir=None):
     """Plot particle trajectories from the NetCDF dataset."""
 
     # Extract trajectory data
-    x_data = ds['x'].values  # shape: (n_particles, n_timesteps)
-    y_data = ds['y'].values  # shape: (n_particles, n_timesteps)
-    time_data = ds['time'].values  # shape: (n_particles, n_timesteps)
+    x_data, y_data, time_data = _trajectory_arrays(ds)
 
     n_particles, n_timesteps = x_data.shape
 
@@ -342,7 +380,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     mean_distances + std_distances,
                     color=pop_colors[pop_idx],
                     alpha=0.2,
-                    label=f'{population_names[pop_idx]} (±1σ)',
+                    label=f'{population_names[pop_idx]} (+/-1 std)',
                 )
 
     ax4.legend()
