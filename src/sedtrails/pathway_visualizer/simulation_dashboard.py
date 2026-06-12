@@ -67,7 +67,14 @@ class SimulationDashboard:
         self.bathymetry_vmax = 6
 
     def initialize_dashboard(self, figsize: Tuple[float, float] = (16, 10)) -> None:
-        """Initialize the dashboard with subplot layout."""
+        """
+        Initialize the dashboard with subplot layout.
+
+        Parameters
+        ----------
+        figsize : Tuple[float, float]
+            Figure size in inches.
+        """
         self.fig = plt.figure(figsize=figsize)
 
         # Use mosaic layout: M1=flowfield, M2=bathymetry, T1-T4=timeseries, P=progress
@@ -101,7 +108,21 @@ class SimulationDashboard:
         self._show_and_raise_window()
 
     def should_update(self, current_time: float, plot_interval: float) -> bool:
-        """Return whether the dashboard should redraw for the given simulation time."""
+        """
+        Return whether the dashboard should redraw for the given simulation time.
+
+        Parameters
+        ----------
+        current_time : float
+            Current simulation time in seconds.
+        plot_interval : float
+            Interval between plot updates.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
         return current_time - self.last_update_time >= plot_interval
 
     def _show_and_raise_window(self):
@@ -207,7 +228,7 @@ class SimulationDashboard:
         # Set up date formatter for all time series plots
         # Use a compact format to fit better in the available space
         date_fmt = mdates.DateFormatter('%m-%d %H:%M')
-        
+
         # Longshore velocity
         (self.lines['longshore_avg'],) = self.axes['longshore_vel'].plot([], [], 'b-', label='Average', linewidth=2)
         (self.lines['longshore_max'],) = self.axes['longshore_vel'].plot([], [], 'r-', label='Maximum', linewidth=2)
@@ -287,7 +308,30 @@ class SimulationDashboard:
         simulation_end_time: float | None = None,
         mesh_geometry: Dict[str, Any] | None = None,
     ) -> None:
-        """Update dashboard with current simulation data."""
+        """
+        Update dashboard with current simulation data.
+
+        Parameters
+        ----------
+        flow_field : Dict[str, np.ndarray]
+            Flow-field data to visualize.
+        bathymetry : np.ndarray
+            Bathymetry data used for plotting.
+        particles : Dict[str, np.ndarray]
+            Particle data used for plotting or output.
+        current_time : float
+            Current simulation time in seconds.
+        timestep : float
+            Current simulation timestep.
+        plot_interval : float
+            Interval between plot updates.
+        simulation_start_time : float
+            Simulation start time in seconds.
+        simulation_end_time : float | None
+            Simulation end time in seconds.
+        mesh_geometry : Dict[str, Any] | None
+            Optional mesh geometry used for plotting.
+        """
 
         if not self.should_update(current_time, plot_interval):
             return
@@ -931,6 +975,13 @@ class SimulationDashboard:
             plt.close(self.fig)
 
     def save(self, save_path: str) -> None:
-        """Save current dashboard state."""
+        """
+        Save current dashboard state.
+
+        Parameters
+        ----------
+        save_path : str
+            Path where the figure or output file is saved.
+        """
         if self.fig is not None:
             self.fig.savefig(save_path, dpi=300, bbox_inches='tight')

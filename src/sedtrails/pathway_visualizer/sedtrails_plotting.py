@@ -127,11 +127,17 @@ class TrajectoryArrays:
         return mask
 
     def release_time(self) -> np.ndarray:
-        """Compute per-particle release time (shape (N,)).
+        """
+        Compute per-particle release time (shape (N,)).
 
         Prefers first index where status_released==1. If not provided,
         uses first finite (x, y) time. If a particle has no finite
         positions, falls back to time[:,0].
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the computed values.
         """
         N, T = self.time.shape
         t0 = np.empty(N, dtype=float)
@@ -154,7 +160,14 @@ class TrajectoryArrays:
         return t0
 
     def age(self) -> np.ndarray:
-        """Age matrix (N, T) = time - release_time, negatives masked to nan."""
+        """
+        Age matrix (N, T) = time - release_time, negatives masked to nan.
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the computed values.
+        """
         t0 = self.release_time()[:, None]  # (N,1)
         age = self.time - t0
         age[age < 0] = np.nan
@@ -189,7 +202,33 @@ def plot_trajectories_by_age(
     show_end: bool = True,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions of all particles, colored by particle age."""
+    """
+    Plot all positions of all particles, colored by particle age.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    point_size : float
+        Scatter marker size.
+    cmap : str
+        Matplotlib colormap name.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    show_start : bool
+        Whether to draw start markers.
+    show_end : bool
+        Whether to draw end markers.
+    ax : Optional[plt.Axes]
+        Matplotlib axes to draw into.
+
+    Returns
+    -------
+    plt.Axes
+        Axes containing the generated plot.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -255,11 +294,36 @@ def plot_trajectories_by_baseline(
     cmap: str = 'viridis',
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions colored by per-particle distance from a rotated baseline.
+    """
+    Plot all positions colored by per-particle distance from a rotated baseline.
 
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
     is computed from the *initial* rotated-X coordinate per particle and then
     broadcast to all timesteps. :contentReference[oaicite:2]{index=2}
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    rotation_deg : float
+        Counterclockwise rotation angle in degrees.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    origin_xy : Optional[Tuple[float, float]]
+        Origin used for rotated coordinates.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    point_size : float
+        Scatter marker size.
+    cmap : str
+        Matplotlib colormap name.
+    ax : Optional[plt.Axes]
+        Matplotlib axes to draw into.
+
+    Returns
+    -------
+    plt.Axes
+        Axes containing the generated plot.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -319,7 +383,39 @@ def animate_particles(
     save_path: Optional[str] = None,
     dpi: int = 150,
 ):
-    """Animate particle positions through time (scatter by timestep)."""
+    """
+    Animate particle positions through time (scatter by timestep).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    rotation_deg : float
+        Counterclockwise rotation angle in degrees.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    origin_xy : Optional[Tuple[float, float]]
+        Origin used for rotated coordinates.
+    color_mode : str
+        Coloring mode for the animation.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    point_size : float
+        Scatter marker size.
+    interval_ms : int
+        Animation frame interval in milliseconds.
+    t_indices : Optional[Sequence[int]]
+        Timestep indices to include in the animation.
+    save_path : Optional[str]
+        Path where the figure or output file is saved.
+    dpi : int
+        Output resolution in dots per inch.
+
+    Returns
+    -------
+    tuple[plt.Figure, FuncAnimation]
+        Matplotlib figure and animation object.
+    """
     N, T = tr.x.shape
     if t_indices is None:
         t_indices = list(range(max(first_stable_index, 0), T))
@@ -405,7 +501,23 @@ def _points_in_poly(x: np.ndarray, y: np.ndarray, poly_xy: np.ndarray) -> np.nda
 def particles_originating_in_polygon(
     tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
 ) -> np.ndarray:
-    """Mask (N,) for particles whose START point is inside polygon."""
+    """
+    Mask (N,) for particles whose START point is inside polygon.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_xy : np.ndarray
+        Polygon vertices as x-y coordinate pairs.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     x0 = tr.x[:, first_stable_index]
     y0 = tr.y[:, first_stable_index]
     inside = _points_in_poly(x0[None, :], y0[None, :], poly_xy)[0]
@@ -415,7 +527,23 @@ def particles_originating_in_polygon(
 def particles_passing_through_polygon(
     tr: TrajectoryArrays, poly_xy: np.ndarray, first_stable_index: int = 0
 ) -> np.ndarray:
-    """Mask (N,) for particles that enter polygon at any timestep."""
+    """
+    Mask (N,) for particles that enter polygon at any timestep.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_xy : np.ndarray
+        Polygon vertices as x-y coordinate pairs.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     inside = _points_in_poly(tr.x, tr.y, poly_xy) & mask_valid
     return inside.any(axis=1)
@@ -428,7 +556,27 @@ def particles_between_two_polygons(
     order: Optional[str] = None,
     first_stable_index: int = 0,
 ) -> np.ndarray:
-    """Particles that pass through both polygons (optionally in a given order)."""
+    """
+    Particles that pass through both polygons (optionally in a given order).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    poly_a : np.ndarray
+        Vertices of the first selection polygon.
+    poly_b : np.ndarray
+        Vertices of the second selection polygon.
+    order : Optional[str]
+        Optional order constraint for polygon crossings.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     in_a = _points_in_poly(tr.x, tr.y, poly_a) & mask_valid
     in_b = _points_in_poly(tr.x, tr.y, poly_b) & mask_valid
@@ -456,7 +604,23 @@ def particles_between_two_polygons(
 def particles_include_exclude(
     tr: TrajectoryArrays, include_polys: List[np.ndarray], exclude_polys: Optional[List[np.ndarray]] = None
 ) -> np.ndarray:
-    """Particles that pass through *any* include polygon and *none* of the exclude polygons."""
+    """
+    Particles that pass through *any* include polygon and *none* of the exclude polygons.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    include_polys : List[np.ndarray]
+        Polygons that particles must pass through.
+    exclude_polys : Optional[List[np.ndarray]]
+        Polygons that particles must avoid.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
+    """
     mask_valid = tr.valid_mask()
     include_any = np.zeros(tr.x.shape[0], dtype=bool)
     for poly in include_polys:
@@ -487,12 +651,21 @@ class InteractivePolygonTool:
         self._poly = np.array(verts, dtype=float)
 
     def disconnect(self):
+        """Run disconnect."""
         if self.selector is not None:
             self.selector.disconnect_events()
             self.selector = None
 
     @property
     def polygon(self) -> Optional[np.ndarray]:
+        """
+        Return the polygon value.
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            The polygon value.
+        """
         return self._poly
 
 
@@ -517,7 +690,21 @@ class ParticleStats:
 
 
 def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) -> List[ParticleStats]:
-    """Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}"""
+    """
+    Compute per-particle trajectory statistics similar to analyze_pathways.m. :contentReference[oaicite:3]{index=3}
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+
+    Returns
+    -------
+    List[ParticleStats]
+        List containing the computed records.
+    """
     N, T = tr.x.shape
     stats: List[ParticleStats] = []
 
@@ -580,7 +767,16 @@ def compute_particle_stats(tr: TrajectoryArrays, first_stable_index: int = 0) ->
 
 
 def stats_to_csv(stats: List[ParticleStats], path: str) -> None:
-    """Write particle stats to CSV. Pandas if available; csv otherwise."""
+    """
+    Write particle stats to CSV. Pandas if available; csv otherwise.
+
+    Parameters
+    ----------
+    stats : List[ParticleStats]
+        Particle statistics records to write.
+    path : str
+        Output path for the file.
+    """
     header = [f for f in ParticleStats.__dataclass_fields__.keys()]
     if _pd is not None:
         _pd.DataFrame([{h: getattr(s, h) for h in header} for s in stats]).to_csv(path, index=False)
@@ -604,7 +800,27 @@ def quick_explorer(
     origin_xy: Optional[Tuple[float, float]] = None,
     units_scale: float = 1.0,
 ):
-    """Quick interactive viewer with a time slider and color mode toggle."""
+    """
+    Quick interactive viewer with a time slider and color mode toggle.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    rotation_deg : float
+        Counterclockwise rotation angle in degrees.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    origin_xy : Optional[Tuple[float, float]]
+        Origin used for rotated coordinates.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+
+    Returns
+    -------
+    plt.Figure | None
+        Interactive matplotlib figure, or None when widgets are unavailable.
+    """
     if Slider is None or Button is None:
         warnings.warn('matplotlib widgets not available; quick_explorer requires Slider and Button.', stacklevel=1)
         return None
@@ -692,7 +908,27 @@ def plot_density_heatmap(
     first_stable_index: int = 0,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot a 2D histogram of trajectory visitation density (spatial heatmap)."""
+    """
+    Plot a 2D histogram of trajectory visitation density (spatial heatmap).
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Trajectory arrays to plot or analyze.
+    bins : int
+        Number of histogram bins.
+    units_scale : float
+        Scale factor applied to plotted coordinates.
+    first_stable_index : int
+        First timestep considered stable for plotting or analysis.
+    ax : Optional[plt.Axes]
+        Matplotlib axes to draw into.
+
+    Returns
+    -------
+    plt.Axes
+        Axes containing the generated plot.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -760,7 +996,19 @@ def _time_values_as_seconds(ds, time_var) -> np.ndarray:
 
 
 def load_from_xarray(ds) -> TrajectoryArrays:
-    """Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables."""
+    """
+    Build TrajectoryArrays from an xarray Dataset with SedTRAILS variables.
+
+    Parameters
+    ----------
+    ds : object
+        xarray dataset containing SedTRAILS variables.
+
+    Returns
+    -------
+    TrajectoryArrays
+        Trajectory arrays loaded from the dataset.
+    """
     x_var = ds['x']
     y_var = ds['y']
     time_var = ds['time'] if 'time' in ds else None

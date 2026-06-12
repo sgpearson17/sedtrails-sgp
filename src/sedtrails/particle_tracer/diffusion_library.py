@@ -62,6 +62,26 @@ class GradientDiffusionStrategy(DiffusionStrategy):
         Example dummy diffusion calculation using gradients of the velocity field.
 
         For unstructured grids, gradients are approximated using nearest-neighbor differences.
+
+        Parameters
+        ----------
+        dt : float
+            Integration timestep in seconds.
+        x : np.ndarray
+            X coordinate value or array.
+        y : np.ndarray
+            Y coordinate value or array.
+        u : np.ndarray
+            X velocity component.
+        v : np.ndarray
+            Y velocity component.
+        kh : float
+            Horizontal diffusivity value or array.
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            Array containing the computed values.
         """
         n = len(x)
         dudx = np.zeros(n)
@@ -104,6 +124,29 @@ class RandomDiffusionStrategy(DiffusionStrategy):
         v: np.ndarray,
         kh: float,
     ) -> Tuple[float, float]:
+        """
+        Return calculate.
+
+        Parameters
+        ----------
+        dt : float
+            Integration timestep in seconds.
+        x : np.ndarray
+            X coordinate value or array.
+        y : np.ndarray
+            Y coordinate value or array.
+        u : np.ndarray
+            X velocity component.
+        v : np.ndarray
+            Y velocity component.
+        kh : float
+            Horizontal diffusivity value or array.
+
+        Returns
+        -------
+        Tuple[float, float]
+            Floating-point result of the calculation.
+        """
         vel_mag = np.sqrt(u**2 + v**2)
         rndnr_mag = np.random.randn(*vel_mag.shape)
         mag_diff = np.abs(rndnr_mag * kh) * vel_mag
@@ -129,6 +172,29 @@ class BrownianDiffusionStrategy(DiffusionStrategy):
         v: np.ndarray,
         kh: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Return calculate.
+
+        Parameters
+        ----------
+        dt : float
+            Integration timestep in seconds.
+        x : np.ndarray
+            X coordinate value or array.
+        y : np.ndarray
+            Y coordinate value or array.
+        u : np.ndarray
+            X velocity component.
+        v : np.ndarray
+            Y velocity component.
+        kh : float
+            Horizontal diffusivity value or array.
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            Array containing the computed values.
+        """
         sigma = math.sqrt(2.0 * kh * dt)
         dx = np.random.normal(0.0, sigma, size=x.shape)
         dy = np.random.normal(0.0, sigma, size=y.shape)
@@ -153,6 +219,11 @@ class DiffusionCalculator:
     def strategy(self) -> DiffusionStrategy:
         """
         Get the current diffusion strategy.
+
+        Returns
+        -------
+        DiffusionStrategy
+            The strategy value.
         """
         return self._strategy
 

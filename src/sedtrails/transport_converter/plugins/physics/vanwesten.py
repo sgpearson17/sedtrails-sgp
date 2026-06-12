@@ -35,6 +35,14 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         grain_properties : dict[str, float]
             Dictionary containing grain properties such as 'critical_shields' and 'settling_velocity'.
 
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            SedTRAILS data object to process.
+        grain_properties : dict[str, float]
+            Precomputed grain-property values.
+        transport_probability_method : str
+            Transport probability method name.
         """
 
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']

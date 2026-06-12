@@ -52,6 +52,16 @@ class FieldDataRetriever:
         --------
         Tuple[int, int, float]
             (lower_index, upper_index, weight) where weight is the interpolation factor [0-1]
+
+        Parameters
+        ----------
+        target_time : float
+            Target simulation time in seconds.
+
+        Returns
+        -------
+        Tuple[int, int, float]
+            Integer result of the calculation.
         """
         times = self.sedtrails_data.times
 
@@ -165,6 +175,18 @@ class FieldDataRetriever:
             - 'u': X-component of the flow velocity
             - 'v': Y-component of the flow velocity
             - 'magnitude': Magnitude of the flow velocity
+
+        Parameters
+        ----------
+        time : float
+            Simulation time in seconds.
+        flow_field_name : str
+            Name of the vector flow field to retrieve.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Array containing the computed values.
         """
         # Get indices for interpolation
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
@@ -225,6 +247,18 @@ class FieldDataRetriever:
         Particle interpolation is linear in the nodal values, so callers with a
         small number of query points can interpolate each time slice at those
         points and blend the results by `weight`.
+
+        Parameters
+        ----------
+        time : float
+            Simulation time in seconds.
+        flow_field_name : str
+            Name of the vector flow field to retrieve.
+
+        Returns
+        -------
+        Dict
+            Dictionary containing the requested values.
         """
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
         lower_slice = self.sedtrails_data[lower_index]
@@ -272,6 +306,18 @@ class FieldDataRetriever:
         The bound is `(1-w) * max(lower) + w * max(upper)`, which is greater
         than or equal to the exact max of the linearly interpolated magnitude
         field for `0 <= w <= 1`.
+
+        Parameters
+        ----------
+        time : float
+            Simulation time in seconds.
+        flow_field_name : str
+            Name of the vector flow field to retrieve.
+
+        Returns
+        -------
+        float
+            Floating-point result of the calculation.
         """
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
         lower_max = self._get_flow_time_slice_max(flow_field_name, lower_index)
@@ -322,6 +368,18 @@ class FieldDataRetriever:
             - 'x': X-coordinates of the grid cells
             - 'y': Y-coordinates of the grid cells
             - 'magnitude': Scalar field values
+
+        Parameters
+        ----------
+        time : float
+            Simulation time in seconds.
+        scalar_field_name : str
+            Name of the scalar field to retrieve.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Array containing the computed values.
         """
         # Get indices for interpolation
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
@@ -362,7 +420,21 @@ class FieldDataRetriever:
             return {'x': self.sedtrails_data.x, 'y': self.sedtrails_data.y, 'magnitude': scalar_interpolated}
 
     def get_scalar_field_bounds(self, time: float, scalar_field_name: str) -> Dict:
-        """Return lower/upper time slices for a scalar field without full-grid interpolation."""
+        """
+        Return lower/upper time slices for a scalar field without full-grid interpolation.
+
+        Parameters
+        ----------
+        time : float
+            Simulation time in seconds.
+        scalar_field_name : str
+            Name of the scalar field to retrieve.
+
+        Returns
+        -------
+        Dict
+            Dictionary containing the requested values.
+        """
         lower_index, upper_index, weight = self.get_interpolation_indices(time)
         lower_slice = self.sedtrails_data[lower_index]
 

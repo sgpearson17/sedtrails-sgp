@@ -1,6 +1,7 @@
 from logger import log_simulation_state, log_exception
 
 def run_simulation():
+    """Run run simulation."""
     try:
         state = {"step": 1, "value": 100, "status": "running"}
         log_simulation_state(state)

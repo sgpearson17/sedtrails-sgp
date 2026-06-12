@@ -27,6 +27,11 @@ class Controller(ABC):
     def load_config(self, config_file: str) -> None:
         """
         Reads the configuration file and applies default values.
+
+        Parameters
+        ----------
+        config_file : str
+            Path to the SedTRAILS configuration file.
         """
 
         pass
@@ -35,6 +40,11 @@ class Controller(ABC):
     def get_config(self) -> Dict[str, Any]:
         """
         Returns the current configuration.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing the requested values.
         """
 
         pass
@@ -43,6 +53,18 @@ class Controller(ABC):
     def get(self, keys: str, default=None) -> Any:
         """
         Retrieves a value from the configuration data using a dot-separated key.
+
+        Parameters
+        ----------
+        keys : str
+            Dot-separated configuration key path to retrieve.
+        default : object
+            Fallback value used when the requested key is absent.
+
+        Returns
+        -------
+        Any
+            Requested value.
         """
 
         pass
@@ -83,6 +105,11 @@ class ConfigurationController(Controller):
 
         config_file : str
             The path to the configuration file to read.
+
+        Returns
+        -------
+        None
+            This method returns None after updating the controller state.
         """
 
         if self.config is None and config_file is None:

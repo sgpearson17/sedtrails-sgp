@@ -423,7 +423,41 @@ class NetCDFWriter:
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
     ) -> Path:
-        """Write a compact restart checkpoint containing only the current state."""
+        """
+        Write a compact restart checkpoint containing only the current state.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file to write.
+        populations : list
+            Particle populations to process.
+        current_time : float
+            Current simulation time in seconds.
+        reference_date : str | None
+            Reference date for converting model times.
+        time_units : str | None
+            NetCDF time units string.
+        name_strlen : int
+            Maximum stored population-name length.
+        coordinate_dtype : str
+            NumPy dtype used for coordinate variables.
+        status_dtype : str
+            NumPy dtype used for status variables.
+        compression : bool
+            Whether NetCDF variables are compressed.
+        compression_level : int
+            Compression level for NetCDF variables.
+        shuffle : bool
+            Whether the NetCDF shuffle filter is enabled.
+        particle_chunk : int
+            Particle chunk size for NetCDF variables.
+
+        Returns
+        -------
+        Path
+            Computed value returned by the function.
+        """
         self._validate_filename(filename)
         output_path = self.output_dir / filename
         tmp_path = output_path.with_name(f'.{output_path.name}.tmp')

@@ -168,6 +168,19 @@ class PointStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         locations = getattr(config, 'strategy_settings', {}).get('locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
@@ -195,6 +208,19 @@ class RandomStrategy(SeedingStrategy):
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         # expects strategy_settings to contain 'bbox' and 'seed'
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         bbox = getattr(config, 'strategy_settings', {}).get('bbox', None)
         if not bbox:
             raise MissingConfigurationParameter('"bbox" must be provided for RandomStrategy.')
@@ -230,6 +256,19 @@ class GridStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         bbox = config.strategy_settings.get('bbox')
         if not bbox:
             raise MissingConfigurationParameter('"bbox" must be provided for GridStrategy.')
@@ -278,6 +317,19 @@ class TransectStrategy(SeedingStrategy):
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         segments = getattr(config, 'strategy_settings', {}).get('segments', None)
         if not segments:
             raise MissingConfigurationParameter('"segments" must be provided for TransectStrategy.')
@@ -335,6 +387,19 @@ class FilePointsStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         import os
 
         import pandas as pd

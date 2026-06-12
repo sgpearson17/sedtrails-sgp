@@ -72,6 +72,18 @@ def compute_shear_velocity(bed_shear_stress: np.ndarray, water_density: float) -
     Reference:
     Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications.
     Thomas Telford. Equation 32
+
+    Parameters
+    ----------
+    bed_shear_stress : np.ndarray
+        Bed shear stress value or array.
+    water_density : float
+        Water density in kilograms per cubic meter.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
     return np.sqrt(np.abs(bed_shear_stress) / water_density)
 
@@ -107,6 +119,24 @@ def compute_shields(
     Reference:
     Soulsby, R. (1997). Dynamics of marine sands: a manual for practical applications.
     Thomas Telford. Equation 74
+
+    Parameters
+    ----------
+    bed_shear_stress : np.ndarray
+        Bed shear stress value or array.
+    gravity : float
+        Gravitational acceleration.
+    sediment_density : float
+        Sediment density in kilograms per cubic meter.
+    water_density : float
+        Water density in kilograms per cubic meter.
+    grain_diameter : float
+        Sediment grain diameter.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
     return np.abs(bed_shear_stress) / (gravity * (sediment_density - water_density) * grain_diameter)
 
@@ -137,7 +167,7 @@ def compute_bed_load_velocity(
 
     Only computed where θ_max > θ_cr (critical conditions).
 
-    References: 
+    References:
     Fredsoe, J., & Deigaard, R. (1992). Mechanics of coastal sediment transport.
     World Scientific. Equation 7.51
 
@@ -148,6 +178,20 @@ def compute_bed_load_velocity(
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793. Equation 2
+
+    Parameters
+    ----------
+    shields_number : np.ndarray
+        Dimensionless Shields parameter.
+    critical_shields : float
+        Critical Shields parameter for motion.
+    mean_shear_velocity : np.ndarray
+        Mean shear velocity.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
 
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -191,6 +235,22 @@ def compute_transport_layer_thickness(
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793. Equation 7
+
+    Parameters
+    ----------
+    transport_magnitude : np.ndarray
+        Magnitude of sediment transport.
+    velocity_magnitude : np.ndarray
+        Magnitude of flow velocity.
+    sediment_density : float
+        Sediment density in kilograms per cubic meter.
+    porosity : float
+        The porosity value.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
     transport_flux = transport_magnitude / (sediment_density * (1 - porosity))
 
@@ -247,6 +307,30 @@ def compute_suspended_velocity(
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
+
+    Parameters
+    ----------
+    flow_velocity_magnitude : np.ndarray
+        Magnitude of flow velocity.
+    bed_load_velocity : np.ndarray
+        Bed-load velocity magnitude.
+    settling_velocity : float
+        Particle settling velocity.
+    von_karman_constant : float
+        von Karman constant.
+    max_shear_velocity : np.ndarray
+        Maximum shear velocity.
+    shields_number : np.ndarray
+        Dimensionless Shields parameter.
+    critical_shields : float
+        Critical Shields parameter for motion.
+    method : SuspendedVelocityMethod
+        Calculation method name.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
     if method == SuspendedVelocityMethod.SOULSBY_2011:
         # Suppress warnings for this entire function
@@ -307,6 +391,22 @@ def compute_directions_from_magnitude(
     van Westen, B., de Schipper, M. A., Pearson, S. G., & Luijendijk, A. P. (2025).
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
+
+    Parameters
+    ----------
+    velocity_magnitude : np.ndarray
+        Magnitude of flow velocity.
+    transport_x : np.ndarray
+        X component of sediment transport.
+    transport_y : np.ndarray
+        Y component of sediment transport.
+    transport_magnitude : np.ndarray
+        Magnitude of sediment transport.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Array containing the computed values.
     """
     with np.errstate(divide='ignore', invalid='ignore'):
         velocity_x = np.where(transport_magnitude > 0, velocity_magnitude * transport_x / transport_magnitude, 0.0)
@@ -348,9 +448,23 @@ def compute_mixing_layer_thickness(
     Lagrangian modelling reveals sediment pathways at evolving coasts.
     Scientific Reports, 15(1), 8793.
 
-    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008). 
-    Improvement of sand activation depth prediction under conditions 
+    Bertin, X., Castelle, B., Anfuso, G., & Ferreira, Ó. (2008).
+    Improvement of sand activation depth prediction under conditions
     of oblique wave breaking. Geo-Marine Letters, 28(2), 65-75.
+
+    Parameters
+    ----------
+    max_bed_shear_stress : np.ndarray
+        Maximum bed shear stress value or array.
+    critical_shear_stress : float
+        Critical shear stress for particle motion.
+    method : MixingLayerMethod
+        Calculation method name.
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the computed values.
     """
     if method == MixingLayerMethod.BERTIN_2008:
         return 0.041 * np.sqrt(np.maximum(max_bed_shear_stress - critical_shear_stress, 0.0))
@@ -401,6 +515,24 @@ def compute_grain_properties(
     Soulsby, R. L., & Whitehouse, R. (1997). Threshold of sediment motion in coastal environments.
     Pacific Coasts and Ports '97: Proceedings of the 13th Australasian Coastal and Ocean
     Engineering Conference and the 6th Australasian Port and Harbour Conference; Volume 1. Equation 14
+
+    Parameters
+    ----------
+    grain_diameter : float
+        Sediment grain diameter.
+    gravity : float
+        Gravitational acceleration.
+    sediment_density : float
+        Sediment density in kilograms per cubic meter.
+    water_density : float
+        Water density in kilograms per cubic meter.
+    kinematic_viscosity : float
+        Water kinematic viscosity.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary containing the requested values.
     """
     # Dimensionless grain size, D* (Soulsby 1997, Equation 75, p. 104)
     dstar = (gravity * (sediment_density / water_density - 1) / kinematic_viscosity**2) ** (1 / 3) * grain_diameter

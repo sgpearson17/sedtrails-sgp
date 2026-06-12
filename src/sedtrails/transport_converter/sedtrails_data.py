@@ -117,7 +117,14 @@ class SedtrailsData:
             self.face_node_connectivity = np.asarray(self.face_node_connectivity, dtype=np.int64)
 
     def mesh_geometry(self) -> Dict[str, Any] | None:
-        """Return optional face-node mesh geometry for visualization code."""
+        """
+        Return optional face-node mesh geometry for visualization code.
+
+        Returns
+        -------
+        Dict[str, Any] | None
+            Dictionary containing the requested values.
+        """
         if self.node_x is None or self.node_y is None or self.face_node_connectivity is None:
             return None
 
@@ -241,17 +248,43 @@ class SedtrailsData:
         setattr(self, name, data)
 
     def has_physics_field(self, name: str) -> bool:
-        """Check if a specific physics field exists."""
+        """
+        Check if a specific physics field exists.
+
+        Parameters
+        ----------
+        name : str
+            Name of the requested object.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
 
         return name in self._physics_fields
 
     def get_physics_fields(self) -> list:
-        """Get list of available physics field names."""
+        """
+        Get list of available physics field names.
+
+        Returns
+        -------
+        list
+            Computed value returned by the function.
+        """
 
         return list(self._physics_fields.keys())
 
     def has_physics_data(self) -> bool:
-        """Check if any physics fields have been added."""
+        """
+        Check if any physics fields have been added.
+
+        Returns
+        -------
+        bool
+            Boolean result of the check.
+        """
 
         return len(self._physics_fields) > 0
 

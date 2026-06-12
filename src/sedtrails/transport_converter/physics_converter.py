@@ -49,6 +49,18 @@ class PhysicsConfig:
         2) base config dict,
         3) method-specific tracer_config (flattened into attributes).
         Supports tracer_config passed either as a flat dict, or nested under the method name.
+
+        Parameters
+        ----------
+        config : Optional[Dict[str, Any]]
+            Configuration mapping used by the operation.
+        tracer_config : Optional[Dict[str, Any]]
+            Tracer-method-specific configuration mapping.
+
+        Returns
+        -------
+        'PhysicsConfig'
+            Constructed physics configuration.
         """
         # Start from defaults
         obj = cls()
@@ -85,6 +97,14 @@ class PhysicsConfig:
 
     # Optional: expose a dict view when needed
     def as_dict(self) -> Dict[str, Any]:
+        """
+        Return as dict.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing the requested values.
+        """
         return dict(self.__dict__)
 
 
@@ -113,7 +133,14 @@ class PhysicsConverter:
 
     @property
     def grain_properties(self):
-        """Get the calculated grain properties."""
+        """
+        Get the calculated grain properties.
+
+        Returns
+        -------
+        dict
+            Calculated grain-property values.
+        """
 
         # lazy grain properties calculation
         if not self._grain_properties:
@@ -142,12 +169,23 @@ class PhysicsConverter:
 
     @property
     def physics_plugin(self, tracer_method: Optional[str] = None):
-        """Get the physics plugin instance based on the configured method.
+        """
+        Get the physics plugin instance based on the configured method.
 
         Parameters:
         -----------
         tracer_method : str, optional
             The tracer method to use for physics calculations. If None, uses the configured method.
+
+        Parameters
+        ----------
+        tracer_method : Optional[str]
+            Tracer method name to use.
+
+        Returns
+        -------
+        object
+            Loaded physics plugin instance.
         """
 
         import importlib  # lazy import for performance
@@ -178,6 +216,13 @@ class PhysicsConverter:
             Existing SedtrailsData object to be enhanced with physics calculations.
         transport_probability_method : str, optional
             Method to use for transport probability effects
+
+        Parameters
+        ----------
+        sedtrails_data : object
+            SedTRAILS data object to process.
+        transport_probability_method : str
+            Transport probability method name.
         """
 
         if self._physics_plugin is None:

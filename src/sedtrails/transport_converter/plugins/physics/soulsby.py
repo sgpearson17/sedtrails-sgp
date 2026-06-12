@@ -39,11 +39,23 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
     def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
         Add physics using Soulsby et al. (2011) approach.
-        '1. Focus on individual particle tracking velocities\n'
-        '2. Different approach to settling and resuspension\n'
-        '3. Particle-specific rather than layer-based calculations\n'
-        'See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating '
-        'the dispersal of sand-sized particles in coastal waters.'
+                '1. Focus on individual particle tracking velocities
+        '
+                '2. Different approach to settling and resuspension
+        '
+                '3. Particle-specific rather than layer-based calculations
+        '
+                'See: Soulsby, R. L., et al. (2011). Lagrangian model for simulating '
+                'the dispersal of sand-sized particles in coastal waters.'
+
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            SedTRAILS data object to process.
+        grain_properties : dict[str, float]
+            Precomputed grain-property values.
+        transport_probability_method : str
+            Transport probability method name.
         """
         logger.info('Using Soulsby et al. (2011) to compute transport velocities and add to SedTRAILS data')
 
@@ -70,7 +82,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         dimensionless_grain_size = grain_properties.get('dimensionless_grain_size')
         critical_shields = grain_properties.get('critical_shields')
         settling_velocity = grain_properties.get('settling_velocity')
-        
+
         # Validate required grain properties
         if critical_shields is None:
             raise ValueError('critical_shields is required for Soulsby physics calculations but was not found in grain_properties')
@@ -163,7 +175,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                         )
                     else:
                         soulsby_b[i][j] = 0
- 
+
         # Compute the transition probability a [-] (Equation 5)
         soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
 
@@ -219,7 +231,7 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
                         Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
                     elif np.isnan(Rs[i][j]):
                         Rs[i][j] = 0
-        
+
         # VECTORIZE THESE LOOPS!
         # Compute R
         for i in range(0, theta_max.shape[0]):

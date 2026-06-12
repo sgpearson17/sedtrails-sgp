@@ -29,7 +29,21 @@ class SedtrailsYamlLoader(yaml.SafeLoader):
 
 # Add a constructor that treats timestamps as strings instead of datetime objects
 def construct_timestamp_as_string(loader, node):
-    """Construct timestamp nodes as strings instead of datetime objects."""
+    """
+    Construct timestamp nodes as strings instead of datetime objects.
+
+    Parameters
+    ----------
+    loader : object
+        YAML loader instance.
+    node : object
+        YAML scalar node to construct.
+
+    Returns
+    -------
+    str
+        Scalar timestamp text constructed from the YAML node.
+    """
     return loader.construct_scalar(node)
 
 
@@ -217,6 +231,11 @@ class YAMLConfigValidator:
     def schema_content(self) -> Dict[str, Any]:
         """
         Property to access the root schema content.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The schema content value.
         """
         return self._get_root_schema_content()
 

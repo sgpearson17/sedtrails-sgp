@@ -567,6 +567,11 @@ class Simulation:
     def config(self):
         """
         Returns the full configuration settings for the simulation.
+
+        Returns
+        -------
+        dict
+            Full validated simulation configuration.
         """
         if not self._config_is_read:
             self._controller.load_config(self._config_file)
@@ -576,6 +581,11 @@ class Simulation:
     def populations_config(self):
         """
         Returns the configuration paramters for 'populations'.
+
+        Returns
+        -------
+        dict
+            Population configuration mapping.
         """
         if self._populations_config is None:
             self._populations_config = self.config.get('particles', {}).get('populations', {})
@@ -585,6 +595,11 @@ class Simulation:
     def start_time(self):
         """
         Get the start time parameter for the simulation.
+
+        Returns
+        -------
+        object
+            Configured simulation start time value.
         """
         if not self._start_time:
             self._start_time = self._controller.get('time.start_time')  # defaults to Unix epoch
@@ -594,6 +609,11 @@ class Simulation:
     def flow_field(self) -> SedtrailsData:
         """
         Returns input flow field data in SedtrailsData format.
+
+        Returns
+        -------
+        SedtrailsData
+            The flow field value.
         """
 
         return self.format_converter.convert_to_sedtrails()
@@ -602,6 +622,10 @@ class Simulation:
         """
         Validates the configuration file.
 
+        Returns
+        -------
+        bool
+            Boolean result of the check.
         """
         if not self._config_is_read:  # assure config is read only once
             try:
@@ -648,7 +672,14 @@ class Simulation:
         return value
 
     def run(self):
-        """Execute the simulation and flush profile timings on failure."""
+        """
+        Execute the simulation and flush profile timings on failure.
+
+        Returns
+        -------
+        object
+            Value returned by the simulation implementation.
+        """
         try:
             return self._run_impl()
         except Exception:

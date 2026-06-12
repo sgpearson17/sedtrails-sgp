@@ -44,6 +44,11 @@ class FormatPlugin(BaseFormatPlugin):
         --------
         List
             List of variable names in the input dataset.
+
+        Returns
+        -------
+        List[str]
+            The variables value.
         """
 
         if self.input_data is None:  # Ensure input_data is loaded
@@ -90,6 +95,20 @@ class FormatPlugin(BaseFormatPlugin):
         --------
         SedtrailsData
             The converted SedtrailsData object.
+
+        Parameters
+        ----------
+        current_time : object
+            Current simulation time in seconds.
+        reading_interval : object
+            The reading interval value.
+        reference_date : Optional[np.datetime64]
+            Reference date for converting model times.
+
+        Returns
+        -------
+        SedtrailsData
+            Converted SedTRAILS data object.
         """
 
         if reference_date is None:
@@ -165,6 +184,11 @@ class FormatPlugin(BaseFormatPlugin):
     def get_seeding_coordinates(self):
         """
         Return only the spatial coordinates required for particle seeding.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            X and Y coordinates used for particle seeding.
         """
         self.load()
 
@@ -236,6 +260,11 @@ class FormatPlugin(BaseFormatPlugin):
     def load(self) -> Any:
         """
         Reads and loads a SFINCS NetCDF file using xugrid.
+
+        Returns
+        -------
+        Any
+            Requested value.
         """
 
         if self.input_data is None:
@@ -537,7 +566,23 @@ class FormatPlugin(BaseFormatPlugin):
 
 
 def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_value=-999):
-    """Return zero-based face-node connectivity with invalid entries set to -1."""
+    """
+    Return zero-based face-node connectivity with invalid entries set to -1.
+
+    Parameters
+    ----------
+    mesh2d_face_nodes : object
+        Face-node connectivity array.
+    start_index : object
+        Index base used by the face-node connectivity.
+    fill_value : object
+        Padding value used for missing face nodes.
+
+    Returns
+    -------
+    np.ndarray
+        Zero-based face-node connectivity with invalid entries set to -1.
+    """
     faces = np.asarray(mesh2d_face_nodes)
     normalized = faces.astype(np.int64) - int(start_index)
     invalid = normalized < 0

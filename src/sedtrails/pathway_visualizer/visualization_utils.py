@@ -37,6 +37,28 @@ def plot_flow_field(
     --------
     tuple
         (fig, ax) matplotlib figure and axis objects
+
+    Parameters
+    ----------
+    flow_data : object
+        Flow-field data used for plotting.
+    title : object
+        Optional plot title.
+    downsample : object
+        Vector downsampling factor for plotting.
+    figsize : object
+        Figure size in inches.
+    cmap : object
+        Matplotlib colormap name.
+    vector_color : object
+        Color for plotted velocity vectors.
+    save_path : object
+        Path where the figure or output file is saved.
+
+    Returns
+    -------
+    tuple[plt.Figure, plt.Axes]
+        Matplotlib figure and axes containing the flow-field plot.
     """
     # Extract data
     x = flow_data['x']
@@ -131,6 +153,34 @@ def plot_particle_trajectory(
     --------
     tuple
         (fig, ax) matplotlib figure and axis objects
+
+    Parameters
+    ----------
+    flow_data : object
+        Flow-field data used for plotting.
+    trajectory_x : object
+        Particle trajectory x coordinates.
+    trajectory_y : object
+        Particle trajectory y coordinates.
+    title : object
+        Optional plot title.
+    downsample : object
+        Vector downsampling factor for plotting.
+    figsize : object
+        Figure size in inches.
+    cmap : object
+        Matplotlib colormap name.
+    vector_color : object
+        Color for plotted velocity vectors.
+    trajectory_color : object
+        Color used for the trajectory line.
+    save_path : object
+        Path where the figure or output file is saved.
+
+    Returns
+    -------
+    tuple[plt.Figure, plt.Axes]
+        Matplotlib figure and axes containing the trajectory plot.
     """
     # First create the flow field plot using existing function
     fig, ax = plot_flow_field(

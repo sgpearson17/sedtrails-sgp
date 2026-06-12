@@ -21,5 +21,17 @@ class BaseFormatPlugin(ABC):
         --------
         SedtrailsData
             The converted SedtrailsData object.
+
+        Parameters
+        ----------
+        *args : object
+            Additional positional arguments passed through to the implementation.
+        **kwargs : object
+            Additional keyword arguments passed through to the implementation.
+
+        Returns
+        -------
+        SedtrailsData
+            Converted SedTRAILS data object.
         """
         pass

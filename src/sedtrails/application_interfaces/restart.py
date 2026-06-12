@@ -361,11 +361,28 @@ def create_restart_from_netcdf(
     output_config_file: str = 'sedtrails-restart.yaml',
     seed_points_dir: str | None = None,
 ) -> RestartSummary:
-    """Create a restart YAML and per-population seed files from NetCDF output.
+    """
+    Create a restart YAML and per-population seed files from NetCDF output.
 
     The generated configuration keeps existing settings from ``base_config_file`` but
     replaces each population seeding strategy with ``file_points`` using particle
     coordinates from the last valid timestep for each particle in ``netcdf_file``.
+
+    Parameters
+    ----------
+    netcdf_file : str
+        Path to the NetCDF results file.
+    base_config_file : str
+        Path to the base configuration file.
+    output_config_file : str
+        Path where the restart configuration file is written.
+    seed_points_dir : str | None
+        Directory containing restart seed-point files.
+
+    Returns
+    -------
+    RestartSummary
+        Computed value returned by the function.
     """
 
     netcdf_path = Path(netcdf_file)

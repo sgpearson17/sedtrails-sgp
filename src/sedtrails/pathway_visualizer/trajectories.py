@@ -135,7 +135,18 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 
 def plot_trajectories(ds, save_plot=False, output_dir=None):
-    """Plot particle trajectories from the NetCDF dataset."""
+    """
+    Plot particle trajectories from the NetCDF dataset.
+
+    Parameters
+    ----------
+    ds : object
+        xarray dataset containing SedTRAILS variables.
+    save_plot : object
+        The save plot value.
+    output_dir : object
+        Directory where output files are written.
+    """
 
     # Extract trajectory data
     x_data, y_data, time_data = _trajectory_arrays(ds)
