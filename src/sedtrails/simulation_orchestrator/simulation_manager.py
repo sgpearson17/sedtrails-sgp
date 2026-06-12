@@ -80,7 +80,6 @@ class Simulation:
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
         self.data_manager = DataManager(self._get_output_dir())
-        self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
         self.dashboard = self._create_dashboard()  #
         self.writer = self.data_manager.writer
@@ -883,44 +882,6 @@ class Simulation:
                             slot_idx,
                         )
 
-                # Saving and plotting
-                # TODO: enable saving and plotting again: addapt writer with structure issue 297
-                # TODO: remove default insertion on configuration retrieval
-                # interval_output = self._controller.get('output.interval_output', '1H')
-                # interval_plot = self._controller.get('output.interval_plot', '1D')
-
-                # # Data manager
-                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > (
-                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_output
-                # ):
-                #     # self.data_manager.add_data()
-
-                # # Plotting
-                # TODO: enable plotting from saved data file and from memory.
-                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_plot > (
-                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_plot
-                # ):
-                #     plot_particle_trajectory(
-                #         flow_data=flow_field,
-                #         trajectory_x=self.data_manager.get_trajectory_x(),
-                #         trajectory_y=self.data_manager.get_trajectory_y(),
-                #         title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.step_count} steps',
-                #         save_path=f'{self.data_manager.output_dir}/trajectory_plot_{timer.step_count:05d}.png',
-                #     )
-
-                # Calculate progress percentage based on simulation time
-                # elapsed_time = timer.current - simulation_time.start
-                # progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
-
-                # # Update progress bar
-                # pbar.n = progress_percent
-                # pbar.set_postfix(
-                #     {
-                #         'Step': timer.step_count,
-                #         'Time': f'{timer.current:.0f}s',
-                #         'dt': f'{timer.current_timestep:.2f}s',
-                #     }
-                # )
                 # Update progress bar
                 if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
                     elapsed_time = timer.current - simulation_time.start
