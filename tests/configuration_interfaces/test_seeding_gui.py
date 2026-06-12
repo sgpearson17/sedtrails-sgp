@@ -3,6 +3,7 @@ import shutil
 
 import numpy as np
 import pytest
+import xarray as xr
 import yaml
 
 from sedtrails.application_interfaces.seeding_gui import (
@@ -13,6 +14,7 @@ from sedtrails.application_interfaces.seeding_gui import (
     generate_grid_points_in_polygon,
     generate_random_points_in_polygon,
     generate_transect_points,
+    load_bathymetry_view_data,
     load_config,
     remove_population,
     rename_population,
@@ -132,6 +134,84 @@ def test_default_seeded_config_path_is_next_to_source_yaml():
     assert default_seeded_config_path(Path('examples/sedtrails-example-multisource.yaml')) == Path(
         'examples/sedtrails-example-multisource-seeded.yaml'
     )
+
+
+def test_load_bathymetry_view_data_supports_fm_netcdf(tmp_path, monkeypatch):
+    """Bathymetry loading extracts first-time FM arrays using net_xcc/net_ycc."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'fm_netcdf'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'net_xcc': (('mesh2d_nFaces',), np.array([0.0, 1.0, 2.0])),
+            'net_ycc': (('mesh2d_nFaces',), np.array([3.0, 4.0, 5.0])),
+            'bedlevel': (('time', 'mesh2d_nFaces'), np.array([[10.0, 11.0, 12.0], [20.0, 21.0, 22.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([0.0, 1.0, 2.0]))
+    np.testing.assert_allclose(view_data.y, np.array([3.0, 4.0, 5.0]))
+    np.testing.assert_allclose(view_data.values, np.array([10.0, 11.0, 12.0]))
+    assert view_data.variable == 'bedlevel'
+
+
+def test_load_bathymetry_view_data_supports_xbeach(tmp_path, monkeypatch):
+    """Bathymetry loading extracts first mean-time XBeach arrays using globalx/globaly."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'xbeach'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [2.0, 3.0]])),
+            'globaly': (('ny', 'nx'), np.array([[10.0, 11.0], [12.0, 13.0]])),
+            'zb_mean': (
+                ('meantime', 'ny', 'nx'),
+                np.array([
+                    [[-1.0, -2.0], [-3.0, -4.0]],
+                    [[-5.0, -6.0], [-7.0, -8.0]],
+                ]),
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([0.0, 1.0, 2.0, 3.0]))
+    np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-1.0, -2.0, -3.0, -4.0]))
+    assert view_data.variable == 'zb_mean'
 
 
 def test_generate_transect_points_from_endpoint_pairs():

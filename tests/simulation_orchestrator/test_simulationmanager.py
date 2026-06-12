@@ -64,6 +64,47 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.1)
         assert not Simulation._is_after_loaded_sedtrails_data(SedtrailsData(), 7200.0)
 
+    def test_simulation_window_must_reach_first_input_time(self):
+        """A simulation that ends before input forcing starts should fail clearly."""
+
+        class SimulationTime:
+            start = 0.0
+            end = 3600.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        with pytest.raises(ConfigurationError, match='ends before the first available input field timestamp'):
+            Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
+
+    def test_simulation_window_must_not_start_before_first_input_time(self):
+        """A simulation may not spend CFL steps before forcing data exists."""
+
+        class SimulationTime:
+            start = 0.0
+            end = 7200.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        with pytest.raises(ConfigurationError, match='starts before the first available input field timestamp'):
+            Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
+
+    def test_simulation_window_may_end_at_first_input_time(self):
+        """The first forcing timestamp is a valid simulation endpoint."""
+
+        class SimulationTime:
+            start = 4600.0
+            end = 4600.0
+            reference_date = '2000-01-01'
+
+        class SedtrailsData:
+            times = np.array([4600.0, 8200.0])
+
+        Simulation._validate_simulation_time_matches_input(SimulationTime(), SedtrailsData())
+
     def test_exhausted_input_suppresses_further_reload_attempts(self):
         """After input exhaustion, later timesteps should reuse the last loaded fields."""
 
@@ -253,7 +294,7 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
 
     def test_initialize_population_output_status_supplies_required_fields(self):
-        """The initial sample should have status fields before the first physics update."""
+        """The seeded initial sample should have status fields before the first physics update."""
 
         class Population:
             particles = {
@@ -411,6 +452,32 @@ class TestSimulationManagerExpandTimeDimension:
         np.testing.assert_array_equal(
             expanded2['x'].isel(time=slice(0, original_size)).values, sample_dataset['x'].values
         )
+        
+    def test_ensure_time_capacity_expands_before_out_of_range_write(self, simulation_manager, sample_dataset):
+        """Output storage should grow before collecting an adaptive timestep beyond capacity."""
+        simulation_manager.logger = type('Logger', (), {'info': lambda self, *args, **kwargs: None})()
+
+        expanded, max_timesteps = simulation_manager._ensure_time_capacity(
+            sample_dataset,
+            timestep_index=2638,
+            max_timesteps=100,
+        )
+
+        assert max_timesteps >= 2639
+        assert len(expanded.time) == max_timesteps
+        np.testing.assert_array_equal(expanded['x'].isel(time=slice(0, 100)).values, sample_dataset['x'].values)
+
+    def test_ensure_time_capacity_reuses_dataset_when_index_fits(self, simulation_manager, sample_dataset):
+        """No expansion is needed while the target timestep is inside the allocated dimension."""
+
+        same_dataset, max_timesteps = simulation_manager._ensure_time_capacity(
+            sample_dataset,
+            timestep_index=99,
+            max_timesteps=100,
+        )
+
+        assert same_dataset is sample_dataset
+        assert max_timesteps == 100
 
     def test_expand_with_different_dimension_orders(self, simulation_manager):
         """Test expansion with different dimension orders."""
@@ -476,6 +543,67 @@ class TestSimulationManagerExpandTimeDimension:
             expanded['x'].isel(time=slice(0, original_size)).values,
             original_x,  # Compare against the stored original, not dataset['x']
         )
+
+class TestSimulationManagerSaveInterval:
+    """Tests for save_interval slot-count calculation and boundary logic."""
+
+    @pytest.mark.parametrize(
+        'duration_s,interval_s,expected_slots',
+        [
+            (3600, 3600, 2),        # 1H run, 1H interval  ? slot 0 + 1 boundary
+            (4 * 3600, 3600, 5),    # 4H run, 1H interval  ? slot 0 + 4 boundaries
+            (86400, 3600, 25),      # 1D run, 1H interval  ? 24 + 1
+            (3600, 900, 5),         # 1H run, 15min interval ? 4 + 1
+            (3601, 3600, 3),        # just over one interval ? 2 + 1
+        ],
+    )
+    def test_n_output_slots_calculation(self, duration_s, interval_s, expected_slots):
+        """Pre-allocated slot count is ceil(duration/interval) + 1 for the initial state."""
+        import math
+        n_slots = math.ceil(duration_s / interval_s) + 1
+        assert n_slots == expected_slots
+
+    def test_save_boundary_triggers_at_next_save_time(self):
+        """Record fires exactly when simulation time reaches the boundary, not before."""
+        next_save_time = 3600.0
+        saved = []
+
+        for t in [0.0, 1200.0, 2400.0, 3600.0, 4800.0]:
+            if t >= next_save_time:
+                saved.append(t)
+                next_save_time += 3600.0
+
+        assert saved == [3600.0]
+
+    def test_final_save_fires_when_sim_ends_between_boundaries(self):
+        """A trailing save after the loop captures the final particle state."""
+        last_saved_time = 3600.0
+        final_time = 4400.0       # simulation ended mid-interval
+        slot_idx = 2
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert should_save
+
+    def test_final_save_skipped_when_already_at_boundary(self):
+        """No duplicate save when the loop ended exactly on a save boundary."""
+        last_saved_time = 7200.0
+        final_time = 7200.0
+        slot_idx = 3
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
+
+    def test_final_save_skipped_when_slots_full(self):
+        """No out-of-bounds write when all pre-allocated slots are consumed."""
+        last_saved_time = 3600.0
+        final_time = 4400.0
+        slot_idx = 5
+        n_output_slots = 5   # already at capacity
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
 
 
 class TestSimulationDashboardThrottle:

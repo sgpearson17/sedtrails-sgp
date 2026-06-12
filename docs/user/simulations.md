@@ -2,7 +2,7 @@
 
 ::: warning
 Explain how a user configures and runs a simulation
-Outputs are explain ina separate section
+Outputs are explained in a separate section
 :::
 
 ## Configuring a Simulation
@@ -34,7 +34,7 @@ time:
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
 particles:
   populations:
-    - name: populaton_1
+    - name: population_1
       particle_type: sand
       characteristics:
         grain_size: 0.00025 

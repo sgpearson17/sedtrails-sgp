@@ -16,6 +16,16 @@ SEEDING_MODES = ('points', 'transect', 'random', 'grid')
 RANDOM_CANDIDATE_BATCH_SIZE = 16_384
 GRID_CANDIDATE_BATCH_SIZE = 100_000
 DEFAULT_GRID_MAX_CANDIDATES = 2_000_000
+SUPPORTED_GUI_INPUT_FORMATS: dict[str, dict[str, tuple[str, ...]]] = {
+    'fm_netcdf': {
+        'coordinates': ('net_xcc', 'net_ycc'),
+        'bathymetry_variables': ('bedlevel', 'bed_level'),
+    },
+    'xbeach': {
+        'coordinates': ('globalx', 'globaly'),
+        'bathymetry_variables': ('zb_mean', 'zb'),
+    },
+}
 
 
 class SeedingGuiError(RuntimeError):
@@ -129,9 +139,13 @@ def load_bathymetry_view_data(
     config_file = Path(config_path)
     config = load_config(config_file)
     input_model = config.get('general', {}).get('input_model', {})
-    input_format = format_override or input_model.get('format')
-    if input_format != 'fm_netcdf':
-        raise SeedingGuiError(f"Unsupported input format for setup GUI: {input_format!r}. Only 'fm_netcdf' is supported.")
+    input_format = str(format_override or input_model.get('format') or '').strip().lower()
+    format_spec = SUPPORTED_GUI_INPUT_FORMATS.get(input_format)
+    if format_spec is None:
+        supported = ', '.join(f"'{name}'" for name in SUPPORTED_GUI_INPUT_FORMATS)
+        raise SeedingGuiError(
+            f'Unsupported input format for setup GUI: {input_format!r}. Only {supported} are supported.'
+        )
 
     data_path = config.get('inputs', {}).get('data')
     if not data_path:
@@ -143,16 +157,21 @@ def load_bathymetry_view_data(
 
     dataset = _open_netcdf_dataset(input_file)
 
-    missing_coordinates = [name for name in ('net_xcc', 'net_ycc') if name not in dataset]
+    coordinate_x, coordinate_y = format_spec['coordinates']
+    missing_coordinates = [name for name in (coordinate_x, coordinate_y) if name not in dataset]
     if missing_coordinates:
         missing = ', '.join(missing_coordinates)
         raise SeedingGuiError(f'Missing coordinate variable(s): {missing}')
 
-    variable_name = _resolve_bathymetry_variable(dataset, variable)
+    variable_name = _resolve_bathymetry_variable(
+        dataset,
+        variable,
+        default_candidates=format_spec['bathymetry_variables'],
+    )
     try:
         values = _first_timestep_values(dataset[variable_name])
-        x = np.asarray(dataset['net_xcc'].values, dtype=float).reshape(-1)
-        y = np.asarray(dataset['net_ycc'].values, dtype=float).reshape(-1)
+        x = np.asarray(dataset[coordinate_x].values, dtype=float).reshape(-1)
+        y = np.asarray(dataset[coordinate_y].values, dtype=float).reshape(-1)
     except Exception as exc:
         raise SeedingGuiError(f'Could not extract map data: {exc}') from exc
     finally:
@@ -1214,10 +1233,14 @@ class SeedingGuiApp:
 
 def _first_timestep_values(variable: Any) -> np.ndarray:
     data = variable
-    if 'layer' in getattr(data, 'dims', ()):
+    dims = getattr(data, 'dims', ())
+    if 'layer' in dims:
         data = data.isel(layer=0)
-    if 'time' in getattr(data, 'dims', ()):
-        data = data.isel(time=0)
+    dims = getattr(data, 'dims', ())
+    for time_dim in ('time', 'meantime', 'globaltime'):
+        if time_dim in dims:
+            data = data.isel({time_dim: 0})
+            break
     return np.asarray(data.values)
 
 
@@ -1229,15 +1252,21 @@ def _polygon_path(polygon: list[tuple[float, float]]) -> Any:
     return MplPath(np.asarray(polygon, dtype=float))
 
 
-def _resolve_bathymetry_variable(dataset: Any, requested: str | None) -> str:
-    candidates = [requested] if requested else ['bedlevel', 'bed_level']
+def _resolve_bathymetry_variable(
+    dataset: Any,
+    requested: str | None,
+    *,
+    default_candidates: tuple[str, ...] = ('bedlevel', 'bed_level'),
+) -> str:
+    candidates = [requested] if requested else list(default_candidates)
     for candidate in candidates:
         if candidate and candidate in dataset:
             return candidate
     available = ', '.join(str(name) for name in dataset.data_vars)
     if requested:
         raise SeedingGuiError(f"Requested bathymetry variable '{requested}' was not found. Available variables: {available}")
-    raise SeedingGuiError(f"No bathymetry variable found. Tried 'bedlevel' and 'bed_level'. Available variables: {available}")
+    defaults = ' and '.join(f"'{name}'" for name in default_candidates)
+    raise SeedingGuiError(f'No bathymetry variable found. Tried {defaults}. Available variables: {available}')
 
 
 def _get_populations(config: dict[str, Any]) -> list[dict[str, Any]]:
