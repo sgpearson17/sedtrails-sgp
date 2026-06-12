@@ -283,32 +283,6 @@ class Simulation:
         """Return whether the loop should try to load another SedTRAILS data chunk."""
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
 
-    @staticmethod
-    def _validate_simulation_time_matches_input(simulation_time: Time, sedtrails_data) -> None:
-        """Raise a clear error when the simulation clock is before forcing starts."""
-        times = np.asarray(sedtrails_data.times, dtype=float)
-        if times.size == 0:
-            return
-
-        first_input_time = float(times[0])
-        if simulation_time.end < first_input_time:
-            raise ConfigurationError(
-                'Simulation time window ends before the first available input field timestamp. '
-                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
-                f'but input fields start at {first_input_time:.3f}s since '
-                f'{simulation_time.reference_date}. Adjust `time.start`, `time.duration`, or '
-                '`general.input_model.reference_date` so the simulation reaches the forcing data.'
-            )
-
-        if simulation_time.start < first_input_time:
-            raise ConfigurationError(
-                'Simulation starts before the first available input field timestamp. '
-                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
-                f'but input fields start at {first_input_time:.3f}s since '
-                f'{simulation_time.reference_date}. Adjust `time.start` or '
-                '`general.input_model.reference_date` so the simulation starts inside the forcing data.'
-            )
-
     def _ensure_time_capacity(
         self,
         xr_data: xr.Dataset,
@@ -327,79 +301,6 @@ class Simulation:
 
         self.logger.info(f'Expanding time dimension from {old_max} to {new_max}')
         return self._expand_time_dimension(xr_data, new_max), new_max
-
-    @staticmethod
-    def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int) -> int:
-        """Estimate stored trajectory samples, including the initial and final samples."""
-        return int(np.ceil(simulation_time.duration.seconds / save_interval_seconds)) + 1
-
-    @staticmethod
-    def _next_scheduled_output_time(simulation_time: Time, save_interval_seconds: int, output_step_count: int) -> float:
-        """Return the next configured output time for the already-written sample count."""
-        scheduled_time = simulation_time.start + output_step_count * save_interval_seconds
-        return min(scheduled_time, simulation_time.end)
-
-    @staticmethod
-    def _limit_timestep_to_output_schedule(
-        current_time: float,
-        current_timestep: float,
-        next_output_time: float,
-    ) -> float:
-        """Shorten a compute step so it lands exactly on the next output time."""
-        remaining = next_output_time - current_time
-        if remaining <= 0:
-            return current_timestep
-        return min(current_timestep, remaining)
-
-    @staticmethod
-    def _is_output_sample_due(sample_time: float, next_output_time: float, simulation_end_time: float) -> bool:
-        """Return whether the current step ended on a save boundary or final time."""
-        tolerance = 1e-9
-        return sample_time >= next_output_time - tolerance or sample_time >= simulation_end_time - tolerance
-
-    @staticmethod
-    def _initialize_population_output_status(populations, current_time: float) -> None:
-        """Populate status fields needed to save the seeded initial state."""
-        for population in populations:
-            particles = population.particles
-            n_particles = len(particles['x'])
-
-            domain = np.ones(n_particles, dtype=bool)
-            simplices = getattr(population, '_particle_simplices', None)
-            if simplices is not None:
-                domain = np.asarray(simplices) >= 0
-
-            alive = np.ones(n_particles, dtype=bool)
-            buried = np.zeros(n_particles, dtype=bool)
-            transported = np.zeros(n_particles, dtype=bool)
-            released = current_time >= particles.get('release_time', np.full(n_particles, -np.inf))
-
-            particles.setdefault('status_alive', alive)
-            particles.setdefault('status_buried', buried)
-            particles.setdefault('status_domain', domain)
-            particles.setdefault('status_transported', transported)
-            particles.setdefault('status_released', released)
-            particles.setdefault(
-                'status_mobile',
-                particles['status_domain']
-                & particles['status_alive']
-                & ~particles['status_buried']
-                & particles['status_released']
-                & particles['status_transported'],
-            )
-
-    def _collect_output_sample(
-        self,
-        xr_data: xr.Dataset,
-        populations,
-        output_step_count: int,
-        sample_time: float,
-        max_timesteps: int,
-    ) -> tuple[xr.Dataset, int, int]:
-        """Collect one compact output sample and expand storage if needed."""
-        xr_data, max_timesteps = self._ensure_time_capacity(xr_data, output_step_count, max_timesteps)
-        self.data_manager.collect_timestep_data(xr_data, populations, output_step_count, sample_time)
-        return xr_data, max_timesteps, output_step_count + 1
 
     @staticmethod
     def _map_eulerian_field_time(
@@ -424,6 +325,143 @@ class Simulation:
             return current_time_seconds
 
         return start + ((current_time_seconds - start) % cycle_duration)
+
+    @staticmethod
+    def _validate_simulation_start_matches_input(
+        simulation_time: Time,
+        input_time_bounds: tuple[float, float] | None,
+    ) -> None:
+        """Validate that the configured simulation start is covered by forcing data."""
+        if input_time_bounds is None:
+            return
+
+        forcing_start, forcing_end = input_time_bounds
+        simulation_start = float(simulation_time.start)
+        if forcing_start <= simulation_start <= forcing_end:
+            return
+
+        configured_start = getattr(simulation_time, '_start', str(simulation_start))
+        raise ConfigurationError(
+            'time.start must be within the input forcing window. '
+            f'time.start={configured_start!r} is {simulation_start:.3f}s since reference_date '
+            f'{simulation_time.reference_date!r}, but forcing covers '
+            f'[{forcing_start:.3f}, {forcing_end:.3f}]s. '
+            'repeat_eulerian_fields only repeats forcing after a valid simulation start.'
+        )
+
+    @classmethod
+    def _validate_simulation_time_matches_input(cls, simulation_time: Time, sedtrails_data) -> None:
+        """Backward-compatible validation helper for loaded SedTRAILS data."""
+        times = np.asarray(sedtrails_data.times, dtype=float)
+        if times.size == 0:
+            raise ConfigurationError('Input forcing contains no timestamps.')
+
+        first_input_time = float(times[0])
+        if simulation_time.end < first_input_time:
+            raise ConfigurationError(
+                'Simulation time window ends before the first available input field timestamp. '
+                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
+                f'but input fields start at {first_input_time:.3f}s since '
+                f'{simulation_time.reference_date}. Adjust `time.start`, `time.duration`, or '
+                '`general.input_model.reference_date` so the simulation reaches the forcing data.'
+            )
+
+        if simulation_time.start < first_input_time:
+            raise ConfigurationError(
+                'Simulation starts before the first available input field timestamp. '
+                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
+                f'but input fields start at {first_input_time:.3f}s since '
+                f'{simulation_time.reference_date}. Adjust `time.start` or '
+                '`general.input_model.reference_date` so the simulation starts inside the forcing data.'
+            )
+
+        cls._validate_simulation_start_matches_input(simulation_time, (first_input_time, float(times[-1])))
+
+    def _output_save_interval_seconds(self) -> int:
+        """Return the configured trajectory output cadence in seconds."""
+        save_interval_seconds = Duration(self._controller.get('outputs.save_interval', '1H')).seconds
+        if save_interval_seconds <= 0:
+            raise ConfigurationError('outputs.save_interval must be a positive duration')
+        return save_interval_seconds
+
+    @staticmethod
+    def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
+        """Count output slots for initial, scheduled, and final trajectory samples."""
+        if save_interval_seconds <= 0:
+            raise ConfigurationError('outputs.save_interval must be a positive duration')
+
+        duration_seconds = float(simulation_time.duration.seconds)
+        if duration_seconds <= 0:
+            return 1
+
+        interval_count = int(np.floor(duration_seconds / float(save_interval_seconds)))
+        count = 1 + interval_count
+        if interval_count * float(save_interval_seconds) < duration_seconds - 1.0e-9:
+            count += 1
+        return max(1, count)
+
+    @staticmethod
+    def _next_scheduled_output_time(
+        simulation_time: Time,
+        save_interval_seconds: int | float,
+        output_index: int,
+    ) -> float:
+        """Return the next scheduled output time, capped at the simulation end."""
+        return float(min(simulation_time.start + output_index * float(save_interval_seconds), simulation_time.end))
+
+    @staticmethod
+    def _limit_timestep_to_output_schedule(
+        current_time: int | float,
+        current_timestep: int | float,
+        next_output_time: int | float,
+    ) -> float:
+        """Shorten a CFL step only when it would cross the next output boundary."""
+        remaining_to_output = float(next_output_time) - float(current_time)
+        if 0.0 < remaining_to_output < float(current_timestep):
+            return remaining_to_output
+        return float(current_timestep)
+
+    @staticmethod
+    def _is_output_sample_due(
+        sample_time: int | float,
+        next_output_time: int | float,
+        end_time: int | float,
+    ) -> bool:
+        """Return whether a trajectory sample should be stored at this time."""
+        tolerance = 1.0e-9
+        return sample_time + tolerance >= next_output_time or sample_time + tolerance >= end_time
+
+    @staticmethod
+    def _initialize_population_output_status(populations, current_time: int | float) -> None:
+        """Populate required status arrays before the initial trajectory sample is written."""
+        for population in populations:
+            particles = population.particles
+            n_particles = len(particles['x'])
+            particles.setdefault('status_alive', np.ones(n_particles, dtype=bool))
+            particles.setdefault('status_buried', np.zeros(n_particles, dtype=bool))
+            particles.setdefault('status_transported', np.zeros(n_particles, dtype=bool))
+
+            if 'status_domain' not in particles:
+                simplices = getattr(population, '_particle_simplices', None)
+                if simplices is None:
+                    particles['status_domain'] = np.ones(n_particles, dtype=bool)
+                else:
+                    particles['status_domain'] = np.asarray(simplices) >= 0
+
+            if 'status_released' not in particles:
+                release_time = particles.get('release_time')
+                if release_time is None:
+                    particles['status_released'] = np.ones(n_particles, dtype=bool)
+                else:
+                    particles['status_released'] = float(current_time) >= np.asarray(release_time, dtype=float)
+
+            particles['status_mobile'] = (
+                np.asarray(particles['status_domain'], dtype=bool)
+                & np.asarray(particles['status_alive'], dtype=bool)
+                & ~np.asarray(particles['status_buried'], dtype=bool)
+                & np.asarray(particles['status_released'], dtype=bool)
+                & np.asarray(particles['status_transported'], dtype=bool)
+            )
 
     def _get_format_config(self):
         """
@@ -601,6 +639,15 @@ class Simulation:
         simulation_time = self._create_simulation_time()
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
+        repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
+        input_time_bounds = self.format_converter.get_time_bounds()
+        self._validate_simulation_start_matches_input(simulation_time, input_time_bounds)
+        if repeat_eulerian_fields and input_time_bounds is not None:
+            self.logger.info(
+                'Repeating Eulerian flow fields from %.3fs after forcing end %.3fs',
+                input_time_bounds[0],
+                input_time_bounds[1],
+            )
 
         # Load only x/y field coordinates needed for the population seeder.
         with self._profile_section('get_seeding_field_data'):
@@ -611,15 +658,6 @@ class Simulation:
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
-        repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
-        input_time_bounds = None
-        if repeat_eulerian_fields:
-            input_time_bounds = self.format_converter.get_time_bounds()
-            self.logger.info(
-                'Repeating Eulerian flow fields from %.3fs after forcing end %.3fs',
-                input_time_bounds[0],
-                input_time_bounds[1],
-            )
 
         # Set initial values
         sedtrails_data = None
@@ -630,6 +668,7 @@ class Simulation:
             desc='Computing positions',
             unit='%',
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
+            disable=not sys.stderr.isatty(),
         )
         self._active_progress_bar = pbar
 
@@ -645,10 +684,8 @@ class Simulation:
         )
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
-        save_interval_seconds = Duration(self._controller.get('outputs.save_interval', '1H')).seconds
-        if save_interval_seconds <= 0:
-            raise ConfigurationError('outputs.save_interval must be a positive duration')
-        n_output_slots = int(np.ceil(simulation_time.duration.seconds / save_interval_seconds)) + 1
+        save_interval_seconds = self._output_save_interval_seconds()
+        n_output_slots = self._estimate_output_timesteps(simulation_time, save_interval_seconds)
         self.logger.info(
             'Streaming output: %d slots at %gs interval -> %s',
             n_output_slots,
@@ -665,11 +702,24 @@ class Simulation:
             populations,
             flow_field_names,
         )
+        nc_handle.reference_date = str(simulation_time.reference_date)
+        nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
+        nc_handle.time_start = self._controller.get('time.start')
+        nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
+        nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
 
-        # Slot tracking � first save at t=start (after initial physics update)
+        # Store the seeded initial state before the first physics update.
+        self._initialize_population_output_status(populations, timer.current)
         slot_idx = 0
-        next_save_time = simulation_time.start
-        last_saved_time = None
+        with self._profile_section('record_output'):
+            nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
+        last_saved_time = timer.current
+        slot_idx += 1
+        next_output_time = self._next_scheduled_output_time(
+            simulation_time,
+            save_interval_seconds,
+            slot_idx,
+        )
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
@@ -698,7 +748,6 @@ class Simulation:
                         sedtrails_data = self.format_converter.convert_to_sedtrails(
                             current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                         )
-                    self._validate_simulation_time_matches_input(simulation_time, sedtrails_data)
                     plan_retrievers = {
                         runtime_plan.population_index: FieldDataRetriever(
                             build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
@@ -736,6 +785,18 @@ class Simulation:
                         sedtrails_data.metadata.min_resolution,
                         sedtrails_data.metadata.timestep,
                     )
+                    timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)
+                    if slot_idx < n_output_slots:
+                        timer.current_timestep = self._limit_timestep_to_output_schedule(
+                            timer.current,
+                            timer.current_timestep,
+                            next_output_time,
+                        )
+                    if timer.current_timestep <= 0:
+                        raise ConfigurationError(
+                            f'Computed non-positive timestep {timer.current_timestep} '
+                            f'at simulation time {timer.current}.'
+                        )
 
                 # Main loop
                 dashboard_flow_field = None
@@ -779,16 +840,6 @@ class Simulation:
                         with self._profile_section('update_position'):
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
-                # Save current particle state at each save_interval boundary.
-                # Use while so a large CFL step never silently skips intermediate saves.
-                while timer.current >= next_save_time and slot_idx < n_output_slots:
-                    with self._profile_section('record_output'):
-                        nc_handle = self.data_manager.writer.record_output(
-                            nc_handle, populations, slot_idx, next_save_time)
-                    last_saved_time = next_save_time
-                    slot_idx += 1
-                    next_save_time += save_interval_seconds
-
                 # Update dashboard if enabled
                 if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
                     plot_interval_seconds = self._dashboard_update_interval_seconds()
@@ -814,6 +865,23 @@ class Simulation:
                         )
 
                 timer.advance()
+
+                if (
+                    slot_idx < n_output_slots
+                    and self._is_output_sample_due(timer.current, next_output_time, simulation_time.end)
+                ):
+                    with self._profile_section('record_output'):
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle, populations, slot_idx, timer.current
+                        )
+                    last_saved_time = timer.current
+                    slot_idx += 1
+                    if slot_idx < n_output_slots:
+                        next_output_time = self._next_scheduled_output_time(
+                            simulation_time,
+                            save_interval_seconds,
+                            slot_idx,
+                        )
 
                 # Saving and plotting
                 # TODO: enable saving and plotting again: addapt writer with structure issue 297
@@ -867,7 +935,6 @@ class Simulation:
                         'dt': f'{timer.current_timestep:.2f}s',
                     }
                 )
-
             # End of Simulation
             pbar.close()
             self._active_progress_bar = None

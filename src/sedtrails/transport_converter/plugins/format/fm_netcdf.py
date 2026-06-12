@@ -245,11 +245,15 @@ class FormatPlugin(BaseFormatPlugin):
         if current_time is None or reading_interval is None:
             return None, None
 
-        # If reading_interval is 0 or very large, load entire file
-        if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
+        times_array = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times_array.size == 0:
             return None, None
 
-        times_array = time_info['seconds_since_reference']
+        forcing_span = times_array[-1] - times_array[0]
+
+        # If reading_interval is 0 or spans the forcing window, load entire file.
+        if reading_interval <= 0 or forcing_span <= 0 or reading_interval >= forcing_span:
+            return None, None
 
         # Find current time index
         current_idx = np.searchsorted(times_array, current_time)

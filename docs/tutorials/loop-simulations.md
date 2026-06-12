@@ -37,16 +37,19 @@ If `repeat_eulerian_fields` is `false`, SedTRAILS will keep using the final avai
 
 ## How Time Mapping Works
 
-Internally, SedTRAILS maps each particle time step to an Eulerian forcing timestamp. This is handled by the helper `_map_eulerian_field_time`, which:
-- Wraps the simulation time into the forcing window when looping is enabled.
-- Clamps the time to the final forcing timestamp when looping is disabled.
+SedTRAILS first validates that `time.start` is inside the input forcing window. Looping is not used to rescue a simulation that starts before the first forcing timestamp or after the last forcing timestamp.
+
+After that valid start:
+- In-window simulation times use the matching Eulerian forcing timestamp.
+- If `repeat_eulerian_fields` is `true`, simulation times after the forcing end are mapped back into the forcing cycle.
+- If `repeat_eulerian_fields` is `false`, SedTRAILS keeps using the final available Eulerian fields once the forcing period is exhausted.
 
 This time mapping is applied consistently across velocity and tracer fields so that particle advection remains synchronized with the Eulerian data.
 
 ## Morfac Decompression
 
 When `general.input_model.morfac` is greater than 1, the forcing time axis is decompressed before mapping. This means:
-- A morphologically accelerated input model is interpreted at its “real time” scale.
+- A morphologically accelerated input model is interpreted at its real-time scale.
 - Looping and interpolation operate on the decompressed timeline.
 
 This keeps the Eulerian time base consistent with the Lagrangian integration when morphological acceleration has been applied to the input model output.
