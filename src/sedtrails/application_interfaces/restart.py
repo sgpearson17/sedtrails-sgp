@@ -51,7 +51,7 @@ def _infer_restart_datetime(config: dict[str, Any], restart_seconds: float | Non
 
     # Heuristic fallback: very large values usually indicate absolute epoch seconds.
     if restart_seconds > 1.0e8:
-        return datetime.fromtimestamp(restart_seconds)
+        return datetime.utcfromtimestamp(restart_seconds)
 
     return base_start + timedelta(seconds=restart_seconds)
 
