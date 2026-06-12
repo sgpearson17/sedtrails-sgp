@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+import xarray as xr
 from tqdm import tqdm
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
@@ -205,6 +206,14 @@ class Simulation:
         update_interval = self._controller.get('visualization.dashboard.update_interval', '1H')
         return Duration(update_interval).seconds
 
+    def _output_save_interval_seconds(self) -> int:
+        """Return the configured trajectory save interval in seconds."""
+        save_interval = self._controller.get('outputs.save_interval', '1H')
+        seconds = Duration(save_interval).seconds
+        if seconds <= 0:
+            raise ConfigurationError('`outputs.save_interval` must be greater than zero.')
+        return seconds
+
     @staticmethod
     def _missing_particle_field_like(particle_x: np.ndarray) -> np.ndarray:
         """Return a same-shaped NaN particle field for unavailable dashboard data."""
@@ -275,6 +284,124 @@ class Simulation:
     ) -> bool:
         """Return whether the loop should try to load another SedTRAILS data chunk."""
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
+
+    @staticmethod
+    def _validate_simulation_time_matches_input(simulation_time: Time, sedtrails_data) -> None:
+        """Raise a clear error when the simulation clock is before forcing starts."""
+        times = np.asarray(sedtrails_data.times, dtype=float)
+        if times.size == 0:
+            return
+
+        first_input_time = float(times[0])
+        if simulation_time.end < first_input_time:
+            raise ConfigurationError(
+                'Simulation time window ends before the first available input field timestamp. '
+                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
+                f'but input fields start at {first_input_time:.3f}s since '
+                f'{simulation_time.reference_date}. Adjust `time.start`, `time.duration`, or '
+                '`general.input_model.reference_date` so the simulation reaches the forcing data.'
+            )
+
+        if simulation_time.start < first_input_time:
+            raise ConfigurationError(
+                'Simulation starts before the first available input field timestamp. '
+                f'Simulation start/end are {simulation_time.start:.3f}s/{simulation_time.end:.3f}s, '
+                f'but input fields start at {first_input_time:.3f}s since '
+                f'{simulation_time.reference_date}. Adjust `time.start` or '
+                '`general.input_model.reference_date` so the simulation starts inside the forcing data.'
+            )
+
+    def _ensure_time_capacity(
+        self,
+        xr_data: xr.Dataset,
+        timestep_index: int,
+        max_timesteps: int,
+    ) -> tuple[xr.Dataset, int]:
+        """Expand output storage before writing a timestep index."""
+        required_size = timestep_index + 1
+        if required_size <= max_timesteps:
+            return xr_data, max_timesteps
+
+        old_max = max_timesteps
+        new_max = max_timesteps
+        while required_size > new_max:
+            new_max = max(new_max + 1, int(new_max * 2.0))
+
+        self.logger.info(f'Expanding time dimension from {old_max} to {new_max}')
+        return self._expand_time_dimension(xr_data, new_max), new_max
+
+    @staticmethod
+    def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int) -> int:
+        """Estimate stored trajectory samples, including the initial and final samples."""
+        return int(np.ceil(simulation_time.duration.seconds / save_interval_seconds)) + 1
+
+    @staticmethod
+    def _next_scheduled_output_time(simulation_time: Time, save_interval_seconds: int, output_step_count: int) -> float:
+        """Return the next configured output time for the already-written sample count."""
+        scheduled_time = simulation_time.start + output_step_count * save_interval_seconds
+        return min(scheduled_time, simulation_time.end)
+
+    @staticmethod
+    def _limit_timestep_to_output_schedule(
+        current_time: float,
+        current_timestep: float,
+        next_output_time: float,
+    ) -> float:
+        """Shorten a compute step so it lands exactly on the next output time."""
+        remaining = next_output_time - current_time
+        if remaining <= 0:
+            return current_timestep
+        return min(current_timestep, remaining)
+
+    @staticmethod
+    def _is_output_sample_due(sample_time: float, next_output_time: float, simulation_end_time: float) -> bool:
+        """Return whether the current step ended on a save boundary or final time."""
+        tolerance = 1e-9
+        return sample_time >= next_output_time - tolerance or sample_time >= simulation_end_time - tolerance
+
+    @staticmethod
+    def _initialize_population_output_status(populations, current_time: float) -> None:
+        """Populate status fields needed to save the seeded initial state."""
+        for population in populations:
+            particles = population.particles
+            n_particles = len(particles['x'])
+
+            domain = np.ones(n_particles, dtype=bool)
+            simplices = getattr(population, '_particle_simplices', None)
+            if simplices is not None:
+                domain = np.asarray(simplices) >= 0
+
+            alive = np.ones(n_particles, dtype=bool)
+            buried = np.zeros(n_particles, dtype=bool)
+            transported = np.zeros(n_particles, dtype=bool)
+            released = current_time >= particles.get('release_time', np.full(n_particles, -np.inf))
+
+            particles.setdefault('status_alive', alive)
+            particles.setdefault('status_buried', buried)
+            particles.setdefault('status_domain', domain)
+            particles.setdefault('status_transported', transported)
+            particles.setdefault('status_released', released)
+            particles.setdefault(
+                'status_mobile',
+                particles['status_domain']
+                & particles['status_alive']
+                & ~particles['status_buried']
+                & particles['status_released']
+                & particles['status_transported'],
+            )
+
+    def _collect_output_sample(
+        self,
+        xr_data: xr.Dataset,
+        populations,
+        output_step_count: int,
+        sample_time: float,
+        max_timesteps: int,
+    ) -> tuple[xr.Dataset, int, int]:
+        """Collect one compact output sample and expand storage if needed."""
+        xr_data, max_timesteps = self._ensure_time_capacity(xr_data, output_step_count, max_timesteps)
+        self.data_manager.collect_timestep_data(xr_data, populations, output_step_count, sample_time)
+        return xr_data, max_timesteps, output_step_count + 1
 
     @staticmethod
     def _map_eulerian_field_time(
@@ -529,7 +656,7 @@ class Simulation:
                 'working_directory': os.getcwd(),
             },
         )
-        # Open streaming output file — pre-allocates all slots before the loop starts
+        # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         save_interval_seconds = Duration(self._controller.get('outputs.save_interval', '1H')).seconds
         if save_interval_seconds <= 0:
@@ -552,230 +679,312 @@ class Simulation:
             flow_field_names,
         )
 
-        # Slot tracking — first save at t=start (after initial physics update)
+        # Slot tracking � first save at t=start (after initial physics update)
         slot_idx = 0
         next_save_time = simulation_time.start
         last_saved_time = None
-
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
         plan_retrievers = {}
         dashboard_flow_field = None
-        while not timer.stop:
-            # Check if current time is within loaded SedTRAILS data
-            current_time_seconds = timer.current
-            field_time_seconds = self._map_eulerian_field_time(
-                current_time_seconds,
-                repeat_eulerian_fields,
-                input_time_bounds,
-            )
-            if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
-                # Avoid recreating SedTRAILS data if current time is before the first time step
-                if (
-                    sedtrails_data is not None
-                    and field_time_seconds < sedtrails_data.times[0]
-                    and not repeat_eulerian_fields
-                ):
-                    timer.advance()
-                    continue
-                # Convert to SedTRAILS format
-                with self._profile_section('convert_to_sedtrails'):
-                    sedtrails_data = self.format_converter.convert_to_sedtrails(
-                        current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
-                    )
-                plan_retrievers = {
-                    runtime_plan.population_index: FieldDataRetriever(
-                        build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
-                    )
-                    for runtime_plan in runtime_plans
-                }
-
-                if self._is_after_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
-                    input_data_exhausted = True
-                    if not input_exhaustion_warning_logged:
-                        self.logger.warning(
-                            'Simulation time %.3fs is beyond the final input field timestamp %.3fs; '
-                            'reusing the last available fields for remaining timesteps.',
-                            current_time_seconds,
-                            float(np.asarray(sedtrails_data.times)[-1]),
-                        )
-                        input_exhaustion_warning_logged = True
-
-            # TODO: integrate loop over flow fields into CFL Condition
-            # Collect flow fields for CFL computation
-            max_velocity = 0.0
-            for runtime_plan in runtime_plans:
-                retriever = plan_retrievers[runtime_plan.population_index]
-                for flow_field_name in runtime_plan.tracer.flow_field_names:
-                    with self._profile_section('get_flow_max_velocity.cfl'):
-                        max_velocity = max(
-                            max_velocity,
-                            retriever.get_flow_max_velocity_bound(field_time_seconds, flow_field_name),
-                        )
-
-            # Compute CFL-based timestep across all flow fields
-            with self._profile_section('compute_cfl_timestep'):
-                timer.compute_cfl_timestep_from_max_velocity(
-                    max_velocity,
-                    sedtrails_data.metadata.min_resolution,
-                    sedtrails_data.metadata.timestep,
+        try:
+            while not timer.stop and timer.current < simulation_time.end:
+                # Check if current time is within loaded SedTRAILS data
+                current_time_seconds = timer.current
+                field_time_seconds = self._map_eulerian_field_time(
+                    current_time_seconds,
+                    repeat_eulerian_fields,
+                    input_time_bounds,
                 )
-
-            # Main loop
-            dashboard_flow_field = None
-            for runtime_plan in runtime_plans:
-                population = runtime_plan.population
-                tracer_plan = runtime_plan.tracer
-                retriever = plan_retrievers[runtime_plan.population_index]
-
-                with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                    mixing_depth = retriever.get_scalar_field(field_time_seconds, 'mixing_layer_thickness')['magnitude']
-                with self._profile_section('get_scalar_field.bed_level'):
-                    bed_level = retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
-
-                for flow_field_name in tracer_plan.flow_field_names:
-                    if tracer_plan.method_name == 'vanwesten':
-                        with self._profile_section('get_scalar_field.transport_probability'):
-                            transport_prob = retriever.get_scalar_field(
-                                field_time_seconds, flow_field_name.replace('velocity', 'probability')
-                            )['magnitude']
-                    else:
-                        transport_prob = np.ones_like(bed_level)
-
-                    with self._profile_section('update_information'):
-                        population.update_information(
-                            current_time=timer.current,
-                            mixing_depth=mixing_depth,
-                            bed_level=bed_level,
-                            transport_probability=transport_prob,
+                if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
+                    # Avoid recreating SedTRAILS data if current time is before the first time step
+                    if (
+                        sedtrails_data is not None
+                        and field_time_seconds < sedtrails_data.times[0]
+                        and not repeat_eulerian_fields
+                    ):
+                        timer.advance()
+                        continue
+                    # Convert to SedTRAILS format
+                    with self._profile_section('convert_to_sedtrails'):
+                        sedtrails_data = self.format_converter.convert_to_sedtrails(
+                            current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                         )
+                    self._validate_simulation_time_matches_input(simulation_time, sedtrails_data)
+                    plan_retrievers = {
+                        runtime_plan.population_index: FieldDataRetriever(
+                            build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
+                        )
+                        for runtime_plan in runtime_plans
+                    }
 
-                    if tracer_plan.method_name == 'vanwesten':
-                        population.update_burial_depth()
+                    if self._is_after_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
+                        input_data_exhausted = True
+                        if not input_exhaustion_warning_logged:
+                            self.logger.warning(
+                                'Simulation time %.3fs is beyond the final input field timestamp %.3fs; '
+                                'reusing the last available fields for remaining timesteps.',
+                                current_time_seconds,
+                                float(np.asarray(sedtrails_data.times)[-1]),
+                            )
+                            input_exhaustion_warning_logged = True
 
-                    population.update_status()
+                # TODO: integrate loop over flow fields into CFL Condition
+                # Collect flow fields for CFL computation
+                max_velocity = 0.0
+                for runtime_plan in runtime_plans:
+                    retriever = plan_retrievers[runtime_plan.population_index]
+                    for flow_field_name in runtime_plan.tracer.flow_field_names:
+                        with self._profile_section('get_flow_max_velocity.cfl'):
+                            max_velocity = max(
+                                max_velocity,
+                                retriever.get_flow_max_velocity_bound(field_time_seconds, flow_field_name),
+                            )
 
-                    with self._profile_section('get_flow_field.update_position'):
-                        flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
-                    if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
-                        dashboard_flow_field = flow_field
+                # Compute CFL-based timestep across all flow fields
+                with self._profile_section('compute_cfl_timestep'):
+                    timer.compute_cfl_timestep_from_max_velocity(
+                        max_velocity,
+                        sedtrails_data.metadata.min_resolution,
+                        sedtrails_data.metadata.timestep,
+                    )
 
-                    with self._profile_section('update_position'):
-                        population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                # Main loop
+                dashboard_flow_field = None
+                for runtime_plan in runtime_plans:
+                    population = runtime_plan.population
+                    tracer_plan = runtime_plan.tracer
+                    retriever = plan_retrievers[runtime_plan.population_index]
 
-                    # Update particle bed level based on new position to inform burial depth in the next iteration
+                    with self._profile_section('get_scalar_field.mixing_layer_thickness'):
+                        mixing_depth = retriever.get_scalar_field(field_time_seconds, 'mixing_layer_thickness')['magnitude']
+                    with self._profile_section('get_scalar_field.bed_level'):
+                        bed_level = retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+
+                    for flow_field_name in tracer_plan.flow_field_names:
+                        if tracer_plan.method_name == 'vanwesten':
+                            with self._profile_section('get_scalar_field.transport_probability'):
+                                transport_prob = retriever.get_scalar_field(
+                                    field_time_seconds, flow_field_name.replace('velocity', 'probability')
+                                )['magnitude']
+                        else:
+                            transport_prob = np.ones_like(bed_level)
+
+                        with self._profile_section('update_information'):
+                            population.update_information(
+                                current_time=timer.current,
+                                mixing_depth=mixing_depth,
+                                bed_level=bed_level,
+                                transport_probability=transport_prob,
+                            )
+
+                        if tracer_plan.method_name == 'vanwesten':
+                            population.update_burial_depth()
+
+                        population.update_status()
+
+                        with self._profile_section('get_flow_field.update_position'):
+                            flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
+                        if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
+                            dashboard_flow_field = flow_field
+
+                        with self._profile_section('update_position'):
+                            population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+
                     if tracer_plan.method_name == 'vanwesten':
                         population.update_bed_level_change_after_movement(bed_level)
 
-            # Save current particle state at each save_interval boundary
-            if timer.current >= next_save_time and slot_idx < n_output_slots:
-                with self._profile_section('record_output'):
-                    self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-                last_saved_time = timer.current
-                slot_idx += 1
-                next_save_time += save_interval_seconds
+                # Save current particle state at each save_interval boundary.
+                # Use while so a large CFL step never silently skips intermediate saves.
+                while timer.current >= next_save_time and slot_idx < n_output_slots:
+                    with self._profile_section('record_output'):
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle, populations, slot_idx, next_save_time)
+                    last_saved_time = next_save_time
+                    slot_idx += 1
+                    next_save_time += save_interval_seconds
 
-            # Update dashboard if enabled
-            if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
-                plot_interval_seconds = self._dashboard_update_interval_seconds()
-                if self.dashboard.should_update(timer.current, plot_interval_seconds):
-                    # For dashboard, use first population data
-                    first_population = populations[0]
-                    particle_data = self._dashboard_particle_data(first_population)
-                    dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
-                    with self._profile_section('get_scalar_field.dashboard_bed_level'):
-                        bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
-                    mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
+                # Update dashboard if enabled
+                if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
+                    plot_interval_seconds = self._dashboard_update_interval_seconds()
+                    if self.dashboard.should_update(timer.current, plot_interval_seconds):
+                        # For dashboard, use first population data
+                        first_population = populations[0]
+                        particle_data = self._dashboard_particle_data(first_population)
+                        dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
+                        with self._profile_section('get_scalar_field.dashboard_bed_level'):
+                            bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+                        mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
-                    self.dashboard.update(
-                        dashboard_flow_field,
-                        bathymetry,
-                        particle_data,
-                        timer.current,
-                        timer.current_timestep,
-                        plot_interval_seconds,
-                        simulation_start_time=simulation_time.start,
-                        simulation_end_time=simulation_time.end,
-                        mesh_geometry=mesh_geometry,
-                    )
+                        self.dashboard.update(
+                            dashboard_flow_field,
+                            bathymetry,
+                            particle_data,
+                            timer.current,
+                            timer.current_timestep,
+                            plot_interval_seconds,
+                            simulation_start_time=simulation_time.start,
+                            simulation_end_time=simulation_time.end,
+                            mesh_geometry=mesh_geometry,
+                        )
 
-            timer.advance()
+                timer.advance()
 
-            # Saving and plotting
-            # TODO: enable saving and plotting again: addapt writer with structure issue 297
-            # TODO: remove default insertion on configuration retrieval
-            # interval_output = self._controller.get('output.interval_output', '1H')
-            # interval_plot = self._controller.get('output.interval_plot', '1D')
+                # Saving and plotting
+                # TODO: enable saving and plotting again: addapt writer with structure issue 297
+                # TODO: remove default insertion on configuration retrieval
+                # interval_output = self._controller.get('output.interval_output', '1H')
+                # interval_plot = self._controller.get('output.interval_plot', '1D')
 
-            # # Data manager
-            # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > (
-            #     (timer.current - simulation_time.start - timer.current_timestep) // interval_output
-            # ):
-            #     # self.data_manager.add_data()
+                # # Data manager
+                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > (
+                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_output
+                # ):
+                #     # self.data_manager.add_data()
 
-            # # Plotting
-            # TODO: enable plotting from saved data file and from memory.
-            # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_plot > (
-            #     (timer.current - simulation_time.start - timer.current_timestep) // interval_plot
-            # ):
-            #     plot_particle_trajectory(
-            #         flow_data=flow_field,
-            #         trajectory_x=self.data_manager.get_trajectory_x(),
-            #         trajectory_y=self.data_manager.get_trajectory_y(),
-            #         title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.step_count} steps',
-            #         save_path=f'{self.data_manager.output_dir}/trajectory_plot_{timer.step_count:05d}.png',
-            #     )
+                # # Plotting
+                # TODO: enable plotting from saved data file and from memory.
+                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_plot > (
+                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_plot
+                # ):
+                #     plot_particle_trajectory(
+                #         flow_data=flow_field,
+                #         trajectory_x=self.data_manager.get_trajectory_x(),
+                #         trajectory_y=self.data_manager.get_trajectory_y(),
+                #         title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.step_count} steps',
+                #         save_path=f'{self.data_manager.output_dir}/trajectory_plot_{timer.step_count:05d}.png',
+                #     )
 
-            # Calculate progress percentage based on simulation time
-            # elapsed_time = timer.current - simulation_time.start
-            # progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
+                # Calculate progress percentage based on simulation time
+                # elapsed_time = timer.current - simulation_time.start
+                # progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
 
-            # # Update progress bar
-            # pbar.n = progress_percent
-            # pbar.set_postfix(
-            #     {
-            #         'Step': timer.step_count,
-            #         'Time': f'{timer.current:.0f}s',
-            #         'dt': f'{timer.current_timestep:.2f}s',
-            #     }
-            # )
-            # Update progress bar
-            if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
-                elapsed_time = timer.current - simulation_time.start
-                progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
-                pbar.update(progress_percent - pbar.n)  # increment by delta
+                # # Update progress bar
+                # pbar.n = progress_percent
+                # pbar.set_postfix(
+                #     {
+                #         'Step': timer.step_count,
+                #         'Time': f'{timer.current:.0f}s',
+                #         'dt': f'{timer.current_timestep:.2f}s',
+                #     }
+                # )
+                # Update progress bar
+                if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
+                    elapsed_time = timer.current - simulation_time.start
+                    progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
+                    pbar.update(progress_percent - pbar.n)  # increment by delta
+                else:
+                    pbar.update(0)  # avoid ZeroDivisionError if duration is 0
+                pbar.set_postfix(
+                    {
+                        'Step': timer.step_count,
+                        'Time': f'{timer.current:.0f}s',
+                        'dt': f'{timer.current_timestep:.2f}s',
+                    }
+                )
+
+            # End of Simulation
+            pbar.close()
+            self._active_progress_bar = None
+            print('\nSimulation completed successfully!')
+
+            # Save final particle state if simulation ended between two save boundaries
+            if last_saved_time is None or timer.current > last_saved_time:
+                if slot_idx < n_output_slots:
+                    nc_handle = self.data_manager.writer.record_output(
+                        nc_handle, populations, slot_idx, timer.current)
+                    slot_idx += 1
+
+            output_file = self.data_manager.writer.close_output(nc_handle)
+            nc_handle = None  # prevent double-close in finally
+            print(f'Simulation results saved to: {output_file}')
+            self._log_profile_summary(status='completed')
+
+            # Keep dashboard open after simulation ends
+            if self.dashboard is not None:
+                self.dashboard.keep_window_open()
+        finally:
+            if nc_handle is not None:
+                try:
+                    self.data_manager.writer.close_output(nc_handle)
+                except Exception:
+                    pass
+
+    def _expand_time_dimension(
+        self,
+        xr_data: xr.Dataset,
+        new_max_timesteps: int,
+    ) -> xr.Dataset:
+        time_dim = 'n_timesteps' if 'n_timesteps' in xr_data.sizes else 'time'
+
+        current_size = xr_data.sizes[time_dim]
+
+        if new_max_timesteps <= current_size:
+            raise ValueError(f'new_max_timesteps={new_max_timesteps} must be larger than current size={current_size}')
+
+        # Replace/normalize the timestep coordinate to guarantee uniqueness
+        xr_data = xr_data.assign_coords({time_dim: np.arange(current_size)})
+
+        new_coord = np.arange(new_max_timesteps)
+
+        expanded_vars = {}
+
+        for var_name, var in xr_data.data_vars.items():
+            if time_dim not in var.dims:
+                expanded_vars[var_name] = var
+                continue
+
+            time_axis = var.dims.index(time_dim)
+
+            pad_shape = list(var.shape)
+            pad_shape[time_axis] = new_max_timesteps - current_size
+
+            if np.issubdtype(var.dtype, np.floating) or np.issubdtype(var.dtype, np.complexfloating):
+                pad_data = np.full(
+                    pad_shape,
+                    np.nan,
+                    dtype=var.dtype,
+                )
             else:
-                pbar.update(0)  # avoid ZeroDivisionError if duration is 0
-            pbar.set_postfix(
-                {
-                    'Step': timer.step_count,
-                    'Time': f'{timer.current:.0f}s',
-                    'dt': f'{timer.current_timestep:.2f}s',
-                }
+                pad_data = np.zeros(
+                    pad_shape,
+                    dtype=var.dtype,
+                )
+
+            pad_coords = {}
+            for dim in var.dims:
+                if dim == time_dim:
+                    pad_coords[dim] = np.arange(current_size, new_max_timesteps)
+                elif dim in var.coords:
+                    pad_coords[dim] = var.coords[dim]
+
+            pad_array = xr.DataArray(
+                pad_data,
+                dims=var.dims,
+                coords=pad_coords,
+                attrs=var.attrs.copy(),
             )
 
-        # End of Simulation
-        pbar.close()
-        self._active_progress_bar = None
-        print('\nSimulation completed successfully!')
+            expanded_vars[var_name] = xr.concat(
+                [var, pad_array],
+                dim=time_dim,
+            )
 
-        # Save final particle state if simulation ended between two save boundaries
-        if last_saved_time is None or timer.current > last_saved_time:
-            if slot_idx < n_output_slots:
-                self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-                slot_idx += 1
+        coords = {}
+        for coord_name, coord in xr_data.coords.items():
+            if coord_name == time_dim:
+                coords[coord_name] = new_coord
+            elif time_dim not in coord.dims:
+                coords[coord_name] = coord
 
-        output_file = self.data_manager.writer.close_output(nc_handle)
-        print(f'Simulation results saved to: {output_file}')
-        self._log_profile_summary(status='completed')
+        expanded_dataset = xr.Dataset(
+            expanded_vars,
+            coords=coords,
+            attrs=xr_data.attrs.copy(),
+        )
 
-        # Keep dashboard open after simulation ends
-        if self.dashboard is not None:
-            self.dashboard.keep_window_open()
-
-        # Finalize results
-        # self.data_manager.dump()  # Write remaining data to disk. # TODO: not working
+        return expanded_dataset
 
 
 # if __name__ == '__main__':

@@ -185,7 +185,7 @@ class GridGeometry:
     def interpolate_fields(self, fields, x_points, y_points):
         """Interpolate multiple nodal fields using one point-location pass."""
         simplices, weights = self.barycentric_weights(x_points, y_points)
-        outputs = [np.zeros(len(simplices), dtype=np.float64) for _ in fields]
+        outputs = [np.full(len(simplices), np.nan, dtype=np.float64) for _ in fields]
 
         valid = simplices >= 0
         if np.any(valid):

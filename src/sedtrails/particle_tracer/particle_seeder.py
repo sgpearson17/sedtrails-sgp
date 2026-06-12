@@ -28,6 +28,7 @@ from numpy import ndarray
 
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
+from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
 from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
@@ -845,6 +846,7 @@ class ParticlePopulation:
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+        self._validate_seed_locations_inside_domain()
 
         rv = _compute_repr_volume(self.population_config, len(self.particles['x']))
         self.repr_volume = rv if rv is not None else np.nan
@@ -928,6 +930,28 @@ class ParticlePopulation:
                 pop_name, n_removed, n_total, pct, n_total - n_removed,
             )
         return n_removed
+
+    def _validate_seed_locations_inside_domain(self) -> None:
+        """Raise a clear configuration error when no seeded particles are inside the field grid."""
+        if self._particle_simplices.size == 0:
+            return
+
+        inside_count = int(np.count_nonzero(self._particle_simplices >= 0))
+        if inside_count > 0:
+            return
+
+        x_values = np.asarray(self.particles['x'], dtype=float)
+        y_values = np.asarray(self.particles['y'], dtype=float)
+        raise ConfigurationError(
+            'All seeded particles are outside the input field domain. '
+            f'Particle x/y ranges are '
+            f'{np.nanmin(x_values):.3f}..{np.nanmax(x_values):.3f} / '
+            f'{np.nanmin(y_values):.3f}..{np.nanmax(y_values):.3f}; '
+            f'field x/y ranges are '
+            f'{np.nanmin(self.field_x):.3f}..{np.nanmax(self.field_x):.3f} / '
+            f'{np.nanmin(self.field_y):.3f}..{np.nanmax(self.field_y):.3f}. '
+            'Use seed coordinates in the same coordinate system as the input model grid.'
+        )
 
     def update_information(
         self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any

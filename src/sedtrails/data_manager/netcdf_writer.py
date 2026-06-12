@@ -274,12 +274,33 @@ class NetCDFWriter:
 
         Creates the file, defines all dimensions and variables, writes static
         population and flow-field metadata, and returns the open handle.
-        The file is kept open throughout the simulation; call close_output() when done.
+        The file is kept open throughout the simulation; call ``close_output()``
+        when done (ideally inside a ``try/finally`` block).
+
+        Parameters
+        ----------
+        filename : str
+            Name of the NetCDF file to create (must end with ``.nc``).
+        n_slots : int
+            Number of time slots to pre-allocate (one per ``save_interval``
+            boundary plus one for the initial state).
+        N_particles : int
+            Total number of particles across all populations.
+        N_populations : int
+            Number of particle populations.
+        N_flowfields : int
+            Number of flow-field tracers.
+        populations : list
+            Population objects; used to write static metadata (name, type, count).
+        flow_field_names : list
+            Names of the flow fields; written as static metadata.
+        name_strlen : int, optional
+            Maximum character length for string variables (default 24).
 
         Returns
         -------
         netCDF4.Dataset
-            Open file handle for use with record_output() and close_output().
+            Open file handle for use with ``record_output()`` and ``close_output()``.
         """
         self._validate_filename(filename)
         output_path = self.output_dir / filename
@@ -411,20 +432,36 @@ class NetCDFWriter:
         self, nc_handle, populations: list, slot_idx: int, current_time: float
     ) -> 'nc4.Dataset':
         """
-        Write current particle state to slot_idx in the streaming output file.
+        Write current particle state to one time slot in the streaming output file.
 
-        Syncs to disk after writing so data is safe even if the process is interrupted.
+        Syncs to disk after every write so data is safe even if the process is
+        interrupted mid-simulation.
 
-        On network drives the HDF5 file descriptor can go stale after a network
-        reconnect or server-side idle timeout.  Two defences are applied:
-          1. Proactive reopen every _REOPEN_INTERVAL writes (refreshes the OS FD).
-          2. Reactive reopen: on any HDF/IO error, the handle is closed, reopened,
-             and the write is retried once.
+        On network (SMB/NFS) drives the HDF5 file descriptor can go stale after
+        a reconnect or server-side idle timeout.  Two defences are applied:
+
+        1. **Proactive reopen** every ``_REOPEN_INTERVAL`` writes refreshes the OS
+           file descriptor before it can go stale.
+        2. **Reactive reopen**: on any HDF/IO ``RuntimeError`` or ``OSError`` the
+           handle is closed, the file is reopened in ``'r+'`` mode, and the write
+           is retried once.
+
+        Parameters
+        ----------
+        nc_handle : netCDF4.Dataset
+            Open handle returned by ``open_output()`` or a previous call to this
+            method.  May be silently replaced by a fresh handle on reopen.
+        populations : list
+            Current population objects whose particle state will be written.
+        slot_idx : int
+            Zero-based index of the time slot to write into.
+        current_time : float
+            Simulation time (seconds) to store in the ``time`` variable.
 
         Returns
         -------
-        nc4.Dataset
-            The (possibly refreshed) file handle — callers must reassign:
+        netCDF4.Dataset
+            The (possibly refreshed) file handle.  **Callers must reassign**:
             ``nc_handle = writer.record_output(nc_handle, ...)``
         """
         # Proactive reopen — prevents stale FD on long-running network-drive writes
@@ -452,7 +489,19 @@ class NetCDFWriter:
         return nc_handle
 
     def close_output(self, nc_handle) -> Path:
-        """Close the streaming output file and return its path."""
+        """
+        Close the streaming output file and return its path.
+
+        Parameters
+        ----------
+        nc_handle : netCDF4.Dataset
+            Open handle returned by ``open_output()``.
+
+        Returns
+        -------
+        pathlib.Path
+            Absolute path to the closed NetCDF file.
+        """
         path = Path(nc_handle.filepath())
         nc_handle.close()
         return path

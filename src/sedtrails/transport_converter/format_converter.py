@@ -23,7 +23,7 @@ class SeederFieldData:
 
     x: np.ndarray
     y: np.ndarray
-    reference_date: str = '1970-01-01 00:00:00'
+    reference_date: np.datetime64
 
 
 class FormatConverter:
@@ -193,7 +193,7 @@ class FormatConverter:
             sedtrails_data = plugin.convert(None, None, self.reference_date)
             x, y = sedtrails_data.x, sedtrails_data.y
 
-        return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=str(self.reference_date))
+        return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
 
     def get_max_exposure_depth(self, physics_converter) -> np.ndarray:
         """
