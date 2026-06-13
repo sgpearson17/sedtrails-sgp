@@ -12,7 +12,7 @@ SedTRAILS is an open-source Python package for modeling sediment transport that 
 ## Features
 - Lagrangian particle tracking for sediment transport simulation.
 - Dashboard for interactive visualization of simulation results in real-time.
-- Support for Delft3D Flexible Mesh (D3D-FM) hydrodynamic model outputs.
+- Support for D-Flow FM, XBeach, and SFINCS hydrodynamic model outputs.
 - Support for various physics convertion methods.
 - Terminal user interface (CLI) for easy setup and execution of simulations.
 - Modular design for easy integration and extension.
@@ -22,14 +22,14 @@ SedTRAILS is an open-source Python package for modeling sediment transport that 
 ## Installation
 
 **Requirements:**
-- SedTRAILS is tested on Python 3.13 and above, but it is likely to work with Python 3.10 and above.
+- SedTRAILS requires Python 3.10 or newer, up to but not including Python 3.14.
 
 
 ### Using pip 
-You can install the latest beta version directly from PyPI using pip. Check the [releases page](https://pypi.org/project/sedtrails/#history) for the latest version (x).
+You can install the latest beta version directly from PyPI using pip. Check the [releases page](https://pypi.org/project/sedtrails/#history) for available versions.
 
 ```bash
-pip install sedtrails=1.0.0-beta.x
+pip install sedtrails==1.0.0-beta.2
 ```
 
 ### From Source
@@ -65,19 +65,19 @@ conda activate sedtrails
 sedtrails --version
 
 # You should see the installed version number.
-# E.g.: SedTRAILS 1.0.0-beta.0
+# E.g.: SedTRAILS 1.0.0-beta.2
 ```
 
 ## Contributing Guidelines
 We welcome contributions from the community! Read the [contributing guidelines](CONTRIBUTING.md) to know how can you take part in developing SedTRAILS. 
 
 ## License
-SetTRAILS is licensed under the [GPL 3.0 License](LICENSE).
+SedTRAILS is licensed under the [GPL 3.0 License](LICENSE).
 &copy; (2025) SedTRAILS Team, Delft, The Netherlands. 
 
 ## Citation
 
-Pearson, S. G., Reyns, J., Garcia Alvarez, M. G., Urhan, A., van Westen, B., Pannozzo, N., & Shafiei, H. SedTRAILS (Version 1.0.0-beta.0) [Computer software]
+Pearson, S. G., Reyns, J., Garcia Alvarez, M. G., Urhan, A., van Westen, B., Pannozzo, N., & Shafiei, H. SedTRAILS (Version 1.0.0-beta.2) [Computer software]
 
 ### Author Contributions
 | [Role](https://credit.niso.org/contributor-roles-defined/) | Author                                                                                                |

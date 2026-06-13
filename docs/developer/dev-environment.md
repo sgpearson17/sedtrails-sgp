@@ -3,7 +3,7 @@
 
 Developers and contributors can set up a local development environment to work on the SedTRAILS codebase. Follow the steps below to get started.
 
-1. Make sure Python (3.13 or newer) and a code editor (e.g., Visual Studio Code) is installed.
+1. Make sure Python 3.10 or newer, up to but not including Python 3.14, and a code editor (e.g., Visual Studio Code) are installed.
 
 1. Fork the SedTRAILS repository on GitHub to your own account. If it is your first time using contritubing to SedTRAILS, please read the [contributing guidelines](contribution.md). 
 
@@ -30,7 +30,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
 
 # If using conda
-conda create --name sedtrails-dev python=3.13
+conda create --name sedtrails-dev python=3.10
 conda activate sedtrails-dev
 
 ```

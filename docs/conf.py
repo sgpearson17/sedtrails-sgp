@@ -6,18 +6,22 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "SedTRAILS"
-copyright = "2025-2026, SedTRAILS Team"
-author = "SedTRAILS Team"
-release = "0.1.0"
-
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path("..", "src").resolve()))
+
+version_file = Path("..", "src", "sedtrails", "__version__.py").resolve()
+version_namespace = {}
+exec(version_file.read_text(encoding="utf-8"), version_namespace)
+
+project = "SedTRAILS"
+copyright = "2025-2026, SedTRAILS Team"
+author = "SedTRAILS Team"
+release = version_namespace["__version__"]
+
+# -- General configuration ---------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
     "myst_parser",

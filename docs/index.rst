@@ -35,7 +35,7 @@ Features
 --------
 * Lagrangian particle tracking for sediment transport simulation.
 * Dashboard for interactive visualization of simulation results in real-time.
-* Support for Delft3D Flexible Mesh (D3D-FM) hydrodynamic model outputs.
+* Support for D-Flow FM, XBeach, and SFINCS hydrodynamic model outputs.
 * Support for various physics convertion methods.
 * Terminal user interface (CLI) for easy setup and execution of simulations.
 * Modular design for easy integration and extension.

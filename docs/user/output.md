@@ -128,7 +128,7 @@ These are the main output variables that will be of primary interest for users w
  - ``mixing_depth: ('n_particles', 'n_timesteps') float64 (15, 880)``
     - The mixing depth $\delta_{mixing}$ of each particle at each timestep.
  - ``status_alive: ('n_particles', 'n_timesteps') int64 (15, 880)``
-    - A binary status indicator showing whether a particle is "alive" and therefore capable of being transported (``1``), or dead and (permanently) removed from consideration (``0``). This variable is primarily intended for biological particles (e.g., coral larvae or mangrove propagules), and has not yet been fully implemented in the current version of the model. For all abiotic particles (e.g., sediment or passive tracers), ``status_alive = 1``, since it concerns their availability for transport.
+    - A binary status indicator showing whether a particle is active (``1``) or permanently removed from consideration (``0``). For the currently supported particle types (``passive``, ``sand``, and ``mud``), ``status_alive = 1`` throughout the run unless future runtime logic changes that state.
  - ``status_buried: ('n_particles', 'n_timesteps') int64 (15, 880)``
     - A binary status indicator showing whether a particle is buried (and therefore capable of being transported) (``1``), or not buried and (temporarily) removed from consideration (``0``).
  - ``status_domain: ('n_particles', 'n_timesteps') int64 (15, 880)``

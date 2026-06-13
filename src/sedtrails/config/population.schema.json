@@ -60,40 +60,6 @@
                 "size"
             ]
         },
-        "bio_characteristics": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "buoyancy": {
-                    "type": "number",
-                    "default": 0.95,
-                    "description": "buoyancy factor for biological particles (relative to water)"
-                }
-            },
-            "required": [
-                "buoyancy"
-            ]
-        },
-        "gravel_characteristics": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "density": {
-                    "type": "number",
-                    "default": 2800.0,
-                    "description": "density of gravel particles [kg/m3]"
-                },
-                "grain_size": {
-                    "type": "number",
-                    "default": 0.01,
-                    "description": "grain size of gravel particles [m]"
-                }
-            },
-            "required": [
-                "density",
-                "grain_size"
-            ]
-        },
         "van_westen_method": {
             "type": "object",
             "additionalProperties": false,
@@ -189,19 +155,17 @@
         "name": {
             "type": "string",
             "default": "particle",
-            "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a', 'bio-1'"
+            "description": "name of the particle population, e.g., 'sediment', 'sand-01', 'mud-a'"
         },
         "particle_type": {
             "type": "string",
             "enum": [
                 "passive",
                 "sand",
-                "mud",
-                "bio",
-                "gravel"
+                "mud"
             ],
             "default": "passive",
-            "description": "type of particles for population (e.g., 'passive', 'sand', 'mud', 'bio', 'gravel')"
+            "description": "type of particles for population (supported values: 'passive', 'sand', 'mud')"
         },
         "characteristics": {
             "type": "object",
@@ -303,7 +267,7 @@
                 "lifespan": {
                     "type": "number",
                     "default": 9e+99,
-                    "description": "life span of particles in seconds. Not applicable for biologial particles"
+                    "description": "life span of particles in seconds"
                 },
                 "release_start": {
                     "type": "string",
@@ -624,38 +588,6 @@
                 "properties": {
                     "characteristics": {
                         "$ref": "#/$defs/mud_characteristics"
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": {
-                    "particle_type": {
-                        "const": "bio"
-                    }
-                }
-            },
-            "then": {
-                "properties": {
-                    "characteristics": {
-                        "$ref": "#/$defs/bio_characteristics"
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "properties": {
-                    "particle_type": {
-                        "const": "gravel"
-                    }
-                }
-            },
-            "then": {
-                "properties": {
-                    "characteristics": {
-                        "$ref": "#/$defs/gravel_characteristics"
                     }
                 }
             }
