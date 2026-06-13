@@ -517,6 +517,10 @@ class ParticlePopulation:
         Bound method for temporal updates and crossed boundary class codes.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
+    _particle_simplex_x, _particle_simplex_y : ndarray
+        Last particle coordinates corresponding to ``_particle_simplices``.
+    _particle_location_known : ndarray
+        True where ``_particle_simplices`` has been located for the cached coordinates, including known-outside points.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -538,6 +542,9 @@ class ParticlePopulation:
     _position_calculator_with_boundary_class: Any = field(init=False)
     _position_calculator_temporal_with_boundary_class: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
+    _particle_simplex_x: ndarray = field(init=False)
+    _particle_simplex_y: ndarray = field(init=False)
+    _particle_location_known: ndarray = field(init=False)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -570,6 +577,9 @@ class ParticlePopulation:
             'status_beached': np.zeros(len(_particles), dtype=bool),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+        self._particle_simplex_x = self.particles['x'].copy()
+        self._particle_simplex_y = self.particles['y'].copy()
+        self._particle_location_known = np.ones(len(_particles), dtype=bool)
         self._validate_seed_locations_inside_domain()
 
         # Store the outer envelope of the domain using shared grid geometry.
@@ -617,9 +627,80 @@ class ParticlePopulation:
 
         self._current_time = current_time
 
-        self._update_particle_field('mixing_depth', mixing_depth)
-        self._update_particle_field('transport_probability', transport_probability)
-        self._update_particle_field('bed_level', bed_level)
+        self._update_particle_fields(
+            {
+                'mixing_depth': mixing_depth,
+                'transport_probability': transport_probability,
+                'bed_level': bed_level,
+            }
+        )
+
+    def _update_particle_fields(self, field_values: Dict[str, Any]) -> None:
+        """Update several particle fields while sharing interpolation work."""
+        single_pass_fields = []
+        temporal_fields = []
+
+        for name, field_value in field_values.items():
+            if field_value is None:
+                continue
+
+            if np.isscalar(field_value):
+                self.particles[name] = np.full(len(self.particles['x']), field_value, dtype=float)
+                continue
+
+            if _is_temporal_field(field_value):
+                lower_values = np.asarray(field_value['lower'])
+                upper_values = np.asarray(field_value['upper'])
+                if lower_values.size == 0:
+                    continue
+
+                weight = field_value['weight']
+                if weight <= 0.0 or lower_values is upper_values:
+                    single_pass_fields.append((name, lower_values))
+                else:
+                    temporal_fields.append((name, lower_values, upper_values, weight))
+                continue
+
+            field_array = np.asarray(field_value)
+            if field_array.size:
+                single_pass_fields.append((name, field_array))
+
+        self._update_single_pass_particle_fields(single_pass_fields)
+        self._update_temporal_particle_fields(temporal_fields)
+
+    def _update_single_pass_particle_fields(self, fields: list[tuple[str, np.ndarray]]) -> None:
+        if not fields:
+            return
+
+        particle_values = self._field_interpolator_multi(
+            tuple(field for _, field in fields),
+            self.particles['x'],
+            self.particles['y'],
+        )
+        for (name, _), values in zip(fields, particle_values, strict=True):
+            if np.isnan(values).all():
+                continue
+            self.particles[name] = values
+
+    def _update_temporal_particle_fields(self, fields: list[tuple[str, np.ndarray, np.ndarray, float]]) -> None:
+        if not fields:
+            return
+
+        interpolation_fields = []
+        for _, lower_values, upper_values, _ in fields:
+            interpolation_fields.extend((lower_values, upper_values))
+
+        interpolated = self._field_interpolator_multi(
+            tuple(interpolation_fields),
+            self.particles['x'],
+            self.particles['y'],
+        )
+        for field_index, (name, _, _, weight) in enumerate(fields):
+            lower_particle_values = interpolated[2 * field_index]
+            upper_particle_values = interpolated[2 * field_index + 1]
+            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
+                continue
+            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -709,30 +790,41 @@ class ParticlePopulation:
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
 
-        # Compute whether particles are transported (or trapped) based on transport probability
-        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        transport_probability_method = self.population_config.population_config['transport_probability']
+        if transport_probability_method == 'no_probability':
+            self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
+        else:
+            self.particles['status_transported'] = np.random.rand(n_particles) < self.particles[
+                'transport_probability'
+            ]
 
         # Compute whether particles are inside the active mesh. This respects
         # any masked-out inner-boundary triangles in shared grid geometry.
-        current_simplices = (
-            self._particle_simplices.copy()
-            if self._particle_simplices.shape == (n_particles,)
-            else np.full(n_particles, -1, dtype=np.int64)
-        )
+        self._ensure_particle_location_cache(n_particles)
+        current_simplices = self._particle_simplices
         current_simplices[left_domain] = -1
-        active_domain_candidates = ~left_domain
-        if np.any(active_domain_candidates):
-            current_simplices[active_domain_candidates] = self.grid_geometry.locate_points(
-                self.particles['x'][active_domain_candidates],
-                self.particles['y'][active_domain_candidates],
-                current_simplices[active_domain_candidates],
+
+        particle_x = np.asarray(self.particles['x'])
+        particle_y = np.asarray(self.particles['y'])
+        known_position_changed = self._particle_location_known & (
+            (particle_x != self._particle_simplex_x) | (particle_y != self._particle_simplex_y)
+        )
+        needs_location = ~left_domain & (~self._particle_location_known | known_position_changed)
+        if np.any(needs_location):
+            location_indices = np.flatnonzero(needs_location)
+            current_simplices[location_indices] = self.grid_geometry.locate_points(
+                particle_x[location_indices],
+                particle_y[location_indices],
+                current_simplices[location_indices],
             )
-        self._particle_simplices = current_simplices
+            self._particle_simplex_x[location_indices] = particle_x[location_indices]
+            self._particle_simplex_y[location_indices] = particle_y[location_indices]
+            self._particle_location_known[location_indices] = True
+
         self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method
-        if self.population_config.population_config['transport_probability'] == 'no_probability':
+        if transport_probability_method == 'no_probability':
             # For no_probability method, all particles are considered exposed (not buried)
             self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
         else:
@@ -833,6 +925,29 @@ class ParticlePopulation:
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
         self._particle_simplices[particle_indices] = new_simplices
+        self._ensure_particle_location_cache(len(self.particles['x']))
+        self._particle_simplex_x[particle_indices] = new_x
+        self._particle_simplex_y[particle_indices] = new_y
+        self._particle_location_known[particle_indices] = True
+
+    def _ensure_particle_location_cache(self, n_particles: int) -> None:
+        """Ensure cached simplex ids and their coordinate stamps match particle count."""
+        reset_known_locations = False
+        if self._particle_simplices.shape != (n_particles,):
+            self._particle_simplices = np.full(n_particles, -1, dtype=np.int64)
+            reset_known_locations = True
+        if getattr(self, '_particle_simplex_x', None) is None or self._particle_simplex_x.shape != (n_particles,):
+            self._particle_simplex_x = np.full(n_particles, np.nan, dtype=float)
+            reset_known_locations = True
+        if getattr(self, '_particle_simplex_y', None) is None or self._particle_simplex_y.shape != (n_particles,):
+            self._particle_simplex_y = np.full(n_particles, np.nan, dtype=float)
+            reset_known_locations = True
+        if (
+            reset_known_locations
+            or getattr(self, '_particle_location_known', None) is None
+            or self._particle_location_known.shape != (n_particles,)
+        ):
+            self._particle_location_known = np.zeros(n_particles, dtype=bool)
 
 
 class ParticleSeeder:

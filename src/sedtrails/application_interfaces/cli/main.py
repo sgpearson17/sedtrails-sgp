@@ -46,7 +46,7 @@ def run_simulation_cmd(
     report_domain_exits: bool = typer.Option(
         True,
         '--report-domain-exits/--no-report-domain-exits',
-        help='Report particles that leave the model domain during and after the run.',
+        help='Report particles that leave the model domain or beach on land during and after the run.',
     ),
 ):
     """

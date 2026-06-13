@@ -709,18 +709,19 @@ class TestSimulationDomainExitReporting:
                 'status_left_domain': np.array([False, True, True]),
             },
         )
-        previous_left_domain = np.array([False, False, True])
+        reported_left_domain = np.array([False, False, True])
 
         newly_left = manager._report_new_domain_exits(
             population,
             population_index=0,
             flow_field_name='bed_load_velocity',
-            previous_left_domain=previous_left_domain,
+            reported_left_domain=reported_left_domain,
             current_time=10.0,
             current_timestep=2.0,
         )
 
         assert newly_left == 1
+        np.testing.assert_array_equal(reported_left_domain, np.array([False, True, True]))
         assert 'Particles left domain: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
         assert 'population total=2/3' in manager.logger.messages[0]
 
@@ -743,6 +744,71 @@ class TestSimulationDomainExitReporting:
         manager._report_domain_exit_summary(populations)
 
         assert manager.logger.messages == ['Particles left domain during run: 3/5 (fine=1/2, medium=2/3)']
+
+    def test_reports_newly_beached_particles(self):
+        """Report only particles that newly transition to beached status."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_beached': np.array([False, True, True]),
+            },
+        )
+        reported_beached = np.array([False, False, True])
+
+        newly_beached = manager._report_new_beached_particles(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_beached=reported_beached,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_beached == 1
+        np.testing.assert_array_equal(reported_beached, np.array([False, True, True]))
+        assert 'Particles beached on land: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
+        assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_final_summary_reports_total_beached_particles(self):
+        """Final summary should report aggregate and per-population beached totals."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_beached': np.array([True, False])},
+            ),
+            SimpleNamespace(
+                population_config={'name': 'medium'},
+                particles={'x': np.zeros(3), 'status_beached': np.array([False, True, True])},
+            ),
+        ]
+
+        manager._report_beached_summary(populations)
+
+        assert manager.logger.messages == ['Particles beached on land during run: 3/5 (fine=1/2, medium=2/3)']
+
+    def test_final_summary_can_use_beached_history(self):
+        """Final beached summary should support particles that remobilized later."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_beached': np.array([False, False])},
+            ),
+        ]
+        beached_history = [np.array([True, False])]
+
+        manager._report_beached_summary(populations, beached_history)
+
+        assert manager.logger.messages == ['Particles beached on land during run: 1/2 (fine=1/2)']
 
 
 class _ListLogger:

@@ -44,7 +44,7 @@ def run_simulation(
     enable_dashboard : bool, optional
         Override the dashboard setting from configuration. If None, uses config value.
     report_domain_exits : bool, optional
-        Report particles that leave the model domain during and after the run.
+        Report particles that leave the model domain or beach on land during and after the run.
 
     Returns
     -------

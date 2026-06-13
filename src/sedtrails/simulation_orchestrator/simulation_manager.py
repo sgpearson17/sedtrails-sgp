@@ -49,7 +49,7 @@ class Simulation:
         enable_dashboard : bool, optional
             Override the dashboard setting from configuration. If None, uses config value.
         report_domain_exits : bool, default True
-            If true, write CLI/log messages when particles newly leave the domain.
+            If true, write CLI/log messages when particles newly leave the domain or beach on land.
         """
         self._config_file = config_file
         self._enable_dashboard_override = enable_dashboard
@@ -150,13 +150,21 @@ class Simulation:
             )
 
     @staticmethod
-    def _left_domain_mask(population) -> np.ndarray:
+    def _particle_status_mask(population, status_name: str) -> np.ndarray:
         particles = getattr(population, 'particles', {})
-        left_domain = particles.get('status_left_domain')
-        if left_domain is None:
+        status = particles.get(status_name)
+        if status is None:
             size = len(particles.get('x', []))
             return np.zeros(size, dtype=bool)
-        return np.asarray(left_domain, dtype=bool)
+        return np.asarray(status, dtype=bool)
+
+    @classmethod
+    def _left_domain_mask(cls, population) -> np.ndarray:
+        return cls._particle_status_mask(population, 'status_left_domain')
+
+    @classmethod
+    def _beached_mask(cls, population) -> np.ndarray:
+        return cls._particle_status_mask(population, 'status_beached')
 
     @staticmethod
     def _population_name(population, fallback_index: int) -> str:
@@ -176,7 +184,7 @@ class Simulation:
         population,
         population_index: int,
         flow_field_name: str,
-        previous_left_domain: np.ndarray,
+        reported_left_domain: np.ndarray,
         current_time: float,
         current_timestep: float,
     ) -> int:
@@ -186,17 +194,18 @@ class Simulation:
             return 0
 
         current_left_domain = self._left_domain_mask(population)
-        if current_left_domain.shape != previous_left_domain.shape:
+        if current_left_domain.shape != reported_left_domain.shape:
             return 0
 
-        newly_left = current_left_domain & ~previous_left_domain
-        newly_left_count = int(np.count_nonzero(newly_left))
+        previous_total = int(np.count_nonzero(reported_left_domain))
+        np.logical_or(reported_left_domain, current_left_domain, out=reported_left_domain)
+        total_left = int(np.count_nonzero(reported_left_domain))
+        newly_left_count = total_left - previous_total
         if newly_left_count == 0:
             return 0
 
         population_name = self._population_name(population, population_index)
         population_size = int(current_left_domain.size)
-        total_left = int(np.count_nonzero(current_left_domain))
         self.logger.info(
             'Particles left domain: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
             newly_left_count,
@@ -208,6 +217,45 @@ class Simulation:
             population_size,
         )
         return newly_left_count
+
+    def _report_new_beached_particles(
+        self,
+        population,
+        population_index: int,
+        flow_field_name: str,
+        reported_beached: np.ndarray,
+        current_time: float,
+        current_timestep: float,
+    ) -> int:
+        """Report newly beached particles for one population update."""
+
+        if not self._report_domain_exits:
+            return 0
+
+        current_beached = self._beached_mask(population)
+        if current_beached.shape != reported_beached.shape:
+            return 0
+
+        previous_total = int(np.count_nonzero(reported_beached))
+        np.logical_or(reported_beached, current_beached, out=reported_beached)
+        total_beached = int(np.count_nonzero(reported_beached))
+        newly_beached_count = total_beached - previous_total
+        if newly_beached_count == 0:
+            return 0
+
+        population_name = self._population_name(population, population_index)
+        population_size = int(current_beached.size)
+        self.logger.info(
+            'Particles beached on land: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
+            newly_beached_count,
+            population_name,
+            flow_field_name,
+            current_time,
+            current_timestep,
+            total_beached,
+            population_size,
+        )
+        return newly_beached_count
 
     def _report_domain_exit_summary(self, populations) -> None:
         """Report final left-domain particle counts."""
@@ -234,6 +282,36 @@ class Simulation:
             self.logger.info('Particles left domain during run: %d/%d%s', total_left, total_particles, details)
         else:
             self.logger.info('Particles left domain during run: 0/%d', total_particles)
+
+    def _report_beached_summary(self, populations, beached_masks: list[np.ndarray] | None = None) -> None:
+        """Report final beached-particle counts."""
+
+        if not self._report_domain_exits:
+            return
+
+        total_beached = 0
+        total_particles = 0
+        per_population = []
+        for population_index, population in enumerate(populations):
+            beached = self._beached_mask(population)
+            if beached_masks is not None and population_index < len(beached_masks):
+                beached_history = np.asarray(beached_masks[population_index], dtype=bool)
+                if beached_history.shape == beached.shape:
+                    beached = beached_history
+            population_beached = int(np.count_nonzero(beached))
+            population_size = int(beached.size)
+            total_beached += population_beached
+            total_particles += population_size
+            if population_beached:
+                per_population.append(
+                    f'{self._population_name(population, population_index)}={population_beached}/{population_size}'
+                )
+
+        if total_beached:
+            details = f" ({', '.join(per_population)})" if per_population else ''
+            self.logger.info('Particles beached on land during run: %d/%d%s', total_beached, total_particles, details)
+        else:
+            self.logger.info('Particles beached on land during run: 0/%d', total_particles)
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
@@ -854,6 +932,8 @@ class Simulation:
             save_interval_seconds,
             slot_idx,
         )
+        left_domain_reported_masks = [self._left_domain_mask(population).copy() for population in populations]
+        beached_ever_masks = [self._beached_mask(population).copy() for population in populations]
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
@@ -934,24 +1014,30 @@ class Simulation:
 
                 # Main loop
                 dashboard_flow_field = None
+                plot_interval_seconds = None
+                dashboard_update_due = False
+                if self._should_update_dashboard(sedtrails_data, timer):
+                    plot_interval_seconds = self._dashboard_update_interval_seconds()
+                    dashboard_update_due = self.dashboard.should_update(timer.current, plot_interval_seconds)
+
                 for runtime_plan in runtime_plans:
                     population = runtime_plan.population
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    with self._profile_section('get_scalar_field.mixing_layer_thickness'):
-                        mixing_depth = retriever.get_scalar_field(field_time_seconds, 'mixing_layer_thickness')['magnitude']
-                    with self._profile_section('get_scalar_field.bed_level'):
-                        bed_level = retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+                    with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
+                        mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
+                    with self._profile_section('get_scalar_field_bounds.bed_level'):
+                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('get_scalar_field.transport_probability'):
-                                transport_prob = retriever.get_scalar_field(
+                            with self._profile_section('get_scalar_field_bounds.transport_probability'):
+                                transport_prob = retriever.get_scalar_field_bounds(
                                     field_time_seconds, flow_field_name.replace('velocity', 'probability')
-                                )['magnitude']
+                                )
                         else:
-                            transport_prob = np.ones_like(bed_level)
+                            transport_prob = 1.0
 
                         with self._profile_section('update_information'):
                             population.update_information(
@@ -966,46 +1052,56 @@ class Simulation:
 
                         population.update_status()
 
-                        with self._profile_section('get_flow_field.update_position'):
-                            flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
-                        if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
-                            dashboard_flow_field = flow_field
+                        with self._profile_section('get_flow_field_bounds.update_position'):
+                            flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
+                        if (
+                            dashboard_update_due
+                            and runtime_plan.population_index == 0
+                            and flow_field_name == tracer_plan.flow_field_names[0]
+                        ):
+                            with self._profile_section('get_flow_field.dashboard'):
+                                dashboard_flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
 
-                        previous_left_domain = self._left_domain_mask(population).copy()
                         with self._profile_section('update_position'):
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
                         self._report_new_domain_exits(
                             population,
                             runtime_plan.population_index,
                             flow_field_name,
-                            previous_left_domain,
+                            left_domain_reported_masks[runtime_plan.population_index],
+                            timer.current,
+                            timer.current_timestep,
+                        )
+                        self._report_new_beached_particles(
+                            population,
+                            runtime_plan.population_index,
+                            flow_field_name,
+                            beached_ever_masks[runtime_plan.population_index],
                             timer.current,
                             timer.current_timestep,
                         )
 
                 # Update dashboard if enabled
-                if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
-                    plot_interval_seconds = self._dashboard_update_interval_seconds()
-                    if self.dashboard.should_update(timer.current, plot_interval_seconds):
-                        # For dashboard, use first population data
-                        first_population = populations[0]
-                        particle_data = self._dashboard_particle_data(first_population)
-                        dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
-                        with self._profile_section('get_scalar_field.dashboard_bed_level'):
-                            bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
-                        mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
+                if dashboard_update_due and dashboard_flow_field is not None:
+                    # For dashboard, use first population data
+                    first_population = populations[0]
+                    particle_data = self._dashboard_particle_data(first_population)
+                    dashboard_retriever = plan_retrievers[runtime_plans[0].population_index]
+                    with self._profile_section('get_scalar_field.dashboard_bed_level'):
+                        bathymetry = dashboard_retriever.get_scalar_field(field_time_seconds, 'bed_level')['magnitude']
+                    mesh_geometry = sedtrails_data.mesh_geometry() if hasattr(sedtrails_data, 'mesh_geometry') else None
 
-                        self.dashboard.update(
-                            dashboard_flow_field,
-                            bathymetry,
-                            particle_data,
-                            timer.current,
-                            timer.current_timestep,
-                            plot_interval_seconds,
-                            simulation_start_time=simulation_time.start,
-                            simulation_end_time=simulation_time.end,
-                            mesh_geometry=mesh_geometry,
-                        )
+                    self.dashboard.update(
+                        dashboard_flow_field,
+                        bathymetry,
+                        particle_data,
+                        timer.current,
+                        timer.current_timestep,
+                        plot_interval_seconds,
+                        simulation_start_time=simulation_time.start,
+                        simulation_end_time=simulation_time.end,
+                        mesh_geometry=mesh_geometry,
+                    )
 
                 timer.advance()
 
@@ -1083,6 +1179,7 @@ class Simulation:
             self._active_progress_bar = None
             print('\nSimulation completed successfully!')
             self._report_domain_exit_summary(populations)
+            self._report_beached_summary(populations, beached_ever_masks)
 
             # Save final particle state if simulation ended between two save boundaries
             if last_saved_time is None or timer.current > last_saved_time:

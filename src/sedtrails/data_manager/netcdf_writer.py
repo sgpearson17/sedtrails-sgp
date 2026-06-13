@@ -342,6 +342,8 @@ class NetCDFWriter:
         ds.createVariable('status_transported', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
         ds.createVariable('status_released', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
         ds.createVariable('status_mobile', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_beached', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
+        ds.createVariable('status_left_domain', 'i4', ('n_particles', 'n_timesteps'), fill_value=-1)
         ds.createVariable('covered_distance', 'f8', ('n_flowfields', 'n_particles', 'n_timesteps'), fill_value=np.nan)
 
         # Write static population metadata
@@ -414,6 +416,12 @@ class NetCDFWriter:
                 population.particles.get('status_released', np.ones(num_particles, dtype=np.int32))
             )
             h['status_mobile'][sl, slot_idx] = np.asarray(population.particles['status_mobile'])
+            h['status_beached'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_beached', np.zeros(num_particles, dtype=np.int32))
+            )
+            h['status_left_domain'][sl, slot_idx] = np.asarray(
+                population.particles.get('status_left_domain', np.zeros(num_particles, dtype=np.int32))
+            )
 
             particle_offset += num_particles
 

@@ -30,6 +30,8 @@ class MockPopulation:
             'status_domain': np.array([1, 1, 1], dtype=np.int32),
             'status_transported': np.array([0, 1, 0], dtype=np.int32),
             'status_released': np.array([1, 1, 1], dtype=np.int32),
+            'status_beached': np.array([0, 1, 0], dtype=np.int32),
+            'status_left_domain': np.array([0, 0, 1], dtype=np.int32),
         }
 
 
@@ -208,6 +210,7 @@ class TestNetCDFWriterStreaming:
         expected = {'x', 'y', 'z', 'time', 'burial_depth', 'mixing_depth',
                     'status_alive', 'status_buried', 'status_domain',
                     'status_transported', 'status_released', 'status_mobile',
+                    'status_beached', 'status_left_domain',
                     'covered_distance'}
         assert expected.issubset(set(open_handle.variables))
 
@@ -243,6 +246,12 @@ class TestNetCDFWriterStreaming:
 
         np.testing.assert_array_equal(
             handle['status_mobile'][:, 0], population.particles['status_mobile']
+        )
+        np.testing.assert_array_equal(
+            handle['status_beached'][:, 0], population.particles['status_beached']
+        )
+        np.testing.assert_array_equal(
+            handle['status_left_domain'][:, 0], population.particles['status_left_domain']
         )
         handle.close()
 
