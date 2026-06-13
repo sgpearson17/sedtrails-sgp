@@ -473,6 +473,6 @@ class YAMLConfigValidator:
 if __name__ == '__main__':
     validator = YAMLConfigValidator()
 
-    data = validator.validate_yaml('examples/config.example.yaml')
+    data = validator.validate_yaml('examples/sedtrails-example.yaml')
 
     print(f'Validated data: {data}')

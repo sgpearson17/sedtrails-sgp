@@ -54,19 +54,23 @@ sedtrails -h
 
 ## Simulation Test
 
-To fullly test your development environment, you can run a sample simulation using a provided dataset.
+To fully test your development environment, you can run a sample simulation using the tracked example configuration.
 
 1. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
 
-2. Change the directory:
+2. From the repository root, create a local sample-data directory and place the downloaded dataset there:
 ```bash
-cd examples
+mkdir -p sample-data
 ```
 
-3. In the file `config.example.yaml`, update the directory for `input_data` to read the downloaded dataset: `input_data: ./<path-to/inlet_sedtrails.nc`
+3. In `examples/sedtrails-example.yaml`, set `inputs.data` to the downloaded dataset:
 
+```yaml
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
+```
 
 4. Run the model:
 ```bash
-sedtrails run -c config.example.yaml
+sedtrails run -c examples/sedtrails-example.yaml
 ```

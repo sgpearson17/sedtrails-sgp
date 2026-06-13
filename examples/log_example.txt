@@ -4,7 +4,7 @@
 2025-07-25 13:07:16,052 - INFO - === SIMULATION START ===
 2025-07-25 13:07:16,052 - INFO - Command: src/sedtrails/simulation.py
 2025-07-25 13:07:16,052 - INFO - Python: 3.13.2
-2025-07-25 13:07:16,052 - INFO - Config: examples/config.example.yaml
+2025-07-25 13:07:16,052 - INFO - Config: examples/sedtrails-example.yaml
 2025-07-25 13:07:16,052 - INFO - Working directory: /home/aurhan/Work/Projects/SedTRAILS/sedtrails
 2025-07-25 13:07:16,787 - INFO - --- Data Conversion Complete ---
 2025-07-25 13:07:16,787 - INFO - Timesteps: 290
