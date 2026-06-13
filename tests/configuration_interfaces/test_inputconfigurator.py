@@ -171,6 +171,26 @@ class TestYAMLConfigValidator:
         assert result['domain']['boundary_class_pol_files']['open'] == ['offshore_01.pol', 'offshore_02.pol']
         assert result['domain']['boundary_class_pol_files']['land'] == ['coastline.pol']
 
+    def test_validate_yaml_accepts_boundary_class_pol_files_without_domain_subset(self, tmp_path):
+        """Boundary class polygons can be the only domain control."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'boundary_class_pol_files': {
+                    'open': ['offshore.pol'],
+                },
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['domain']['boundary_class_pol_files']['open'] == ['offshore.pol']
+
     def test_validate_yaml_rejects_non_string_boundary_class_pol_files(self, tmp_path):
         """Boundary override file entries must be paths encoded as strings."""
 

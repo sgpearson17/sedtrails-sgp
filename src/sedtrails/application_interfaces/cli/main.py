@@ -43,6 +43,11 @@ def run_simulation_cmd(
         '-c',
         help='Path to the SedTRAILS configuration file.',
     ),
+    report_domain_exits: bool = typer.Option(
+        True,
+        '--report-domain-exits/--no-report-domain-exits',
+        help='Report particles that leave the model domain during and after the run.',
+    ),
 ):
     """
     Run a simulation based on a configuration file.
@@ -56,7 +61,11 @@ def run_simulation_cmd(
 
     try:
         typer.echo(f"Starting simulation from '{config_file}'...")
-        output_dir = run_simulation(config_file=config_file, verbose=True)
+        output_dir = run_simulation(
+            config_file=config_file,
+            verbose=True,
+            report_domain_exits=report_domain_exits,
+        )
         typer.echo(f"Simulation complete. Results saved to '{output_dir}'.")
     except Exception as e:
         typer.echo(f'Error running simulation: {e}')

@@ -115,6 +115,7 @@ class FormatConverter:
                 plugin_module = importlib.import_module(plugin_module_name)
                 # Initialize the format plugin with the input file and morfac
                 self._format_plugin = plugin_module.FormatPlugin(self.input_file, morfac=self.morfac)
+                self._configure_format_plugin(self._format_plugin)
             except ImportError as e:
                 raise ImportError(
                     f'Failed to import format plugin module: {plugin_module_name} '
@@ -122,6 +123,16 @@ class FormatConverter:
                 ) from e
 
         return self._format_plugin
+
+    def _configure_format_plugin(self, plugin):
+        """Apply converter-level options supported by format plugins."""
+        if 'domain_config' not in self.config:
+            return
+
+        try:
+            plugin.domain_config = self.config.get('domain_config') or {}
+        except AttributeError:
+            pass
 
     def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """

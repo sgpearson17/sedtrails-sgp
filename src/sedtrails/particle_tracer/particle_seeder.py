@@ -28,7 +28,11 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.position_calculator_numba import (
+    BOUNDARY_CLASS_LAND,
+    BOUNDARY_CLASS_OPEN,
+    create_grid_geometry,
+)
 from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
 
 
@@ -507,6 +511,10 @@ class ParticlePopulation:
         Bound method for advancing particles while reusing cached simplex ids.
     _position_calculator_temporal_with_simplex : Any
         Bound method for temporal particle updates while reusing cached simplex ids.
+    _position_calculator_with_boundary_class : Any
+        Bound method for advancing particles and returning crossed boundary class codes.
+    _position_calculator_temporal_with_boundary_class : Any
+        Bound method for temporal updates and crossed boundary class codes.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
     _current_time : ndarray
@@ -527,6 +535,8 @@ class ParticlePopulation:
     _field_interpolator_multi: Any = field(init=False)
     _position_calculator_with_simplex: Any = field(init=False)
     _position_calculator_temporal_with_simplex: Any = field(init=False)
+    _position_calculator_with_boundary_class: Any = field(init=False)
+    _position_calculator_temporal_with_boundary_class: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
@@ -541,6 +551,10 @@ class ParticlePopulation:
         self._field_interpolator_multi = self.grid_geometry.interpolate_fields
         self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
         self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
+        self._position_calculator_with_boundary_class = self.grid_geometry.update_particles_with_boundary_class
+        self._position_calculator_temporal_with_boundary_class = (
+            self.grid_geometry.update_particles_temporal_with_boundary_class
+        )
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -762,7 +776,7 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
-        ix = self.particles['status_mobile']  # Get indices of mobile particles
+        ix = np.asarray(self.particles['status_mobile'], dtype=bool).copy()  # Freeze current mobile-particle mask.
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
             return
@@ -771,7 +785,7 @@ class ParticlePopulation:
         old_simplices = self._particle_simplices[particle_indices].copy()
 
         if _is_temporal_flow_field(flow_field):
-            new_x, new_y, new_simplices = self._position_calculator_temporal_with_simplex(
+            new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_temporal_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['lower']['u'],
@@ -783,7 +797,7 @@ class ParticlePopulation:
                 simplex_ids=self._particle_simplices[particle_indices],
             )
         else:
-            new_x, new_y, new_simplices = self._position_calculator_with_simplex(
+            new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['u'],
@@ -795,23 +809,18 @@ class ParticlePopulation:
         # TODO: implement Bart's solution for gross/net values here. Add
         outside_domain = new_simplices < 0
         if np.any(outside_domain):
-            boundary_classes = self.grid_geometry.classify_boundary_crossings(
-                old_x[outside_domain],
-                old_y[outside_domain],
-                new_x[outside_domain],
-                new_y[outside_domain],
-            )
+            outside_boundary_class_codes = np.asarray(boundary_class_codes[outside_domain], dtype=np.int8)
             outside_particle_indices = particle_indices[outside_domain]
             self.particles['status_domain'][outside_particle_indices] = False
             self.particles['status_mobile'][outside_particle_indices] = False
 
-            open_boundary = boundary_classes == 'open'
+            open_boundary = outside_boundary_class_codes == BOUNDARY_CLASS_OPEN
             if np.any(open_boundary):
                 open_indices = outside_particle_indices[open_boundary]
                 self.particles['status_left_domain'][open_indices] = True
                 self.particles['status_alive'][open_indices] = False
 
-            land_boundary = boundary_classes == 'land'
+            land_boundary = outside_boundary_class_codes == BOUNDARY_CLASS_LAND
             if np.any(land_boundary):
                 land_local_indices = np.flatnonzero(outside_domain)[land_boundary]
                 land_particle_indices = outside_particle_indices[land_boundary]

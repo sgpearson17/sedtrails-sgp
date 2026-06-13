@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever
+from sedtrails.particle_tracer.particle_seeder import ParticleSeeder
 from sedtrails.transport_converter.format_converter import FormatConverter
 from sedtrails.transport_converter.plugins.format import xbeach
 
@@ -11,6 +12,20 @@ from sedtrails.transport_converter.plugins.format import xbeach
 def _existing_input_path():
     """Returns a guaranteed-existing file path for plugin constructor inputs."""
     return __file__
+
+
+def _write_square_pol(path, xmin, ymin, xmax, ymax):
+    """Write a single-block Tekal polygon around a square."""
+    path.write_text(
+        f"""
+selector
+4 2
+{xmin} {ymin}
+{xmax} {ymin}
+{xmax} {ymax}
+{xmin} {ymax}
+""".strip()
+    )
 
 
 def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatch):
@@ -51,11 +66,17 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
         self.input_data = ds
         return ds
 
+    def fail_delaunay(*_args, **_kwargs):
+        """Fails if structured XBeach grids fall back to Delaunay connectivity."""
+        raise AssertionError('Structured XBeach grids should not use Delaunay connectivity')
+
     monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    monkeypatch.setattr(xbeach, 'delaunay_connectivity', fail_delaunay)
 
     plugin = xbeach.FormatPlugin(_existing_input_path())
     sedtrails_data = plugin.convert(reference_date=np.datetime64('1970-01-01T00:00:00'))
 
+    expected_connectivity = np.array([[0, 1, 3], [0, 3, 2]], dtype=np.int64)
     np.testing.assert_array_equal(sedtrails_data.times, np.array([10.0, 20.0]))
     np.testing.assert_array_equal(sedtrails_data.x, np.array([0.0, 1.0, 0.0, 1.0]))
     assert sedtrails_data.bed_level.shape == (2, 4)
@@ -65,6 +86,8 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     assert sedtrails_data.fractions == 1
     assert sedtrails_data.metadata.source_sediment_classes == 2
     assert sedtrails_data.metadata.sediment_transport_fraction_handling == 'sum_over_source_sediment_classes'
+    np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, expected_connectivity)
+    np.testing.assert_array_equal(sedtrails_data.particle_face_connectivity, expected_connectivity)
     np.testing.assert_array_equal(sedtrails_data.bed_load_transport['x'], np.array([[4.0, 6.0, 8.0, 10.0], [20.0, 22.0, 24.0, 26.0]]))
     np.testing.assert_array_equal(sedtrails_data.bed_load_transport['y'], np.array([[24.0, 26.0, 28.0, 30.0], [40.0, 42.0, 44.0, 46.0]]))
     np.testing.assert_allclose(sedtrails_data.mean_bed_shear_stress, 5.0)
@@ -72,8 +95,8 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     np.testing.assert_array_equal(sedtrails_data.nonlinear_wave_velocity['x'], (scalar + 3.0).reshape(2, 4))
 
 
-def test_format_converter_get_seeding_field_data_uses_xbeach_coordinate_reader(monkeypatch):
-    """Checks FormatConverter uses the XBeach coordinate fast path."""
+def test_format_converter_get_seeding_field_data_uses_xbeach_geometry_reader(monkeypatch):
+    """Checks FormatConverter uses the XBeach geometry fast path."""
     ds = xr.Dataset(
         coords={
             'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
@@ -90,19 +113,76 @@ def test_format_converter_get_seeding_field_data_uses_xbeach_coordinate_reader(m
         """Fails if seeding falls back to full conversion."""
         raise RuntimeError('XBeach seeding should use get_seeding_coordinates')
 
+    def fail_delaunay(*_args, **_kwargs):
+        """Fails if structured XBeach grids fall back to Delaunay connectivity."""
+        raise AssertionError('Structured XBeach grids should not use Delaunay connectivity')
+
     monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
     monkeypatch.setattr(xbeach.FormatPlugin, 'convert', fail_convert)
+    monkeypatch.setattr(xbeach, 'delaunay_connectivity', fail_delaunay)
 
     converter = FormatConverter(
         {'input_file': _existing_input_path(), 'input_format': 'xbeach', 'reference_date': '2000-01-01'}
     )
     field_data = converter.get_seeding_field_data()
 
+    expected_connectivity = np.array([[0, 1, 3], [0, 3, 2]], dtype=np.int64)
     np.testing.assert_array_equal(field_data.x, np.array([0.0, 1.0, 0.0, 1.0]))
     np.testing.assert_array_equal(field_data.y, np.array([0.0, 0.0, 1.0, 1.0]))
-    assert field_data.face_node_connectivity is None
-    assert field_data.particle_face_connectivity is None
+    np.testing.assert_array_equal(field_data.face_node_connectivity, expected_connectivity)
+    np.testing.assert_array_equal(field_data.particle_face_connectivity, expected_connectivity)
     assert field_data.reference_date == np.datetime64('2000-01-01')
+
+
+def test_xbeach_open_boundary_classification_reaches_particle_updates(monkeypatch, tmp_path):
+    """XBeach particles crossing configured open edges should leave the domain."""
+
+    open_file = tmp_path / 'open.pol'
+    _write_square_pol(open_file, 0.25, -0.10, 0.75, 0.10)
+    ds = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+        },
+    )
+
+    def fake_load(self):
+        """Injects synthetic XBeach grid coordinates."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+    converter = FormatConverter(
+        {
+            'input_file': _existing_input_path(),
+            'input_format': 'xbeach',
+            'reference_date': '2000-01-01',
+            'domain_config': {'boundary_class_pol_files': {'open': [str(open_file)]}},
+        }
+    )
+    field_data = converter.get_seeding_field_data()
+    config = {
+        'name': 'XBeach open boundary population',
+        'particle_type': 'sand',
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': ['0.5,0.2']}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+
+    population = ParticleSeeder([config]).seed(field_data)[0]
+    population._current_time = 0.0
+    population.particles['transport_probability'] = np.ones(1)
+    population.update_status()
+    population.update_position(flow_field={'u': np.zeros(4), 'v': -np.ones(4)}, current_timestep=0.5)
+
+    assert field_data.boundary_edge_classification['class_counts']['open'] == 1
+    assert population.particles['status_left_domain'].tolist() == [True]
+    assert population.particles['status_alive'].tolist() == [False]
 
 
 def test_xbeach_get_scalar_field_slices_time_dependent_bed_level(monkeypatch):

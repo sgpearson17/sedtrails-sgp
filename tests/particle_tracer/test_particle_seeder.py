@@ -1340,6 +1340,24 @@ class TestParticlePopulation:
         assert population.particles['status_alive'].tolist() == [False]
         assert population.particles['status_mobile'].tolist() == [False]
 
+    def test_open_boundary_exit_keeps_original_update_mask_shape(self, monkeypatch):
+        """Boundary exits should not shrink the mobile mask before position assignment."""
+        config = _boundary_action_config('0.2,0.2')
+        config['seeding']['strategy']['point']['locations'] = ['0.2,0.2', '0.4,0.2']
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.particles['transport_probability'] = np.ones(2)
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+        population.update_position(
+            flow_field={'u': np.zeros(3), 'v': -np.ones(3)},
+            current_timestep=0.5,
+        )
+
+        assert population.particles['status_left_domain'].tolist() == [True, True]
+        assert population.particles['status_mobile'].tolist() == [False, False]
+
     def test_land_boundary_contact_marks_beached_without_removing_particle(self, monkeypatch):
         """Particles crossing land boundary edges stay put and can reactivate later."""
         population = ParticleSeeder([_boundary_action_config('0.2,0.2')]).seed(_boundary_action_field_data())[0]

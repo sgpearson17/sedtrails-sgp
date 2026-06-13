@@ -15,8 +15,8 @@ Domain Masks and Boundary Classes
 ---------------------------------
 
 FM and SFINCS converters accept the optional ``domain.inner_boundary_pol_files``
-and ``domain.boundary_class_pol_files`` settings from the simulation
-configuration.
+setting from the simulation configuration. FM, SFINCS, and XBeach converters
+accept ``domain.boundary_class_pol_files``.
 
 ``inner_boundary_pol_files`` points to one or more Tekal ``.pol`` files. Each
 file may contain multiple polygon blocks. Candidate mesh faces or triangles with

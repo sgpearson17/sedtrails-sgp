@@ -17,6 +17,9 @@ from scipy.spatial import ConvexHull, Delaunay
 
 TRIANGLE_TOLERANCE = 1e-10
 MAX_SIMPLEX_WALK_STEPS = 128
+BOUNDARY_CLASS_UNCLASSIFIED = np.int8(0)
+BOUNDARY_CLASS_OPEN = np.int8(1)
+BOUNDARY_CLASS_LAND = np.int8(2)
 
 
 @dataclass
@@ -37,11 +40,8 @@ class GridGeometry:
     inv11: np.ndarray
     triangle_finder: Any = None
     boundary_edges: np.ndarray | None = None
-    boundary_edge_classes: np.ndarray | None = None
-    boundary_edge_start_x: np.ndarray | None = None
-    boundary_edge_start_y: np.ndarray | None = None
-    boundary_edge_end_x: np.ndarray | None = None
-    boundary_edge_end_y: np.ndarray | None = None
+    boundary_edge_class_codes: np.ndarray | None = None
+    triangle_edge_class_codes: np.ndarray | None = None
 
     @classmethod
     def from_points(cls, grid_x, grid_y, triangles=None, boundary_edge_classification=None):
@@ -85,15 +85,15 @@ class GridGeometry:
 
         p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(x, y, triangle_array)
 
-        boundary_edges, boundary_edge_classes = _parse_boundary_edge_classification(boundary_edge_classification)
-        (
+        boundary_edges, boundary_edge_class_codes = _parse_boundary_edge_classification(boundary_edge_classification)
+        boundary_edges, boundary_edge_class_codes = _prepare_boundary_edge_geometry(
+            x, y, boundary_edges, boundary_edge_class_codes
+        )
+        triangle_edge_class_codes = _build_triangle_edge_class_codes(
+            triangle_array,
             boundary_edges,
-            boundary_edge_classes,
-            boundary_edge_start_x,
-            boundary_edge_start_y,
-            boundary_edge_end_x,
-            boundary_edge_end_y,
-        ) = _prepare_boundary_edge_geometry(x, y, boundary_edges, boundary_edge_classes)
+            boundary_edge_class_codes,
+        )
 
         return cls(
             grid_x=x,
@@ -110,11 +110,8 @@ class GridGeometry:
             inv11=inv11,
             triangle_finder=triangle_finder,
             boundary_edges=boundary_edges,
-            boundary_edge_classes=boundary_edge_classes,
-            boundary_edge_start_x=boundary_edge_start_x,
-            boundary_edge_start_y=boundary_edge_start_y,
-            boundary_edge_end_x=boundary_edge_end_x,
-            boundary_edge_end_y=boundary_edge_end_y,
+            boundary_edge_class_codes=boundary_edge_class_codes,
+            triangle_edge_class_codes=triangle_edge_class_codes,
         )
 
     def find_triangle(self, x, y) -> int:
@@ -225,7 +222,7 @@ class GridGeometry:
 
     def update_particles_temporal(self, x0, y0, lower_u, lower_v, upper_u, upper_v, weight, dt, igeo=0):
         """Advance particles using lower/upper time-slice velocities blended by weight."""
-        x_new, y_new, _ = self.update_particles_temporal_with_simplex(
+        x_new, y_new, _, _ = self.update_particles_temporal_with_boundary_class(
             x0,
             y0,
             lower_u,
@@ -241,7 +238,20 @@ class GridGeometry:
 
     def update_particles_with_simplex(self, x0, y0, grid_u, grid_v, dt, simplex_ids=None, igeo=0):
         """Advance particles and return updated simplex ids for the new positions."""
-        return self.update_particles_temporal_with_simplex(
+        x_new, y_new, new_simplices, _ = self.update_particles_with_boundary_class(
+            x0,
+            y0,
+            grid_u,
+            grid_v,
+            dt,
+            simplex_ids=simplex_ids,
+            igeo=igeo,
+        )
+        return x_new, y_new, new_simplices
+
+    def update_particles_with_boundary_class(self, x0, y0, grid_u, grid_v, dt, simplex_ids=None, igeo=0):
+        """Advance particles and return updated simplex ids plus exit boundary classes."""
+        return self.update_particles_temporal_with_boundary_class(
             x0,
             y0,
             grid_u,
@@ -268,11 +278,44 @@ class GridGeometry:
         igeo=0,
     ):
         """Advance particles with a Numba RK4 kernel and cached simplex ids."""
+        x_new, y_new, new_simplices, _ = self.update_particles_temporal_with_boundary_class(
+            x0,
+            y0,
+            lower_u,
+            lower_v,
+            upper_u,
+            upper_v,
+            weight,
+            dt,
+            simplex_ids=simplex_ids,
+            igeo=igeo,
+        )
+        return x_new, y_new, new_simplices
+
+    def update_particles_temporal_with_boundary_class(
+        self,
+        x0,
+        y0,
+        lower_u,
+        lower_v,
+        upper_u,
+        upper_v,
+        weight,
+        dt,
+        simplex_ids=None,
+        igeo=0,
+    ):
+        """Advance particles and return exit boundary class codes."""
         x0 = np.asarray(x0, dtype=np.float64)
         y0 = np.asarray(y0, dtype=np.float64)
         particle_shape = x0.shape
         if x0.size == 0:
-            return x0.copy(), y0.copy(), np.empty(0, dtype=np.int64)
+            return (
+                x0.copy(),
+                y0.copy(),
+                np.empty(0, dtype=np.int64),
+                np.empty(0, dtype=np.int8),
+            )
 
         lower_u_adj, lower_v_adj = self._velocity_arrays(lower_u, lower_v, igeo)
         if weight <= 0.0:
@@ -282,7 +325,7 @@ class GridGeometry:
             upper_u_adj, upper_v_adj = self._velocity_arrays(upper_u, upper_v, igeo)
 
         starts = self.locate_points(x0, y0, simplex_ids)
-        x_new, y_new, new_simplices = _update_particles_temporal_numba(
+        x_new, y_new, new_simplices, boundary_class_codes = _update_particles_temporal_numba(
             x0.ravel(),
             y0.ravel(),
             np.asarray(lower_u_adj).ravel(),
@@ -300,10 +343,16 @@ class GridGeometry:
             self.inv01,
             self.inv10,
             self.inv11,
+            self.triangle_edge_class_codes,
             MAX_SIMPLEX_WALK_STEPS,
             TRIANGLE_TOLERANCE,
         )
-        return x_new.reshape(particle_shape), y_new.reshape(particle_shape), new_simplices
+        return (
+            x_new.reshape(particle_shape),
+            y_new.reshape(particle_shape),
+            new_simplices,
+            boundary_class_codes.reshape(particle_shape),
+        )
 
     def interpolate_vector(self, grid_u, grid_v, x_points, y_points):
         """Interpolate vector components at point coordinates."""
@@ -372,28 +421,30 @@ class GridGeometry:
         classes = np.full(start_points.shape[0], 'unclassified', dtype=object)
 
         if (
-            self.boundary_edge_classes is None
-            or self.boundary_edge_start_x is None
-            or self.boundary_edge_start_y is None
-            or self.boundary_edge_end_x is None
-            or self.boundary_edge_end_y is None
-            or self.boundary_edge_classes.size == 0
+            self.boundary_edges is None
+            or self.boundary_edge_class_codes is None
+            or self.boundary_edges.size == 0
+            or self.boundary_edge_class_codes.size == 0
         ):
             return classes.reshape(np.asarray(x0).shape)
 
+        edge_start_x = np.asarray(self.grid_x[self.boundary_edges[:, 0]], dtype=np.float64)
+        edge_start_y = np.asarray(self.grid_y[self.boundary_edges[:, 0]], dtype=np.float64)
+        edge_end_x = np.asarray(self.grid_x[self.boundary_edges[:, 1]], dtype=np.float64)
+        edge_end_y = np.asarray(self.grid_y[self.boundary_edges[:, 1]], dtype=np.float64)
         edge_indices = _nearest_boundary_edge_indices_numba(
             start_points[:, 0],
             start_points[:, 1],
             end_points[:, 0],
             end_points[:, 1],
-            self.boundary_edge_start_x,
-            self.boundary_edge_start_y,
-            self.boundary_edge_end_x,
-            self.boundary_edge_end_y,
+            edge_start_x,
+            edge_start_y,
+            edge_end_x,
+            edge_end_y,
             TRIANGLE_TOLERANCE,
         )
         valid = edge_indices >= 0
-        classes[valid] = self.boundary_edge_classes[edge_indices[valid]]
+        classes[valid] = _boundary_class_labels(self.boundary_edge_class_codes[edge_indices[valid]])
 
         return classes.reshape(np.asarray(x0).shape)
 
@@ -499,15 +550,15 @@ def _parse_boundary_edge_classification(boundary_edge_classification):
         return None, None
 
     edges = np.asarray(edge_nodes, dtype=np.int64)
-    classes = np.asarray(edge_classes, dtype=object)
-    if edges.ndim != 2 or edges.shape[1] != 2 or classes.shape != (edges.shape[0],):
+    class_codes = _boundary_class_codes(edge_classes)
+    if edges.ndim != 2 or edges.shape[1] != 2 or class_codes.shape != (edges.shape[0],):
         return None, None
-    return edges, classes
+    return edges, class_codes
 
 
-def _prepare_boundary_edge_geometry(grid_x, grid_y, boundary_edges, boundary_edge_classes):
-    if boundary_edges is None or boundary_edge_classes is None or boundary_edges.size == 0:
-        return None, None, None, None, None, None
+def _prepare_boundary_edge_geometry(grid_x, grid_y, boundary_edges, boundary_edge_class_codes):
+    if boundary_edges is None or boundary_edge_class_codes is None or boundary_edges.size == 0:
+        return None, None
 
     valid_edges = (
         (boundary_edges >= 0)
@@ -515,18 +566,47 @@ def _prepare_boundary_edge_geometry(grid_x, grid_y, boundary_edges, boundary_edg
         & (boundary_edges < grid_y.size)
     ).all(axis=1)
     if not np.any(valid_edges):
-        return None, None, None, None, None, None
+        return None, None
 
     edges = np.asarray(boundary_edges[valid_edges], dtype=np.int64)
-    classes = np.asarray(boundary_edge_classes[valid_edges], dtype=object)
-    return (
-        edges,
-        classes,
-        np.asarray(grid_x[edges[:, 0]], dtype=np.float64),
-        np.asarray(grid_y[edges[:, 0]], dtype=np.float64),
-        np.asarray(grid_x[edges[:, 1]], dtype=np.float64),
-        np.asarray(grid_y[edges[:, 1]], dtype=np.float64),
-    )
+    class_codes = np.asarray(boundary_edge_class_codes[valid_edges], dtype=np.int8)
+    return edges, class_codes
+
+
+def _boundary_class_codes(labels) -> np.ndarray:
+    labels_array = np.asarray(labels, dtype=object)
+    codes = np.zeros(labels_array.shape, dtype=np.int8)
+    codes[labels_array == 'open'] = BOUNDARY_CLASS_OPEN
+    codes[labels_array == 'land'] = BOUNDARY_CLASS_LAND
+    return codes
+
+
+def _boundary_class_labels(codes) -> np.ndarray:
+    codes_array = np.asarray(codes, dtype=np.int8)
+    labels = np.full(codes_array.shape, 'unclassified', dtype=object)
+    labels[codes_array == BOUNDARY_CLASS_OPEN] = 'open'
+    labels[codes_array == BOUNDARY_CLASS_LAND] = 'land'
+    return labels
+
+
+def _build_triangle_edge_class_codes(triangles, boundary_edges, boundary_edge_class_codes) -> np.ndarray:
+    triangle_edge_class_codes = np.zeros((triangles.shape[0], 3), dtype=np.int8)
+    if boundary_edges is None or boundary_edge_class_codes is None:
+        return triangle_edge_class_codes
+
+    edge_class_lookup = {
+        tuple(sorted((int(edge[0]), int(edge[1])))): np.int8(class_code)
+        for edge, class_code in zip(boundary_edges, boundary_edge_class_codes, strict=True)
+    }
+    opposite_edges = ((1, 2), (0, 2), (0, 1))
+    for triangle_index, triangle in enumerate(triangles):
+        for edge_index, edge_vertices in enumerate(opposite_edges):
+            edge_key = tuple(sorted((int(triangle[edge_vertices[0]]), int(triangle[edge_vertices[1]]))))
+            triangle_edge_class_codes[triangle_index, edge_index] = edge_class_lookup.get(
+                edge_key,
+                BOUNDARY_CLASS_UNCLASSIFIED,
+            )
+    return triangle_edge_class_codes
 
 
 def _segment_distance_squared(p0, p1, q0, q1) -> float:
@@ -722,6 +802,48 @@ def _walk_simplex(start, x, y, neighbors, p0_x, p0_y, inv00, inv01, inv10, inv11
     return -1, 0.0, 0.0, 0.0
 
 
+@njit(cache=True)
+def _walk_simplex_with_exit_class(
+    start,
+    x,
+    y,
+    neighbors,
+    triangle_edge_class_codes,
+    p0_x,
+    p0_y,
+    inv00,
+    inv01,
+    inv10,
+    inv11,
+    max_steps,
+    tolerance,
+):
+    n_triangles = neighbors.shape[0]
+    if start < 0 or start >= n_triangles:
+        return -1, 0.0, 0.0, 0.0, np.int8(0)
+
+    simplex = start
+    for _ in range(max_steps):
+        w0, w1, w2 = _weights_in_simplex(simplex, x, y, p0_x, p0_y, inv00, inv01, inv10, inv11)
+        if w0 >= -tolerance and w1 >= -tolerance and w2 >= -tolerance:
+            return simplex, w0, w1, w2, np.int8(0)
+
+        edge_index = 0
+        min_weight = w0
+        if w1 < min_weight:
+            edge_index = 1
+            min_weight = w1
+        if w2 < min_weight:
+            edge_index = 2
+
+        next_simplex = neighbors[simplex, edge_index]
+        if next_simplex < 0 or next_simplex == simplex:
+            return -1, 0.0, 0.0, 0.0, triangle_edge_class_codes[simplex, edge_index]
+        simplex = next_simplex
+
+    return -1, 0.0, 0.0, 0.0, np.int8(0)
+
+
 @njit(cache=True, parallel=True)
 def _locate_points_walk_numba(
     x_points,
@@ -831,12 +953,14 @@ def _update_particles_temporal_numba(
     inv01,
     inv10,
     inv11,
+    triangle_edge_class_codes,
     max_steps,
     tolerance,
 ):
     x_new = np.empty_like(x0, dtype=np.float64)
     y_new = np.empty_like(y0, dtype=np.float64)
     simplex_new = np.empty(start_simplices.shape[0], dtype=np.int64)
+    boundary_class_codes = np.zeros(start_simplices.shape[0], dtype=np.int8)
 
     for i in prange(x0.shape[0]):
         start = start_simplices[i]
@@ -944,11 +1068,12 @@ def _update_particles_temporal_numba(
             final_start = s1
         if final_start < 0:
             final_start = start
-        final_simplex, _, _, _ = _walk_simplex(
+        final_simplex, _, _, _, exit_class_code = _walk_simplex_with_exit_class(
             final_start,
             x_out,
             y_out,
             neighbors,
+            triangle_edge_class_codes,
             p0_x,
             p0_y,
             inv00,
@@ -959,8 +1084,10 @@ def _update_particles_temporal_numba(
             tolerance,
         )
         simplex_new[i] = final_simplex
+        if final_simplex < 0:
+            boundary_class_codes[i] = exit_class_code
 
-    return x_new, y_new, simplex_new
+    return x_new, y_new, simplex_new, boundary_class_codes
 
 
 def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classification=None) -> GridGeometry:
@@ -973,13 +1100,28 @@ def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classific
     )
 
 
-def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geometry=None):
+def create_numba_particle_calculator(
+    grid_x,
+    grid_y,
+    triangles=None,
+    grid_geometry=None,
+    boundary_edge_classification=None,
+):
     """
     Create particle interpolation/update callables.
 
     The returned dictionary keeps the historical keys used by ParticlePopulation.
     """
-    geometry = grid_geometry if grid_geometry is not None else create_grid_geometry(grid_x, grid_y, triangles)
+    geometry = (
+        grid_geometry
+        if grid_geometry is not None
+        else create_grid_geometry(
+            grid_x,
+            grid_y,
+            triangles=triangles,
+            boundary_edge_classification=boundary_edge_classification,
+        )
+    )
 
     return {
         'geometry': geometry,
@@ -991,6 +1133,8 @@ def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geomet
         'update_particles_temporal': geometry.update_particles_temporal,
         'update_particles_with_simplex': geometry.update_particles_with_simplex,
         'update_particles_temporal_with_simplex': geometry.update_particles_temporal_with_simplex,
+        'update_particles_with_boundary_class': geometry.update_particles_with_boundary_class,
+        'update_particles_temporal_with_boundary_class': geometry.update_particles_temporal_with_boundary_class,
         'update_particles_parallel': geometry.update_particles,
     }
 

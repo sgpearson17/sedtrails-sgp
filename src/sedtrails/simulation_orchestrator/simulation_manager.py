@@ -33,7 +33,12 @@ class Simulation:
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
 
-    def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
+    def __init__(
+        self,
+        config_file: str,
+        enable_dashboard: Optional[bool] = None,
+        report_domain_exits: bool = True,
+    ):
         """
         Initialize the simulation with the given configuration.
 
@@ -43,9 +48,12 @@ class Simulation:
             Path to the configuration file.
         enable_dashboard : bool, optional
             Override the dashboard setting from configuration. If None, uses config value.
+        report_domain_exits : bool, default True
+            If true, write CLI/log messages when particles newly leave the domain.
         """
         self._config_file = config_file
         self._enable_dashboard_override = enable_dashboard
+        self._report_domain_exits = report_domain_exits
 
         self._start_time = None
         self._config_is_read = False
@@ -140,6 +148,92 @@ class Simulation:
                 average,
                 stats['max'],
             )
+
+    @staticmethod
+    def _left_domain_mask(population) -> np.ndarray:
+        particles = getattr(population, 'particles', {})
+        left_domain = particles.get('status_left_domain')
+        if left_domain is None:
+            size = len(particles.get('x', []))
+            return np.zeros(size, dtype=bool)
+        return np.asarray(left_domain, dtype=bool)
+
+    @staticmethod
+    def _population_name(population, fallback_index: int) -> str:
+        config = getattr(population, 'population_config', {}) or {}
+        if isinstance(config, dict):
+            name = config.get('name')
+        else:
+            nested_config = getattr(config, 'population_config', None)
+            if isinstance(nested_config, dict):
+                name = nested_config.get('name')
+            else:
+                name = getattr(config, 'name', None)
+        return str(name or f'population_{fallback_index + 1}')
+
+    def _report_new_domain_exits(
+        self,
+        population,
+        population_index: int,
+        flow_field_name: str,
+        previous_left_domain: np.ndarray,
+        current_time: float,
+        current_timestep: float,
+    ) -> int:
+        """Report newly left-domain particles for one population update."""
+
+        if not self._report_domain_exits:
+            return 0
+
+        current_left_domain = self._left_domain_mask(population)
+        if current_left_domain.shape != previous_left_domain.shape:
+            return 0
+
+        newly_left = current_left_domain & ~previous_left_domain
+        newly_left_count = int(np.count_nonzero(newly_left))
+        if newly_left_count == 0:
+            return 0
+
+        population_name = self._population_name(population, population_index)
+        population_size = int(current_left_domain.size)
+        total_left = int(np.count_nonzero(current_left_domain))
+        self.logger.info(
+            'Particles left domain: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
+            newly_left_count,
+            population_name,
+            flow_field_name,
+            current_time,
+            current_timestep,
+            total_left,
+            population_size,
+        )
+        return newly_left_count
+
+    def _report_domain_exit_summary(self, populations) -> None:
+        """Report final left-domain particle counts."""
+
+        if not self._report_domain_exits:
+            return
+
+        total_left = 0
+        total_particles = 0
+        per_population = []
+        for population_index, population in enumerate(populations):
+            left_domain = self._left_domain_mask(population)
+            population_left = int(np.count_nonzero(left_domain))
+            population_size = int(left_domain.size)
+            total_left += population_left
+            total_particles += population_size
+            if population_left:
+                per_population.append(
+                    f'{self._population_name(population, population_index)}={population_left}/{population_size}'
+                )
+
+        if total_left:
+            details = f" ({', '.join(per_population)})" if per_population else ''
+            self.logger.info('Particles left domain during run: %d/%d%s', total_left, total_particles, details)
+        else:
+            self.logger.info('Particles left domain during run: 0/%d', total_particles)
 
     def _create_dashboard(self):
         """Create and return a dashboard instance."""
@@ -877,8 +971,17 @@ class Simulation:
                         if runtime_plan.population_index == 0 and flow_field_name == tracer_plan.flow_field_names[0]:
                             dashboard_flow_field = flow_field
 
+                        previous_left_domain = self._left_domain_mask(population).copy()
                         with self._profile_section('update_position'):
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+                        self._report_new_domain_exits(
+                            population,
+                            runtime_plan.population_index,
+                            flow_field_name,
+                            previous_left_domain,
+                            timer.current,
+                            timer.current_timestep,
+                        )
 
                 # Update dashboard if enabled
                 if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
@@ -979,6 +1082,7 @@ class Simulation:
             pbar.close()
             self._active_progress_bar = None
             print('\nSimulation completed successfully!')
+            self._report_domain_exit_summary(populations)
 
             # Save final particle state if simulation ended between two save boundaries
             if last_saved_time is None or timer.current > last_saved_time:

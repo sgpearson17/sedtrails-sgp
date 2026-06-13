@@ -27,6 +27,7 @@ def run_simulation(
     config_file: str,
     verbose: bool = False,
     enable_dashboard: Optional[bool] = None,
+    report_domain_exits: bool = True,
 ) -> str:
     """
     Run a SedTRAILS simulation from a configuration file.
@@ -42,6 +43,8 @@ def run_simulation(
         Enable verbose logging output. Default is False.
     enable_dashboard : bool, optional
         Override the dashboard setting from configuration. If None, uses config value.
+    report_domain_exits : bool, optional
+        Report particles that leave the model domain during and after the run.
 
     Returns
     -------
@@ -71,7 +74,11 @@ def run_simulation(
 
     # Create simulation instance with dashboard override
     try:
-        simulation = Simulation(config_file, enable_dashboard=enable_dashboard)
+        simulation = Simulation(
+            config_file,
+            enable_dashboard=enable_dashboard,
+            report_domain_exits=report_domain_exits,
+        )
     except Exception as e:
         raise ConfigurationError(f'Failed to initialize simulation: {e}') from e
 

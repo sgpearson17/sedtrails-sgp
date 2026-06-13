@@ -241,6 +241,70 @@ def test_fm_convert_stores_boundary_edge_class_overrides(monkeypatch, tmp_path):
     assert edge_classes['class_pol_files']['open'] == [str(open_file)]
 
 
+def test_format_converter_applies_domain_config_to_fm_plugin(monkeypatch, tmp_path):
+    """FormatConverter must pass domain polygons to plugin seeding geometry."""
+
+    open_file = tmp_path / 'open.pol'
+    _write_square_pol(open_file, 0.25, -0.10, 0.75, 0.10)
+    ds = xr.Dataset(
+        data_vars={
+            'net_xcc': (('node',), np.array([0.0, 1.0, 0.0])),
+            'net_ycc': (('node',), np.array([0.0, 0.0, 1.0])),
+            'NetElemNode': (('face', 'nmax'), np.array([[0, 1, 2]], dtype=np.int64)),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['NetElemNode'].attrs['start_index'] = 0
+
+    def fake_load(self):
+        self.input_data = ds
+
+    monkeypatch.setattr(fm_netcdf.FormatPlugin, 'load', fake_load)
+    converter = FormatConverter(
+        {
+            'input_file': _existing_input_path(),
+            'input_format': 'fm_netcdf',
+            'reference_date': '2024-01-01T00:00:00',
+            'domain_config': {'boundary_class_pol_files': {'open': [str(open_file)]}},
+        }
+    )
+
+    field_data = converter.get_seeding_field_data()
+
+    edge_classes = field_data.boundary_edge_classification
+    assert edge_classes['class_counts']['open'] == 1
+    assert edge_classes['polygon_counts']['open'] == 1
+    assert edge_classes['class_pol_files']['open'] == [str(open_file)]
+
+
+def test_fm_uses_delaunay_when_source_connectivity_does_not_index_cell_centers(monkeypatch, tmp_path):
+    """FM native node connectivity should not be used with cell-center coordinates."""
+
+    open_file = tmp_path / 'open.pol'
+    _write_square_pol(open_file, 0.25, -0.10, 0.75, 0.10)
+    ds = xr.Dataset(
+        data_vars={
+            'net_xcc': (('face',), np.array([0.0, 1.0, 1.0, 0.0])),
+            'net_ycc': (('face',), np.array([0.0, 0.0, 1.0, 1.0])),
+            'NetElemNode': (('elem', 'nmax'), np.array([[10, 11, 12]], dtype=np.int64)),
+        },
+        coords={'time': np.array(['2024-01-01T00:00:00', '2024-01-01T00:01:00'], dtype='datetime64[ns]')},
+    )
+    ds['NetElemNode'].attrs['start_index'] = 0
+
+    def fake_load(self):
+        self.input_data = ds
+
+    monkeypatch.setattr(fm_netcdf.FormatPlugin, 'load', fake_load)
+    plugin = fm_netcdf.FormatPlugin(_existing_input_path())
+    plugin.domain_config = {'boundary_class_pol_files': {'open': [str(open_file)]}}
+
+    field_data = plugin.get_seeding_field_data()
+
+    assert np.max(field_data.face_node_connectivity) < field_data.x.size
+    assert field_data.boundary_edge_classification['class_counts']['open'] == 1
+
+
 def test_fm_active_geometry_and_boundary_classification_are_cached(monkeypatch):
     """Repeated FM geometry requests should reuse static connectivity and edge classes."""
     plugin = fm_netcdf.FormatPlugin(_existing_input_path())

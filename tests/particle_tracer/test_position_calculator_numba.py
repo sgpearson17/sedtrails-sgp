@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry, create_numba_particle_calculator
+from sedtrails.particle_tracer.position_calculator_numba import (
+    BOUNDARY_CLASS_LAND,
+    BOUNDARY_CLASS_OPEN,
+    create_grid_geometry,
+    create_numba_particle_calculator,
+)
 
 
 def square_grid():
@@ -221,8 +226,8 @@ def test_velocity_arrays_do_not_copy_non_geographic_float32_fields():
     assert np.shares_memory(grid_v_adj, grid_v)
 
 
-def test_boundary_crossing_classification_uses_cached_edge_geometry():
-    """Boundary crossing classes should use cached edge endpoints and preserve labels."""
+def test_boundary_crossing_classification_uses_encoded_edge_classes():
+    """Boundary crossing classes should use encoded edge classes and preserve labels."""
     grid_x, grid_y = square_grid()
     geometry = create_grid_geometry(
         grid_x,
@@ -241,9 +246,40 @@ def test_boundary_crossing_classification_uses_cached_edge_geometry():
         np.array([-0.3, 0.5, 1.3]),
     )
 
-    assert geometry.boundary_edge_start_x is not None
-    assert geometry.boundary_edge_end_x is not None
+    assert geometry.boundary_edge_class_codes.dtype == np.int8
+    assert geometry.triangle_edge_class_codes.dtype == np.int8
+    assert BOUNDARY_CLASS_OPEN in geometry.triangle_edge_class_codes
+    assert BOUNDARY_CLASS_LAND in geometry.triangle_edge_class_codes
     np.testing.assert_array_equal(classes, np.array(['open', 'land', 'unclassified'], dtype=object))
+
+
+def test_boundary_aware_update_returns_exit_class_codes():
+    """Particle updates should report the boundary class crossed by the final simplex walk."""
+    grid_x, grid_y = square_grid()
+    calculator = create_numba_particle_calculator(
+        grid_x,
+        grid_y,
+        triangles=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64),
+        boundary_edge_classification={
+            'edge_nodes': [[0, 1], [1, 2], [2, 3], [3, 0]],
+            'edge_classes': ['open', 'land', 'unclassified', 'land'],
+        },
+    )
+    geometry = calculator['geometry']
+
+    x_new, y_new, new_simplices, boundary_class_codes = geometry.update_particles_with_boundary_class(
+        np.array([0.5, 0.8]),
+        np.array([0.2, 0.5]),
+        np.array([0.0, 0.0, 0.0, 0.0]),
+        np.array([-1.0, 0.0, 0.0, 0.0]),
+        0.5,
+        simplex_ids=geometry.locate_points(np.array([0.5, 0.8]), np.array([0.2, 0.5])),
+    )
+
+    np.testing.assert_allclose(x_new, np.array([0.5, 0.8]))
+    assert y_new[0] < 0.0
+    assert new_simplices[0] == -1
+    assert boundary_class_codes[0] == BOUNDARY_CLASS_OPEN
 
 
 def test_boundary_crossing_classification_rejects_mismatched_segments():

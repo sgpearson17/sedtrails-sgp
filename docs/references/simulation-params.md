@@ -110,7 +110,7 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 
 ### Inner Boundaries and Boundary Actions
 
-For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to distinguish islands/cutouts from open offshore boundaries.
+For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/cutouts. For FM, SFINCS, and XBeach inputs, SedTRAILS can use Tekal polygon files to distinguish open offshore boundaries from land boundaries.
 
 `inner_boundary_pol_files` removes candidate faces or triangles whose centroids fall inside any configured polygon. This creates holes in the active particle mesh. Particles inside those holes are not treated as valid in-domain particles.
 

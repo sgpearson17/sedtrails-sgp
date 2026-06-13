@@ -2,6 +2,8 @@
 Unit tests for the Simulation class.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -690,3 +692,64 @@ class TestSimulationDashboardThrottle:
         timer = type('Timer', (), {'step_count': 1})()
 
         assert manager._should_update_dashboard(sedtrails_data, timer)
+
+
+class TestSimulationDomainExitReporting:
+    """Tests CLI/log reporting for particles that leave the domain."""
+
+    def test_reports_newly_left_domain_particles(self):
+        """Report only particles that newly transition to left-domain status."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_left_domain': np.array([False, True, True]),
+            },
+        )
+        previous_left_domain = np.array([False, False, True])
+
+        newly_left = manager._report_new_domain_exits(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            previous_left_domain=previous_left_domain,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_left == 1
+        assert 'Particles left domain: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
+        assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_final_summary_reports_total_left_domain_particles(self):
+        """Final summary should report aggregate and per-population left-domain totals."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager.logger = _ListLogger()
+        populations = [
+            SimpleNamespace(
+                population_config={'name': 'fine'},
+                particles={'x': np.zeros(2), 'status_left_domain': np.array([True, False])},
+            ),
+            SimpleNamespace(
+                population_config={'name': 'medium'},
+                particles={'x': np.zeros(3), 'status_left_domain': np.array([False, True, True])},
+            ),
+        ]
+
+        manager._report_domain_exit_summary(populations)
+
+        assert manager.logger.messages == ['Particles left domain during run: 3/5 (fine=1/2, medium=2/3)']
+
+
+class _ListLogger:
+    """Minimal logger that stores formatted info messages for assertions."""
+
+    def __init__(self):
+        self.messages = []
+
+    def info(self, message, *args):
+        self.messages.append(message % args if args else message)

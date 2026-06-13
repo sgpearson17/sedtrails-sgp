@@ -1,11 +1,13 @@
 """A plugin for converting XBeach NetCDF mean output to SedTRAILS format."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import xarray as xr
 
+from sedtrails.transport_converter.domain_mask import classify_boundary_edges_from_config, delaunay_connectivity
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
@@ -55,6 +57,9 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data: xr.Dataset | None = None
         self._input_variables: List[str] = []
+        self.domain_config: Dict[str, Any] = {}
+        self._particle_connectivity_cache: dict[str, Any] | None = None
+        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -190,6 +195,14 @@ class FormatPlugin(BaseFormatPlugin):
                 'max_bed_shear_stress_source': 'taubx_mean/tauby_mean magnitude',
             }
         )
+        particle_connectivity = self._particle_face_connectivity(mapped_data['x'], mapped_data['y'])
+        boundary_edge_classification = self._boundary_edge_classification(
+            mapped_data['x'],
+            mapped_data['y'],
+            particle_connectivity,
+        )
+        if boundary_edge_classification is not None:
+            metadata.add('boundary_edge_classification', boundary_edge_classification)
 
         return SedtrailsData(
             times=seconds_since_ref,
@@ -208,7 +221,36 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            node_x=mapped_data['x'],
+            node_y=mapped_data['y'],
+            face_node_connectivity=particle_connectivity,
+            particle_face_connectivity=particle_connectivity,
+            face_node_fill_value=-1,
             metadata=metadata,
+        )
+
+    def get_seeding_field_data(self):
+        """
+        Return XBeach particle-grid geometry required for seeding.
+
+        Returns
+        -------
+        types.SimpleNamespace
+            Object with flattened XBeach cell-center coordinates, Delaunay
+            fallback or structured triangular connectivity for particle tracking, optional
+            ``boundary_edge_classification`` metadata, and ``face_node_fill_value``.
+        """
+        self.load()
+        x, y = self._get_grid_coordinates()
+        particle_connectivity = self._particle_face_connectivity(x, y)
+        boundary_edge_classification = self._boundary_edge_classification(x, y, particle_connectivity)
+        return SimpleNamespace(
+            x=x,
+            y=y,
+            face_node_connectivity=particle_connectivity,
+            particle_face_connectivity=particle_connectivity,
+            boundary_edge_classification=boundary_edge_classification,
+            face_node_fill_value=-1,
         )
 
     def get_seeding_coordinates(self):
@@ -448,6 +490,105 @@ class FormatPlugin(BaseFormatPlugin):
         if x.shape != y.shape:
             raise ValueError(f'globalx and globaly must have the same flattened shape, got {x.shape} and {y.shape}')
         return x, y
+
+    def _particle_face_connectivity(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        cache = self._particle_connectivity_cache
+        if self._geometry_cache_matches(cache, x, y):
+            return cache['connectivity']
+
+        connectivity = self._structured_grid_connectivity()
+        if connectivity is None:
+            connectivity = delaunay_connectivity(x, y)
+        self._particle_connectivity_cache = {
+            'x': np.asarray(x),
+            'y': np.asarray(y),
+            'connectivity': connectivity,
+        }
+        return connectivity
+
+    def _structured_grid_connectivity(self) -> np.ndarray | None:
+        if self.input_data is None or 'globalx' not in self.input_data or 'globaly' not in self.input_data:
+            return None
+
+        x_shape = np.asarray(self.input_data['globalx'].values).shape
+        y_shape = np.asarray(self.input_data['globaly'].values).shape
+        if x_shape != y_shape or len(x_shape) != 2:
+            return None
+
+        ny, nx = x_shape
+        if ny < 2 or nx < 2:
+            return None
+
+        triangles = np.empty(((ny - 1) * (nx - 1) * 2, 3), dtype=np.int64)
+        out_index = 0
+        for iy in range(ny - 1):
+            row = iy * nx
+            next_row = (iy + 1) * nx
+            for ix in range(nx - 1):
+                lower_left = row + ix
+                lower_right = lower_left + 1
+                upper_left = next_row + ix
+                upper_right = upper_left + 1
+                triangles[out_index] = (lower_left, lower_right, upper_right)
+                triangles[out_index + 1] = (lower_left, upper_right, upper_left)
+                out_index += 2
+        return triangles
+
+    def _boundary_edge_classification(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        connectivity: np.ndarray | None,
+    ) -> dict | None:
+        if connectivity is None:
+            return None
+
+        cache = self._boundary_edge_classification_cache
+        if self._geometry_cache_matches(cache, x, y, connectivity):
+            return cache['metadata']
+
+        classification = classify_boundary_edges_from_config(
+            x,
+            y,
+            connectivity,
+            getattr(self, 'domain_config', {}),
+        )
+        metadata = None if classification is None else classification.to_metadata()
+        self._boundary_edge_classification_cache = {
+            'x': np.asarray(x),
+            'y': np.asarray(y),
+            'connectivity': np.asarray(connectivity),
+            'domain_signature': self._domain_config_signature(),
+            'metadata': metadata,
+        }
+        return metadata
+
+    def _domain_config_signature(self) -> str:
+        return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _geometry_cache_matches(
+        self,
+        cache: dict[str, Any] | None,
+        x: np.ndarray,
+        y: np.ndarray,
+        connectivity: np.ndarray | None = None,
+    ) -> bool:
+        if cache is None:
+            return False
+        if 'domain_signature' in cache and cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if not self._arrays_equal(cache.get('x'), x) or not self._arrays_equal(cache.get('y'), y):
+            return False
+        if connectivity is None:
+            return True
+        return self._arrays_equal(cache.get('connectivity'), connectivity)
+
+    @staticmethod
+    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
+        if left is None:
+            return False
+        right_array = np.asarray(right)
+        return left.shape == right_array.shape and np.array_equal(left, right_array)
 
     def _mean_scalar(self, var_name: str, time_slice: slice, num_times: int, grid_size: int) -> np.ndarray:
         """Read a scalar ``*_mean`` variable as ``(time, spatial)``."""

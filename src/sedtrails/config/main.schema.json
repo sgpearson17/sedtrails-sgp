@@ -336,6 +336,16 @@
             "subset_m",
             "subset_n"
           ]
+        },
+        {
+          "required": [
+            "inner_boundary_pol_files"
+          ]
+        },
+        {
+          "required": [
+            "boundary_class_pol_files"
+          ]
         }
       ],
       "not": {

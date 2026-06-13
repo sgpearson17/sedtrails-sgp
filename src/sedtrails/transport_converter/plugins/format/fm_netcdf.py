@@ -637,12 +637,26 @@ class FormatPlugin(BaseFormatPlugin):
     def _source_face_node_connectivity(self, node_count: int) -> np.ndarray | None:
         for variable_name in _FACE_NODE_CONNECTIVITY_CANDIDATES:
             if variable_name in self.input_data:
-                return self._normalize_face_node_connectivity(
+                connectivity = self._normalize_face_node_connectivity(
                     self.input_data[variable_name],
                     node_count=node_count,
                     variable_name=variable_name,
                 )
+                if self._connectivity_compatible_with_points(connectivity, node_count):
+                    return connectivity
         return None
+
+    @staticmethod
+    def _connectivity_compatible_with_points(connectivity: np.ndarray, node_count: int) -> bool:
+        if connectivity.size == 0:
+            return False
+
+        valid = connectivity >= 0
+        if not np.any(valid):
+            return False
+        if int(np.max(connectivity[valid])) >= node_count:
+            return False
+        return bool(np.all(np.count_nonzero(valid, axis=1) >= 3))
 
     @staticmethod
     def _normalize_face_node_connectivity(face_nodes_var, node_count: int, variable_name: str | None = None) -> np.ndarray:
