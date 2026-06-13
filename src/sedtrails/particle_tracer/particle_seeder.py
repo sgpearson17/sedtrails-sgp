@@ -39,6 +39,7 @@ class HasFieldCoordinates(Protocol):
 
 DEFAULT_REFERENCE_DATE = '1970-01-01 00:00:00'
 DEFAULT_RELEASE_START = '__SIMULATION_START__'
+MISSING = object()
 
 
 def _release_time_to_seconds(release_time: str | int | float, reference_date: str | np.datetime64) -> float:
@@ -119,8 +120,8 @@ class PopulationConfig:
         self.strategy_settings = find_value(self.population_config, f'seeding.strategy.{self.strategy}', {})
         if not self.strategy_settings:
             raise MissingConfigurationParameter(f'"{self.strategy}" settings are not defined in the configuration.')
-        _quantity = find_value(self.population_config, 'seeding.quantity', {})
-        if not _quantity:
+        _quantity = find_value(self.population_config, 'seeding.quantity', MISSING)
+        if _quantity is MISSING:
             raise MissingConfigurationParameter('"quantity" is not defined as seeding parameter.')
         self.quantity = _quantity
         _release_start = find_value(self.population_config, 'seeding.release_start', None)
@@ -462,6 +463,9 @@ class ParticleFactory:
             raise ValueError(f'Unknown seeding strategy: {strategy_name}')
         StrategyClass = STRATEGY_MAP[strategy_name.lower()]
 
+        if int(config.quantity) <= 0:
+            return []
+
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
@@ -651,6 +655,9 @@ class ParticlePopulation:
         Currently, it does not perform any operations.
         """
 
+        if len(self.particles['x']) == 0:
+            return
+
         # Initialize vertical position ('z') based on bed level and burial depth
         self.particles['z'] = (
             self.particles['bed_level'] - self.particles['burial_depth']
@@ -675,6 +682,18 @@ class ParticlePopulation:
             left_domain = np.asarray(left_domain, dtype=bool)
         self.particles['status_left_domain'] = left_domain
         self.particles['status_beached'] = np.zeros(n_particles, dtype=bool)
+
+        if n_particles == 0:
+            for status_name in (
+                'status_alive',
+                'status_buried',
+                'status_domain',
+                'status_released',
+                'status_transported',
+                'status_mobile',
+            ):
+                self.particles[status_name] = np.zeros(0, dtype=bool)
+            return
 
         # Compute whether particles are transported (or trapped) based on transport probability
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
@@ -739,6 +758,9 @@ class ParticlePopulation:
             The current time step in the simulation in seconds.
 
         """
+
+        if len(self.particles['x']) == 0:
+            return
 
         ix = self.particles['status_mobile']  # Get indices of mobile particles
         particle_indices = np.flatnonzero(ix)

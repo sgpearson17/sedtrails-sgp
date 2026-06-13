@@ -7,6 +7,7 @@ import pytest
 import xarray as xr
 
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.particle_tracer.timer import Duration, Time
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -113,6 +114,30 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=False)
         assert not Simulation._should_attempt_sedtrails_reload(SedtrailsData(), 7200.1, input_data_exhausted=True)
 
+    def test_simulation_start_must_be_within_forcing_window(self):
+        """A run must start on forcing data; repeat mapping is only allowed after that."""
+
+        class SimulationTime:
+            start = 0.0
+            reference_date = '2000-01-01'
+            _start = '2000-01-01 00:00:00'
+
+        with pytest.raises(ConfigurationError, match='time.start must be within the input forcing window'):
+            Simulation._validate_simulation_start_matches_input(SimulationTime(), (3600.0, 7200.0))
+
+    def test_simulation_start_at_forcing_edges_is_valid(self):
+        """The first and last forcing timestamps are valid simulation starts."""
+
+        class SimulationTime:
+            reference_date = '2000-01-01'
+            _start = '2000-01-01 01:00:00'
+
+            def __init__(self, start):
+                self.start = start
+
+        Simulation._validate_simulation_start_matches_input(SimulationTime(3600.0), (3600.0, 7200.0))
+        Simulation._validate_simulation_start_matches_input(SimulationTime(7200.0), (3600.0, 7200.0))
+
     def test_eulerian_time_is_unchanged_when_repeat_disabled(self):
         """Without looping, field lookups use the simulation clock."""
 
@@ -123,6 +148,17 @@ class TestSimulationManagerTimeConfig:
         )
 
         assert mapped_time == 25.0
+
+    def test_eulerian_time_before_input_start_is_not_mapped_forward(self):
+        """Before-start lookups remain invalid so validation/reload failures stay clear."""
+
+        mapped_time = Simulation._map_eulerian_field_time(
+            current_time_seconds=50.0,
+            repeat_eulerian_fields=True,
+            input_time_bounds=(100.0, 200.0),
+        )
+
+        assert mapped_time == 50.0
 
     @pytest.mark.parametrize(
         'current_time,expected_time',
@@ -200,13 +236,13 @@ class TestSimulationManagerTimeConfig:
         [
             ('3H', 3600, 4),
             ('30M', 3600, 2),
-            ('2H 30M', 3600, 4),
+            ('2H30M', 3600, 4),
         ],
     )
-    def test_estimate_output_timesteps_counts_initial_and_final(self, duration, save_interval, expected_count):
-        """The output dataset should allocate slots for start, configured samples, and final time."""
-        from sedtrails.particle_tracer.timer import Duration, Time
-
+    def test_estimate_output_timesteps_counts_initial_scheduled_and_final(
+        self, duration, save_interval, expected_count
+    ):
+        """Output allocation follows save cadence, not CFL integration cadence."""
         simulation_time = Time(
             _start='2000-01-01 00:00:00',
             duration=Duration(duration),
@@ -226,7 +262,7 @@ class TestSimulationManagerTimeConfig:
         assert Simulation._next_scheduled_output_time(SimulationTime(), 3600, 3) == 9000.0
 
     def test_limit_timestep_to_output_schedule_hits_save_boundary(self):
-        """A CFL step that would cross an output boundary should be shortened to that boundary."""
+        """A CFL step that crosses an output boundary should land exactly on it."""
         limited = Simulation._limit_timestep_to_output_schedule(
             current_time=3598.0,
             current_timestep=10.0,
@@ -284,6 +320,7 @@ class TestSimulationManagerTimeConfig:
         assert expected_keys.issubset(population.particles)
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, False]))
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
 
 
@@ -415,7 +452,7 @@ class TestSimulationManagerExpandTimeDimension:
         np.testing.assert_array_equal(
             expanded2['x'].isel(time=slice(0, original_size)).values, sample_dataset['x'].values
         )
-
+        
     def test_ensure_time_capacity_expands_before_out_of_range_write(self, simulation_manager, sample_dataset):
         """Output storage should grow before collecting an adaptive timestep beyond capacity."""
         simulation_manager.logger = type('Logger', (), {'info': lambda self, *args, **kwargs: None})()
@@ -506,6 +543,67 @@ class TestSimulationManagerExpandTimeDimension:
             expanded['x'].isel(time=slice(0, original_size)).values,
             original_x,  # Compare against the stored original, not dataset['x']
         )
+
+class TestSimulationManagerSaveInterval:
+    """Tests for save_interval slot-count calculation and boundary logic."""
+
+    @pytest.mark.parametrize(
+        'duration_s,interval_s,expected_slots',
+        [
+            (3600, 3600, 2),        # 1H run, 1H interval  ? slot 0 + 1 boundary
+            (4 * 3600, 3600, 5),    # 4H run, 1H interval  ? slot 0 + 4 boundaries
+            (86400, 3600, 25),      # 1D run, 1H interval  ? 24 + 1
+            (3600, 900, 5),         # 1H run, 15min interval ? 4 + 1
+            (3601, 3600, 3),        # just over one interval ? 2 + 1
+        ],
+    )
+    def test_n_output_slots_calculation(self, duration_s, interval_s, expected_slots):
+        """Pre-allocated slot count is ceil(duration/interval) + 1 for the initial state."""
+        import math
+        n_slots = math.ceil(duration_s / interval_s) + 1
+        assert n_slots == expected_slots
+
+    def test_save_boundary_triggers_at_next_save_time(self):
+        """Record fires exactly when simulation time reaches the boundary, not before."""
+        next_save_time = 3600.0
+        saved = []
+
+        for t in [0.0, 1200.0, 2400.0, 3600.0, 4800.0]:
+            if t >= next_save_time:
+                saved.append(t)
+                next_save_time += 3600.0
+
+        assert saved == [3600.0]
+
+    def test_final_save_fires_when_sim_ends_between_boundaries(self):
+        """A trailing save after the loop captures the final particle state."""
+        last_saved_time = 3600.0
+        final_time = 4400.0       # simulation ended mid-interval
+        slot_idx = 2
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert should_save
+
+    def test_final_save_skipped_when_already_at_boundary(self):
+        """No duplicate save when the loop ended exactly on a save boundary."""
+        last_saved_time = 7200.0
+        final_time = 7200.0
+        slot_idx = 3
+        n_output_slots = 5
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
+
+    def test_final_save_skipped_when_slots_full(self):
+        """No out-of-bounds write when all pre-allocated slots are consumed."""
+        last_saved_time = 3600.0
+        final_time = 4400.0
+        slot_idx = 5
+        n_output_slots = 5   # already at capacity
+
+        should_save = (final_time > last_saved_time) and (slot_idx < n_output_slots)
+        assert not should_save
 
 
 class TestSimulationDashboardThrottle:

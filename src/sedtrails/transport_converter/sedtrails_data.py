@@ -199,17 +199,22 @@ class SedtrailsData:
         else:
             min_resolution = float(np.min(positive_distances))
 
-        # Compute outer envelope using convex hull; fallback to bbox on failure
-        try:
-            hull = ConvexHull(unique_coords)
-            outer_envelope = unique_coords[hull.vertices].tolist()
-        except Exception as e:
-            warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
-            min_x = float(np.min(unique_coords[:, 0]))
-            max_x = float(np.max(unique_coords[:, 0]))
-            min_y = float(np.min(unique_coords[:, 1]))
-            max_y = float(np.max(unique_coords[:, 1]))
+        min_x = float(np.min(unique_coords[:, 0]))
+        max_x = float(np.max(unique_coords[:, 0]))
+        min_y = float(np.min(unique_coords[:, 1]))
+        max_y = float(np.max(unique_coords[:, 1]))
+
+        # Compute outer envelope using convex hull; degenerate grids have no 2D
+        # hull, so use the bounding box directly instead of warning on expected input.
+        if unique_coords.shape[0] < 3 or np.linalg.matrix_rank(unique_coords - unique_coords.mean(axis=0)) < 2:
             outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
+        else:
+            try:
+                hull = ConvexHull(unique_coords)
+                outer_envelope = unique_coords[hull.vertices].tolist()
+            except Exception as e:
+                warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
+                outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
 
         # Add to metadata
         self.metadata.add('min_resolution', min_resolution)

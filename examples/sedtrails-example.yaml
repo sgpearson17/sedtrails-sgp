@@ -4,8 +4,9 @@ general:
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ./sample-data/inlet_sedtrails.nc
+  data: ./sample-data/inlet_example.nc
   read_interval: 10D  # Time chunk size for reading input data
+  repeat_eulerian_fields: true  # Repeat forcing after a valid start inside the input time range
 # Optional domain controls for islands/cutouts and boundary actions.
 # Tekal .pol paths are resolved relative to this configuration file.
 # domain:

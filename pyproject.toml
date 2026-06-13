@@ -14,6 +14,7 @@ dependencies = [
   "pandas",
   "matplotlib",
   "xarray",
+  "netCDF4",
   "typer >=0.16.0,<1.0",
   "xugrid",
   "numba",
@@ -82,3 +83,8 @@ sedtrails = "sedtrails.application_interfaces.cli:app"
 pythonpath = "src"
 addopts = ["--import-mode=importlib"]
 markers = ["integration: mark a test as an integration test."]
+filterwarnings = [
+  'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._fontconfig_pattern',
+  'ignore:.*:pyparsing.warnings.PyparsingDeprecationWarning:matplotlib\._mathtext',
+  'ignore:numpy\.ndarray size changed, may indicate binary incompatibility\..*:RuntimeWarning',
+]
