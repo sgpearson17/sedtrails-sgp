@@ -111,6 +111,24 @@ class TestYAMLConfigValidator:
 
         assert result['inputs']['repeat_eulerian_fields'] is False
 
+    def test_validate_yaml_accepts_report_domain_exit_updates(self, tmp_path):
+        """General config accepts optional per-timestep domain-exit update logging."""
+
+        config_data = {
+            'general': {
+                'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'},
+                'report_domain_exit_updates': True,
+            },
+            'inputs': {'data': 'dummy.nc'},
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['general']['report_domain_exit_updates'] is True
+
     def test_validate_yaml_accepts_output_sync_interval(self, tmp_path):
         """Output config accepts an optional NetCDF flush cadence."""
 

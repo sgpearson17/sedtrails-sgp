@@ -49,11 +49,14 @@ class Simulation:
         enable_dashboard : bool, optional
             Override the dashboard setting from configuration. If None, uses config value.
         report_domain_exits : bool, default True
-            If true, write CLI/log messages when particles newly leave the domain or beach on land.
+            If true, write final CLI/log summaries for particles that leave
+            the domain or beach on land. Per-timestep update messages are
+            controlled by ``general.report_domain_exit_updates``.
         """
         self._config_file = config_file
         self._enable_dashboard_override = enable_dashboard
         self._report_domain_exits = report_domain_exits
+        self._report_domain_exit_updates = False
 
         self._start_time = None
         self._config_is_read = False
@@ -73,6 +76,9 @@ class Simulation:
             # self._controller = ConfigurationController(self._config_file)
             self._controller = ConfigurationController(self._config_file)
             self._controller.load_config(self._config_file)
+            self._report_domain_exit_updates = bool(
+                self._controller.get('general.report_domain_exit_updates', False)
+            )
 
             # TODO: logger has a circular dependency with controller. The logger needs refactoring.
             self.logger = logging.getLogger(__name__)
@@ -204,18 +210,19 @@ class Simulation:
         if newly_left_count == 0:
             return 0
 
-        population_name = self._population_name(population, population_index)
-        population_size = int(current_left_domain.size)
-        self.logger.info(
-            'Particles left domain: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
-            newly_left_count,
-            population_name,
-            flow_field_name,
-            current_time,
-            current_timestep,
-            total_left,
-            population_size,
-        )
+        if getattr(self, '_report_domain_exit_updates', False):
+            population_name = self._population_name(population, population_index)
+            population_size = int(current_left_domain.size)
+            self.logger.info(
+                'Particles left domain: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
+                newly_left_count,
+                population_name,
+                flow_field_name,
+                current_time,
+                current_timestep,
+                total_left,
+                population_size,
+            )
         return newly_left_count
 
     def _report_new_beached_particles(
@@ -243,18 +250,19 @@ class Simulation:
         if newly_beached_count == 0:
             return 0
 
-        population_name = self._population_name(population, population_index)
-        population_size = int(current_beached.size)
-        self.logger.info(
-            'Particles beached on land: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
-            newly_beached_count,
-            population_name,
-            flow_field_name,
-            current_time,
-            current_timestep,
-            total_beached,
-            population_size,
-        )
+        if getattr(self, '_report_domain_exit_updates', False):
+            population_name = self._population_name(population, population_index)
+            population_size = int(current_beached.size)
+            self.logger.info(
+                'Particles beached on land: +%d in %s via %s at t=%.3fs (dt=%.3fs; population total=%d/%d)',
+                newly_beached_count,
+                population_name,
+                flow_field_name,
+                current_time,
+                current_timestep,
+                total_beached,
+                population_size,
+            )
         return newly_beached_count
 
     def _report_domain_exit_summary(self, populations) -> None:

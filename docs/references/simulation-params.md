@@ -32,6 +32,7 @@ Controls basic simulation behavior and model configuration.
 | `input_model`            | object  | Optional | -       | Configuration for the input flow model. See [Input Model Configuration](#input-model-configuration). |
 | `n_runs`                 | integer | Optional | `1`     | Number of simulation runs to execute.                                                                |
 | `display_input_metadata` | boolean | Optional | `false` | Display all metadata from input files during loading.                                                |
+| `report_domain_exit_updates` | boolean | Optional | `false` | Log per-timestep messages when particles newly leave the domain or beach on land. Final totals remain controlled by the CLI domain-exit reporting option. |
 | `numerical_scheme`       | string  | Optional | `rk4`   | Numerical integration method. Options: `rk4` (Runge-Kutta 4th order), `euler` (Euler method).        |
 
 (input-model-configuration)=
@@ -51,6 +52,7 @@ Nested under `general.input_model`:
 general:
   preprocess: true
   compute_pathways: true
+  report_domain_exit_updates: false
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf

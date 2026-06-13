@@ -169,6 +169,11 @@
           "default": false,
           "description": "display all metadata"
         },
+        "report_domain_exit_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, log per-timestep messages when particles newly leave the domain or beach on land. Final domain-exit and beaching summaries are controlled by the CLI report-domain-exits option."
+        },
         "numerical_scheme": {
           "$ref": "#/$defs/numerical_scheme_type",
           "default": "rk4",

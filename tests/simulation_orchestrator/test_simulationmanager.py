@@ -731,6 +731,7 @@ class TestSimulationDomainExitReporting:
         """Report only particles that newly transition to left-domain status."""
         manager = object.__new__(Simulation)
         manager._report_domain_exits = True
+        manager._report_domain_exit_updates = True
         manager.logger = _ListLogger()
         population = SimpleNamespace(
             population_config=SimpleNamespace(population_config={'name': 'sand'}),
@@ -754,6 +755,34 @@ class TestSimulationDomainExitReporting:
         np.testing.assert_array_equal(reported_left_domain, np.array([False, True, True]))
         assert 'Particles left domain: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
         assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_new_left_domain_updates_can_be_quiet(self):
+        """Intermediate left-domain reporting can be disabled while masks still update."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = False
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_left_domain': np.array([False, True, True]),
+            },
+        )
+        reported_left_domain = np.array([False, False, True])
+
+        newly_left = manager._report_new_domain_exits(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_left_domain=reported_left_domain,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_left == 1
+        np.testing.assert_array_equal(reported_left_domain, np.array([False, True, True]))
+        assert manager.logger.messages == []
 
     def test_final_summary_reports_total_left_domain_particles(self):
         """Final summary should report aggregate and per-population left-domain totals."""
@@ -779,6 +808,7 @@ class TestSimulationDomainExitReporting:
         """Report only particles that newly transition to beached status."""
         manager = object.__new__(Simulation)
         manager._report_domain_exits = True
+        manager._report_domain_exit_updates = True
         manager.logger = _ListLogger()
         population = SimpleNamespace(
             population_config=SimpleNamespace(population_config={'name': 'sand'}),
@@ -802,6 +832,34 @@ class TestSimulationDomainExitReporting:
         np.testing.assert_array_equal(reported_beached, np.array([False, True, True]))
         assert 'Particles beached on land: +1 in sand via bed_load_velocity' in manager.logger.messages[0]
         assert 'population total=2/3' in manager.logger.messages[0]
+
+    def test_new_beached_updates_can_be_quiet(self):
+        """Intermediate beaching reporting can be disabled while history still updates."""
+        manager = object.__new__(Simulation)
+        manager._report_domain_exits = True
+        manager._report_domain_exit_updates = False
+        manager.logger = _ListLogger()
+        population = SimpleNamespace(
+            population_config=SimpleNamespace(population_config={'name': 'sand'}),
+            particles={
+                'x': np.zeros(3),
+                'status_beached': np.array([False, True, True]),
+            },
+        )
+        reported_beached = np.array([False, False, True])
+
+        newly_beached = manager._report_new_beached_particles(
+            population,
+            population_index=0,
+            flow_field_name='bed_load_velocity',
+            reported_beached=reported_beached,
+            current_time=10.0,
+            current_timestep=2.0,
+        )
+
+        assert newly_beached == 1
+        np.testing.assert_array_equal(reported_beached, np.array([False, True, True]))
+        assert manager.logger.messages == []
 
     def test_final_summary_reports_total_beached_particles(self):
         """Final summary should report aggregate and per-population beached totals."""
