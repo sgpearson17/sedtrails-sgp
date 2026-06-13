@@ -255,6 +255,30 @@ class TestNetCDFWriterStreaming:
         )
         handle.close()
 
+    def test_record_syncs_at_configured_write_cadence(self, writer, population, monkeypatch):
+        """Streaming output should flush only on configured write intervals."""
+
+        class FakeHandle:
+            def __init__(self):
+                self.sync_count = 0
+
+            def sync(self):
+                self.sync_count += 1
+
+        monkeypatch.setattr(NetCDFWriter, '_write_slot', staticmethod(lambda h, p, s, t: None))
+        writer._write_count = 0
+        writer._sync_every_n_writes = 3
+        handle = FakeHandle()
+
+        for slot_idx in range(5):
+            writer.record_output(handle, [population], slot_idx=slot_idx, current_time=float(slot_idx))
+
+        assert handle.sync_count == 1
+
+        writer.record_output(handle, [population], slot_idx=5, current_time=5.0)
+
+        assert handle.sync_count == 2
+
     def test_unwritten_slots_are_fill_values(self, writer, population):
         """Slots not yet written should contain the declared fill value, not zeros."""
         handle = writer.open_output(

@@ -268,6 +268,7 @@ class NetCDFWriter:
         populations: list,
         flow_field_names: list,
         name_strlen: int = 24,
+        sync_every_n_writes: int = 1,
     ):
         """
         Open a streaming output file with pre-allocated dimensions.
@@ -296,6 +297,10 @@ class NetCDFWriter:
             Names of the flow fields; written as static metadata.
         name_strlen : int, optional
             Maximum character length for string variables (default 24).
+        sync_every_n_writes : int, optional
+            Flush buffered NetCDF data to disk every N calls to
+            ``record_output()``. Defaults to 1, which syncs every saved
+            output slot.
 
         Returns
         -------
@@ -378,6 +383,7 @@ class NetCDFWriter:
         # Store path so record_output can reopen on network/HDF errors
         self._streaming_path = str(output_path)
         self._write_count = 0
+        self._sync_every_n_writes = max(1, int(sync_every_n_writes))
 
         ds.sync()
         return ds
@@ -425,8 +431,6 @@ class NetCDFWriter:
 
             particle_offset += num_particles
 
-        h.sync()
-
     def _reopen_handle(self, nc_handle) -> 'nc4.Dataset':
         """Close a broken/stale handle and reopen the file in read-write mode."""
         path = getattr(self, '_streaming_path', None) or nc_handle.filepath()
@@ -436,14 +440,20 @@ class NetCDFWriter:
             pass
         return nc4.Dataset(str(path), 'r+', format='NETCDF4')
 
+    def _sync_output_if_due(self, nc_handle) -> None:
+        """Flush streaming output when the configured write cadence is reached."""
+        sync_every_n_writes = max(1, int(getattr(self, '_sync_every_n_writes', 1)))
+        if self._write_count % sync_every_n_writes == 0:
+            nc_handle.sync()
+
     def record_output(
         self, nc_handle, populations: list, slot_idx: int, current_time: float
     ) -> 'nc4.Dataset':
         """
         Write current particle state to one time slot in the streaming output file.
 
-        Syncs to disk after every write so data is safe even if the process is
-        interrupted mid-simulation.
+        Syncs to disk at the cadence configured by ``open_output()``. By
+        default this is every write, matching the output save interval.
 
         On network (SMB/NFS) drives the HDF5 file descriptor can go stale after
         a reconnect or server-side idle timeout.  Two defences are applied:
@@ -482,6 +492,7 @@ class NetCDFWriter:
         # Attempt write; on HDF/IO error reopen and retry once
         try:
             self._write_slot(nc_handle, populations, slot_idx, current_time)
+            self._sync_output_if_due(nc_handle)
         except (RuntimeError, OSError) as exc:
             err_str = str(exc)
             if not any(kw in err_str for kw in ('HDF', 'NetCDF', 'errno', 'I/O')):
@@ -492,6 +503,7 @@ class NetCDFWriter:
             )
             nc_handle = self._reopen_handle(nc_handle)
             self._write_slot(nc_handle, populations, slot_idx, current_time)
+            self._sync_output_if_due(nc_handle)
             logger.info('Retry succeeded for slot %d', slot_idx)
 
         return nc_handle

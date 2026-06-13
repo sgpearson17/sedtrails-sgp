@@ -233,6 +233,36 @@ class TestSimulationManagerTimeConfig:
         with pytest.raises(ConfigurationError, match='outputs.save_interval'):
             manager._output_save_interval_seconds()
 
+    def test_output_sync_interval_defaults_to_save_interval(self):
+        """NetCDF flush cadence should default to the trajectory save cadence."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: default})()
+
+        assert manager._output_sync_interval_seconds(save_interval_seconds=1800) == 1800
+
+    def test_output_sync_interval_uses_outputs_config(self):
+        """Configured sync interval should be converted to seconds."""
+
+        class Controller:
+            def get(self, key, default=None):
+                if key == 'outputs.sync_interval':
+                    return '2H'
+                return default
+
+        manager = object.__new__(Simulation)
+        manager._controller = Controller()
+
+        assert manager._output_sync_interval_seconds(save_interval_seconds=1800) == 7200
+        assert Simulation._sync_every_n_writes(save_interval_seconds=1800, sync_interval_seconds=7200) == 4
+
+    def test_output_sync_interval_rejects_zero_duration(self):
+        """A zero sync interval would make streaming flush cadence ambiguous."""
+        manager = object.__new__(Simulation)
+        manager._controller = type('Controller', (), {'get': lambda self, key, default=None: '0S'})()
+
+        with pytest.raises(ConfigurationError, match='outputs.sync_interval'):
+            manager._output_sync_interval_seconds(save_interval_seconds=1800)
+
     @pytest.mark.parametrize(
         'duration,save_interval,expected_count',
         [

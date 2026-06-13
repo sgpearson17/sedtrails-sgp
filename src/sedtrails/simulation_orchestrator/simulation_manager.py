@@ -562,6 +562,32 @@ class Simulation:
             raise ConfigurationError('outputs.save_interval must be a positive duration')
         return save_interval_seconds
 
+    def _output_sync_interval_seconds(self, save_interval_seconds: int | float | None = None) -> int:
+        """Return the configured NetCDF sync cadence in seconds.
+
+        If unset, syncing defaults to the trajectory save interval.
+        """
+        if save_interval_seconds is None:
+            save_interval_seconds = self._output_save_interval_seconds()
+
+        sync_interval = self._controller.get('outputs.sync_interval', None)
+        if sync_interval in (None, ''):
+            return int(save_interval_seconds)
+
+        sync_interval_seconds = Duration(sync_interval).seconds
+        if sync_interval_seconds <= 0:
+            raise ConfigurationError('outputs.sync_interval must be a positive duration')
+        return sync_interval_seconds
+
+    @staticmethod
+    def _sync_every_n_writes(save_interval_seconds: int | float, sync_interval_seconds: int | float) -> int:
+        """Convert save/sync durations to a streaming writer cadence."""
+        if save_interval_seconds <= 0:
+            raise ConfigurationError('outputs.save_interval must be a positive duration')
+        if sync_interval_seconds <= 0:
+            raise ConfigurationError('outputs.sync_interval must be a positive duration')
+        return max(1, int(np.ceil(float(sync_interval_seconds) / float(save_interval_seconds))))
+
     @staticmethod
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
         """Count output slots for initial, scheduled, and final trajectory samples."""
@@ -897,11 +923,16 @@ class Simulation:
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
         save_interval_seconds = self._output_save_interval_seconds()
+        sync_interval_seconds = self._output_sync_interval_seconds(save_interval_seconds)
+        sync_every_n_writes = self._sync_every_n_writes(save_interval_seconds, sync_interval_seconds)
         n_output_slots = self._estimate_output_timesteps(simulation_time, save_interval_seconds)
         self.logger.info(
-            'Streaming output: %d slots at %gs interval -> %s',
+            'Streaming output: %d slots at %gs interval, syncing every %g seconds (%d write%s) -> %s',
             n_output_slots,
             save_interval_seconds,
+            sync_interval_seconds,
+            sync_every_n_writes,
+            '' if sync_every_n_writes == 1 else 's',
             self.data_manager.writer.output_dir / 'sedtrails_results.nc',
         )
 
@@ -913,12 +944,14 @@ class Simulation:
             len(flow_field_names) if flow_field_names else 1,
             populations,
             flow_field_names,
+            sync_every_n_writes=sync_every_n_writes,
         )
         nc_handle.reference_date = str(simulation_time.reference_date)
         nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
         nc_handle.time_start = self._controller.get('time.start')
         nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
         nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
+        nc_handle.outputs_sync_interval_seconds = float(sync_interval_seconds)
 
         # Store the seeded initial state before the first physics update.
         self._initialize_population_output_status(populations, timer.current)

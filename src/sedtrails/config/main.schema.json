@@ -556,6 +556,10 @@
           "default": "1H",
           "description": "save interval for output files, e.g., '1H' for 1 hour."
         },
+        "sync_interval": {
+          "type": "string",
+          "description": "optional cadence for flushing streaming NetCDF output to disk. Defaults to outputs.save_interval. Use a longer interval to reduce filesystem sync overhead."
+        },
         "store_tracks": {
           "type": "boolean",
           "default": true,

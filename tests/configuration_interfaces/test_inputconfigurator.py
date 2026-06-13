@@ -111,6 +111,26 @@ class TestYAMLConfigValidator:
 
         assert result['inputs']['repeat_eulerian_fields'] is False
 
+    def test_validate_yaml_accepts_output_sync_interval(self, tmp_path):
+        """Output config accepts an optional NetCDF flush cadence."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'outputs': {
+                'save_interval': '30M',
+                'sync_interval': '2H',
+                'store_tracks': True,
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['outputs']['sync_interval'] == '2H'
+
     def test_validate_yaml_accepts_inner_boundary_pol_files(self, tmp_path):
         """Domain config accepts one or more island/cutout polygon files."""
 
