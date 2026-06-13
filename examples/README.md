@@ -13,12 +13,12 @@ The NetCDF forcing files referenced by these examples are not stored in this dir
 
 ## Python Examples
 
-- `reading_flowfields_example.py`: Opens and inspects flow-field input data.
-- `seeder_example.py`: Demonstrates particle seeding helpers.
-- `particle_simulation_example.py`: Basic particle simulation script.
-- `particle_simulation_numba_example.py`: Particle simulation script using the Numba path.
-- `numba_example.py`: Small Numba-oriented example.
-- `visualization_utils.py`: Visualization helper example code.
+- `particle_simulation_example.py`: Shows the lower-level flow conversion, retrieval, particle update, and plotting workflow.
+- `reading_flowfields_example.py`: Converts model input with `FormatConverter` and samples a flow field with `FieldDataRetriever`.
+- `seeder_example.py`: Demonstrates `ParticleSeeder` with in-memory field coordinates.
+- `particle_simulation_numba_example.py`: Teaches the two current particle-update APIs side by side on one converted flow field.
+- `numba_example.py`: Demonstrates the reusable grid calculator on a synthetic grid.
+- `visualization_utils.py`: Shared plotting helpers used by the examples.
 
 ## Data Files
 
