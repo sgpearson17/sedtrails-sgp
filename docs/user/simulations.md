@@ -209,7 +209,7 @@ particles:
 
 The seed point CSV files contain particle coordinates from the last valid timestep:
 
-```csv
+```text
 x,y
 40293.54196405,17547.72446346
 39626.62407569,17560.15080805
@@ -229,6 +229,7 @@ The new simulation will:
 - Use the adjusted `time.duration` to simulate only the remaining time
 - Output results to the same or a different output directory (configured in the restart YAML)
 
+(notes-and-tips)=
 ### Notes and Tips
 
 - **Particle Retention**: Only particles that were alive and within the domain at their last position are included in the restart. Particles that escaped the domain or were trapped will not be restarted.
