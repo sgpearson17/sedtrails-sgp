@@ -35,7 +35,31 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     validated = _validate_config(tmp_path, config)
 
     tracer_methods = validated['particles']['populations'][0]['tracer_methods']
-    assert tracer_methods == {'vanwesten': {'flow_field_name': ['bed_load_velocity']}}
+    assert tracer_methods == {'vanwesten': {'flow_field_name': ['bed_load_velocity'], 'beta': 0.2}}
+
+
+def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
+    """Accept passive tracer configs and apply the default flow field."""
+    config = _base_config()
+    config['particles']['populations'][0]['particle_type'] = 'passive'
+    config['particles']['populations'][0]['characteristics'] = {'diffusion_coefficient': 0.0}
+    config['particles']['populations'][0]['tracer_methods'] = {'passive_tracer': {}}
+
+    validated = _validate_config(tmp_path, config)
+
+    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
+    assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
+
+
+def test_population_schema_rejects_vanwesten_bl(tmp_path):
+    """Reject stale tracer methods that are not implemented at runtime."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'vanwesten_bl': {'flow_field_name': ['bed_load_velocity']}
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
 
 
 def _validate_config(tmp_path, config):

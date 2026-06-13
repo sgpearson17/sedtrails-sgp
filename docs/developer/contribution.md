@@ -30,7 +30,7 @@ The figure below summarizes the workflow our team follows for developing SedTRAI
 
 ## C. You want to make changes to the code base
 
-SedTRAILS requires **Python 3.10 or newer**, up to but not including Python 3.14. The minimum is set by Python 3.10 language features used in the codebase, including PEP 604 union annotations and `zip(..., strict=True)`.
+SedTRAILS requires **Python 3.10 or newer**, up to but not including Python 3.14. The minimum is set by Python 3.10 language features used in the codebase.
 
 ### Announce your plan
 

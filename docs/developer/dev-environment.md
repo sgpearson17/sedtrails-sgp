@@ -30,7 +30,7 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
 
 # If using conda
-conda create --name sedtrails-dev python=3.10
+conda create --name sedtrails-dev python=3.13
 conda activate sedtrails-dev
 
 ```

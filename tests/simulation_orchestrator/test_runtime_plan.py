@@ -94,6 +94,20 @@ def test_mixed_populations_preserve_each_population_method_and_flow_fields():
     assert unique_flow_field_names(runtime_plans) == ['bed_load_velocity', 'grain_velocity']
 
 
+def test_passive_tracer_population_defaults_to_depth_averaged_velocity():
+    """Build a passive tracer plan with the default depth-averaged flow field."""
+    population_config = _population_config(
+        {'passive_tracer': {}},
+        characteristics={'diffusion_coefficient': 0.0},
+    )
+
+    runtime_plan = build_population_runtime_plans([population_config], [object()], {})[0]
+
+    assert runtime_plan.tracer.method_name == 'passive_tracer'
+    assert runtime_plan.tracer.flow_field_names == ('depth_avg_flow_velocity',)
+    assert runtime_plan.tracer.required_physics_fields == ('depth_avg_flow_velocity',)
+
+
 def test_same_method_populations_keep_separate_method_configs():
     """Ensure same-method populations do not share converter instances or config."""
     fine_sand_config = _population_config(

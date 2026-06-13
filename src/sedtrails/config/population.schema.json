@@ -142,9 +142,13 @@
             "properties": {
                 "flow_field_name": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     },
+                    "default": [
+                        "depth_avg_flow_velocity"
+                    ],
                     "description": "List of flow field names to use for passive tracer method"
                 }
             },
@@ -178,9 +182,6 @@
                 "vanwesten": {
                     "$ref": "#/$defs/van_westen_method"
                 },
-                "vanwesten_bl": {
-                    "$ref": "#/$defs/van_westen_bl_method"
-                },
                 "soulsby": {
                     "$ref": "#/$defs/soulsby_method"
                 },
@@ -191,12 +192,13 @@
             "minProperties": 1,
             "maxProperties": 1,
             "default": {
-                "soulsby": {
-                    "f": 0.1,
-                    "r": 0.8
+                "passive_tracer": {
+                    "flow_field_name": [
+                        "depth_avg_flow_velocity"
+                    ]
                 }
             },
-            "description": "At least one tracer method must be specified"
+            "description": "Exactly one tracer method must be specified"
         },
         "transport_probability": {
             "type": "string",

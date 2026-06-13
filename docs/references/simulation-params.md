@@ -260,21 +260,33 @@ The `characteristics` object varies by `particle_type`:
 (tracer-methods)=
 ### Tracer Methods
 
-At least one tracer method must be specified. Multiple methods can be used simultaneously.
+Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
 
 #### Van Westen Method
 
 | Parameter         | Type   | Required | Default | Description                                                                           |
 | ----------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------- |
-| `flow_field_name` | array  | Optional | -       | List of flow field names to use (e.g., `["bed_load_velocity", "suspended_velocity"]`). |
+| `flow_field_name` | array  | **Required** | -       | List of flow field names to use (e.g., `["bed_load_velocity", "suspended_velocity"]`). |
 | `beta`            | number | Optional | `0.2`   | Beta parameter for Van Westen formulation.                                            |
 
 #### Soulsby Method
 
-| Parameter | Type   | Required | Default | Description                          |
-| --------- | ------ | -------- | ------- | ------------------------------------ |
-| `f`       | number | Optional | `0.1`   | f parameter for Soulsby formulation. |
-| `r`       | number | Optional | `0.8`   | r parameter for Soulsby formulation. |
+| Parameter                 | Type   | Required     | Default  | Description                                                      |
+| ------------------------- | ------ | ------------ | -------- | ---------------------------------------------------------------- |
+| `flow_field_name`         | array  | **Required** | -        | List of flow field names to use, commonly `["grain_velocity"]`.  |
+| `tracer_grain_size`       | number | Optional     | `0.0002` | Grain size of tracer sediment [m].                               |
+| `background_grain_size`   | number | Optional     | `0.0002` | Grain size of background sediment [m].                           |
+| `soulsby_b_e`             | number | Optional     | `1.7e-7` | Maximum free-to-trapped transition probability per second [1/s]. |
+| `soulsby_theta_s`         | number | Optional     | `0.1`    | Transition scale value [-].                                      |
+| `soulsby_gamma_e`         | number | Optional     | `0.1`    | Long-term equilibrium proportion of free particles [-].          |
+| `soulsby_mu_d`            | number | Optional     | `0.5`    | Dynamic friction coefficient [-].                                |
+| `soulsby_freedom_factor`  | number | Optional     | `1`      | Initial freedom factor (`0` = trapped, `1` = free).              |
+
+#### Passive Tracer Method
+
+| Parameter         | Type  | Required | Default                       | Description                                           |
+| ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
+| `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
 (particle-seeding)=
 ### Particle Seeding
@@ -418,8 +430,9 @@ particles:
         grain_size: 0.0005  # 0.5 mm
       tracer_methods:
         soulsby:
-          f: 0.1
-          r: 0.8
+          flow_field_name: ["grain_velocity"]
+          tracer_grain_size: 0.0005
+          background_grain_size: 0.0005
       seeding:
         quantity: 50
         strategy:
