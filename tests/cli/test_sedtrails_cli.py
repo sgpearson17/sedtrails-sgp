@@ -78,7 +78,8 @@ class TestSedtrailsCLI:
             # Verify run_simulation was called correctly
             mock_run_simulation.assert_called_once_with(
                 config_file='sedtrails.yml',
-                verbose=True
+                verbose=True,
+                report_domain_exits=True,
             )
 
     def test_run_simulation_custom_config(self, runner, cli_command, sample_config_data, mock_run_simulation):
@@ -99,7 +100,8 @@ class TestSedtrailsCLI:
             # Verify run_simulation was called with custom config
             mock_run_simulation.assert_called_once_with(
                 config_file=custom_config,
-                verbose=True
+                verbose=True,
+                report_domain_exits=True,
             )
 
     def test_run_simulation_short_option(self, runner, cli_command, sample_config_data, mock_run_simulation):
@@ -120,7 +122,25 @@ class TestSedtrailsCLI:
             # Verify run_simulation was called with short option
             mock_run_simulation.assert_called_once_with(
                 config_file=custom_config,
-                verbose=True
+                verbose=True,
+                report_domain_exits=True,
+            )
+
+    def test_run_simulation_can_disable_domain_exit_reporting(
+        self, runner, cli_command, sample_config_data, mock_run_simulation
+    ):
+        """Test run with domain exit reporting disabled."""
+        with runner.isolated_filesystem():
+            with open('sedtrails.yml', 'w') as f:
+                yaml.dump(sample_config_data, f)
+
+            result = runner.invoke(cli_command, ['run', '--no-report-domain-exits'])
+
+            assert result.exit_code == 0
+            mock_run_simulation.assert_called_once_with(
+                config_file='sedtrails.yml',
+                verbose=True,
+                report_domain_exits=False,
             )
 
     def test_run_simulation_error(self, runner, cli_command, sample_config_data, mock_run_simulation):
