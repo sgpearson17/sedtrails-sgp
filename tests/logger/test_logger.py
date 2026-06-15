@@ -29,31 +29,37 @@ class LoggerTestBase:
         """Setup and cleanup for each test with complete isolation."""
         # Store original state
         self.original_excepthook = sys.excepthook
-        
+
         # Create fresh temp directory
         self.temp_dir = tempfile.mkdtemp()
         self.test_results_dir = os.path.join(self.temp_dir, 'results')
         os.makedirs(self.test_results_dir, exist_ok=True)
-        
-        # Complete logging reset
+
+        # Complete logging reset before test
         self.reset_logging_completely()
-        
+
         yield
-        
-        # Complete cleanup
+
+        # Complete logging reset after test so subsequent tests are not affected
+        # (setup_logging sets propagate=False on 'sedtrails', which would prevent
+        # pytest caplog from capturing records in later tests that rely on propagation)
+        self.reset_logging_completely()
         sys.excepthook = self.original_excepthook
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def reset_logging_completely(self):
         """Completely reset all logging state for clean test isolation."""
-        # Clear all loggers and their handlers
+        # Clear all loggers and their handlers; restore propagation and level
+        # so that setup_logging side-effects do not bleed into other tests.
         for name in list(logging.Logger.manager.loggerDict.keys()):
             logger = logging.getLogger(name)
             for handler in logger.handlers[:]:
                 logger.removeHandler(handler)
                 if hasattr(handler, 'close'):
                     handler.close()
-        
+            logger.propagate = True
+            logger.setLevel(logging.NOTSET)
+
         # Clear root logger
         root_logger = logging.getLogger()
         for handler in root_logger.handlers[:]:

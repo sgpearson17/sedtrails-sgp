@@ -1,14 +1,20 @@
 import numpy as np
 import pytest
 
-from sedtrails.data_manager.xarray_dataset import collect_timestep_data, create_sedtrails_dataset
+from sedtrails.data_manager.xarray_dataset import (
+    collect_timestep_data,
+    create_sedtrails_dataset,
+    populate_population_metadata,
+)
 
 
 class MockPopulation:
     """Minimal population stub exposing particle arrays used by dataset export."""
 
-    def __init__(self):
+    def __init__(self, name='population', repr_volume=np.nan):
         """Provides deterministic particle state for a single-timestep test."""
+        self.name = name
+        self.repr_volume = repr_volume
         # Keys mirror the particle fields consumed by collect_timestep_data.
         self.particles = {
             'x': np.array([1.0, 2.0]),
@@ -35,3 +41,21 @@ def test_collect_timestep_data_requires_status_mobile():
 
     with pytest.raises(KeyError, match="status_mobile"):
         collect_timestep_data(ds, [population], timestep=0, current_time=12.0)
+
+
+def test_create_sedtrails_dataset_includes_population_repr_volume():
+    """Population representative-volume metadata should be present by default."""
+    ds = create_sedtrails_dataset(N_particles=2, N_populations=1, N_timesteps=1, N_flowfields=1)
+
+    assert 'population_repr_volume' in ds
+    assert np.isnan(ds['population_repr_volume'].values[0])
+
+
+def test_populate_population_metadata_writes_repr_volume():
+    """Population metadata export should include representative volume values."""
+    ds = create_sedtrails_dataset(N_particles=2, N_populations=1, N_timesteps=1, N_flowfields=1)
+    population = MockPopulation(name='sand', repr_volume=12.5)
+
+    populate_population_metadata(ds, [population])
+
+    assert ds['population_repr_volume'].values[0] == pytest.approx(12.5)
