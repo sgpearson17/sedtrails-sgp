@@ -38,6 +38,40 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     assert tracer_methods == {'vanwesten': {'flow_field_name': ['bed_load_velocity']}}
 
 
+@pytest.mark.parametrize(
+    ('strategy_name', 'settings'),
+    [
+        ('random', {'pol_file': './release_area.pol', 'nlocations': 10}),
+        ('grid', {'pol_file': './release_area.pol', 'separation': {'dx': 100.0, 'dy': 100.0}}),
+    ],
+)
+def test_population_schema_rejects_legacy_pol_file_for_area_strategies(tmp_path, strategy_name, settings):
+    """Reject legacy pol_file for random and grid release areas."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize(
+    ('strategy_name', 'settings'),
+    [
+        ('random', {'poly': './release_area.pol', 'nlocations': 10}),
+        ('grid', {'poly': './release_area.pol', 'separation': {'dx': 100.0, 'dy': 100.0}}),
+    ],
+)
+def test_population_schema_accepts_poly_file_path_for_area_strategies(tmp_path, strategy_name, settings):
+    """Accept poly file paths for random and grid release areas."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
+
+    validated = _validate_config(tmp_path, config)
+
+    strategy = validated['particles']['populations'][0]['seeding']['strategy']
+    assert strategy == {strategy_name: settings}
+
+
 def _validate_config(tmp_path, config):
     """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'

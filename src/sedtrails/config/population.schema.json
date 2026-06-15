@@ -413,6 +413,7 @@
                         },
                         "random": {
                             "type": "object",
+                            "description": "Random area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
                             "additionalProperties": false,
                             "properties": {
                                 "bbox": {
@@ -466,6 +467,7 @@
                         },
                         "grid": {
                             "type": "object",
+                            "description": "Regular grid area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
                             "additionalProperties": false,
                             "properties": {
                                 "bbox": {
