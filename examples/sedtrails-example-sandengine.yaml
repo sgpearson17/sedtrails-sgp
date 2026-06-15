@@ -4,7 +4,7 @@ general:
     reference_date: 2011-08-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ././sandengine_dfm_data/sandengine_sedtrails.nc
+  data: ../sample-data/sandengine_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
 time:
   start:  2011-08-01 00:00:00
