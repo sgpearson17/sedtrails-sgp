@@ -28,7 +28,33 @@ BERTIN_COEFFICIENT = 0.041
 
 @dataclass
 class PhysicsConfig:
-    """Configuration parameters for physics calculations."""
+    """Configuration parameters for physics calculations.
+
+    Attributes
+    ----------
+    tracer_method : str
+        Name of the active sediment tracer physics method.
+    suspended_velocity_method : str
+        Method used to compute suspended sediment velocity.
+    gravity : float
+        Gravitational acceleration in m/s^2.
+    von_karman_constant : float
+        Von Karman constant.
+    kinematic_viscosity : float
+        Kinematic viscosity in m^2/s.
+    water_density : float
+        Water density in kg/m^3.
+    particle_density : float
+        Particle density in kg/m^3.
+    porosity : float
+        Bed porosity.
+    grain_diameter : float
+        Representative grain diameter in meters.
+    morfac : float
+        Morphological acceleration factor.
+    bertin_coefficient : float
+        Empirical coefficient for Bertin-style mixing layer thickness.
+    """
 
     # Physics methods
     tracer_method: str = 'vanwesten'  # name of method for

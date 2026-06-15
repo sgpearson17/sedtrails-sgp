@@ -14,8 +14,14 @@ from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
-    """
-    Plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format.
+    """Convert Delft3D Flexible Mesh NetCDF data to SedTRAILS format.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the Delft3D Flexible Mesh NetCDF file.
+    morfac : float, optional
+        Morphological acceleration factor used to decompress model time.
     """
 
     def __init__(self, input_file: str, morfac: float = 1.0):

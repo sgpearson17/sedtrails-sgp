@@ -46,7 +46,17 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     ],
 )
 def test_population_schema_rejects_legacy_pol_file_for_area_strategies(tmp_path, strategy_name, settings):
-    """Reject legacy pol_file for random and grid release areas."""
+    """Reject legacy pol_file for random and grid release areas.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory used for writing the test configuration file.
+    strategy_name : str
+        Area seeding strategy to validate.
+    settings : dict
+        Strategy settings containing the legacy ``pol_file`` key.
+    """
     config = _base_config()
     config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
 
@@ -62,7 +72,17 @@ def test_population_schema_rejects_legacy_pol_file_for_area_strategies(tmp_path,
     ],
 )
 def test_population_schema_accepts_poly_file_path_for_area_strategies(tmp_path, strategy_name, settings):
-    """Accept poly file paths for random and grid release areas."""
+    """Accept poly file paths for random and grid release areas.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory used for writing the test configuration file.
+    strategy_name : str
+        Area seeding strategy to validate.
+    settings : dict
+        Strategy settings containing a ``poly`` file path.
+    """
     config = _base_config()
     config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
 

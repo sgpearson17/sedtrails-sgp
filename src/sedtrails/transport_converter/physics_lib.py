@@ -39,7 +39,17 @@ from enum import Enum
 
 
 class SuspendedVelocityMethod(Enum):
-    """Available methods for computing suspended sediment velocity."""
+    """Available methods for computing suspended sediment velocity.
+
+    Attributes
+    ----------
+    VAN_WESTEN_2025 : str
+        Main suspended velocity method from van Westen et al. (2025).
+    SOULSBY_2011 : str
+        Rouse-profile ratio method from Soulsby et al. (2011).
+    MACDONALD_2006 : str
+        Log-profile method evaluated at suspended sediment centroid height.
+    """
 
     VAN_WESTEN_2025 = 'van_westen_2025'  # Main method from van Westen et al. (2025)
     SOULSBY_2011 = 'soulsby_2011'  # Rouse-profile ratio from Soulsby et al. (2011)
@@ -47,7 +57,15 @@ class SuspendedVelocityMethod(Enum):
 
 
 class MixingLayerMethod(Enum):
-    """Available methods for computing mixing layer thickness."""
+    """Available methods for computing mixing layer thickness.
+
+    Attributes
+    ----------
+    BERTIN_2008 : str
+        Bertin-style mixing layer implementation.
+    HARRIS_WIBERG : str
+        Placeholder for a Harris and Wiberg mixing layer method.
+    """
 
     BERTIN_2008 = 'bertin_2008'  # Bertin method (current implementation)
     HARRIS_WIBERG = 'harris_wiberg'  # Harris & Wiberg method - placeholder

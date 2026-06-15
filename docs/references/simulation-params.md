@@ -339,6 +339,8 @@ Controls where, when, and how particles are released.
 
 Choose **ONE** strategy. Each strategy has different required parameters.
 
+For random and grid release areas, use `poly` for polygon files or inline polygon vertices, and `bbox` for rectangular areas.
+
 ##### Point Release
 
 Releases particles at specific point locations.
@@ -370,7 +372,7 @@ Releases particles along line segments (transects).
 
 Releases particles at random locations within a rectangular or polygonal area.
 
-⚠️ **Area Required**: Specify `poly` or `bbox`. The legacy `pol_file` key is not valid for random release areas; use `poly: ./release_area.pol` for polygon files. If both `poly` and `bbox` are supplied, `poly` takes precedence.
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
 
 | Parameter          | Type            | Required     | Default | Description                                                                                         |
 | ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |
@@ -385,7 +387,7 @@ Releases particles at random locations within a rectangular or polygonal area.
 
 Releases particles on a regular grid within a rectangular or polygonal area.
 
-⚠️ **Area Required**: Specify `poly` or `bbox`. The legacy `pol_file` key is not valid for grid release areas; use `poly: ./release_area.pol` for polygon files. If both `poly` and `bbox` are supplied, `poly` takes precedence.
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
 
 | Parameter          | Type            | Required     | Default | Description                                                                                         |
 | ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |

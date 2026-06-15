@@ -3,6 +3,27 @@ import xarray as xr
 
 
 def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24):
+    """Create an empty SedTRAILS trajectory dataset.
+
+    Parameters
+    ----------
+    N_particles : int
+        Number of particles represented in the output dataset.
+    N_populations : int
+        Number of particle populations represented in the output dataset.
+    N_timesteps : int
+        Number of stored output timesteps.
+    N_flowfields : int
+        Number of flow fields tracked for per-particle covered distance.
+    name_strlen : int, optional
+        Fixed string length used for encoded names and trajectory identifiers.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset initialized with SedTRAILS trajectory, status, population, and
+        flow-field variables.
+    """
     ds = xr.Dataset(
         {
             # Population metadata - initialize with empty/default values

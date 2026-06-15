@@ -435,9 +435,10 @@ class PointStrategy(SeedingStrategy):
 
 
 class RandomStrategy(SeedingStrategy):
-    """
-    Seeding strategy to release particles at random locations (x,y) within an area.
+    """Release particles at random locations within an area.
 
+    Notes
+    -----
     The area can be defined as:
     - ``bbox``: axis-aligned bounding box string ``'xmin,ymin xmax,ymax'``
     - ``poly``: an arbitrary polygon given as a list of ``'x,y'`` strings or a
@@ -450,6 +451,28 @@ class RandomStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """Generate random seed locations for one population.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Population configuration containing ``quantity`` and random
+            strategy settings.
+
+        Returns
+        -------
+        list of tuple of int and float
+            Seed locations as ``(quantity, x, y)`` tuples.
+
+        Raises
+        ------
+        MissingConfigurationParameter
+            If the area definition, particle quantity, or number of locations
+            is missing.
+        ValueError
+            If ``nlocations`` is invalid or too few points can be sampled
+            inside a polygon.
+        """
         settings = getattr(config, 'strategy_settings', {})
         bbox = settings.get('bbox', None)
         poly = settings.get('poly', None)
@@ -504,10 +527,11 @@ class RandomStrategy(SeedingStrategy):
 
 
 class GridStrategy(SeedingStrategy):
-    """
-    Seeding strategy to release particles on a regular grid.
+    """Release particles on a regular grid.
 
-    The grid is defined by the distance between particles (dx, dy).  The
+    Notes
+    -----
+    The grid is defined by the distance between particles (``dx``, ``dy``). The
     seeding area can be defined as:
 
     - ``bbox``: axis-aligned bounding box — dict with ``xmin/ymin/xmax/ymax``
@@ -521,6 +545,25 @@ class GridStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """Generate regular-grid seed locations for one population.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Population configuration containing ``quantity`` and grid strategy
+            settings.
+
+        Returns
+        -------
+        list of tuple of int and float
+            Seed locations as ``(quantity, x, y)`` tuples.
+
+        Raises
+        ------
+        MissingConfigurationParameter
+            If the area definition, separation settings, or particle quantity
+            is missing.
+        """
         settings = config.strategy_settings
         bbox = settings.get('bbox')
         poly = settings.get('poly', None)
@@ -726,6 +769,14 @@ class FilePointsStrategy(SeedingStrategy):
 
 
 class ParticleFactory:
+    """Create particle instances from population configuration.
+
+    Notes
+    -----
+    The factory dispatches to the configured seeding strategy and then creates
+    one particle object for each requested release location and quantity.
+    """
+
     @staticmethod
     def create_particles(config: PopulationConfig) -> list[Particle]:
         """
@@ -1049,8 +1100,10 @@ class ParticlePopulation:
         self.particles[name] = particle_values
 
     def update_burial_depth(self) -> None:
-        """Updates the burial depth of particles in the population.
+        """Update the burial depth of particles in the population.
 
+        Notes
+        -----
         Invariant: ``particles['bed_level_previous']`` always holds the bed level
         at the particle's *current* position at the *previous* timestep, because
         ``update_bed_level_change_after_movement`` re-samples bed level at the new
@@ -1067,8 +1120,16 @@ class ParticlePopulation:
         self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
     def update_bed_level_change_after_movement(self, bed_level) -> None:
-        """Re-samples bed level at the new particle positions after movement.
+        """Re-sample bed level at the new particle positions after movement.
 
+        Parameters
+        ----------
+        bed_level : array_like or scalar
+            Bed-level field used to update particle bed elevation and elevation
+            ``z`` after movement.
+
+        Notes
+        -----
         This preserves the invariant required by ``update_burial_depth``: after
         this call ``particles['bed_level']`` holds BL at the *new* position at the
         *current* timestep, so it becomes the correct ``bed_level_previous``

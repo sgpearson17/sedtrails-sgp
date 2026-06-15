@@ -29,7 +29,16 @@ from sedtrails.transport_converter.physics_converter import PhysicsConverter
 
 
 class Simulation:
-    """Class to encapsulate the particle simulation process."""
+    """Encapsulate the particle simulation process.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS YAML configuration file.
+    enable_dashboard : bool, optional
+        Override for the dashboard setting from the configuration. If omitted,
+        the configuration value is used.
+    """
 
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10

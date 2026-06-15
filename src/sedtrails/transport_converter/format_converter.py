@@ -17,8 +17,16 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 @dataclass
 class SeederFieldData:
-    """
-    Minimal field data needed by ParticleSeeder: spatial coordinates and reference date.
+    """Minimal field data needed by ``ParticleSeeder``.
+
+    Attributes
+    ----------
+    x : np.ndarray
+        Field x-coordinates.
+    y : np.ndarray
+        Field y-coordinates.
+    reference_date : np.datetime64
+        Reference date used to convert release times.
     """
 
     x: np.ndarray

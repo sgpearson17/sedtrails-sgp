@@ -60,7 +60,24 @@ def read_netcdf(results_file_path: Path) -> xr.Dataset:
 
 
 def plot_trajectories(ds, save_plot=False, output_dir=None):
-    """Plot particle trajectories from the NetCDF dataset."""
+    """Plot particle trajectories from a SedTRAILS dataset.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset containing particle trajectory variables, including ``x``,
+        ``y``, and ``time``.
+    save_plot : bool, optional
+        If true, save the generated figure as ``particle_trajectories.png``.
+    output_dir : str or pathlib.Path, optional
+        Directory where the figure is saved. If omitted, the source dataset
+        directory is used when available.
+
+    Notes
+    -----
+    This function creates a four-panel matplotlib figure and displays it with
+    ``plt.show()``. It does not return the figure or axes.
+    """
 
     # Extract trajectory data
     x_data = ds['x'].values  # shape: (n_particles, n_timesteps)
