@@ -2,12 +2,63 @@
 Unit tests for the Simulation class.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
+
+
+class _FakePopulation:
+    """Minimal population double for permanent-burial integration tests."""
+
+    def __init__(self, remove_permanently_buried):
+        """Store the configured removal flag and captured exposure fields."""
+        self.population_config = SimpleNamespace(remove_permanently_buried=remove_permanently_buried)
+        self.exposure_fields = []
+
+    def remove_permanently_buried_particles(self, max_exposure_depth):
+        """Capture the exposure field passed by the simulation helper."""
+        self.exposure_fields.append(np.asarray(max_exposure_depth))
+        return 0
+
+
+class _ExposurePlugin:
+    """Format-plugin double returning deterministic maximum exposure inputs."""
+
+    def __init__(self, max_erosion=None, max_bss=None):
+        """Store exposure inputs and track calls."""
+        self.max_erosion = np.asarray(max_erosion if max_erosion is not None else [0.5, 1.0])
+        self.max_bss = np.asarray(max_bss if max_bss is not None else [5.0, 2.0])
+        self.calls = 0
+
+    def get_max_exposure_depth_fields(self):
+        """Return maximum erosion and bed shear stress arrays."""
+        self.calls += 1
+        return self.max_erosion, self.max_bss
+
+
+def _runtime_plan(population, critical_shear_stress=1.0, bertin_coefficient=0.08):
+    """Build a minimal runtime plan with converter config and grain properties."""
+    grain_properties = {}
+    if critical_shear_stress is not None:
+        grain_properties['critical_shear_stress'] = critical_shear_stress
+    converter = SimpleNamespace(
+        grain_properties=grain_properties,
+        config=SimpleNamespace(bertin_coefficient=bertin_coefficient),
+    )
+    return SimpleNamespace(population=population, tracer=SimpleNamespace(converter=converter))
+
+
+def _simulation_with_plugin(plugin):
+    """Create an uninitialized Simulation with only helper dependencies set."""
+    manager = object.__new__(Simulation)
+    manager._profile_enabled = False
+    manager.format_converter = SimpleNamespace(format_plugin=plugin)
+    return manager
 
 
 class TestSimulationManagerTimeConfig:
@@ -322,6 +373,56 @@ class TestSimulationManagerTimeConfig:
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
 
+class TestSimulationPermanentBurialIntegration:
+    """Tests for simulation-level permanent-burial removal wiring."""
+
+    def test_no_flagged_populations_skip_exposure_scan(self):
+        """The expensive exposure scan should only run when removal is enabled."""
+        population = _FakePopulation(remove_permanently_buried=False)
+        plugin = _ExposurePlugin()
+        manager = _simulation_with_plugin(plugin)
+
+        manager._remove_permanently_buried_populations([population], [_runtime_plan(population)])
+
+        assert plugin.calls == 0
+        assert population.exposure_fields == []
+
+    def test_flagged_population_receives_erosion_plus_custom_bertin_mixing(self):
+        """Flagged populations should receive max erosion plus max mixing depth."""
+        flagged = _FakePopulation(remove_permanently_buried=True)
+        unflagged = _FakePopulation(remove_permanently_buried=False)
+        plugin = _ExposurePlugin(max_erosion=[0.5, 1.0], max_bss=[5.0, 2.0])
+        manager = _simulation_with_plugin(plugin)
+        runtime_plans = [
+            _runtime_plan(flagged, critical_shear_stress=1.0, bertin_coefficient=0.08),
+            _runtime_plan(unflagged, critical_shear_stress=1.0, bertin_coefficient=0.08),
+        ]
+
+        manager._remove_permanently_buried_populations([flagged, unflagged], runtime_plans)
+
+        assert plugin.calls == 1
+        assert len(flagged.exposure_fields) == 1
+        np.testing.assert_allclose(flagged.exposure_fields[0], [0.66, 1.08])
+        assert unflagged.exposure_fields == []
+
+    def test_missing_exposure_plugin_support_raises(self):
+        """Enabled removal should require a plugin exposure-field API."""
+        population = _FakePopulation(remove_permanently_buried=True)
+        manager = _simulation_with_plugin(object())
+
+        with pytest.raises(NotImplementedError, match='get_max_exposure_depth_fields'):
+            manager._remove_permanently_buried_populations([population], [_runtime_plan(population)])
+
+    def test_missing_critical_shear_stress_raises(self):
+        """Exposure conversion requires critical shear stress from the converter."""
+        population = _FakePopulation(remove_permanently_buried=True)
+        manager = _simulation_with_plugin(_ExposurePlugin())
+
+        with pytest.raises(ValueError, match='critical_shear_stress'):
+            manager._remove_permanently_buried_populations(
+                [population],
+                [_runtime_plan(population, critical_shear_stress=None)],
+            )
 
 class TestSimulationManagerSaveInterval:
     """Tests for save_interval slot-count calculation and boundary logic."""

@@ -135,17 +135,23 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 
 def plot_trajectories(ds, save_plot=False, output_dir=None):
-    """
-    Plot particle trajectories from the NetCDF dataset.
+    """Plot particle trajectories from a SedTRAILS dataset.
 
     Parameters
     ----------
-    ds : object
-        xarray dataset containing SedTRAILS variables.
-    save_plot : object
-        The save plot value.
-    output_dir : object
-        Directory where output files are written.
+    ds : xarray.Dataset
+        Dataset containing particle trajectory variables, including ``x``,
+        ``y``, and ``time``.
+    save_plot : bool, optional
+        If true, save the generated figure as ``particle_trajectories.png``.
+    output_dir : str or pathlib.Path, optional
+        Directory where the figure is saved. If omitted, the source dataset
+        directory is used when available.
+
+    Notes
+    -----
+    This function creates a four-panel matplotlib figure and displays it with
+    ``plt.show()``. It does not return the figure or axes.
     """
 
     # Extract trajectory data
@@ -224,11 +230,13 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
             )
 
             # Mark start and end points
+            # start point marker
             ax1.scatter(
-                x_traj[0], y_traj[0], color=colors[i], marker='o', s=50, edgecolor='black', linewidth=1, zorder=5
+                x_traj[0], y_traj[0], color=colors[i], marker='x', s=50, linewidth=1, zorder=5
             )
+            # end point marker
             ax1.scatter(
-                x_traj[-1], y_traj[-1], color=colors[i], marker='s', s=50, edgecolor='black', linewidth=1, zorder=5
+                x_traj[-1], y_traj[-1], color=colors[i], marker='o', s=50, edgecolor='black', linewidth=1, zorder=5
             )
 
     # Add legend if few particles
@@ -302,9 +310,8 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     x_traj[0],
                     y_traj[0],
                     color=pop_colors[pop_idx],
-                    marker='o',
+                    marker='x',
                     s=50,
-                    edgecolor='black',
                     linewidth=1,
                     zorder=5,
                 )
@@ -312,7 +319,7 @@ def plot_trajectories(ds, save_plot=False, output_dir=None):
                     x_traj[-1],
                     y_traj[-1],
                     color=pop_colors[pop_idx],
-                    marker='s',
+                    marker='o',
                     s=50,
                     edgecolor='black',
                     linewidth=1,
