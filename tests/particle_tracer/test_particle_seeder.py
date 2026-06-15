@@ -944,6 +944,32 @@ class TestParticleFactory:
             assert 1.0 <= x <= 3.0
             assert 2.0 <= y <= 4.0
 
+    def test_random_burial_depth_is_sampled_with_strategy_seed(self):
+        """Seeded random strategies should reproduce stochastic burial depths."""
+        config = PopulationConfig(
+            {
+                'name': 'Random Burial Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': '0,0 1,1', 'nlocations': 3, 'seed': 7}},
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'random': 4.0},
+                },
+            }
+        )
+
+        first = ParticleFactory.create_particles(config)
+        second = ParticleFactory.create_particles(config)
+        first_depths = np.array([particle.burial_depth for particle in first])
+        second_depths = np.array([particle.burial_depth for particle in second])
+
+        assert len(first_depths) == 6
+        assert np.all(first_depths >= 0.0)
+        assert np.all(first_depths <= 4.0)
+        assert np.unique(first_depths).size > 1
+        np.testing.assert_allclose(first_depths, second_depths)
+
     def test_create_particles_different_particle_types(self, particle_classes):
         """Test creating different particle types."""
         Sand, Mud, Passive = particle_classes['Sand'], particle_classes['Mud'], particle_classes['Passive']
@@ -1167,6 +1193,63 @@ class TestParticlePopulation:
         assert len(population.particles['x']) == 10  # 2 nlocations * 5 quantity
         assert len(population.particles['y']) == 10  # 2 nlocations * 5 quantity
 
+    def test_repr_volume_uses_random_burial_bbox_area(self):
+        """Representative volume should be area times max depth per particle."""
+        config = PopulationConfig(
+            {
+                'name': 'Representative Volume BBox',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'random': {'bbox': '0,0 4,3', 'nlocations': 6, 'seed': 3}},
+                    'quantity': 2,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'random': 5.0},
+                },
+            }
+        )
+
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 4.0, 4.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 3.0, 3.0]),
+            population_config=config,
+        )
+
+        assert population.repr_volume == pytest.approx((4.0 * 3.0 * 5.0) / 12)
+
+    def test_repr_volume_uses_random_burial_poly_area(self):
+        """Polygon area should feed representative-volume metadata."""
+        config = PopulationConfig(
+            {
+                'name': 'Representative Volume Poly',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'grid': {'poly': ['0,0', '4,0', '0,3'], 'separation': {'dx': 1.0, 'dy': 1.0}}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'random': 2.0},
+                },
+            }
+        )
+
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 4.0, 4.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 3.0, 3.0]),
+            population_config=config,
+        )
+
+        expected_volume = (0.5 * 4.0 * 3.0 * 2.0) / len(population.particles['x'])
+        assert population.repr_volume == pytest.approx(expected_volume)
+
+    def test_repr_volume_is_nan_for_constant_burial(self, population_config):
+        """Constant burial depths do not define a representative seeding volume."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 5.0, 5.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 5.0, 5.0]),
+            population_config=population_config,
+        )
+
+        assert np.isnan(population.repr_volume)
+
     def test_zero_particle_population_updates_are_noops(self):
         """Disabled restart populations should not require particle fields."""
         config = PopulationConfig(
@@ -1240,6 +1323,50 @@ class TestParticlePopulation:
         )
 
         np.testing.assert_allclose(population.particles['bed_level'], 0.5)
+
+    def test_update_burial_depth_tracks_temporal_bed_level_change(self):
+        """Accretion should increase burial depth, while erosion clamps at zero."""
+        config = PopulationConfig(
+            {
+                'name': 'Bed Level Change Config',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.25,0.25', '0.75,0.75']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population.particles['bed_level_previous'] = np.array([10.0, 10.0])
+        population.particles['bed_level'] = np.array([10.5, 8.0])
+        population.particles['burial_depth'] = np.array([1.0, 1.0])
+
+        population.update_burial_depth()
+
+        np.testing.assert_allclose(population.particles['burial_depth'], [1.5, 0.0])
+        np.testing.assert_allclose(population.particles['z'], [9.0, 8.0])
+
+    def test_update_bed_level_after_movement_resamples_current_position(self, point_config_simple):
+        """Post-move bed levels should update both bed_level and particle z."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        population.particles['x'] = np.array([0.25])
+        population.particles['y'] = np.array([0.25])
+        population.particles['burial_depth'] = np.array([0.25])
+
+        population.update_bed_level_change_after_movement(np.array([1.0, 2.0, 3.0, 2.0]))
+
+        np.testing.assert_allclose(population.particles['bed_level'], [1.5])
+        np.testing.assert_allclose(population.particles['z'], [1.25])
 
     def test_update_status_uses_status_keys_and_mobile_mask_composition(self, monkeypatch):
         """Only particles that satisfy every status flag should be mobile."""

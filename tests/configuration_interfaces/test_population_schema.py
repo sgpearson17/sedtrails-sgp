@@ -92,6 +92,79 @@ def test_population_schema_accepts_poly_file_path_for_area_strategies(tmp_path, 
     assert strategy == {strategy_name: settings}
 
 
+@pytest.mark.parametrize(
+    ('strategy_name', 'settings'),
+    [
+        ('random', {'poly': ['0,0', '1,0', '0,1'], 'nlocations': 10}),
+        ('grid', {'poly': ['0,0', '1,0', '0,1'], 'separation': {'dx': 100.0, 'dy': 100.0}}),
+    ],
+)
+def test_population_schema_accepts_inline_poly_for_area_strategies(tmp_path, strategy_name, settings):
+    """Accept inline polygon vertex arrays for random and grid areas.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory used for writing the test configuration file.
+    strategy_name : str
+        Area seeding strategy to validate.
+    settings : dict
+        Strategy settings containing inline ``poly`` vertices.
+    """
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
+
+    validated = _validate_config(tmp_path, config)
+
+    strategy = validated['particles']['populations'][0]['seeding']['strategy']
+    assert strategy == {strategy_name: settings}
+
+
+@pytest.mark.parametrize(
+    ('strategy_name', 'settings'),
+    [
+        ('random', {'poly': ['0,0', '1,0'], 'nlocations': 10}),
+        ('grid', {'poly': ['0,0', '1,0'], 'separation': {'dx': 100.0, 'dy': 100.0}}),
+    ],
+)
+def test_population_schema_rejects_inline_poly_with_too_few_vertices(tmp_path, strategy_name, settings):
+    """Reject inline polygons with fewer than three vertices.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory used for writing the test configuration file.
+    strategy_name : str
+        Area seeding strategy to validate.
+    settings : dict
+        Strategy settings containing an invalid inline ``poly`` value.
+    """
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['strategy'] = {strategy_name: settings}
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_accepts_remove_permanently_buried_boolean(tmp_path):
+    """Accept the permanent-burial optimization flag when it is boolean."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['remove_permanently_buried'] = True
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['seeding']['remove_permanently_buried'] is True
+
+
+def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_path):
+    """Reject non-boolean permanent-burial optimization values."""
+    config = _base_config()
+    config['particles']['populations'][0]['seeding']['remove_permanently_buried'] = 'yes'
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 def _validate_config(tmp_path, config):
     """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'
