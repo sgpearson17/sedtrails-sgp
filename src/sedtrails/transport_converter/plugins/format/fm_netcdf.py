@@ -122,11 +122,10 @@ class FormatPlugin(BaseFormatPlugin):
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
-        # FIX ME: TEMPORARY
-        # Looping over all arrays in mapped data, check for dimensions with size 1 and squeeze them to remove the extra dimension. This is a temporary fix for DFM files that have an extra time dimension of size 1 after slicing.
+        # TODO: DFM slicing can introduce an extra leading singleton dimension; remove only that axis.
         for key, value in mapped_data.items():
-            if isinstance(value, np.ndarray) and value.ndim > 2 and np.min(value.shape) == 1:
-                mapped_data[key] = np.squeeze(value)
+            if isinstance(value, np.ndarray) and value.ndim > 2 and value.shape[0] == 1:
+                mapped_data[key] = np.squeeze(value, axis=0)
 
         # Calculate magnitudes for vector quantities
         # Flow velocity magnitude

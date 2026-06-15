@@ -195,57 +195,6 @@ class FormatConverter:
 
         return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
 
-    def get_max_exposure_depth(self, physics_converter) -> np.ndarray:
-        """
-        Compute the maximum possible exposure depth per grid node over the full simulation.
-
-        Exposure depth = max_erosion + max_mixing_layer_thickness, where:
-        - max_erosion is the largest bed-level drop (bed_level_t0 - min(bed_level_t)) at each node.
-        - max_mixing_layer_thickness is derived from the peak bed shear stress at each node.
-
-        Parameters
-        ----------
-        physics_converter : PhysicsConverter
-            Used to obtain grain properties (critical shear stress) for the mixing
-            layer thickness calculation.
-
-        Returns
-        -------
-        np.ndarray, shape (n_nodes,)
-            Maximum exposure depth per node [m].
-
-        Raises
-        ------
-        NotImplementedError
-            If the active format plugin does not implement ``get_max_exposure_depth_fields``.
-        """
-        from sedtrails.transport_converter import physics_lib
-
-        plugin = self.format_plugin
-
-        if not hasattr(plugin, 'get_max_exposure_depth_fields'):
-            raise NotImplementedError(
-                f"Format plugin '{type(plugin).__name__}' does not implement "
-                "'get_max_exposure_depth_fields'. Cannot compute max exposure depth "
-                "for permanent burial removal."
-            )
-
-        max_erosion, max_bss = plugin.get_max_exposure_depth_fields()
-
-        critical_shear_stress = physics_converter.grain_properties.get('critical_shear_stress')
-        if critical_shear_stress is None:
-            raise ValueError(
-                "Physics converter does not provide 'critical_shear_stress' in grain_properties."
-            )
-
-        max_mixing = physics_lib.compute_mixing_layer_thickness(
-            max_bss, critical_shear_stress,
-            bertin_coefficient=physics_converter.config.bertin_coefficient,
-        )
-
-        return max_erosion + max_mixing
-
-
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')
 

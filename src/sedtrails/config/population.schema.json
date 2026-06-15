@@ -322,7 +322,7 @@
                 "remove_permanently_buried": {
                     "type": "boolean",
                     "default": false,
-                    "description": "If true, particles whose initial burial depth exceeds the maximum possible exposure depth (max_erosion + max_mixing_depth) at their location are permanently removed before the simulation starts. Requires calling ParticlePopulation.remove_permanently_buried_particles() with the pre-computed max-exposure field."
+                    "description": "If true, particles whose initial burial depth exceeds the maximum possible exposure depth (max_erosion + max_mixing_depth) at their location are removed before the simulation starts (computed automatically by the simulation when enabled)."
                 },
                 "strategy": {
                     "type": "object",

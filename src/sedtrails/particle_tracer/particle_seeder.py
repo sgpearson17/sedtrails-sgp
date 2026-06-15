@@ -127,7 +127,7 @@ def _parse_polygon(poly_spec) -> np.ndarray:
     raise ValueError('poly must be a file path string or a list of "x,y" coordinate strings.')
 
 
-def _sample_burial_depth(burial_depth_config) -> float:
+def _sample_burial_depth(burial_depth_config, rng: random.Random | None = None) -> float:
     """Resolve a single burial-depth value from the population config entry.
 
     Parameters
@@ -137,12 +137,17 @@ def _sample_burial_depth(burial_depth_config) -> float:
         ``{'random': max_value}`` to draw uniformly from ``[0, max_value]``.
         A bare float is passed through unchanged (used when the config is
         already a resolved number, e.g. from legacy test fixtures).
+    rng : random.Random, optional
+        A local ``random.Random`` instance to use for stochastic sampling.
+        When *None* the module-level ``random`` generator is used as a
+        fallback (legacy behaviour).
     """
     if isinstance(burial_depth_config, dict):
         if 'constant' in burial_depth_config:
             return float(burial_depth_config['constant'])
         if 'random' in burial_depth_config:
-            return random.uniform(0.0, float(burial_depth_config['random']))
+            _rng = rng if rng is not None else random
+            return _rng.uniform(0.0, float(burial_depth_config['random']))
         raise ValueError(
             'Unsupported burial_depth configuration. '
             'Use {constant: value} or {random: max_value}.'
@@ -348,7 +353,7 @@ class PopulationConfig:
     particle_type: str = field(init=False)
     release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
     quantity: int = field(init=False)  # number of particles to release per release location
-    burial_depth: float = field(init=False, default=0.0)  # burial depth of the particles
+    burial_depth: float | dict[str, float] = field(init=False, default=0.0)  # burial depth configuration for the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
     remove_permanently_buried: bool = field(init=False, default=False)
 
@@ -452,14 +457,15 @@ class RandomStrategy(SeedingStrategy):
         if poly is None and not bbox:
             raise MissingConfigurationParameter('"bbox" or "poly" must be provided for RandomStrategy.')
 
-        seed_val = settings.get('seed', None)
-        if not seed_val:
-            raise MissingConfigurationParameter('"seed" must be provided for RandomStrategy.')
+        seed_val = settings.get('seed', 42)
         random.seed(seed_val)
 
         nlocations = settings.get('nlocations', None)
-        if not nlocations:
+        if nlocations is None:
             raise MissingConfigurationParameter('"nlocations" must be provided for RandomStrategy.')
+        nlocations = int(nlocations)
+        if nlocations <= 0:
+            raise ValueError('"nlocations" must be a positive integer for RandomStrategy.')
 
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for RandomStrategy.')
@@ -763,6 +769,17 @@ class ParticleFactory:
         burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
         _log_seeding_box_volume(config, positions)
+
+        # Build a dedicated local RNG for burial-depth sampling, isolated from
+        # other RNG usage. Seeded from the strategy seed when available (e.g.
+        # RandomStrategy) so the simulation stays reproducible. For strategies
+        # without an explicit seed (point/grid/transect) strategy_seed is None
+        # and random.Random(None) seeds from system entropy — burial depths are
+        # then non-reproducible across runs for those strategies.
+        # TODO: add a dedicated burial_depth.seed config key for full reproducibility.
+        strategy_seed = getattr(config, 'strategy_settings', {}).get('seed', None)
+        burial_rng = random.Random(strategy_seed)
+
         particles = []
         for qty, x, y in positions:
             for _ in range(qty):
@@ -771,8 +788,8 @@ class ParticleFactory:
                 p.y = y
                 p.release_time = getattr(config, 'release_start', None)
 
-                p.burial_depth = _sample_burial_depth(burial_depth)
-                    
+                p.burial_depth = _sample_burial_depth(burial_depth, rng=burial_rng)
+
                 particles.append(p)
 
         return particles

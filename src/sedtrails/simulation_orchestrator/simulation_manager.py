@@ -666,10 +666,35 @@ class Simulation:
         # Only done when at least one population has remove_permanently_buried=True, to
         # avoid scanning the full dataset unnecessarily.
         if any(pop.population_config.remove_permanently_buried for pop in populations):
+            plugin = self.format_converter.format_plugin
+            if not hasattr(plugin, 'get_max_exposure_depth_fields'):
+                raise NotImplementedError(
+                    f"Format plugin '{type(plugin).__name__}' does not implement "
+                    "'get_max_exposure_depth_fields'. Cannot compute max exposure depth for permanent burial removal."
+                )
+
             with self._profile_section('get_max_exposure_depth'):
-                max_exposure_depth = self.format_converter.get_max_exposure_depth(self.physics_converter)
-            for pop in populations:
-                pop.remove_permanently_buried_particles(max_exposure_depth)
+                max_erosion, max_bss = plugin.get_max_exposure_depth_fields()
+
+            from sedtrails.transport_converter import physics_lib
+
+            for plan in runtime_plans:
+                pop = plan.population
+                if not pop.population_config.remove_permanently_buried:
+                    continue
+
+                critical_shear_stress = plan.tracer.converter.grain_properties.get('critical_shear_stress')
+                if critical_shear_stress is None:
+                    raise ValueError(
+                        "Physics converter does not provide 'critical_shear_stress' in grain_properties."
+                    )
+
+                max_mixing = physics_lib.compute_mixing_layer_thickness(
+                    max_bss,
+                    critical_shear_stress,
+                    bertin_coefficient=plan.tracer.converter.config.bertin_coefficient,
+                )
+                pop.remove_permanently_buried_particles(max_erosion + max_mixing)
 
         # Set initial values
         sedtrails_data = None
