@@ -2,6 +2,8 @@
 
 At the end of the simulation, an output file ``sedtrails_results.nc`` is written in [netcdf](https://www.unidata.ucar.edu/software/netcdf) (``*.nc``) format. When ``outputs.store_tracks`` is enabled, the file contains time-varying trajectories and generally follows the spirit of [CF conventions for multidimensional arrays of trajectories](https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#_multidimensional_array_representation_of_trajectories). When ``outputs.store_end_positions`` is enabled, SedTRAILS writes a compact result file with only one final state per particle and no ``n_timesteps`` dimension.
 
+NetCDF compression is controlled by ``outputs.netcdf.compression``, which defaults to ``auto``. Set it to ``true`` or ``false`` to force a mode, or use ``auto`` to enable compression only when the estimated uncompressed particle payload reaches ``outputs.netcdf.compression_auto_threshold_mb``. The default threshold is ``1024`` MiB.
+
 :::warning
 Some metadata is still missing from the output files!
 :::

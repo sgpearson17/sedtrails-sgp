@@ -512,7 +512,14 @@ outputs:
   directory: ./results/simulation_001
   save_interval: "30M"
   store_tracks: true
+  netcdf:
+    compression: auto
+    compression_auto_threshold_mb: 1024
 ```
+
+### NetCDF Compression
+
+Nested under `outputs.netcdf`, `compression` accepts `true`, `false`, or `auto` and defaults to `auto`. In `auto` mode, SedTRAILS estimates the uncompressed particle output payload before writing. Compression is enabled when the estimate is greater than or equal to `compression_auto_threshold_mb` MiB, which defaults to `1024`. Full-track output estimates all saved trajectory slots; `store_end_positions` and restart checkpoints estimate one particle snapshot.
 
 ---
 

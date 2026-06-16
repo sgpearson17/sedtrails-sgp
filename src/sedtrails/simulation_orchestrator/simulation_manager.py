@@ -41,6 +41,19 @@ class Simulation:
 
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
+    _OUTPUT_COORDINATE_FIELD_COUNT = 5
+    _OUTPUT_STATUS_FIELD_COUNT = 6
+    _DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB = 1024
+    _OUTPUT_DTYPE_BYTES = {
+        'float32': 4,
+        'f4': 4,
+        'float64': 8,
+        'f8': 8,
+        'uint8': 1,
+        'u1': 1,
+        'int32': 4,
+        'i4': 4,
+    }
 
     def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
         """
@@ -372,7 +385,13 @@ class Simulation:
         return {
             'coordinate_dtype': netcdf_config.get('coordinate_dtype', 'float32'),
             'status_dtype': netcdf_config.get('status_dtype', 'uint8'),
-            'compression': bool(netcdf_config.get('compression', True)),
+            'compression': netcdf_config.get('compression', 'auto'),
+            'compression_auto_threshold_mb': int(
+                netcdf_config.get(
+                    'compression_auto_threshold_mb',
+                    self._DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB,
+                )
+            ),
             'compression_level': int(netcdf_config.get('compression_level', 1)),
             'shuffle': bool(netcdf_config.get('shuffle', True)),
             'time_chunk': int(netcdf_config.get('time_chunk', 1)),
@@ -381,10 +400,66 @@ class Simulation:
             'reopen_interval': netcdf_config.get('reopen_interval', None),
         }
 
-    def _output_checkpoint_options(self) -> dict[str, Any]:
+    @classmethod
+    def _estimate_netcdf_payload_bytes(
+        cls,
+        n_particles: int,
+        n_output_slots: int,
+        coordinate_dtype: str,
+        status_dtype: str,
+    ) -> int:
+        """Estimate uncompressed particle payload bytes for NetCDF output."""
+        coordinate_bytes = cls._OUTPUT_DTYPE_BYTES[str(coordinate_dtype)]
+        status_bytes = cls._OUTPUT_DTYPE_BYTES[str(status_dtype)]
+        bytes_per_particle_slot = (
+            cls._OUTPUT_COORDINATE_FIELD_COUNT * coordinate_bytes
+            + cls._OUTPUT_STATUS_FIELD_COUNT * status_bytes
+        )
+        return max(0, int(n_particles)) * max(1, int(n_output_slots)) * bytes_per_particle_slot
+
+    @classmethod
+    def _resolve_output_netcdf_options(
+        cls,
+        netcdf_options: dict[str, Any],
+        n_particles: int,
+        n_output_slots: int,
+    ) -> dict[str, Any]:
+        """Resolve auto compression into concrete NetCDF writer options."""
+        resolved_options = dict(netcdf_options)
+        compression = resolved_options.get('compression', 'auto')
+        threshold_mb = int(
+            resolved_options.pop(
+                'compression_auto_threshold_mb',
+                cls._DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB,
+            )
+        )
+
+        if compression == 'auto':
+            estimated_bytes = cls._estimate_netcdf_payload_bytes(
+                n_particles,
+                n_output_slots,
+                resolved_options['coordinate_dtype'],
+                resolved_options['status_dtype'],
+            )
+            resolved_options['compression'] = estimated_bytes >= threshold_mb * 1024 * 1024
+        elif isinstance(compression, bool):
+            resolved_options['compression'] = compression
+        else:
+            raise ConfigurationError(
+                "outputs.netcdf.compression must be true, false, or 'auto'."
+            )
+
+        return resolved_options
+
+    def _output_checkpoint_options(self, writer_options: dict[str, Any] | None = None) -> dict[str, Any]:
         """Return checkpoint policy and shared NetCDF encoding options."""
         netcdf_config = self._controller.get('outputs.netcdf', {}) or {}
-        writer_options = self._output_netcdf_options()
+        if writer_options is None:
+            writer_options = self._resolve_output_netcdf_options(
+                self._output_netcdf_options(),
+                n_particles=0,
+                n_output_slots=1,
+            )
         return {
             'enabled': bool(netcdf_config.get('checkpoint', True)),
             'interval': int(netcdf_config.get('checkpoint_interval', 0)),
@@ -400,6 +475,27 @@ class Simulation:
                 )
             },
         }
+
+    def _resolved_output_writer_options(
+        self,
+        total_particles: int,
+        n_output_slots: int,
+        store_tracks: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return concrete trajectory, snapshot, and checkpoint writer options."""
+        raw_netcdf_options = self._output_netcdf_options()
+        netcdf_options = self._resolve_output_netcdf_options(
+            raw_netcdf_options,
+            total_particles,
+            n_output_slots if store_tracks else 1,
+        )
+        snapshot_netcdf_options = self._resolve_output_netcdf_options(
+            raw_netcdf_options,
+            total_particles,
+            1,
+        )
+        checkpoint_options = self._output_checkpoint_options(snapshot_netcdf_options)
+        return netcdf_options, snapshot_netcdf_options, checkpoint_options
 
     def _output_store_tracks(self) -> bool:
         """Return whether output should store the full trajectory cube."""
@@ -827,8 +923,11 @@ class Simulation:
             if store_tracks
             else 0
         )
-        netcdf_options = self._output_netcdf_options()
-        checkpoint_options = self._output_checkpoint_options()
+        netcdf_options, _, checkpoint_options = self._resolved_output_writer_options(
+            total_particles,
+            n_output_slots,
+            store_tracks,
+        )
 
         self._initialize_population_output_status(populations, timer.current)
         nc_handle = None

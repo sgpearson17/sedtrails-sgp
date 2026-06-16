@@ -409,7 +409,8 @@ class TestSimulationManagerNetCDFOutputOptions:
         assert manager._output_netcdf_options() == {
             'coordinate_dtype': 'float32',
             'status_dtype': 'uint8',
-            'compression': True,
+            'compression': 'auto',
+            'compression_auto_threshold_mb': 1024,
             'compression_level': 1,
             'shuffle': True,
             'time_chunk': 1,
@@ -424,6 +425,7 @@ class TestSimulationManagerNetCDFOutputOptions:
             'coordinate_dtype': 'float64',
             'status_dtype': 'int32',
             'compression': False,
+            'compression_auto_threshold_mb': 256,
             'compression_level': 0,
             'shuffle': False,
             'time_chunk': 8,
@@ -436,6 +438,101 @@ class TestSimulationManagerNetCDFOutputOptions:
 
         assert manager._output_netcdf_options() == netcdf_config
 
+    def test_estimate_netcdf_payload_bytes_uses_particle_slots_and_dtypes(self):
+        """Payload estimates should track the particle-slot fields written by NetCDFWriter."""
+        estimated = Simulation._estimate_netcdf_payload_bytes(
+            n_particles=100,
+            n_output_slots=10,
+            coordinate_dtype='float32',
+            status_dtype='uint8',
+        )
+
+        assert estimated == 100 * 10 * ((5 * 4) + (6 * 1))
+
+    @pytest.mark.parametrize(
+        ('n_particles', 'n_slots', 'threshold_mb', 'expected'),
+        [
+            (1_000, 2, 1, False),
+            (1_000_000, 100, 1, True),
+            (1_000_000, 1, 1024, False),
+        ],
+    )
+    def test_resolve_output_netcdf_options_auto_compression(
+        self, n_particles, n_slots, threshold_mb, expected
+    ):
+        """Auto compression should resolve from estimated output payload size."""
+        raw_options = {
+            'coordinate_dtype': 'float32',
+            'status_dtype': 'uint8',
+            'compression': 'auto',
+            'compression_auto_threshold_mb': threshold_mb,
+            'compression_level': 1,
+            'shuffle': True,
+            'time_chunk': 1,
+            'particle_chunk': 65_536,
+            'sync_interval': 10,
+            'reopen_interval': None,
+        }
+
+        resolved = Simulation._resolve_output_netcdf_options(raw_options, n_particles, n_slots)
+
+        assert resolved['compression'] is expected
+        assert 'compression_auto_threshold_mb' not in resolved
+
+    @pytest.mark.parametrize('compression', [True, False])
+    def test_resolve_output_netcdf_options_preserves_explicit_compression(self, compression):
+        """Explicit compression booleans should bypass auto-size decisions."""
+        raw_options = {
+            'coordinate_dtype': 'float32',
+            'status_dtype': 'uint8',
+            'compression': compression,
+            'compression_auto_threshold_mb': 0,
+            'compression_level': 1,
+            'shuffle': True,
+            'time_chunk': 1,
+            'particle_chunk': 65_536,
+            'sync_interval': 10,
+            'reopen_interval': None,
+        }
+
+        resolved = Simulation._resolve_output_netcdf_options(raw_options, 0, 1)
+
+        assert resolved['compression'] is compression
+        assert 'compression_auto_threshold_mb' not in resolved
+
+    def test_resolved_output_writer_options_sizes_tracks_and_snapshots_separately(self):
+        """Full-track auto compression should not force snapshot compression."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        netcdf_options, snapshot_options, checkpoint_options = manager._resolved_output_writer_options(
+            total_particles=1_000_000,
+            n_output_slots=100,
+            store_tracks=True,
+        )
+
+        assert netcdf_options['compression'] is True
+        assert snapshot_options['compression'] is False
+        assert checkpoint_options['writer_kwargs']['compression'] is False
+        assert 'compression_auto_threshold_mb' not in netcdf_options
+        assert 'compression_auto_threshold_mb' not in snapshot_options
+        assert 'compression_auto_threshold_mb' not in checkpoint_options['writer_kwargs']
+
+    def test_resolved_output_writer_options_sizes_end_positions_as_one_snapshot(self):
+        """End-position output should resolve auto compression using one saved state."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        netcdf_options, snapshot_options, checkpoint_options = manager._resolved_output_writer_options(
+            total_particles=1_000_000,
+            n_output_slots=0,
+            store_tracks=False,
+        )
+
+        assert netcdf_options['compression'] is False
+        assert snapshot_options['compression'] is False
+        assert checkpoint_options['writer_kwargs']['compression'] is False
+
     def test_output_checkpoint_options_use_defaults(self):
         """Default checkpoint policy should reuse checkpoint-safe writer defaults."""
         manager = object.__new__(Simulation)
@@ -447,7 +544,7 @@ class TestSimulationManagerNetCDFOutputOptions:
             'writer_kwargs': {
                 'coordinate_dtype': 'float32',
                 'status_dtype': 'uint8',
-                'compression': True,
+                'compression': False,
                 'compression_level': 1,
                 'shuffle': True,
                 'particle_chunk': 65_536,
@@ -463,6 +560,7 @@ class TestSimulationManagerNetCDFOutputOptions:
                     'coordinate_dtype': 'float64',
                     'status_dtype': 'int32',
                     'compression': False,
+                    'compression_auto_threshold_mb': 256,
                     'compression_level': 0,
                     'shuffle': False,
                     'time_chunk': 4,

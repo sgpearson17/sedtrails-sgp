@@ -532,7 +532,20 @@
         "netcdf": {
           "type": "object",
           "additionalProperties": false,
-          "default": {},
+          "default": {
+            "coordinate_dtype": "float32",
+            "status_dtype": "uint8",
+            "compression": "auto",
+            "compression_auto_threshold_mb": 1024,
+            "compression_level": 1,
+            "shuffle": true,
+            "time_chunk": 1,
+            "particle_chunk": 65536,
+            "sync_interval": 10,
+            "reopen_interval": null,
+            "checkpoint": true,
+            "checkpoint_interval": 0
+          },
           "properties": {
             "coordinate_dtype": {
               "type": "string",
@@ -553,9 +566,25 @@
               "description": "integer precision for trajectory status flag variables"
             },
             "compression": {
-              "type": "boolean",
-              "default": true,
-              "description": "compress chunked NetCDF trajectory variables"
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "auto"
+                  ]
+                }
+              ],
+              "default": "auto",
+              "description": "compress chunked NetCDF variables: true, false, or auto based on estimated output size"
+            },
+            "compression_auto_threshold_mb": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 1024,
+              "description": "estimated uncompressed output size in MiB at which compression auto mode enables compression"
             },
             "compression_level": {
               "type": "integer",

@@ -17,7 +17,31 @@ def test_outputs_netcdf_schema_applies_defaults_when_block_is_present(tmp_path):
     assert validated['outputs']['netcdf'] == {
         'coordinate_dtype': 'float32',
         'status_dtype': 'uint8',
-        'compression': True,
+        'compression': 'auto',
+        'compression_auto_threshold_mb': 1024,
+        'compression_level': 1,
+        'shuffle': True,
+        'time_chunk': 1,
+        'particle_chunk': 65_536,
+        'sync_interval': 10,
+        'reopen_interval': None,
+        'checkpoint': True,
+        'checkpoint_interval': 0,
+    }
+
+
+def test_outputs_netcdf_schema_applies_defaults_when_block_is_omitted(tmp_path):
+    """Apply the same NetCDF defaults when the block is omitted."""
+    config = _base_config()
+    config['outputs'] = {'store_tracks': True}
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['outputs']['netcdf'] == {
+        'coordinate_dtype': 'float32',
+        'status_dtype': 'uint8',
+        'compression': 'auto',
+        'compression_auto_threshold_mb': 1024,
         'compression_level': 1,
         'shuffle': True,
         'time_chunk': 1,
@@ -37,7 +61,8 @@ def test_outputs_netcdf_schema_accepts_non_default_values(tmp_path):
         'netcdf': {
             'coordinate_dtype': 'float64',
             'status_dtype': 'int32',
-            'compression': False,
+            'compression': 'auto',
+            'compression_auto_threshold_mb': 512,
             'compression_level': 9,
             'shuffle': False,
             'time_chunk': 4,
@@ -54,11 +79,24 @@ def test_outputs_netcdf_schema_accepts_non_default_values(tmp_path):
     assert validated['outputs']['netcdf'] == config['outputs']['netcdf']
 
 
+@pytest.mark.parametrize('compression', [True, False])
+def test_outputs_netcdf_schema_accepts_boolean_compression(tmp_path, compression):
+    """Accept explicit boolean compression policies for NetCDF output."""
+    config = _base_config()
+    config['outputs'] = {'store_tracks': True, 'netcdf': {'compression': compression}}
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['outputs']['netcdf']['compression'] is compression
+
+
 @pytest.mark.parametrize(
     ('key', 'value'),
     [
         ('coordinate_dtype', 'float16'),
         ('status_dtype', 'bool'),
+        ('compression', 'gzip'),
+        ('compression_auto_threshold_mb', -1),
         ('compression_level', 10),
         ('compression_level', -1),
         ('time_chunk', 0),
