@@ -61,6 +61,30 @@ def _simulation_with_plugin(plugin):
     return manager
 
 
+class _Controller:
+    """Minimal controller double backed by a key-value mapping."""
+
+    def __init__(self, values=None):
+        """Store values returned by ``get``."""
+        self.values = values or {}
+
+    def get(self, key, default=None):
+        """Return the configured value or the provided default."""
+        return self.values.get(key, default)
+
+
+class _CheckpointWriter:
+    """Writer double that captures checkpoint write calls."""
+
+    def __init__(self):
+        """Initialize the captured call list."""
+        self.calls = []
+
+    def write_checkpoint(self, *args, **kwargs):
+        """Capture checkpoint arguments."""
+        self.calls.append((args, kwargs))
+
+
 class TestSimulationManagerTimeConfig:
     """Tests for simulation-time construction from configuration."""
 
@@ -372,6 +396,168 @@ class TestSimulationManagerTimeConfig:
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
+
+
+class TestSimulationManagerNetCDFOutputOptions:
+    """Tests for NetCDF output and checkpoint option plumbing."""
+
+    def test_output_netcdf_options_use_large_track_defaults(self):
+        """Default NetCDF writer options should match the simulation policy."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        assert manager._output_netcdf_options() == {
+            'coordinate_dtype': 'float32',
+            'status_dtype': 'uint8',
+            'compression': True,
+            'compression_level': 1,
+            'shuffle': True,
+            'time_chunk': 1,
+            'particle_chunk': 65_536,
+            'sync_interval': 10,
+            'reopen_interval': None,
+        }
+
+    def test_output_netcdf_options_preserve_configured_values(self):
+        """Configured NetCDF values should be forwarded without losing zero/null settings."""
+        netcdf_config = {
+            'coordinate_dtype': 'float64',
+            'status_dtype': 'int32',
+            'compression': False,
+            'compression_level': 0,
+            'shuffle': False,
+            'time_chunk': 8,
+            'particle_chunk': 128,
+            'sync_interval': 0,
+            'reopen_interval': 25,
+        }
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller({'outputs.netcdf': netcdf_config})
+
+        assert manager._output_netcdf_options() == netcdf_config
+
+    def test_output_checkpoint_options_use_defaults(self):
+        """Default checkpoint policy should reuse checkpoint-safe writer defaults."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller()
+
+        assert manager._output_checkpoint_options() == {
+            'enabled': True,
+            'interval': 0,
+            'writer_kwargs': {
+                'coordinate_dtype': 'float32',
+                'status_dtype': 'uint8',
+                'compression': True,
+                'compression_level': 1,
+                'shuffle': True,
+                'particle_chunk': 65_536,
+            },
+        }
+
+    def test_output_checkpoint_options_forward_shared_writer_kwargs(self):
+        """Checkpoint options should include policy fields and checkpoint-safe writer kwargs."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'outputs.netcdf': {
+                    'coordinate_dtype': 'float64',
+                    'status_dtype': 'int32',
+                    'compression': False,
+                    'compression_level': 0,
+                    'shuffle': False,
+                    'time_chunk': 4,
+                    'particle_chunk': 512,
+                    'sync_interval': 0,
+                    'reopen_interval': 10,
+                    'checkpoint': False,
+                    'checkpoint_interval': 3,
+                }
+            }
+        )
+
+        checkpoint_options = manager._output_checkpoint_options()
+
+        assert checkpoint_options == {
+            'enabled': False,
+            'interval': 3,
+            'writer_kwargs': {
+                'coordinate_dtype': 'float64',
+                'status_dtype': 'int32',
+                'compression': False,
+                'compression_level': 0,
+                'shuffle': False,
+                'particle_chunk': 512,
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ('checkpoint_options', 'saved_slots', 'final', 'expected_calls'),
+        [
+            ({'enabled': False, 'interval': 1, 'writer_kwargs': {}}, 1, True, 0),
+            ({'enabled': True, 'interval': 0, 'writer_kwargs': {}}, 3, False, 0),
+            ({'enabled': True, 'interval': 3, 'writer_kwargs': {}}, 2, False, 0),
+            ({'enabled': True, 'interval': 3, 'writer_kwargs': {}}, 6, False, 1),
+            ({'enabled': True, 'interval': 0, 'writer_kwargs': {}}, 7, True, 1),
+        ],
+    )
+    def test_maybe_write_checkpoint_obeys_policy(
+        self, checkpoint_options, saved_slots, final, expected_calls
+    ):
+        """Checkpoint writes should follow enabled, interval, and final-save policy."""
+        writer = _CheckpointWriter()
+        manager = object.__new__(Simulation)
+        manager.data_manager = SimpleNamespace(writer=writer)
+        simulation_time = SimpleNamespace(reference_date='2000-01-01')
+
+        manager._maybe_write_checkpoint(
+            populations=['population'],
+            current_time=123.0,
+            simulation_time=simulation_time,
+            saved_slots=saved_slots,
+            checkpoint_options=checkpoint_options,
+            final=final,
+        )
+
+        assert len(writer.calls) == expected_calls
+        if expected_calls:
+            args, kwargs = writer.calls[0]
+            assert args == ('sedtrails_checkpoint.nc', ['population'], 123.0)
+            assert kwargs['reference_date'] == '2000-01-01'
+            assert kwargs['time_units'] == 'seconds since 2000-01-01'
+
+    def test_maybe_write_checkpoint_forwards_writer_kwargs(self):
+        """Checkpoint writer kwargs should be passed through to the NetCDF writer."""
+        writer = _CheckpointWriter()
+        manager = object.__new__(Simulation)
+        manager.data_manager = SimpleNamespace(writer=writer)
+
+        manager._maybe_write_checkpoint(
+            populations=[],
+            current_time=0,
+            simulation_time=SimpleNamespace(reference_date='1970-01-01'),
+            saved_slots=1,
+            checkpoint_options={
+                'enabled': True,
+                'interval': 1,
+                'writer_kwargs': {
+                    'coordinate_dtype': 'float64',
+                    'status_dtype': 'int32',
+                    'compression': False,
+                    'compression_level': 0,
+                    'shuffle': False,
+                    'particle_chunk': 256,
+                },
+            },
+        )
+
+        _, kwargs = writer.calls[0]
+        assert kwargs['coordinate_dtype'] == 'float64'
+        assert kwargs['status_dtype'] == 'int32'
+        assert kwargs['compression'] is False
+        assert kwargs['compression_level'] == 0
+        assert kwargs['shuffle'] is False
+        assert kwargs['particle_chunk'] == 256
+
 
 class TestSimulationPermanentBurialIntegration:
     """Tests for simulation-level permanent-burial removal wiring."""
