@@ -185,7 +185,32 @@ def plot_trajectories_by_age(
     show_end: bool = True,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions of all particles, colored by particle age."""
+    """Plot all particle positions colored by particle age.
+
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Particle trajectory arrays to plot.
+    units_scale : float, optional
+        Multiplicative factor applied to x/y coordinates before plotting.
+    point_size : float, optional
+        Marker size for particle positions.
+    cmap : str, optional
+        Matplotlib colormap name for age coloring.
+    first_stable_index : int, optional
+        First timestep index included in the plot.
+    show_start : bool, optional
+        If true, draw markers at the first plotted particle positions.
+    show_end : bool, optional
+        If true, draw markers at the final finite particle positions.
+    ax : matplotlib.axes.Axes, optional
+        Existing axes to draw on. If omitted, a new axes is created.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        Axes containing the trajectory scatter plot.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -216,9 +241,7 @@ def plot_trajectories_by_age(
         last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
         end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
         end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-        ax.scatter(
-            end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end'
-        )
+        ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')
@@ -251,8 +274,35 @@ def plot_trajectories_by_baseline(
     cmap: str = 'viridis',
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """Plot all positions colored by per-particle distance from a rotated baseline.
+    """Plot positions colored by distance from a rotated baseline.
 
+    Parameters
+    ----------
+    tr : TrajectoryArrays
+        Particle trajectory arrays to plot.
+    rotation_deg : float, optional
+        Counterclockwise rotation angle of the baseline frame in degrees.
+    first_stable_index : int, optional
+        Timestep index used as the source position for baseline coloring.
+    origin_xy : tuple of float, optional
+        Origin for the rotated coordinate system. If omitted, the minimum x/y
+        coordinate is used.
+    units_scale : float, optional
+        Multiplicative factor applied to x/y coordinates before plotting.
+    point_size : float, optional
+        Marker size for particle positions.
+    cmap : str, optional
+        Matplotlib colormap name for distance coloring.
+    ax : matplotlib.axes.Axes, optional
+        Existing axes to draw on. If omitted, a new axes is created.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        Axes containing the trajectory scatter plot.
+
+    Notes
+    -----
     Mirrors the rotated-axis idea used in the MATLAB pathway plots. The color
     is computed from the *initial* rotated-X coordinate per particle and then
     broadcast to all timesteps. :contentReference[oaicite:2]{index=2}
@@ -292,7 +342,7 @@ def plot_trajectories_by_baseline(
     last_idx = np.where(np.isfinite(tr.x), np.arange(tr.x.shape[1]), -1).max(axis=1)
     end_x = tr.x[np.arange(tr.x.shape[0]), last_idx] * units_scale
     end_y = tr.y[np.arange(tr.y.shape[0]), last_idx] * units_scale
-    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', edgecolor='black', linewidths=0.8, zorder=3, label='end')
+    ax.scatter(end_x, end_y, s=point_size * 1.4, marker='x', linewidths=0.8, zorder=3, label='end')
 
     ax.set_aspect('equal')
     ax.set_xlabel('X')

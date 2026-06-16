@@ -320,6 +320,8 @@ Controls where, when, and how particles are released.
 
 Choose **ONE** strategy. Each strategy has different required parameters.
 
+For random and grid release areas, use `poly` for polygon files or inline polygon vertices, and `bbox` for rectangular areas.
+
 ##### Point Release
 
 Releases particles at specific point locations.
@@ -349,31 +351,33 @@ Releases particles along line segments (transects).
 
 ##### Random Release
 
-Releases particles at random locations within a bounding area.
+Releases particles at random locations within a rectangular or polygonal area.
 
-⚠️ **Mutually Exclusive**: Specify either `pol_file` OR `bbox`.
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
 
-| Parameter          | Type    | Required     | Default | Description                                       |
-| ------------------ | ------- | ------------ | ------- | ------------------------------------------------- |
-| `pol_file`         | string  | Conditional  | -       | Path to `.pol` file defining bounding polygon.    |
-| `bbox`             | string  | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.            |
-| `nlocations`       | integer | **Required** | `1`     | Number of random points to generate.              |
-| `seed`             | number  | Optional     | `42`    | Random number generator seed for reproducibility. |
-| `show_check_plots` | boolean | Optional     | `false` | Display diagnostic plots.                         |
-| `save_check_plots` | boolean | Optional     | `false` | Save diagnostic plots.                            |
+| Parameter          | Type            | Required     | Default | Description                                                                                         |
+| ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |
+| `poly`             | string or array | Conditional  | -       | Polygon boundary as a path to a `.pol`, CSV, or text file, or an inline list of coordinate strings. |
+| `bbox`             | string          | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.                                                              |
+| `nlocations`       | integer         | **Required** | `1`     | Number of random points to generate.                                                                |
+| `seed`             | number          | Optional     | `42`    | Random number generator seed for reproducibility.                                                   |
+| `show_check_plots` | boolean         | Optional     | `false` | Display diagnostic plots.                                                                           |
+| `save_check_plots` | boolean         | Optional     | `false` | Save diagnostic plots.                                                                              |
 
 ##### Grid Release
 
-Releases particles on a regular grid.
+Releases particles on a regular grid within a rectangular or polygonal area.
 
-| Parameter               | Type    | Required     | Default | Description                                             |
-| ----------------------- | ------- | ------------ | ------- | ------------------------------------------------------- |
-| `pol_file`              | string  | Optional     | -       | Path to `.pol` file defining bounding polygon for grid. |
-| `separation.dx`         | number  | **Required** | `100.0` | Grid spacing in x-direction [m].                        |
-| `separation.dy`         | number  | **Required** | `100.0` | Grid spacing in y-direction [m].                        |
-| `separation.jitter_pct` | number  | Optional     | `0.1`   | Random jitter as fraction of grid spacing (0-1).        |
-| `show_check_plots`      | boolean | Optional     | `false` | Display diagnostic plots.                               |
-| `save_check_plots`      | boolean | Optional     | `false` | Save diagnostic plots.                                  |
+⚠️ **Area Required**: Specify `poly` or `bbox`. For polygon files, use `poly: ./release_area.pol`. If both `poly` and `bbox` are supplied, `poly` takes precedence.
+
+| Parameter          | Type            | Required     | Default | Description                                                                                         |
+| ------------------ | --------------- | ------------ | ------- | --------------------------------------------------------------------------------------------------- |
+| `poly`             | string or array | Conditional  | -       | Polygon boundary as a path to a `.pol`, CSV, or text file, or an inline list of coordinate strings. |
+| `bbox`             | string          | Conditional  | -       | Bounding box as `xmin,ymin xmax,ymax`.                                                              |
+| `separation.dx`    | number          | **Required** | `100.0` | Grid spacing in x-direction [m].                                                                    |
+| `separation.dy`    | number          | **Required** | `100.0` | Grid spacing in y-direction [m].                                                                    |
+| `show_check_plots` | boolean         | Optional     | `false` | Display diagnostic plots.                                                                           |
+| `save_check_plots` | boolean         | Optional     | `false` | Save diagnostic plots.                                                                              |
 
 ##### File Points Release
 
@@ -437,7 +441,7 @@ particles:
         quantity: 50
         strategy:
           grid:
-            pol_file: ./domain_boundary.pol
+            poly: ./domain_boundary.pol
             separation:
               dx: 500
               dy: 500
@@ -615,11 +619,10 @@ particles:
           constant: 0.0
         strategy:
           grid:
-            pol_file: ./release_area.pol
+            poly: ./release_area.pol
             separation:
               dx: 200
               dy: 200
-              jitter_pct: 0.1
 
 outputs:
   directory: ./results/june_2020
@@ -654,7 +657,7 @@ visualization:
 
 ### Domain Definition
 
-- Use `pol_file` for complex, irregular domains
+- Use `domain.pol_file` for complex, irregular simulation domains
 - Use `subset_x` and `subset_y` for simple rectangular domains
 - Always visualize your domain boundary before running long simulations
 

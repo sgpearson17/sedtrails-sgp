@@ -327,6 +327,11 @@
               "type": "number",
               "default": 0.1,
               "description": "random walk diffusion coefficient (horizontal diffusivity K_h)"
+            },
+            "bertin_coefficient": {
+              "type": "number",
+              "default": 0.041,
+              "description": "Empirical coefficient c in the Bertin (2008) mixing layer formula: d_mix = c * sqrt(max(tau_max - tau_cr, 0)) [m / (N/m^2)^0.5]. Default 0.041 matches the original publication."
             }
           }
         },

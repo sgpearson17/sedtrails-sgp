@@ -76,6 +76,12 @@
                     "type": "number",
                     "default": 0.2,
                     "description": "beta parameter for van Westen method"
+                },
+                "suspended_velocity_method": {
+                    "type": "string",
+                    "enum": ["soulsby_2011", "macdonald_2006"],
+                    "default": "soulsby_2011",
+                    "description": "Method for computing suspended sediment velocity. 'soulsby_2011': Rouse-profile ratio (van Westen et al. 2025). 'macdonald_2006': log-profile at suspended sediment centroid height (MacDonald 2006, Eqs. 27-29)."
                 }
             },
             "required": [
@@ -279,6 +285,11 @@
                     "type": "string",
                     "description": "release stop time, e.g., '2020-01-01 01:00:00'. If empty, then release stops immediately after the first particles are released."
                 },
+                "remove_permanently_buried": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, particles whose initial burial depth exceeds the maximum possible exposure depth (max_erosion + max_mixing_depth) at their location are removed before the simulation starts (computed automatically by the simulation when enabled)."
+                },
                 "strategy": {
                     "type": "object",
                     "additionalProperties": false,
@@ -368,15 +379,28 @@
                         },
                         "random": {
                             "type": "object",
+                            "description": "Random area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
                             "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
-                                    "type": "string",
-                                    "description": "path to Deltares '.pol' file with bounding polygon for random point generation"
-                                },
                                 "bbox": {
                                     "type": "string",
                                     "description": "bounding box for random point generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for random point generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "nlocations": {
                                     "type": "integer",
@@ -402,43 +426,49 @@
                             "required": [
                                 "nlocations"
                             ],
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "bbox"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                }
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "grid": {
                             "type": "object",
+                            "description": "Regular grid area release. Define the release area with `bbox` or `poly`; legacy `pol_file` is not supported here. Use `poly: path/to/file.pol` for polygon files. If both `bbox` and `poly` are provided, the polygon is used.",
+                            "additionalProperties": false,
                             "properties": {
-                                "pol_file": {
+                                "bbox": {
                                     "type": "string",
-                                    "description": "path to tekal '.pol' file with bounding polygon for cluster analysis"
+                                    "description": "bounding box for grid generation, as 'xmin,ymin xmax,ymax'"
+                                },
+                                "poly": {
+                                    "description": "polygon boundary for grid generation; either a path to a polygon file (.pol, CSV, or plain text) or an inline list of 'x,y' coordinate strings (minimum 3 vertices)",
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "path to polygon file (.pol, CSV, or plain text)"
+                                        },
+                                        {
+                                            "type": "array",
+                                            "items": { "type": "string" },
+                                            "minItems": 3,
+                                            "description": "inline polygon as a list of 'x,y' or 'x y' coordinate strings"
+                                        }
+                                    ]
                                 },
                                 "separation": {
                                     "type": "object",
+                                    "additionalProperties": false,
                                     "properties": {
                                         "dx": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
+                                            "description": "grid spacing in x-direction [m]"
                                         },
                                         "dy": {
                                             "type": "number",
                                             "default": 100.0,
-                                            "description": "square grid cells where dx=dy"
-                                        },
-                                        "jitter_pct": {
-                                            "type": "number",
-                                            "default": 0.1,
-                                            "description": "fraction of grid cell size to jitter by"
+                                            "description": "grid spacing in y-direction [m]"
                                         }
                                     },
                                     "required": [
@@ -457,17 +487,12 @@
                                     "description": "Do you want to save cluster check plots?"
                                 }
                             },
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "pol_file"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "separation"
-                                    ]
-                                }
+                            "required": [
+                                "separation"
+                            ],
+                            "anyOf": [
+                                { "required": ["bbox"] },
+                                { "required": ["poly"] }
                             ]
                         },
                         "file_points": {

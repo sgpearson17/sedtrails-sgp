@@ -25,10 +25,20 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     unique_flow_field_names,
 )
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
+from sedtrails.transport_converter.physics_converter import PhysicsConverter
 
 
 class Simulation:
-    """Class to encapsulate the particle simulation process."""
+    """Encapsulate the particle simulation process.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS YAML configuration file.
+    enable_dashboard : bool, optional
+        Override for the dashboard setting from the configuration. If omitted,
+        the configuration value is used.
+    """
 
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
@@ -79,6 +89,7 @@ class Simulation:
             raise
         # Initialize other components
         self.format_converter = FormatConverter(self._get_format_config())
+        self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
         self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
@@ -525,10 +536,62 @@ class Simulation:
             porosity=self._controller.get('physics.constants.porosity', 0.4),
             grain_diameter=self._controller.get('physics.constants.grain_diameter', 2.5e-4),
             morfac=self._controller.get('physics.constants.morphology_factor', 1.0),
+            bertin_coefficient=self._controller.get('physics.constants.bertin_coefficient', 0.041),
             # trapped_exposed_method=self._controller.get('physics.trapped_exposed_method', 'reduced_velocity'), # other option; 'probabilistic_exposure'
         )
 
         return config
+
+    def _remove_permanently_buried_populations(self, populations, runtime_plans) -> None:
+        """Remove particles whose burial depth can never be exposed.
+
+        Parameters
+        ----------
+        populations : sequence
+            Seeded particle populations.
+        runtime_plans : sequence
+            Runtime plans paired with the seeded populations.
+
+        Raises
+        ------
+        NotImplementedError
+            If removal is enabled but the format plugin cannot provide maximum
+            exposure fields.
+        ValueError
+            If a physics converter does not expose ``critical_shear_stress``.
+        """
+        # Only scan the full dataset when at least one population requests the
+        # optimization.
+        if not any(pop.population_config.remove_permanently_buried for pop in populations):
+            return
+
+        plugin = self.format_converter.format_plugin
+        if not hasattr(plugin, 'get_max_exposure_depth_fields'):
+            raise NotImplementedError(
+                f"Format plugin '{type(plugin).__name__}' does not implement "
+                "'get_max_exposure_depth_fields'. Cannot compute max exposure depth for permanent burial removal."
+            )
+
+        with self._profile_section('get_max_exposure_depth'):
+            max_erosion, max_bss = plugin.get_max_exposure_depth_fields()
+
+        from sedtrails.transport_converter import physics_lib
+
+        for plan in runtime_plans:
+            pop = plan.population
+            if not pop.population_config.remove_permanently_buried:
+                continue
+
+            critical_shear_stress = plan.tracer.converter.grain_properties.get('critical_shear_stress')
+            if critical_shear_stress is None:
+                raise ValueError("Physics converter does not provide 'critical_shear_stress' in grain_properties.")
+
+            max_mixing = physics_lib.compute_mixing_layer_thickness(
+                max_bss,
+                critical_shear_stress,
+                bertin_coefficient=plan.tracer.converter.config.bertin_coefficient,
+            )
+            pop.remove_permanently_buried_particles(max_erosion + max_mixing)
 
     @property
     def config(self):
@@ -659,6 +722,8 @@ class Simulation:
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
 
+        self._remove_permanently_buried_populations(populations, runtime_plans)
+
         # Set initial values
         sedtrails_data = None
 
@@ -668,6 +733,7 @@ class Simulation:
             desc='Computing positions',
             unit='%',
             bar_format='{l_bar}{bar}| {n:.1f}% [{elapsed}<{remaining}, {postfix}]',
+            smoothing=0,
             disable=not sys.stderr.isatty(),
         )
         self._active_progress_bar = pbar
@@ -839,6 +905,9 @@ class Simulation:
 
                         with self._profile_section('update_position'):
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
+
+                    if tracer_plan.method_name == 'vanwesten':
+                        population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:

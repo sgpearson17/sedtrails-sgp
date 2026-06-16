@@ -23,4 +23,3 @@ The NetCDF forcing files referenced by these examples are not stored in this dir
 ## Data Files
 
 - `sources_xy_inlet.txt`: Example x/y release points for `sedtrails-example-multisource.yaml`.
-- `log_example.txt`: Example simulation log output.
