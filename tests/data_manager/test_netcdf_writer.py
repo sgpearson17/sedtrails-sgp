@@ -203,3 +203,24 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
         np.testing.assert_array_equal(ds['population_id'].values, np.zeros(self.N_PARTICLES, dtype=int))
         ds.close()
+
+    def test_write_end_positions_stores_compact_result_state(self, writer, population):
+        """End-position results should use one particle dimension and no trajectory cube."""
+        path = writer.write_end_positions(
+            'sedtrails_results.nc',
+            [population],
+            current_time=456.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        assert ds.attrs['sedtrails_file_kind'] == 'end_positions'
+        assert ds.attrs['sedtrails_output_schema'] == 'end_positions_v1'
+        assert ds.attrs['trajectory_layout'] == 'end_positions'
+        assert ds.sizes['n_particles'] == self.N_PARTICLES
+        assert 'n_timesteps' not in ds.sizes
+        assert ds['x'].dims == ('n_particles',)
+        assert float(ds['time'].values) == pytest.approx(456.0)
+        np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
+        ds.close()

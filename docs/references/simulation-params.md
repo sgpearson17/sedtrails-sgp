@@ -503,7 +503,7 @@ Controls what results are saved and where.
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
 | `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
 | `store_tracks`        | boolean | Conditional | `true`     | Store complete particle trajectories over time. Creates larger files but enables full pathway analysis. |
-| `store_end_positions` | boolean | Conditional | `false`    | Store only final particle positions. Creates smaller files but limits analysis options.                 |
+| `store_end_positions` | boolean | Conditional | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
 
 **Example:**
 

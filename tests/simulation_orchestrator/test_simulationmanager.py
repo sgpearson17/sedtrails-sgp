@@ -558,6 +558,25 @@ class TestSimulationManagerNetCDFOutputOptions:
         assert kwargs['shuffle'] is False
         assert kwargs['particle_chunk'] == 256
 
+    @pytest.mark.parametrize(
+        ('controller_values', 'expected'),
+        [
+            ({}, True),
+            ({'outputs.store_tracks': True}, True),
+            ({'outputs.store_tracks': False}, False),
+            ({'outputs.store_end_positions': True}, False),
+            ({'outputs.store_tracks': True, 'outputs.store_end_positions': True}, False),
+        ],
+    )
+    def test_output_store_tracks_selects_trajectory_or_end_position_mode(
+        self, controller_values, expected
+    ):
+        """End-position output should disable full trajectory streaming."""
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(controller_values)
+
+        assert manager._output_store_tracks() is expected
+
 
 class TestSimulationPermanentBurialIntegration:
     """Tests for simulation-level permanent-burial removal wiring."""

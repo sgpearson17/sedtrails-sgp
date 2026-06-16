@@ -407,12 +407,16 @@ class NetCDFWriter:
 
         return nc_handle
 
-    def write_checkpoint(
+    def _write_particle_snapshot(
         self,
         filename: str,
         populations: list,
         current_time: float,
         *,
+        title: str,
+        file_kind: str,
+        output_schema: str,
+        layout: str,
         reference_date: str | None = None,
         time_units: str | None = None,
         name_strlen: int = 24,
@@ -423,41 +427,7 @@ class NetCDFWriter:
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
     ) -> Path:
-        """
-        Write a compact restart checkpoint containing only the current state.
-
-        Parameters
-        ----------
-        filename : str
-            Name of the file to write.
-        populations : list
-            Particle populations to process.
-        current_time : float
-            Current simulation time in seconds.
-        reference_date : str | None
-            Reference date for converting model times.
-        time_units : str | None
-            NetCDF time units string.
-        name_strlen : int
-            Maximum stored population-name length.
-        coordinate_dtype : str
-            NumPy dtype used for coordinate variables.
-        status_dtype : str
-            NumPy dtype used for status variables.
-        compression : bool
-            Whether NetCDF variables are compressed.
-        compression_level : int
-            Compression level for NetCDF variables.
-        shuffle : bool
-            Whether the NetCDF shuffle filter is enabled.
-        particle_chunk : int
-            Particle chunk size for NetCDF variables.
-
-        Returns
-        -------
-        Path
-            Computed value returned by the function.
-        """
+        """Write a compact one-snapshot particle-state NetCDF file."""
         self._validate_filename(filename)
         output_path = self.output_dir / filename
         tmp_path = output_path.with_name(f'.{output_path.name}.tmp')
@@ -479,12 +449,12 @@ class NetCDFWriter:
             ds.createDimension('n_flowfields', 1)
             ds.createDimension('name_strlen', name_strlen)
 
-            ds.title = 'SedTRAILS Particle Simulation Checkpoint'
+            ds.title = title
             ds.institution = 'SedTRAILS Particle Tracer System'
             ds.created_on = datetime.now().isoformat()
-            ds.sedtrails_file_kind = 'checkpoint'
-            ds.sedtrails_output_schema = 'checkpoint_v1'
-            ds.trajectory_layout = 'checkpoint'
+            ds.sedtrails_file_kind = file_kind
+            ds.sedtrails_output_schema = output_schema
+            ds.trajectory_layout = layout
             if reference_date is not None:
                 ds.reference_date = str(reference_date)
             if time_units is not None:
@@ -542,6 +512,146 @@ class NetCDFWriter:
 
         tmp_path.replace(output_path)
         return output_path
+
+    def write_checkpoint(
+        self,
+        filename: str,
+        populations: list,
+        current_time: float,
+        *,
+        reference_date: str | None = None,
+        time_units: str | None = None,
+        name_strlen: int = 24,
+        coordinate_dtype: str = 'float32',
+        status_dtype: str = 'uint8',
+        compression: bool = True,
+        compression_level: int = 1,
+        shuffle: bool = True,
+        particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+    ) -> Path:
+        """
+        Write a compact restart checkpoint containing only the current state.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file to write.
+        populations : list
+            Particle populations to process.
+        current_time : float
+            Current simulation time in seconds.
+        reference_date : str | None
+            Reference date for converting model times.
+        time_units : str | None
+            NetCDF time units string.
+        name_strlen : int
+            Maximum stored population-name length.
+        coordinate_dtype : str
+            NumPy dtype used for coordinate variables.
+        status_dtype : str
+            NumPy dtype used for status variables.
+        compression : bool
+            Whether NetCDF variables are compressed.
+        compression_level : int
+            Compression level for NetCDF variables.
+        shuffle : bool
+            Whether the NetCDF shuffle filter is enabled.
+        particle_chunk : int
+            Particle chunk size for NetCDF variables.
+
+        Returns
+        -------
+        Path
+            Path to the checkpoint file.
+        """
+        return self._write_particle_snapshot(
+            filename,
+            populations,
+            current_time,
+            title='SedTRAILS Particle Simulation Checkpoint',
+            file_kind='checkpoint',
+            output_schema='checkpoint_v1',
+            layout='checkpoint',
+            reference_date=reference_date,
+            time_units=time_units,
+            name_strlen=name_strlen,
+            coordinate_dtype=coordinate_dtype,
+            status_dtype=status_dtype,
+            compression=compression,
+            compression_level=compression_level,
+            shuffle=shuffle,
+            particle_chunk=particle_chunk,
+        )
+
+    def write_end_positions(
+        self,
+        filename: str,
+        populations: list,
+        current_time: float,
+        *,
+        reference_date: str | None = None,
+        time_units: str | None = None,
+        name_strlen: int = 24,
+        coordinate_dtype: str = 'float32',
+        status_dtype: str = 'uint8',
+        compression: bool = True,
+        compression_level: int = 1,
+        shuffle: bool = True,
+        particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+    ) -> Path:
+        """
+        Write compact end-position results containing one state per particle.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the result file to write.
+        populations : list
+            Particle populations to process.
+        current_time : float
+            Final simulation time in seconds.
+        reference_date : str | None
+            Reference date for converting model times.
+        time_units : str | None
+            NetCDF time units string.
+        name_strlen : int
+            Maximum stored population-name length.
+        coordinate_dtype : str
+            NumPy dtype used for coordinate variables.
+        status_dtype : str
+            NumPy dtype used for status variables.
+        compression : bool
+            Whether NetCDF variables are compressed.
+        compression_level : int
+            Compression level for NetCDF variables.
+        shuffle : bool
+            Whether the NetCDF shuffle filter is enabled.
+        particle_chunk : int
+            Particle chunk size for NetCDF variables.
+
+        Returns
+        -------
+        Path
+            Path to the end-position result file.
+        """
+        return self._write_particle_snapshot(
+            filename,
+            populations,
+            current_time,
+            title='SedTRAILS Particle Simulation End Positions',
+            file_kind='end_positions',
+            output_schema='end_positions_v1',
+            layout='end_positions',
+            reference_date=reference_date,
+            time_units=time_units,
+            name_strlen=name_strlen,
+            coordinate_dtype=coordinate_dtype,
+            status_dtype=status_dtype,
+            compression=compression,
+            compression_level=compression_level,
+            shuffle=shuffle,
+            particle_chunk=particle_chunk,
+        )
 
     def close_output(self, nc_handle) -> Path:
         """

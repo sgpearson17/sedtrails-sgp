@@ -401,6 +401,12 @@ class Simulation:
             },
         }
 
+    def _output_store_tracks(self) -> bool:
+        """Return whether output should store the full trajectory cube."""
+        if self._controller.get('outputs.store_end_positions', False):
+            return False
+        return bool(self._controller.get('outputs.store_tracks', True))
+
     def _maybe_write_checkpoint(
         self,
         populations,
@@ -814,54 +820,70 @@ class Simulation:
         )
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
-        save_interval_seconds = self._output_save_interval_seconds()
-        n_output_slots = self._estimate_output_timesteps(simulation_time, save_interval_seconds)
+        store_tracks = self._output_store_tracks()
+        save_interval_seconds = self._output_save_interval_seconds() if store_tracks else None
+        n_output_slots = (
+            self._estimate_output_timesteps(simulation_time, save_interval_seconds)
+            if store_tracks
+            else 0
+        )
         netcdf_options = self._output_netcdf_options()
         checkpoint_options = self._output_checkpoint_options()
-        self.logger.info(
-            'Streaming output: %d slots at %gs interval -> %s',
-            n_output_slots,
-            save_interval_seconds,
-            self.data_manager.writer.output_dir / 'sedtrails_results.nc',
-        )
 
-        nc_handle = self.data_manager.writer.open_output(
-            'sedtrails_results.nc',
-            n_output_slots,
-            total_particles,
-            len(populations),
-            len(flow_field_names) if flow_field_names else 1,
-            populations,
-            flow_field_names,
-            **netcdf_options,
-        )
-        nc_handle.reference_date = str(simulation_time.reference_date)
-        nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
-        nc_handle.time_start = self._controller.get('time.start')
-        nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
-        nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
-        nc_handle['time'].units = nc_handle.time_units
-        nc_handle['time'].reference_date = nc_handle.reference_date
-
-        # Store the seeded initial state before the first physics update.
         self._initialize_population_output_status(populations, timer.current)
+        nc_handle = None
         slot_idx = 0
-        with self._profile_section('record_output'):
-            nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-        last_saved_time = timer.current
-        slot_idx += 1
-        self._maybe_write_checkpoint(
-            populations,
-            timer.current,
-            simulation_time,
-            slot_idx,
-            checkpoint_options,
-        )
-        next_output_time = self._next_scheduled_output_time(
-            simulation_time,
-            save_interval_seconds,
-            slot_idx,
-        )
+        last_saved_time = None
+        next_output_time = simulation_time.end
+
+        if store_tracks:
+            self.logger.info(
+                'Streaming output: %d slots at %gs interval -> %s',
+                n_output_slots,
+                save_interval_seconds,
+                self.data_manager.writer.output_dir / 'sedtrails_results.nc',
+            )
+
+            nc_handle = self.data_manager.writer.open_output(
+                'sedtrails_results.nc',
+                n_output_slots,
+                total_particles,
+                len(populations),
+                len(flow_field_names) if flow_field_names else 1,
+                populations,
+                flow_field_names,
+                **netcdf_options,
+            )
+            nc_handle.reference_date = str(simulation_time.reference_date)
+            nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
+            nc_handle.time_start = self._controller.get('time.start')
+            nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
+            nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
+            nc_handle['time'].units = nc_handle.time_units
+            nc_handle['time'].reference_date = nc_handle.reference_date
+
+            # Store the seeded initial state before the first physics update.
+            with self._profile_section('record_output'):
+                nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
+            last_saved_time = timer.current
+            slot_idx += 1
+            self._maybe_write_checkpoint(
+                populations,
+                timer.current,
+                simulation_time,
+                slot_idx,
+                checkpoint_options,
+            )
+            next_output_time = self._next_scheduled_output_time(
+                simulation_time,
+                save_interval_seconds,
+                slot_idx,
+            )
+        else:
+            self.logger.info(
+                'End-position output enabled: final state will be written to %s',
+                self.data_manager.writer.output_dir / 'sedtrails_results.nc',
+            )
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
@@ -928,7 +950,7 @@ class Simulation:
                         sedtrails_data.metadata.timestep,
                     )
                     timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)
-                    if slot_idx < n_output_slots:
+                    if store_tracks and slot_idx < n_output_slots:
                         timer.current_timestep = self._limit_timestep_to_output_schedule(
                             timer.current,
                             timer.current_timestep,
@@ -1012,7 +1034,9 @@ class Simulation:
                 timer.advance()
 
                 if (
-                    slot_idx < n_output_slots
+                    store_tracks
+                    and nc_handle is not None
+                    and slot_idx < n_output_slots
                     and self._is_output_sample_due(timer.current, next_output_time, simulation_time.end)
                 ):
                     with self._profile_section('record_output'):
@@ -1054,12 +1078,24 @@ class Simulation:
             self._active_progress_bar = None
             print('\nSimulation completed successfully!')
 
-            # Save final particle state if simulation ended between two save boundaries
-            if last_saved_time is None or timer.current > last_saved_time:
-                if slot_idx < n_output_slots:
-                    nc_handle = self.data_manager.writer.record_output(
-                        nc_handle, populations, slot_idx, timer.current)
-                    slot_idx += 1
+            if store_tracks:
+                # Save final particle state if simulation ended between two save boundaries
+                if last_saved_time is None or timer.current > last_saved_time:
+                    if slot_idx < n_output_slots:
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle, populations, slot_idx, timer.current)
+                        slot_idx += 1
+                output_file = self.data_manager.writer.close_output(nc_handle)
+                nc_handle = None  # prevent double-close in finally
+            else:
+                output_file = self.data_manager.writer.write_end_positions(
+                    'sedtrails_results.nc',
+                    populations,
+                    float(timer.current),
+                    reference_date=str(simulation_time.reference_date),
+                    time_units=f'seconds since {simulation_time.reference_date}',
+                    **checkpoint_options.get('writer_kwargs', {}),
+                )
             self._maybe_write_checkpoint(
                 populations,
                 timer.current,
@@ -1069,8 +1105,6 @@ class Simulation:
                 final=True,
             )
 
-            output_file = self.data_manager.writer.close_output(nc_handle)
-            nc_handle = None  # prevent double-close in finally
             print(f'Simulation results saved to: {output_file}')
             self._log_profile_summary(status='completed')
 
