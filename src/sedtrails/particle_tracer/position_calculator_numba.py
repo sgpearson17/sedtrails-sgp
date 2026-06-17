@@ -239,6 +239,50 @@ class GridGeometry:
 
         return simplices, weights
 
+    def barycentric_weights_with_simplex(self, x_points, y_points, simplex_ids=None):
+        """
+        Return simplex indices and barycentric weights using cached simplex ids.
+
+        Parameters
+        ----------
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+        simplex_ids : object
+            Cached simplex ids for the point coordinates.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Simplex indices and barycentric weights for each point.
+        """
+        if simplex_ids is None:
+            return self.barycentric_weights(x_points, y_points)
+
+        points = _points_array(x_points, y_points)
+        simplices = self.locate_points(x_points, y_points, simplex_ids)
+        weights = np.zeros((points.shape[0], 3), dtype=np.float64)
+
+        valid_indices = np.flatnonzero(simplices >= 0)
+        if valid_indices.size:
+            valid_simplices = simplices[valid_indices]
+            dx = points[valid_indices, 0] - self.p0_x[valid_simplices]
+            dy = points[valid_indices, 1] - self.p0_y[valid_simplices]
+            w1 = self.inv00[valid_simplices] * dx + self.inv01[valid_simplices] * dy
+            w2 = self.inv10[valid_simplices] * dx + self.inv11[valid_simplices] * dy
+            nondegenerate = (
+                (self.inv00[valid_simplices] != 0.0)
+                | (self.inv01[valid_simplices] != 0.0)
+                | (self.inv10[valid_simplices] != 0.0)
+                | (self.inv11[valid_simplices] != 0.0)
+            )
+            local_weights = np.column_stack((1.0 - w1 - w2, w1, w2))
+            weights[valid_indices[nondegenerate]] = local_weights[nondegenerate]
+            simplices[valid_indices[~nondegenerate]] = -1
+
+        return simplices, weights
+
     def interpolate_field(self, field, x_points, y_points):
         """
         Barycentrically interpolate a nodal field at point coordinates.
@@ -277,6 +321,7 @@ class GridGeometry:
         tuple[np.ndarray, ...]
             Interpolated field values for each supplied field.
         """
+        fields = tuple(fields)
         simplices, weights = self.barycentric_weights(x_points, y_points)
         outputs = [np.full(len(simplices), np.nan, dtype=np.float64) for _ in fields]
 
@@ -289,6 +334,65 @@ class GridGeometry:
                 output[valid] = np.einsum('ij,ij->i', values[vertices], valid_weights)
 
         return tuple(outputs)
+
+    def interpolate_fields_with_simplex(self, fields, x_points, y_points, simplex_ids=None):
+        """
+        Interpolate nodal fields and return refreshed simplex ids.
+
+        Parameters
+        ----------
+        fields : object
+            Scalar field arrays defined on grid nodes.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+        simplex_ids : object
+            Cached simplex ids for the point coordinates.
+
+        Returns
+        -------
+        tuple[tuple[np.ndarray, ...], np.ndarray]
+            Interpolated field values and the containing simplex index for each point.
+        """
+        fields = tuple(fields)
+        if not fields:
+            simplices = self.locate_points(x_points, y_points, simplex_ids)
+            return (), simplices
+
+        x_values = np.asarray(x_points, dtype=np.float64)
+        y_values = np.asarray(y_points, dtype=np.float64)
+        if y_values.shape != x_values.shape:
+            raise ValueError(
+                f'x_points and y_points must have the same shape, got {x_values.shape} and {y_values.shape}'
+            )
+
+        field_values = []
+        n_nodes = self.grid_x.size
+        for field in fields:
+            values = np.asarray(field, dtype=np.float64).ravel()
+            if values.size != n_nodes:
+                raise ValueError(f'field arrays must have {n_nodes} values, got {values.size}')
+            field_values.append(values)
+
+        simplices = self.locate_points(x_values, y_values, simplex_ids)
+        stacked_fields = np.vstack(field_values)
+        output_values, refreshed_simplices = _interpolate_fields_at_simplices_numba(
+            stacked_fields,
+            simplices,
+            x_values.ravel(),
+            y_values.ravel(),
+            self.triangles,
+            self.p0_x,
+            self.p0_y,
+            self.inv00,
+            self.inv01,
+            self.inv10,
+            self.inv11,
+            TRIANGLE_TOLERANCE,
+        )
+        outputs = tuple(output_values[i].copy() for i in range(output_values.shape[0]))
+        return outputs, refreshed_simplices
 
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
         """
@@ -720,6 +824,68 @@ def _locate_points_walk_numba(
     return out
 
 
+@njit(cache=True, parallel=True)
+def _interpolate_fields_at_simplices_numba(
+    fields,
+    simplices,
+    x_points,
+    y_points,
+    triangles,
+    p0_x,
+    p0_y,
+    inv00,
+    inv01,
+    inv10,
+    inv11,
+    tolerance,
+):
+    n_fields = fields.shape[0]
+    n_points = simplices.shape[0]
+    outputs = np.empty((n_fields, n_points), dtype=np.float64)
+    refreshed_simplices = simplices.copy()
+
+    for i in prange(n_points):
+        simplex = simplices[i]
+        if simplex < 0:
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        if (
+            inv00[simplex] == 0.0
+            and inv01[simplex] == 0.0
+            and inv10[simplex] == 0.0
+            and inv11[simplex] == 0.0
+        ):
+            refreshed_simplices[i] = -1
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        dx = x_points[i] - p0_x[simplex]
+        dy = y_points[i] - p0_y[simplex]
+        w1 = inv00[simplex] * dx + inv01[simplex] * dy
+        w2 = inv10[simplex] * dx + inv11[simplex] * dy
+        w0 = 1.0 - w1 - w2
+        if w0 < -tolerance or w1 < -tolerance or w2 < -tolerance:
+            refreshed_simplices[i] = -1
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        v0 = triangles[simplex, 0]
+        v1 = triangles[simplex, 1]
+        v2 = triangles[simplex, 2]
+        for field_index in range(n_fields):
+            outputs[field_index, i] = (
+                fields[field_index, v0] * w0
+                + fields[field_index, v1] * w1
+                + fields[field_index, v2] * w2
+            )
+
+    return outputs, refreshed_simplices
+
+
 @njit(cache=True)
 def _interpolate_temporal_velocity(
     x,
@@ -977,6 +1143,7 @@ def create_numba_particle_calculator(grid_x, grid_y, triangles=None, grid_geomet
         'find_triangle': geometry.find_triangle,
         'interpolate_field': geometry.interpolate_field,
         'interpolate_fields': geometry.interpolate_fields,
+        'interpolate_fields_with_simplex': geometry.interpolate_fields_with_simplex,
         'update_particles': geometry.update_particles,
         'update_particles_temporal': geometry.update_particles_temporal,
         'update_particles_with_simplex': geometry.update_particles_with_simplex,

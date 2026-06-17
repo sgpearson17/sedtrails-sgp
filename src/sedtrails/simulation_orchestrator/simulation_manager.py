@@ -1091,9 +1091,11 @@ class Simulation:
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
-                            population.update_burial_depth()
+                            with self._profile_section('update_burial_depth'):
+                                population.update_burial_depth()
 
-                        population.update_status()
+                        with self._profile_section('update_status'):
+                            population.update_status()
 
                         with self._profile_section('get_flow_field.update_position'):
                             flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
@@ -1104,7 +1106,8 @@ class Simulation:
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
                     if tracer_plan.method_name == 'vanwesten':
-                        population.update_bed_level_change_after_movement(bed_level)
+                        with self._profile_section('update_bed_level_after_movement'):
+                            population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:

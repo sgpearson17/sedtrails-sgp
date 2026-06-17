@@ -905,12 +905,18 @@ class ParticlePopulation:
         Bound method for interpolating one nodal field to particle positions.
     _field_interpolator_multi : Any
         Bound method for interpolating multiple nodal fields with one point-location pass.
+    _field_interpolator_multi_with_simplex : Any
+        Bound method for interpolating multiple nodal fields while reusing cached simplex ids.
     _position_calculator_with_simplex : Any
         Bound method for advancing particles while reusing cached simplex ids.
     _position_calculator_temporal_with_simplex : Any
         Bound method for temporal particle updates while reusing cached simplex ids.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
+    _particle_simplices_x : ndarray
+        Particle x coordinates corresponding to the cached simplex ids.
+    _particle_simplices_y : ndarray
+        Particle y coordinates corresponding to the cached simplex ids.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -928,9 +934,12 @@ class ParticlePopulation:
     repr_volume: float = field(init=False, default=np.nan)  # representative volume [m³/particle]
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
+    _field_interpolator_multi_with_simplex: Any = field(init=False)
     _position_calculator_with_simplex: Any = field(init=False)
     _position_calculator_temporal_with_simplex: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
+    _particle_simplices_x: ndarray = field(init=False)
+    _particle_simplices_y: ndarray = field(init=False)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -942,6 +951,7 @@ class ParticlePopulation:
         # Reuse methods bound to the shared grid geometry.
         self._field_interpolator = self.grid_geometry.interpolate_field
         self._field_interpolator_multi = self.grid_geometry.interpolate_fields
+        self._field_interpolator_multi_with_simplex = self.grid_geometry.interpolate_fields_with_simplex
         self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
         self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
 
@@ -957,6 +967,7 @@ class ParticlePopulation:
             'burial_depth': np.array([p.burial_depth for p in _particles]),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+        self._mark_particle_simplices_current()
         self._validate_seed_locations_inside_domain()
 
         rv = _compute_repr_volume(self.population_config, len(self.particles['x']))
@@ -1026,6 +1037,7 @@ class ParticlePopulation:
         for key in list(self.particles.keys()):
             self.particles[key] = self.particles[key][keep]
         self._particle_simplices = self._particle_simplices[keep]
+        self._mark_particle_simplices_current()
 
         pct = 100.0 * n_removed / n_total
         if n_removed == n_total:
@@ -1064,6 +1076,38 @@ class ParticlePopulation:
             'Use seed coordinates in the same coordinate system as the input model grid.'
         )
 
+    def _mark_particle_simplices_current(self) -> None:
+        """Record the particle coordinates represented by the simplex cache."""
+        self._particle_simplices_x = np.asarray(self.particles['x']).copy()
+        self._particle_simplices_y = np.asarray(self.particles['y']).copy()
+
+    def _particle_simplices_match_positions(self) -> bool:
+        """Return whether cached simplex ids represent the current particle positions."""
+        n_particles = len(self.particles['x'])
+        if self._particle_simplices.shape[0] != n_particles:
+            return False
+        if (
+            self._particle_simplices_x.shape[0] != n_particles
+            or self._particle_simplices_y.shape[0] != n_particles
+        ):
+            return False
+        return (
+            np.array_equal(self._particle_simplices_x, self.particles['x'], equal_nan=True)
+            and np.array_equal(self._particle_simplices_y, self.particles['y'], equal_nan=True)
+        )
+
+    def _refresh_particle_simplices(self) -> None:
+        """Refresh cached simplex ids from the current particle coordinates."""
+        simplex_ids = self._particle_simplices
+        if simplex_ids.shape[0] != len(self.particles['x']):
+            simplex_ids = None
+        self._particle_simplices = self.grid_geometry.locate_points(
+            self.particles['x'],
+            self.particles['y'],
+            simplex_ids,
+        )
+        self._mark_particle_simplices_current()
+
     def update_information(
         self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
@@ -1088,13 +1132,56 @@ class ParticlePopulation:
         if 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
-        self._update_particle_field('mixing_depth', mixing_depth)
-        self._update_particle_field('transport_probability', transport_probability)
-        self._update_particle_field('bed_level', bed_level)
+        batched_fields = []
+        batched_names = []
+        for name, field_value in (
+            ('mixing_depth', mixing_depth),
+            ('transport_probability', transport_probability),
+            ('bed_level', bed_level),
+        ):
+            if self._can_batch_particle_field(field_value):
+                batched_names.append(name)
+                batched_fields.append(np.asarray(field_value))
+            else:
+                self._update_particle_field(name, field_value)
+
+        if batched_fields:
+            particle_values = self._interpolate_particle_fields(
+                tuple(batched_fields),
+            )
+            for name, values in zip(batched_names, particle_values, strict=True):
+                if np.isnan(values).all():
+                    continue
+                self.particles[name] = values
 
         if 'bed_level_previous' not in self.particles: # (only for the first update, after seeding)
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
+
+    @staticmethod
+    def _can_batch_particle_field(field_value) -> bool:
+        """Return whether a field can join one multi-field interpolation pass."""
+        if field_value is None or np.isscalar(field_value) or _is_temporal_field(field_value):
+            return False
+
+        field_array = np.asarray(field_value)
+        return field_array.size > 0
+
+    def _interpolate_particle_fields(self, fields):
+        """Interpolate fields at particle positions and refresh cached simplex ids."""
+        simplex_ids = self._particle_simplices
+        if simplex_ids.shape[0] != len(self.particles['x']):
+            simplex_ids = None
+        particle_values, simplices = self._field_interpolator_multi_with_simplex(
+            tuple(fields),
+            self.particles['x'],
+            self.particles['y'],
+            simplex_ids=simplex_ids,
+        )
+        if simplices.shape[0] == len(self.particles['x']):
+            self._particle_simplices = simplices
+            self._mark_particle_simplices_current()
+        return particle_values
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -1108,16 +1195,14 @@ class ParticlePopulation:
 
             weight = field_value['weight']
             if weight <= 0.0 or lower_values is upper_values:
-                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
+                lower_particle_values = self._interpolate_particle_fields((lower_values,))[0]
                 if np.isnan(lower_particle_values).all():
                     return
                 self.particles[name] = lower_particle_values
                 return
 
-            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
+            lower_particle_values, upper_particle_values = self._interpolate_particle_fields(
                 (lower_values, upper_values),
-                self.particles['x'],
-                self.particles['y'],
             )
             if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
                 return
@@ -1132,7 +1217,7 @@ class ParticlePopulation:
         if field_array.size == 0:
             return
 
-        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
+        particle_values = self._interpolate_particle_fields((field_array,))[0]
         if np.isnan(particle_values).all():
             return
 
@@ -1203,10 +1288,9 @@ class ParticlePopulation:
         # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
         self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
 
-        # Compute whether particles are inside (or outside) the domain envelope
-        self.particles['status_domain'] = self._outer_envelope.contains_points(
-            np.column_stack((self.particles['x'], self.particles['y']))
-        )
+        if not self._particle_simplices_match_positions():
+            self._refresh_particle_simplices()
+        self.particles['status_domain'] = self._particle_simplices >= 0
 
         # New conditional logic based on transport_probability_method
         if self.population_config.population_config['transport_probability'] == 'no_probability':
@@ -1285,6 +1369,7 @@ class ParticlePopulation:
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
         self._particle_simplices[particle_indices] = new_simplices
+        self._mark_particle_simplices_current()
 
 
 class ParticleSeeder:
