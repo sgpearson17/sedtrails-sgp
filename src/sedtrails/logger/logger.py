@@ -267,6 +267,8 @@ def log_exception(logger: logging.Logger, e: Exception, context: str = None) -> 
 
     Parameters
     ----------
+    logger : logging.Logger
+        Logger used to write the exception details.
     e : Exception
         The exception that occurred
     context : str, optional
@@ -280,7 +282,7 @@ def log_exception(logger: logging.Logger, e: Exception, context: str = None) -> 
 
     logger.error(f'Exception type: {type(e).__name__}')
     logger.error(f'Exception message: {str(e)}')
-    logger.error('Stack trace:', exc_info=True)
+    logger.error('Stack trace:', exc_info=(type(e), e, e.__traceback__))
     logger.error('=' * 50)
 
 
