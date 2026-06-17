@@ -107,7 +107,15 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
     if x_var.ndim == 1 and y_var.ndim == 1:
         x_data = np.asarray(x_var.values, dtype=float)[:, np.newaxis]
         y_data = np.asarray(y_var.values, dtype=float)[:, np.newaxis]
-    elif x_var.ndim == 2 and 'time' in ds and ds['time'].ndim == 1 and x_var.dims[0] == ds['time'].dims[0]:
+    elif (
+        x_var.ndim == 2
+        and y_var.ndim == 2
+        and 'time' in ds
+        and ds['time'].ndim == 1
+        and x_var.dims[0] == ds['time'].dims[0]
+        and y_var.dims[0] == ds['time'].dims[0]
+        and x_var.shape == y_var.shape
+    ):
         x_data = np.asarray(x_var.values, dtype=float).T
         y_data = np.asarray(y_var.values, dtype=float).T
     else:
