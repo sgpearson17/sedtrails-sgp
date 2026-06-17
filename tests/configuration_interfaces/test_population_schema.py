@@ -35,7 +35,13 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     validated = _validate_config(tmp_path, config)
 
     tracer_methods = validated['particles']['populations'][0]['tracer_methods']
-    assert tracer_methods == {'vanwesten': {'flow_field_name': ['bed_load_velocity'], 'beta': 0.2}}
+    assert tracer_methods == {
+        'vanwesten': {
+            'flow_field_name': ['bed_load_velocity'],
+            'beta': 0.2,
+            'suspended_velocity_method': 'soulsby_2011',
+        }
+    }
 
 
 def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
@@ -113,7 +119,8 @@ def test_population_schema_accepts_poly_file_path_for_area_strategies(tmp_path, 
     validated = _validate_config(tmp_path, config)
 
     strategy = validated['particles']['populations'][0]['seeding']['strategy']
-    assert strategy == {strategy_name: settings}
+    expected_settings = _with_strategy_defaults(strategy_name, settings)
+    assert strategy == {strategy_name: expected_settings}
 
 
 @pytest.mark.parametrize(
@@ -141,7 +148,8 @@ def test_population_schema_accepts_inline_poly_for_area_strategies(tmp_path, str
     validated = _validate_config(tmp_path, config)
 
     strategy = validated['particles']['populations'][0]['seeding']['strategy']
-    assert strategy == {strategy_name: settings}
+    expected_settings = _with_strategy_defaults(strategy_name, settings)
+    assert strategy == {strategy_name: expected_settings}
 
 
 @pytest.mark.parametrize(
@@ -194,6 +202,17 @@ def _validate_config(tmp_path, config):
     config_file = tmp_path / 'sedtrails.yml'
     config_file.write_text(yaml.dump(config))
     return YAMLConfigValidator().validate_yaml(str(config_file))
+
+
+def _with_strategy_defaults(strategy_name, settings):
+    """Return expected defaults for a selected seeding strategy."""
+    defaults = {
+        'show_check_plots': False,
+        'save_check_plots': False,
+    }
+    if strategy_name == 'random':
+        defaults['seed'] = 42
+    return {**settings, **defaults}
 
 
 def _base_config():

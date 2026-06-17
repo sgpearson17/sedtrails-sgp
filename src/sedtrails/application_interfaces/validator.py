@@ -160,20 +160,25 @@ class YAMLConfigValidator:
                 resolved_prop_schema = self._resolve_schema_reference(prop_schema, schema_root)
                 resolved_prop_root = self._schema_root_for_reference(prop_schema, resolved_prop_schema, schema_root)
                 if key not in config_data:
+                    can_create_missing_container = self._can_create_missing_container(schema_content)
                     # Create missing property with default value
                     if 'default' in prop_schema:
                         config_data[key] = self._deep_copy_default(prop_schema['default'])
-                    elif '$ref' not in prop_schema and prop_schema.get('type') == 'object':
+                    elif 'default' in resolved_prop_schema and (
+                        resolved_prop_schema.get('type') not in {'object', 'array'} or can_create_missing_container
+                    ):
+                        config_data[key] = self._deep_copy_default(resolved_prop_schema['default'])
+                    elif can_create_missing_container and resolved_prop_schema.get('type') == 'object':
                         # Create empty object and apply defaults recursively
                         config_data[key] = {}
                         config_data[key] = self._apply_defaults_with_resolver(
-                            prop_schema, config_data[key], validator, schema_root
+                            resolved_prop_schema, config_data[key], validator, resolved_prop_root
                         )
                     elif (
-                        '$ref' not in prop_schema
-                        and prop_schema.get('type') == 'array'
-                        and 'items' in prop_schema
-                        and 'default' in prop_schema['items']
+                        can_create_missing_container
+                        and resolved_prop_schema.get('type') == 'array'
+                        and 'items' in resolved_prop_schema
+                        and self._array_items_define_default(resolved_prop_schema, resolved_prop_root)
                     ):
                         # Handle arrays with default items
                         config_data[key] = []
@@ -204,6 +209,18 @@ class YAMLConfigValidator:
                     config_data[i] = self._apply_defaults_with_resolver(item_schema, item, validator, item_schema_root)
 
         return config_data
+
+    @staticmethod
+    def _can_create_missing_container(schema_content: Dict[str, Any]) -> bool:
+        """Return whether missing object or array properties should be materialized."""
+        choice_keywords = {'anyOf', 'oneOf', 'maxProperties'}
+        return not any(keyword in schema_content for keyword in choice_keywords)
+
+    def _array_items_define_default(self, schema_content: Dict[str, Any], schema_root: Dict[str, Any]) -> bool:
+        """Return whether an array schema's items define a default."""
+        raw_item_schema = schema_content.get('items', {})
+        item_schema = self._resolve_schema_reference(raw_item_schema, schema_root)
+        return 'default' in item_schema
 
     def _resolve_schema_reference(
         self, schema_content: Dict[str, Any], schema_root: Optional[Dict[str, Any]] = None

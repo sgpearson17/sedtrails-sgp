@@ -37,6 +37,9 @@ Controls basic simulation behavior and model configuration.
 
 Nested under `general.input_model`:
 
+When configuration defaults are applied, `general.input_model` is created if it
+is omitted and populated with the nested defaults below.
+
 | Parameter        | Type   | Required | Default      | Description                                                                                                          |
 | ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
