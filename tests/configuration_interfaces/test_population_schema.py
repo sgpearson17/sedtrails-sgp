@@ -35,7 +35,37 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     validated = _validate_config(tmp_path, config)
 
     tracer_methods = validated['particles']['populations'][0]['tracer_methods']
-    assert tracer_methods == {'vanwesten': {'flow_field_name': ['bed_load_velocity']}}
+    assert tracer_methods == {
+        'vanwesten': {
+            'flow_field_name': ['bed_load_velocity'],
+            'beta': 0.2,
+            'suspended_velocity_method': 'soulsby_2011',
+        }
+    }
+
+
+def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
+    """Accept passive tracer configs and apply the default flow field."""
+    config = _base_config()
+    config['particles']['populations'][0]['particle_type'] = 'passive'
+    config['particles']['populations'][0]['characteristics'] = {'diffusion_coefficient': 0.0}
+    config['particles']['populations'][0]['tracer_methods'] = {'passive_tracer': {}}
+
+    validated = _validate_config(tmp_path, config)
+
+    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
+    assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
+
+
+def test_population_schema_rejects_vanwesten_bl(tmp_path):
+    """Reject stale tracer methods that are not implemented at runtime."""
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'vanwesten_bl': {'flow_field_name': ['bed_load_velocity']}
+    }
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
 
 
 @pytest.mark.parametrize(
@@ -89,7 +119,8 @@ def test_population_schema_accepts_poly_file_path_for_area_strategies(tmp_path, 
     validated = _validate_config(tmp_path, config)
 
     strategy = validated['particles']['populations'][0]['seeding']['strategy']
-    assert strategy == {strategy_name: settings}
+    expected_settings = _with_strategy_defaults(strategy_name, settings)
+    assert strategy == {strategy_name: expected_settings}
 
 
 @pytest.mark.parametrize(
@@ -117,7 +148,8 @@ def test_population_schema_accepts_inline_poly_for_area_strategies(tmp_path, str
     validated = _validate_config(tmp_path, config)
 
     strategy = validated['particles']['populations'][0]['seeding']['strategy']
-    assert strategy == {strategy_name: settings}
+    expected_settings = _with_strategy_defaults(strategy_name, settings)
+    assert strategy == {strategy_name: expected_settings}
 
 
 @pytest.mark.parametrize(
@@ -170,6 +202,17 @@ def _validate_config(tmp_path, config):
     config_file = tmp_path / 'sedtrails.yml'
     config_file.write_text(yaml.dump(config))
     return YAMLConfigValidator().validate_yaml(str(config_file))
+
+
+def _with_strategy_defaults(strategy_name, settings):
+    """Return expected defaults for a selected seeding strategy."""
+    defaults = {
+        'show_check_plots': False,
+        'save_check_plots': False,
+    }
+    if strategy_name == 'random':
+        defaults['seed'] = 42
+    return {**settings, **defaults}
 
 
 def _base_config():

@@ -65,12 +65,120 @@ class TestYAMLConfigValidator:
         result = validator._apply_defaults(schema, config)
         assert result == {'outer': {'inner': 'baz'}}
 
+    def test_apply_defaults_missing_referenced_object(self, validator):
+        """Apply defaults inside a missing object property defined by a reference."""
+        schema = {
+            'type': 'object',
+            '$defs': {
+                'input_model_type': {
+                    'type': 'object',
+                    'properties': {
+                        'format': {'type': 'string', 'default': 'fm_netcdf'},
+                        'reference_date': {'type': 'string', 'default': '1970-01-01'},
+                    },
+                }
+            },
+            'properties': {
+                'input_model': {'$ref': '#/$defs/input_model_type'},
+            },
+        }
+        config = {}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {
+            'input_model': {
+                'format': 'fm_netcdf',
+                'reference_date': '1970-01-01',
+            }
+        }
+
+    def test_apply_defaults_does_not_create_missing_referenced_choice(self, validator):
+        """Do not materialize unselected referenced objects in choice maps."""
+        schema = {
+            'type': 'object',
+            '$defs': {
+                'method': {
+                    'type': 'object',
+                    'properties': {
+                        'flow_field_name': {
+                            'type': 'array',
+                            'default': ['depth_avg_flow_velocity'],
+                        },
+                    },
+                }
+            },
+            'properties': {
+                'tracer_methods': {
+                    'type': 'object',
+                    'properties': {
+                        'selected': {'$ref': '#/$defs/method'},
+                        'unselected': {'$ref': '#/$defs/method'},
+                    },
+                    'maxProperties': 1,
+                }
+            },
+        }
+        config = {'tracer_methods': {'selected': {}}}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {
+            'tracer_methods': {
+                'selected': {
+                    'flow_field_name': ['depth_avg_flow_velocity'],
+                }
+            }
+        }
+
     def test_apply_defaults_array(self, validator):
         """Apply item defaults for each element in an array of objects."""
         schema = {'type': 'array', 'items': {'type': 'object', 'properties': {'x': {'type': 'integer', 'default': 1}}}}
         config = [{'x': 2}, {}]
         result = validator._apply_defaults(schema, config)
         assert result == [{'x': 2}, {'x': 1}]
+
+    def test_apply_defaults_missing_referenced_array(self, validator):
+        """Apply defaults for missing array properties defined by references."""
+        schema = {
+            'type': 'object',
+            '$defs': {
+                'tags': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'default': ['active'],
+                },
+                'tag': {
+                    'type': 'string',
+                    'default': 'active',
+                },
+                'names': {
+                    'type': 'array',
+                    'items': {'$ref': '#/$defs/tag'},
+                },
+            },
+            'properties': {
+                'tags': {'$ref': '#/$defs/tags'},
+                'names': {'$ref': '#/$defs/names'},
+            },
+        }
+        config = {}
+
+        result = validator._apply_defaults(schema, config)
+
+        assert result == {'tags': ['active'], 'names': []}
+
+    def test_create_config_template_includes_referenced_object_defaults(self, tmp_path):
+        """Include defaults from referenced object schemas in generated templates."""
+        output_file = tmp_path / 'sedtrails-template.yml'
+        validator = YAMLConfigValidator()
+
+        validator.create_config_template(str(output_file))
+
+        template = yaml.safe_load(output_file.read_text(encoding='utf-8'))
+        assert template['general']['input_model']['format'] == 'fm_netcdf'
+        assert template['general']['input_model']['reference_date'] == '1970-01-01'
+        assert template['general']['input_model']['morfac'] == 1
 
     # -----------------------------
     # Tests for validate_yaml
