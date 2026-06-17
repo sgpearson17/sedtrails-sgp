@@ -25,14 +25,23 @@ Physics Converters
 Format Plug-ins
 ---------------
 
-Delft3D-4 (trim-*.dat)
-^^^^^^^^^^^^^^^^^^^^^^
-.. automodule:: sedtrails.transport_converter.plugins.format.delft3d4_trim
-                    :members:
+SedTRAILS currently exposes D-Flow FM, XBeach, and SFINCS input formats through
+the public configuration schema. The Delft3D-4 TRIM module is retained in the
+codebase as a legacy stub and raises ``NotImplementedError`` if used directly.
 
 D-Flow FM (netcdf)
 ^^^^^^^^^^^^^^^^^^
 .. automodule:: sedtrails.transport_converter.plugins.format.fm_netcdf
+                    :members:
+
+XBeach (netcdf)
+^^^^^^^^^^^^^^^
+.. automodule:: sedtrails.transport_converter.plugins.format.xbeach
+                    :members:
+
+SFINCS (netcdf)
+^^^^^^^^^^^^^^^
+.. automodule:: sedtrails.transport_converter.plugins.format.sfincs
                     :members:
 
 

@@ -83,15 +83,6 @@
       "default": "free",
       "description": "'trapped' = particle is trapped, 'free' = particle is free"
     },
-    "delft3d4_vertical_layer_type": {
-      "type": "string",
-      "enum": [
-        "lowest",
-        "max"
-      ],
-      "default": "lowest",
-      "description": "vertical sigma or z-layer of model in Delft3D4 ('lowest' = lowest layer, 'max' = surface)"
-    },
     "numerical_scheme_type": {
       "type": "string",
       "enum": [
@@ -108,14 +99,11 @@
           "type": "string",
           "enum": [
             "fm_netcdf",
-            "d3d4",
             "xbeach",
-            "aeolis",
-            "sfincs",
-            "xbeach"
+            "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'd3d4' = Delft3D-4, 'xbeach' = xbeach, 'aeolis' = aeolis, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'xbeach' = XBeach, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",
@@ -151,14 +139,9 @@
           "default": true,
           "description": "true: pre-process; false: use existing files with default names"
         },
-        "compute_pathways": {
-          "type": "boolean",
-          "default": true,
-          "description": "true: (re)run everything; false: load existing pathways"
-        },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (e.g., fm_netcdf, d3d4, xbeach, aeolis)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",
@@ -182,7 +165,7 @@
       "properties": {
         "data": {
           "type": "string",
-          "description": "path to D-Flow data file"
+          "description": "path to the input flow-field data file"
         },
         "read_interval": {
           "type": "string",
@@ -219,20 +202,6 @@
           "type": "string",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
         },
-        "subset_m": {
-          "type": "integer",
-          "default": 0,
-          "description": "limits of d3d4 model domain in m-direction (0=all)"
-        },
-        "subset_n": {
-          "type": "integer",
-          "default": 0,
-          "description": "limits of d3d4 model domain in n-direction (0=all)"
-        },
-        "subset_t": {
-          "type": "string",
-          "description": "limits of d3d4 model domain in t-direction (time). Given as minimum:maximum, e.g. 49:124"
-        },
         "flow_field_data": {
           "type": "object",
           "additionalProperties": false,
@@ -241,30 +210,6 @@
               "$ref": "#/$defs/fm_format_type",
               "default": "sedtrails_nc",
               "description": "format of the D-Flow FM model output files. 'sedtrails_nc' is the default format for Sedtrails."
-            },
-            "delft3d4": {
-              "type": "object",
-              "properties": {
-                "nested": {
-                  "type": "boolean",
-                  "default": false,
-                  "description": "is Delft3D model nested? (Y=true, N=false)"
-                },
-                "nested_pol_file": {
-                  "type": "string",
-                  "description": "path to Deltares 'pol' file containing a polygon inside which to include fine nested model and exclude coarser main model"
-                },
-                "depth_average_flow": {
-                  "type": "boolean",
-                  "default": true,
-                  "description": "use depth-averaged flow from Delft3D? (Y=true, N=false)"
-                },
-                "vertical_layer": {
-                  "$ref": "#/$defs/delft3d4_vertical_layer_type",
-                  "default": "lowest",
-                  "description": "vertical sigma or z-layer of model (lowest = lowest layer, max = surface)"
-                }
-              }
             }
           },
           "anyOf": [
@@ -272,19 +217,8 @@
               "required": [
                 "fm"
               ]
-            },
-            {
-              "required": [
-                "delft3d4"
-              ]
             }
-          ],
-          "not": {
-            "required": [
-              "fm",
-              "delft3d4"
-            ]
-          }
+          ]
         }
       },
       "anyOf": [
@@ -298,21 +232,13 @@
             "subset_x",
             "subset_y"
           ]
-        },
-        {
-          "required": [
-            "subset_m",
-            "subset_n"
-          ]
         }
       ],
       "not": {
         "required": [
           "pol_file",
           "subset_x",
-          "subset_y",
-          "subset_m",
-          "subset_n"
+          "subset_y"
         ]
       }
     },
@@ -474,42 +400,6 @@
         "populations"
       ]
     },
-    "pathways": {
-      "type": "object",
-      "unevaluatedProperties": false,
-      "properties": {
-        "polygon_query": {
-          "type": "boolean",
-          "default": true,
-          "description": "query pathways to/from a given polygon?"
-        },
-        "polygon_name": {
-          "type": "string",
-          "description": "name of polygon to query"
-        },
-        "analyze": {
-          "type": "boolean",
-          "default": false,
-          "description": "analyze pathways? (Y=true, N=false)"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "polygon_query": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "polygon_name"
-            ]
-          }
-        }
-      ]
-    },
     "outputs": {
       "type": "object",
       "additionalProperties": false,
@@ -522,7 +412,7 @@
         "store_tracks": {
           "type": "boolean",
           "default": true,
-          "description": "store full particle tracks? (Y=true, N=false)"
+          "description": "store full particle tracks; set false for compact final-state output"
         },
         "directory": {
           "type": "string",
@@ -641,21 +531,9 @@
         "store_end_positions": {
           "type": "boolean",
           "default": false,
-          "description": "store end only positions? (Y=true, N=false), Will store only the last position of each particle at the end of the simulation."
+          "description": "store only the last position of each particle at the end of the simulation"
         }
-      },
-      "oneOf": [
-        {
-          "required": [
-            "store_tracks"
-          ]
-        },
-        {
-          "required": [
-            "store_end_positions"
-          ]
-        }
-      ]
+      }
     },
     "visualization": {
       "$ref": "urn:sedtrails:config:visualization.schema.json"

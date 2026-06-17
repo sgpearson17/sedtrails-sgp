@@ -16,14 +16,9 @@ Typical variables used by the GUI and runtime are:
 
 ## Delft3D 4
 
-By default, the map output from Delft3D-4 is written to binary `trim-*.dat` files. At present it is not possible to directly read these files in with Python, so it is better to instead write the map output as `*.nc` files. To enable `*.nc` output in Delft3D-4, add the following lines to the `*.mdf` file:
-```
-FlNcdf= #maphis#
-ncFormat=4
-```
-The resulting  `*.nc` file can then be directly read by SedTRAILS using the `d3d4_netcdf.py` format converter plugin.
+Delft3D 4 input is not currently a supported SedTRAILS runtime format. The repository contains a Delft3D 4 converter scaffold, but it raises `NotImplementedError`, and `d3d4` is not a valid value for `general.input_model.format`.
 
-When in doubt, check the converter and the example configuration for the exact variable names and coordinate conventions.
+Convert Delft3D 4 results to one of the supported NetCDF-based formats before using them with SedTRAILS.
 
 ## XBeach
 

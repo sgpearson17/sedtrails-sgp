@@ -88,35 +88,37 @@ visualization:
 
 ## Running a Simulation
 
-The  following steps will guide you through running a simple SedTRAILS simulation using the example configuration file. Configuration files are files describing the parameters and settings for running the SedTRAILS simulations.
+The following steps run the tracked example configuration at `examples/sedtrails-example.yaml`.
 
 :::important
 Make sure you have SedTRAILS installed. If you haven't installed it yet, please refer to the [Installation Guide](./installation.md).
 
-<a href="../_static/downloads/config-example.yaml" download>Download the example configuration file</a> to your computer and save it in a directory where you want to run the simulation. For example `./examples/config-example.yaml`.
+The example configuration is part of the repository under `examples/sedtrails-example.yaml`.
 :::
 
-1. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm), and save it to your directory.
+1. Download the dataset file named `inlet_sedtrails.nc` from [this link](https://surfdrive.surf.nl/files/index.php/s/VUGKZm7QexAXuD9?path=%2Fdfm).
 
+2. From the repository root, create a `sample-data` directory and save the downloaded file there.
 
-2. Update the `input_data` parameter in configuration file and save the changes. You can use any text-editor to open and update the file. This parameter must pint to the location of the `inlet_sedtrails.nc` dataset you downloaded earlier.
-For example: 
-```yaml
-input_data: ./inlet_sedtrails.nc
+```bash
+mkdir -p sample-data
 ```
 
-1. Using the terminal, go to the directory containing the dataset and configuration files:
-```bash
-cd ./<path-to-you-simulation-directory>/
+3. In `examples/sedtrails-example.yaml`, set `inputs.data` to the downloaded file.
+
+```yaml
+inputs:
+  data: ./sample-data/inlet_sedtrails.nc
 ```
 
 4. Run the model using the following command:
+
 ```bash
-sedtrails run -c ./config-example.yaml
+sedtrails run -c ./examples/sedtrails-example.yaml
 ```
 
 ::: note
-The simulation will start running, and a dashboard will open to show the progress. Close the dashboard window to get back to the terminal and see the simulation results.
+The simulation will start running, and a dashboard will open if it is enabled in the configuration. Output is written to `examples/results/sedtrails_results.nc` unless you change `outputs.directory`.
 :::
 
 ## Restarting a Simulation
@@ -189,7 +191,7 @@ general:
     reference_date: '1970-01-01'
     morfac: 1
 inputs:
-  data: ./sample-data/inlet_example.nc
+  data: ./sample-data/inlet_sedtrails.nc
 time:
   start: '2016-09-27 03:22:48'          # Updated to last valid timestamp
   timestep: 60S
@@ -209,7 +211,7 @@ particles:
 
 The seed point CSV files contain particle coordinates from the last valid timestep:
 
-```csv
+```text
 x,y
 40293.54196405,17547.72446346
 39626.62407569,17560.15080805
@@ -229,6 +231,7 @@ The new simulation will:
 - Use the adjusted `time.duration` to simulate only the remaining time
 - Output results to the same or a different output directory (configured in the restart YAML)
 
+(notes-and-tips)=
 ### Notes and Tips
 
 - **Particle Retention**: Only particles that were alive and within the domain at their last position are included in the restart. Particles that escaped the domain or were trapped will not be restarted.

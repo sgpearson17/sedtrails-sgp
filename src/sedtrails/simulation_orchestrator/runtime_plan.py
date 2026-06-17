@@ -12,7 +12,8 @@ from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 
 
-SUPPORTED_TRACER_METHODS = frozenset({'soulsby', 'vanwesten'})
+DEFAULT_PASSIVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
+SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten'})
 DEFAULT_TRANSPORT_PROBABILITY_METHOD = 'no_probability'
 
 
@@ -246,6 +247,9 @@ def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -
     if method_name == 'soulsby':
         return tuple(_unique_preserving_order((*flow_field_names, 'mixing_layer_thickness', 'soulsby_a', 'soulsby_b')))
 
+    if method_name == 'passive_tracer':
+        return tuple(_unique_preserving_order(flow_field_names))
+
     raise ConfigurationError(f'Unsupported tracer method {method_name!r}.')
 
 
@@ -253,6 +257,9 @@ def _get_flow_field_names(
     population_index: int, method_name: str, method_config: Mapping[str, Any]
 ) -> tuple[str, ...]:
     flow_field_names = method_config.get('flow_field_name')
+    if method_name == 'passive_tracer' and flow_field_names is None:
+        return DEFAULT_PASSIVE_TRACER_FLOW_FIELDS
+
     if not isinstance(flow_field_names, Sequence) or isinstance(flow_field_names, str) or not flow_field_names:
         raise ConfigurationError(
             f'Population {population_index} tracer method {method_name!r} must define a non-empty '

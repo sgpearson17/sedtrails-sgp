@@ -14,9 +14,8 @@ In the current version, not all parameters may be fully implemented. Please refe
 4. [Time Configuration](#time-configuration)
 5. [Physics Parameters](#physics-parameters)
 6. [Particle Populations](#particle-populations)
-7. [Pathway Analysis](#pathway-analysis)
-8. [Output Settings](#output-settings)
-9. [Visualization](#visualization)
+7. [Output Settings](#output-settings)
+8. [Visualization](#visualization)
 
 ---
 
@@ -28,7 +27,6 @@ Controls basic simulation behavior and model configuration.
 | Parameter                | Type    | Required | Default | Description                                                                                          |
 | ------------------------ | ------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | `preprocess`             | boolean | Optional | `true`  | Enable preprocessing of input data. Set to `false` to use existing processed files.                  |
-| `compute_pathways`       | boolean | Optional | `true`  | Enable pathway computation. Set to `false` to load existing pathway results.                         |
 | `input_model`            | object  | Optional | -       | Configuration for the input flow model. See [Input Model Configuration](#input-model-configuration). |
 | `n_runs`                 | integer | Optional | `1`     | Number of simulation runs to execute.                                                                |
 | `display_input_metadata` | boolean | Optional | `false` | Display all metadata from input files during loading.                                                |
@@ -39,9 +37,12 @@ Controls basic simulation behavior and model configuration.
 
 Nested under `general.input_model`:
 
+When configuration defaults are applied, `general.input_model` is created if it
+is omitted and populated with the nested defaults below.
+
 | Parameter        | Type   | Required | Default      | Description                                                                                                          |
 | ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4` (Delft3D-4), `xbeach`, `aeolis`.                        |
+| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
 | `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
 | `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
 
@@ -50,7 +51,6 @@ Nested under `general.input_model`:
 ```yaml
 general:
   preprocess: true
-  compute_pathways: true
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
@@ -92,16 +92,12 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 ⚠️ **Mutually Exclusive Options**: Choose only ONE method from the following:
 - **Method 1**: `pol_file` - Use a polygon file
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
-- **Method 3**: `subset_m` and `subset_n` - Use grid indices (Delft3D-4 only)
 
 | Parameter         | Type    | Required     | Default | Description                                                                                               |
 | ----------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
 | `pol_file`        | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
 | `subset_x`        | string  | Conditional* | -       | X-coordinate range as `min:max` (e.g., `35000:52000`).                                                    |
 | `subset_y`        | string  | Conditional* | -       | Y-coordinate range as `min:max` (e.g., `12000:150000`).                                                   |
-| `subset_m`        | integer | Conditional* | `0`     | M-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_n`        | integer | Conditional* | `0`     | N-direction limits for Delft3D-4 models (`0` = all).                                                      |
-| `subset_t`        | string  | Optional     | -       | Time range as `min:max` indices (e.g., `49:124`).                                                         |
 | `flow_field_data` | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
 
 *Conditional: One method must be specified.
@@ -109,24 +105,13 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 (flow-field-data-configuration)=
 ### Flow Field Data Configuration
 
-Nested under `domain.flow_field_data`. **Choose ONE format**:
-
-⚠️ **Mutually Exclusive**: Specify either `fm` OR `delft3d4`, not both.
+Nested under `domain.flow_field_data`. This section currently exposes D-Flow FM-specific settings.
 
 #### D-Flow FM Settings (`fm`)
 
 | Parameter | Type   | Required    | Default        | Description                                                             |
 | --------- | ------ | ----------- | -------------- | ----------------------------------------------------------------------- |
 | `fm`      | string | Conditional | `sedtrails_nc` | Format of D-Flow FM output files. Options: `sedtrails_nc`, `merged_nc`. |
-
-#### Delft3D-4 Settings (`delft3d4`)
-
-| Parameter            | Type    | Required | Default  | Description                                                            |
-| -------------------- | ------- | -------- | -------- | ---------------------------------------------------------------------- |
-| `nested`             | boolean | Optional | `false`  | Is the model nested (fine grid within coarse grid)?                    |
-| `nested_pol_file`    | string  | Optional | -        | Path to `.pol` file defining the fine nested model region.             |
-| `depth_average_flow` | boolean | Optional | `true`   | Use depth-averaged flow velocities.                                    |
-| `vertical_layer`     | string  | Optional | `lowest` | Which vertical layer to use. Options: `lowest` (bed), `max` (surface). |
 
 **Example:**
 
@@ -243,7 +228,7 @@ The `particles` section contains an array of `populations`, where each populatio
 | Parameter               | Type   | Required     | Default          | Description                                                                                                |
 | ----------------------- | ------ | ------------ | ---------------- | ---------------------------------------------------------------------------------------------------------- |
 | `name`                  | string | **Required** | `particle`       | Unique name for this population (e.g., `sediment-fine`, `sand-01`).                                        |
-| `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`, `bio`, `gravel`.                                      |
+| `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`.                                                       |
 | `characteristics`       | object | **Required** | -                | Type-specific particle properties. See [Particle Characteristics](#particle-characteristics).              |
 | `tracer_methods`        | object | **Required** | -                | Transport calculation method(s). See [Tracer Methods](#tracer-methods).                                    |
 | `transport_probability` | string | Optional     | `no_probability` | How to apply transport probability. Options: `no_probability`, `stochastic_transport`, `reduced_velocity`. |
@@ -275,37 +260,36 @@ The `characteristics` object varies by `particle_type`:
 | `density` | number | **Required** | `2000.0`  | Particle density [kg/m³].                       |
 | `size`    | number | **Required** | `0.00005` | Grain diameter [m]. Default is 0.05 mm (50 μm). |
 
-#### Bio Particles
-
-| Parameter  | Type   | Required     | Default | Description                              |
-| ---------- | ------ | ------------ | ------- | ---------------------------------------- |
-| `buoyancy` | number | **Required** | `0.95`  | Buoyancy factor relative to water (0-1). |
-
-#### Gravel Particles
-
-| Parameter    | Type   | Required     | Default  | Description                           |
-| ------------ | ------ | ------------ | -------- | ------------------------------------- |
-| `density`    | number | **Required** | `2800.0` | Particle density [kg/m³].             |
-| `grain_size` | number | **Required** | `0.01`   | Grain diameter [m]. Default is 10 mm. |
-
 (tracer-methods)=
 ### Tracer Methods
 
-At least one tracer method must be specified. Multiple methods can be used simultaneously.
+Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
 
 #### Van Westen Method
 
 | Parameter         | Type   | Required | Default | Description                                                                           |
 | ----------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------- |
-| `flow_field_name` | array  | Optional | -       | List of flow field names to use (e.g., `["bedload_velocity", "suspended_velocity"]`). |
+| `flow_field_name` | array  | **Required** | -       | List of flow field names to use (e.g., `["bed_load_velocity", "suspended_velocity"]`). |
 | `beta`            | number | Optional | `0.2`   | Beta parameter for Van Westen formulation.                                            |
 
 #### Soulsby Method
 
-| Parameter | Type   | Required | Default | Description                          |
-| --------- | ------ | -------- | ------- | ------------------------------------ |
-| `f`       | number | Optional | `0.1`   | f parameter for Soulsby formulation. |
-| `r`       | number | Optional | `0.8`   | r parameter for Soulsby formulation. |
+| Parameter                 | Type   | Required     | Default  | Description                                                      |
+| ------------------------- | ------ | ------------ | -------- | ---------------------------------------------------------------- |
+| `flow_field_name`         | array  | **Required** | -        | List of flow field names to use, commonly `["grain_velocity"]`.  |
+| `tracer_grain_size`       | number | Optional     | `0.0002` | Grain size of tracer sediment [m].                               |
+| `background_grain_size`   | number | Optional     | `0.0002` | Grain size of background sediment [m].                           |
+| `soulsby_b_e`             | number | Optional     | `1.7e-7` | Maximum free-to-trapped transition probability per second [1/s]. |
+| `soulsby_theta_s`         | number | Optional     | `0.1`    | Transition scale value [-].                                      |
+| `soulsby_gamma_e`         | number | Optional     | `0.1`    | Long-term equilibrium proportion of free particles [-].          |
+| `soulsby_mu_d`            | number | Optional     | `0.5`    | Dynamic friction coefficient [-].                                |
+| `soulsby_freedom_factor`  | number | Optional     | `1`      | Initial freedom factor (`0` = trapped, `1` = free).              |
+
+#### Passive Tracer Method
+
+| Parameter         | Type  | Required | Default                       | Description                                           |
+| ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
+| `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
 (particle-seeding)=
 ### Particle Seeding
@@ -432,7 +416,7 @@ particles:
         grain_size: 0.00025  # 0.25 mm
       tracer_methods:
         vanwesten:
-          flow_field_name: ["bedload_velocity"]
+          flow_field_name: ["bed_load_velocity"]
           beta: 0.2
       transport_probability: reduced_velocity
       seeding:
@@ -453,8 +437,9 @@ particles:
         grain_size: 0.0005  # 0.5 mm
       tracer_methods:
         soulsby:
-          f: 0.1
-          r: 0.8
+          flow_field_name: ["grain_velocity"]
+          tracer_grain_size: 0.0005
+          background_grain_size: 0.0005
       seeding:
         quantity: 50
         strategy:
@@ -467,43 +452,17 @@ particles:
 
 ---
 
-(pathway-analysis)=
-## Pathway Analysis
-
-Optional settings for analyzing particle pathways relative to specific areas.
-
-| Parameter       | Type    | Required     | Default | Description                                                       |
-| --------------- | ------- | ------------ | ------- | ----------------------------------------------------------------- |
-| `polygon_query` | boolean | Optional     | `true`  | Query pathways to/from a given polygon.                           |
-| `polygon_name`  | string  | Conditional* | -       | Name of polygon to query (required if `polygon_query` is `true`). |
-| `analyze`       | boolean | Optional     | `false` | Enable pathway analysis.                                          |
-
-*Required if `polygon_query` is `true`.
-
-**Example:**
-
-```yaml
-pathways:
-  polygon_query: true
-  polygon_name: inlet_channel
-  analyze: true
-```
-
----
-
 (output-settings)=
 ## Output Settings
 
 Controls what results are saved and where.
 
-⚠️ **Mutually Exclusive**: Choose either `store_tracks` OR `store_end_positions`.
-
 | Parameter             | Type    | Required    | Default    | Description                                                                                             |
 | --------------------- | ------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
 | `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
-| `store_tracks`        | boolean | Conditional | `true`     | Store complete particle trajectories over time. Creates larger files but enables full pathway analysis. |
-| `store_end_positions` | boolean | Conditional | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
+| `store_tracks`        | boolean | Optional    | `true`     | Store complete particle trajectories over time. Set to `false` for compact final-state output. |
+| `store_end_positions` | boolean | Optional    | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
 
 **Example:**
 
@@ -620,7 +579,6 @@ Here's a complete example showing how all sections work together:
 ```yaml
 general:
   preprocess: true
-  compute_pathways: true
   numerical_scheme: rk4
   input_model:
     format: fm_netcdf
@@ -662,7 +620,7 @@ particles:
         grain_size: 0.00025
       tracer_methods:
         vanwesten:
-          flow_field_name: ["bedload_velocity"]
+          flow_field_name: ["bed_load_velocity"]
           beta: 0.2
       transport_probability: reduced_velocity
       seeding:
