@@ -33,11 +33,21 @@ def _population_config(
 def test_vanwesten_population_creates_population_scoped_converter():
     """Build a van Westen plan with population-specific converter settings."""
     population_config = _population_config(
-        {'vanwesten': {'flow_field_name': ['bed_load_velocity', 'suspended_velocity'], 'beta': 0.3}},
+        {
+            'vanwesten': {
+                'flow_field_name': ['bed_load_velocity', 'suspended_velocity'],
+                'beta': 0.3,
+                'suspended_velocity_method': 'macdonald_2006',
+            }
+        },
         transport_probability='stochastic_transport',
     )
 
-    runtime_plan = build_population_runtime_plans([population_config], [object()], {'gravity': 9.8})[0]
+    runtime_plan = build_population_runtime_plans(
+        [population_config],
+        [object()],
+        {'gravity': 9.8, 'bertin_coefficient': 0.123},
+    )[0]
 
     assert runtime_plan.population_index == 0
     assert runtime_plan.tracer.method_name == 'vanwesten'
@@ -45,7 +55,9 @@ def test_vanwesten_population_creates_population_scoped_converter():
     assert runtime_plan.tracer.transport_probability_method == 'stochastic_transport'
     assert runtime_plan.tracer.converter.config.tracer_method == 'vanwesten'
     assert runtime_plan.tracer.converter.config.gravity == 9.8
+    assert runtime_plan.tracer.converter.config.bertin_coefficient == 0.123
     assert runtime_plan.tracer.converter.config.beta == 0.3
+    assert runtime_plan.tracer.converter.config.suspended_velocity_method == 'macdonald_2006'
     assert runtime_plan.tracer.converter.config.grain_diameter == 0.00025
 
 
@@ -92,6 +104,20 @@ def test_mixed_populations_preserve_each_population_method_and_flow_fields():
         ('grain_velocity',),
     ]
     assert unique_flow_field_names(runtime_plans) == ['bed_load_velocity', 'grain_velocity']
+
+
+def test_passive_tracer_population_defaults_to_depth_averaged_velocity():
+    """Build a passive tracer plan with the default depth-averaged flow field."""
+    population_config = _population_config(
+        {'passive_tracer': {}},
+        characteristics={'diffusion_coefficient': 0.0},
+    )
+
+    runtime_plan = build_population_runtime_plans([population_config], [object()], {})[0]
+
+    assert runtime_plan.tracer.method_name == 'passive_tracer'
+    assert runtime_plan.tracer.flow_field_names == ('depth_avg_flow_velocity',)
+    assert runtime_plan.tracer.required_physics_fields == ('depth_avg_flow_velocity',)
 
 
 def test_same_method_populations_keep_separate_method_configs():

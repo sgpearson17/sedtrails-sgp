@@ -4,7 +4,7 @@ general:
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ./sample-data/inlet_sedtrails.nc
+  data: ../sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
   repeat_eulerian_fields: false  # Set true to loop forcing from the first input timestamp
 time:

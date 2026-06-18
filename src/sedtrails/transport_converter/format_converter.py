@@ -17,8 +17,16 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 @dataclass
 class SeederFieldData:
-    """
-    Minimal field data needed by ParticleSeeder: only spatial coordinates.
+    """Minimal field data needed by ``ParticleSeeder``.
+
+    Attributes
+    ----------
+    x : np.ndarray
+        Field x-coordinates.
+    y : np.ndarray
+        Field y-coordinates.
+    reference_date : np.datetime64
+        Reference date used to convert release times.
     """
 
     x: np.ndarray
@@ -249,7 +257,6 @@ class FormatConverter:
         if connectivity is None:
             return None
         return np.asarray(connectivity, dtype=np.int64)
-
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')

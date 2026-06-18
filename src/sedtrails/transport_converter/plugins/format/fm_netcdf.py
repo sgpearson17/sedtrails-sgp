@@ -24,8 +24,14 @@ from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
-    """
-    Plugin for converting Delft3D Flexible Mesh NetCDF to SedTRAILS format.
+    """Convert Delft3D Flexible Mesh NetCDF data to SedTRAILS format.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the Delft3D Flexible Mesh NetCDF file.
+    morfac : float, optional
+        Morphological acceleration factor used to decompress model time.
     """
 
     def __init__(self, input_file: str, morfac: float = 1.0):
@@ -137,6 +143,11 @@ class FormatPlugin(BaseFormatPlugin):
         mapped_data = self._map_dfm_variables(time_info, time_start_idx, time_end_idx)
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
+
+        # TODO: DFM slicing can introduce an extra leading singleton dimension; remove only that axis.
+        for key, value in mapped_data.items():
+            if isinstance(value, np.ndarray) and value.ndim > 2 and value.shape[0] == 1:
+                mapped_data[key] = np.squeeze(value, axis=0)
 
         # Calculate magnitudes for vector quantities
         # Flow velocity magnitude
@@ -271,6 +282,46 @@ class FormatPlugin(BaseFormatPlugin):
             raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
 
         return self.input_data['net_xcc'].values, self.input_data['net_ycc'].values
+
+    def get_max_exposure_depth_fields(self):
+        """
+        Compute per-node maximum erosion depth and maximum bed shear stress over the
+        full dataset (all time steps), without loading every time step into memory.
+
+        Returns
+        -------
+        max_erosion : np.ndarray, shape (n_nodes,)
+            Maximum erosion depth per node [m]: max(bed_level_t0 - bed_level_t) over all t,
+            clipped to >= 0.  Zero for nodes with a static bed level.
+        max_bss : np.ndarray, shape (n_nodes,)
+            Maximum bed shear stress per node over all time steps [N/m²].
+        """
+        self.load()
+
+        bed_var = 'bedlevel'
+        bss_var = 'max_bss_magnitude'
+
+        if bed_var not in self.input_data:
+            raise KeyError(f"Required variable '{bed_var}' not found in dataset")
+        if bss_var not in self.input_data:
+            raise KeyError(f"Required variable '{bss_var}' not found in dataset")
+
+        bed = self.input_data[bed_var]
+        bss = self.input_data[bss_var]
+
+        if 'time' in bed.dims:
+            bed_initial = bed.isel(time=0).values.astype(float)
+            bed_min = bed.min(dim='time').values.astype(float)
+            max_erosion = np.maximum(bed_initial - bed_min, 0.0)
+        else:
+            max_erosion = np.zeros(np.asarray(bed.values).shape, dtype=float)
+
+        if 'time' in bss.dims:
+            max_bss = bss.max(dim='time').values.astype(float)
+        else:
+            max_bss = np.asarray(bss.values, dtype=float)
+
+        return max_erosion, max_bss
 
     def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
         """

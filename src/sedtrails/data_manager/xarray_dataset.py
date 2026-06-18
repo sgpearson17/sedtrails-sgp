@@ -3,6 +3,27 @@ import xarray as xr
 
 
 def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfields, name_strlen=24):
+    """Create an empty SedTRAILS trajectory dataset.
+
+    Parameters
+    ----------
+    N_particles : int
+        Number of particles represented in the output dataset.
+    N_populations : int
+        Number of particle populations represented in the output dataset.
+    N_timesteps : int
+        Number of stored output timesteps.
+    N_flowfields : int
+        Number of flow fields tracked for per-particle covered distance.
+    name_strlen : int, optional
+        Fixed string length used for encoded names and trajectory identifiers.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset initialized with SedTRAILS trajectory, status, population, and
+        flow-field variables.
+    """
     ds = xr.Dataset(
         {
             # Population metadata - initialize with empty/default values
@@ -10,6 +31,7 @@ def create_sedtrails_dataset(N_particles, N_populations, N_timesteps, N_flowfiel
             'population_particle_type': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_start_idx': ('n_populations', np.zeros(N_populations, dtype=int)),
             'population_count': ('n_populations', np.zeros(N_populations, dtype=int)),
+            'population_repr_volume': ('n_populations', np.full(N_populations, np.nan)),
             # Trajectory metadata
             'trajectory_id': (('n_particles', 'name_strlen'), np.empty((N_particles, name_strlen), dtype='S1')),
             'population_id': ('n_particles', np.zeros(N_particles, dtype=int)),
@@ -72,6 +94,7 @@ def populate_population_metadata(ds, populations):
         ds['population_particle_type'][pop_idx] = getattr(population, 'particle_type', 0)
         ds['population_start_idx'][pop_idx] = particle_offset
         ds['population_count'][pop_idx] = len(population.particles['x'])
+        ds['population_repr_volume'][pop_idx] = getattr(population, 'repr_volume', np.nan)
 
         # Assign population ID to particles
         num_particles = len(population.particles['x'])
