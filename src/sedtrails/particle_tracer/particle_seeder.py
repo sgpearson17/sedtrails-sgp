@@ -1292,7 +1292,11 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
-        grid_geometry = create_grid_geometry(sedtrails_data.x, sedtrails_data.y)
+        grid_geometry = create_grid_geometry(
+            sedtrails_data.x,
+            sedtrails_data.y,
+            triangles=_geometry_triangles_from_field_data(sedtrails_data),
+        )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
             pop = ParticlePopulation(
@@ -1304,6 +1308,30 @@ class ParticleSeeder:
             )
             populations.append(pop)
         return populations
+
+
+def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> np.ndarray | None:
+    """Return triangle connectivity compatible with the provided x/y coordinates."""
+
+    connectivity = getattr(sedtrails_data, 'particle_face_connectivity', None)
+    if connectivity is None:
+        connectivity = getattr(sedtrails_data, 'face_node_connectivity', None)
+    if connectivity is None:
+        return None
+
+    triangles = np.asarray(connectivity, dtype=np.int64)
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        return None
+    if triangles.shape[0] == 0:
+        return triangles
+
+    n_points = np.asarray(sedtrails_data.x).size
+    valid = triangles >= 0
+    if np.any(valid) and int(np.max(triangles[valid])) >= n_points:
+        return None
+    if np.any(np.sum(valid, axis=1) != 3):
+        return None
+    return triangles
 
 
 # if __name__ == '__main__':

@@ -32,6 +32,9 @@ class SeederFieldData:
     x: np.ndarray
     y: np.ndarray
     reference_date: np.datetime64
+    face_node_connectivity: np.ndarray | None = None
+    particle_face_connectivity: np.ndarray | None = None
+    face_node_fill_value: int = -1
 
 
 class FormatConverter:
@@ -194,7 +197,24 @@ class FormatConverter:
         """
         plugin = self.format_plugin
 
-        if hasattr(plugin, 'get_seeding_coordinates'):
+        seeding_field_data_reader = getattr(plugin, 'get_seeding_field_data', None)
+        seeding_coordinate_reader = getattr(plugin, 'get_seeding_coordinates', None)
+
+        if callable(seeding_field_data_reader):
+            field_data = seeding_field_data_reader()
+            return SeederFieldData(
+                x=np.asarray(field_data.x),
+                y=np.asarray(field_data.y),
+                reference_date=self.reference_date,
+                face_node_connectivity=self._optional_connectivity_array(
+                    getattr(field_data, 'face_node_connectivity', None)
+                ),
+                particle_face_connectivity=self._optional_connectivity_array(
+                    getattr(field_data, 'particle_face_connectivity', None)
+                ),
+                face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
+            )
+        if callable(seeding_coordinate_reader):
             x, y = plugin.get_seeding_coordinates()
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
@@ -202,6 +222,13 @@ class FormatConverter:
             x, y = sedtrails_data.x, sedtrails_data.y
 
         return SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
+
+    @staticmethod
+    def _optional_connectivity_array(connectivity):
+        """Return optional connectivity as an integer array."""
+        if connectivity is None:
+            return None
+        return np.asarray(connectivity, dtype=np.int64)
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')
