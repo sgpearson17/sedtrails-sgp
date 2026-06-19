@@ -82,6 +82,101 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     np.testing.assert_array_equal(sedtrails_data.nonlinear_wave_velocity['x'], (scalar + 3.0).reshape(2, 4))
 
 
+def test_xbeach_convert_skips_numeric_fill_meantime_rows(monkeypatch):
+    """Checks XBeach fill values in ``meantime`` do not enter conversion."""
+    globalx = np.array([[0.0, 1.0], [0.0, 1.0]])
+    globaly = np.array([[0.0, 0.0], [1.0, 1.0]])
+    num_valid_times = 13
+    num_raw_times = num_valid_times + 1
+    scalar = np.arange(num_raw_times * 4, dtype=float).reshape(num_raw_times, 2, 2)
+    transport = np.ones((num_raw_times, 1, 2, 2), dtype=float)
+
+    ds = xr.Dataset(
+        data_vars={
+            'zb_mean': (('meantime', 'ny', 'nx'), scalar),
+            'hh_mean': (('meantime', 'ny', 'nx'), scalar + 1.0),
+            'ue_mean': (('meantime', 'ny', 'nx'), scalar + 2.0),
+            've_mean': (('meantime', 'ny', 'nx'), scalar + 3.0),
+            'taubx_mean': (('meantime', 'ny', 'nx'), np.full((num_raw_times, 2, 2), 3.0)),
+            'tauby_mean': (('meantime', 'ny', 'nx'), np.full((num_raw_times, 2, 2), 4.0)),
+            'Subg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport),
+            'Svbg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 1.0),
+            'Susg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 2.0),
+            'Svsg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), transport + 3.0),
+            'cctot_mean': (('meantime', 'ny', 'nx'), scalar + 4.0),
+            'ua_mean': (('meantime', 'ny', 'nx'), scalar + 5.0),
+            'thetamean_mean': (('meantime', 'ny', 'nx'), np.zeros((num_raw_times, 2, 2))),
+        },
+        coords={
+            'globalx': (('ny', 'nx'), globalx),
+            'globaly': (('ny', 'nx'), globaly),
+            'meantime': (('meantime',), np.append(np.arange(num_valid_times, dtype=float) * 10.0, 9.96920997e36)),
+        },
+    )
+    ds['meantime'].attrs['units'] = 's'
+
+    def fake_load(self):
+        """Injects synthetic XBeach mean-output dataset with a fill time row."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    assert plugin.get_time_bounds(reference_date=np.datetime64('1970-01-01T00:00:00')) == (0.0, 120.0)
+
+    sedtrails_data = plugin.convert(reference_date=np.datetime64('1970-01-01T00:00:00'))
+
+    np.testing.assert_array_equal(sedtrails_data.times, np.arange(num_valid_times, dtype=float) * 10.0)
+    np.testing.assert_array_equal(sedtrails_data.bed_level, scalar[:num_valid_times].reshape(num_valid_times, 4))
+    assert sedtrails_data.bed_level.shape == (num_valid_times, 4)
+
+    chunked_data = plugin.convert(
+        current_time=100.0,
+        reading_interval=10.0,
+        reference_date=np.datetime64('1970-01-01T00:00:00'),
+    )
+
+    np.testing.assert_array_equal(chunked_data.times, np.arange(8, num_valid_times, dtype=float) * 10.0)
+    np.testing.assert_array_equal(chunked_data.bed_level, scalar[8:num_valid_times].reshape(5, 4))
+
+
+def test_xbeach_get_time_bounds_skips_declared_fill_values(monkeypatch):
+    """Checks declared time fill values are not treated as valid mean times."""
+    ds = xr.Dataset(coords={'meantime': (('meantime',), np.array([-999.0, 0.0, 10.0]))})
+    ds['meantime'].attrs['units'] = 's'
+    ds['meantime'].attrs['missing_value'] = -999.0
+
+    def fake_load(self):
+        """Injects synthetic XBeach mean-time metadata."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+
+    assert plugin.get_time_bounds(reference_date=np.datetime64('1970-01-01T00:00:00')) == (0.0, 10.0)
+
+
+def test_xbeach_get_time_bounds_rejects_all_invalid_meantime(monkeypatch):
+    """Checks all-invalid XBeach mean times fail with a clear error."""
+    ds = xr.Dataset(coords={'meantime': (('meantime',), np.array([9.96920997e36]))})
+    ds['meantime'].attrs['units'] = 's'
+
+    def fake_load(self):
+        """Injects synthetic XBeach mean-time fill data."""
+        self.input_data = ds
+        return ds
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+
+    with pytest.raises(ValueError, match='no valid mean time values'):
+        plugin.get_time_bounds(reference_date=np.datetime64('1970-01-01T00:00:00'))
+
+
 def test_xbeach_cutout_coordinates_filter_fields_and_connectivity(monkeypatch):
     """Checks XBeach cutout points are removed from fields and mesh connectivity."""
     globalx = np.array([[0.0, np.nan, 2.0], [0.0, 1.0, 2.0]])

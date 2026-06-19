@@ -359,32 +359,44 @@ class FormatPlugin(BaseFormatPlugin):
         raw_time_values = np.asarray(time_var.values)
         orig_units = time_var.attrs.get('units')
         orig_calendar = time_var.attrs.get('calendar', 'standard')
+        valid_time_indices = np.arange(raw_time_values.size, dtype=np.int64)
 
         if np.issubdtype(raw_time_values.dtype, np.datetime64):
+            valid_time_mask = ~np.isnat(raw_time_values)
+            raw_time_values = raw_time_values[valid_time_mask]
+            valid_time_indices = valid_time_indices[valid_time_mask]
             time_values = raw_time_values
             seconds_since_ref = np.array(
                 [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values],
                 dtype=float,
             )
-        elif orig_units and 'since' in orig_units:
-            decoded = xr.coding.times.decode_cf_datetime(raw_time_values, orig_units, orig_calendar)
-            try:
-                decoded = xr.coding.times.cftime_to_nptime(decoded)
-            except Exception:
-                pass
-            time_values = np.asarray(decoded)
-            seconds_since_ref = np.array(
-                [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values],
-                dtype=float,
-            )
         else:
-            seconds_since_ref = np.asarray(raw_time_values, dtype=float)
-            time_values = np.array(
-                [
-                    reference_date + np.timedelta64(int(round(seconds * 1_000_000)), 'us')
-                    for seconds in seconds_since_ref
-                ]
-            )
+            fill_values = self._numeric_time_fill_values(time_var)
+            valid_time_mask = self._valid_numeric_time_mask(raw_time_values, orig_units, fill_values)
+            raw_time_values = raw_time_values[valid_time_mask]
+            valid_time_indices = valid_time_indices[valid_time_mask]
+            if orig_units and 'since' in orig_units:
+                decoded = xr.coding.times.decode_cf_datetime(raw_time_values, orig_units, orig_calendar)
+                try:
+                    decoded = xr.coding.times.cftime_to_nptime(decoded)
+                except Exception:
+                    pass
+                time_values = np.asarray(decoded)
+                seconds_since_ref = np.array(
+                    [float((t - reference_date) / np.timedelta64(1, 's')) for t in time_values],
+                    dtype=float,
+                )
+            else:
+                seconds_since_ref = np.asarray(raw_time_values, dtype=float)
+                time_values = np.array(
+                    [
+                        reference_date + np.timedelta64(int(round(seconds * 1_000_000)), 'us')
+                        for seconds in seconds_since_ref
+                    ]
+                )
+
+        if len(time_values) == 0:
+            raise ValueError('Input data contains no valid mean time values')
 
         return {
             'time_values': time_values,
@@ -395,13 +407,78 @@ class FormatPlugin(BaseFormatPlugin):
             'seconds_since_reference': seconds_since_ref,
             'reference_date': reference_date,
             'num_times': len(time_values),
+            'valid_time_indices': valid_time_indices,
         }
+
+    @staticmethod
+    def _numeric_time_fill_values(time_var: xr.DataArray) -> np.ndarray:
+        """Return explicit numeric fill values declared on a time variable."""
+        fill_values = []
+        for metadata in (time_var.attrs, time_var.encoding):
+            for key in ('_FillValue', 'missing_value'):
+                value = metadata.get(key)
+                if value is None:
+                    continue
+                try:
+                    fill_values.extend(np.asarray(value, dtype=float).ravel())
+                except (TypeError, ValueError):
+                    continue
+        return np.asarray(fill_values, dtype=float)
+
+    @staticmethod
+    def _valid_numeric_time_mask(
+        raw_time_values: np.ndarray,
+        units: str | None,
+        fill_values: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return numeric time values that can be represented as timedeltas."""
+        values = np.asarray(raw_time_values, dtype=float)
+        seconds_scale = FormatPlugin._time_unit_seconds_scale(units)
+        max_time_value = np.iinfo(np.int64).max / (1_000_000.0 * seconds_scale)
+        valid = np.isfinite(values) & (np.abs(values) <= max_time_value)
+        if fill_values is not None:
+            for fill_value in np.asarray(fill_values, dtype=float).ravel():
+                if np.isfinite(fill_value):
+                    valid &= values != fill_value
+        return valid
+
+    @staticmethod
+    def _time_unit_seconds_scale(units: str | None) -> float:
+        """Return the seconds represented by one numeric time unit."""
+        if not units:
+            return 1.0
+        unit = units.split('since', 1)[0].strip().lower()
+        if not unit:
+            return 1.0
+        unit = unit.split()[0]
+        return {
+            's': 1.0,
+            'sec': 1.0,
+            'secs': 1.0,
+            'second': 1.0,
+            'seconds': 1.0,
+            'm': 60.0,
+            'min': 60.0,
+            'mins': 60.0,
+            'minute': 60.0,
+            'minutes': 60.0,
+            'h': 3600.0,
+            'hr': 3600.0,
+            'hrs': 3600.0,
+            'hour': 3600.0,
+            'hours': 3600.0,
+            'd': 86400.0,
+            'day': 86400.0,
+            'days': 86400.0,
+        }.get(unit, 1.0)
 
     def _slice_time_info(self, time_info: Dict, time_slice: slice) -> Dict:
         """Slice time info to specified range."""
         sliced_info = time_info.copy()
         sliced_info['time_values'] = time_info['time_values'][time_slice]
         sliced_info['seconds_since_reference'] = time_info['seconds_since_reference'][time_slice]
+        if 'valid_time_indices' in time_info:
+            sliced_info['valid_time_indices'] = time_info['valid_time_indices'][time_slice]
         sliced_info['num_times'] = len(sliced_info['time_values'])
         if len(sliced_info['time_values']) > 0:
             sliced_info['time_start'] = sliced_info['time_values'][0]
@@ -422,26 +499,28 @@ class FormatPlugin(BaseFormatPlugin):
             raise ValueError('Dataset not loaded. Call load() first.')
 
         num_times = time_info['num_times']
-        time_slice = (
-            slice(time_start_idx, time_end_idx)
-            if time_start_idx is not None or time_end_idx is not None
-            else slice(None)
-        )
+        time_selector = self._time_selector_from_indices(time_info.get('valid_time_indices'))
+        if time_selector is None:
+            time_selector = (
+                slice(time_start_idx, time_end_idx)
+                if time_start_idx is not None or time_end_idx is not None
+                else slice(None)
+            )
 
         x, y = self._get_grid_coordinates()
         grid_size = x.size
 
         bed_load_transport_x, bed_load_classes_x = self._mean_transport_component(
-            'Subg_mean', time_slice, num_times, grid_size
+            'Subg_mean', time_selector, num_times, grid_size
         )
         bed_load_transport_y, bed_load_classes_y = self._mean_transport_component(
-            'Svbg_mean', time_slice, num_times, grid_size
+            'Svbg_mean', time_selector, num_times, grid_size
         )
         suspended_transport_x, suspended_classes_x = self._mean_transport_component(
-            'Susg_mean', time_slice, num_times, grid_size
+            'Susg_mean', time_selector, num_times, grid_size
         )
         suspended_transport_y, suspended_classes_y = self._mean_transport_component(
-            'Svsg_mean', time_slice, num_times, grid_size
+            'Svsg_mean', time_selector, num_times, grid_size
         )
         source_sediment_classes = max(
             bed_load_classes_x,
@@ -453,11 +532,11 @@ class FormatPlugin(BaseFormatPlugin):
         data = {
             'x': x,
             'y': y,
-            'bed_level': self._mean_scalar('zb_mean', time_slice, num_times, grid_size),
-            'water_depth': self._mean_scalar('hh_mean', time_slice, num_times, grid_size),
-            'flow_velocity_x': self._mean_scalar('ue_mean', time_slice, num_times, grid_size),
-            'flow_velocity_y': self._mean_scalar('ve_mean', time_slice, num_times, grid_size),
-            'sediment_concentration': self._mean_scalar('cctot_mean', time_slice, num_times, grid_size),
+            'bed_level': self._mean_scalar('zb_mean', time_selector, num_times, grid_size),
+            'water_depth': self._mean_scalar('hh_mean', time_selector, num_times, grid_size),
+            'flow_velocity_x': self._mean_scalar('ue_mean', time_selector, num_times, grid_size),
+            'flow_velocity_y': self._mean_scalar('ve_mean', time_selector, num_times, grid_size),
+            'sediment_concentration': self._mean_scalar('cctot_mean', time_selector, num_times, grid_size),
             'bed_load_transport_x': bed_load_transport_x,
             'bed_load_transport_y': bed_load_transport_y,
             'suspended_transport_x': suspended_transport_x,
@@ -465,13 +544,13 @@ class FormatPlugin(BaseFormatPlugin):
             'source_sediment_classes': source_sediment_classes,
         }
 
-        taubx = self._mean_scalar('taubx_mean', time_slice, num_times, grid_size)
-        tauby = self._mean_scalar('tauby_mean', time_slice, num_times, grid_size)
+        taubx = self._mean_scalar('taubx_mean', time_selector, num_times, grid_size)
+        tauby = self._mean_scalar('tauby_mean', time_selector, num_times, grid_size)
         data['mean_bed_shear_stress'] = np.sqrt(taubx**2 + tauby**2)
 
         if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
-            theta = self._mean_scalar('thetamean_mean', time_slice, num_times, grid_size)
-            ua = self._mean_scalar('ua_mean', time_slice, num_times, grid_size)
+            theta = self._mean_scalar('thetamean_mean', time_selector, num_times, grid_size)
+            ua = self._mean_scalar('ua_mean', time_selector, num_times, grid_size)
             data['nonlinear_wave_velocity_x'] = ua * np.cos(np.deg2rad(theta))
             data['nonlinear_wave_velocity_y'] = ua * np.sin(np.deg2rad(theta))
         else:
@@ -480,6 +559,18 @@ class FormatPlugin(BaseFormatPlugin):
             print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
 
         return data
+
+    @staticmethod
+    def _time_selector_from_indices(time_indices: np.ndarray | None) -> Any:
+        """Return a slice for contiguous raw time indices, otherwise indices."""
+        if time_indices is None:
+            return None
+        indices = np.asarray(time_indices, dtype=np.int64)
+        if indices.size == 0:
+            return indices
+        if np.array_equal(indices, np.arange(indices[0], indices[-1] + 1, dtype=np.int64)):
+            return slice(int(indices[0]), int(indices[-1]) + 1)
+        return indices
 
     def _get_grid_coordinates(self) -> tuple[np.ndarray, np.ndarray]:
         """Return flattened active XBeach cell-center coordinates."""
@@ -588,19 +679,19 @@ class FormatPlugin(BaseFormatPlugin):
         right_array = np.asarray(right)
         return left.shape == right_array.shape and np.array_equal(left, right_array)
 
-    def _mean_scalar(self, var_name: str, time_slice: slice, num_times: int, grid_size: int) -> np.ndarray:
+    def _mean_scalar(self, var_name: str, time_selector: Any, num_times: int, grid_size: int) -> np.ndarray:
         """Read a scalar ``*_mean`` variable as ``(time, spatial)``."""
         var = self._require_mean_variable(var_name)
         if self.FRACTION_DIM in var.dims:
             raise ValueError(f"Expected scalar mean variable '{var_name}', found fraction dimension {var.dims}")
-        return self._reshape_mean_spatial(self._select_time(var, time_slice), num_times, grid_size)
+        return self._reshape_mean_spatial(self._select_time(var, time_selector), num_times, grid_size)
 
     def _mean_transport_component(
-        self, var_name: str, time_slice: slice, num_times: int, grid_size: int
+        self, var_name: str, time_selector: Any, num_times: int, grid_size: int
     ) -> tuple[np.ndarray, int]:
         """Read a transport ``*_mean`` variable as total ``(time, spatial)`` data."""
         var = self._require_mean_variable(var_name)
-        var = self._select_time(var, time_slice)
+        var = self._select_time(var, time_selector)
         source_sediment_classes = int(var.sizes.get(self.FRACTION_DIM, 1))
         if self.FRACTION_DIM in var.dims:
             var = var.sum(dim=self.FRACTION_DIM)
@@ -661,10 +752,10 @@ class FormatPlugin(BaseFormatPlugin):
             raise KeyError(f"Required XBeach mean variable '{var_name}' not found in dataset")
         return self.input_data[var_name]
 
-    def _select_time(self, var: xr.DataArray, time_slice: slice) -> xr.DataArray:
+    def _select_time(self, var: xr.DataArray, time_selector: Any) -> xr.DataArray:
         """Apply the XBeach mean-time slice when present."""
         if self.TIME_DIM in var.dims:
-            return var.isel({self.TIME_DIM: time_slice})
+            return var.isel({self.TIME_DIM: time_selector})
         return var
 
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
