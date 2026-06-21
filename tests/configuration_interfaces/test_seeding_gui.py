@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -7,6 +8,9 @@ import xarray as xr
 import yaml
 
 from sedtrails.application_interfaces.seeding_gui import (
+    BathymetryViewData,
+    MAP_ZOOM_IN_FACTOR,
+    SeedingGuiApp,
     SeedingGuiError,
     add_population_from_existing,
     clip_points_by_elevation,
@@ -23,6 +27,56 @@ from sedtrails.application_interfaces.seeding_gui import (
     write_points_file,
 )
 from sedtrails.particle_tracer.particle_seeder import FilePointsStrategy, PopulationConfig
+
+
+@pytest.fixture
+def seeding_gui_app(tmp_path, monkeypatch):
+    """Create a headless seeding GUI app with synthetic map data."""
+
+    import matplotlib
+
+    matplotlib.use('Agg', force=True)
+    import matplotlib.pyplot as plt
+    config_file = tmp_path / 'config.yaml'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'particles': {
+                    'populations': [
+                        {
+                            'name': 'sand_a',
+                            'seeding': {'quantity': 1, 'strategy': {'point': {'locations': ['0,0']}}},
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding='utf-8',
+    )
+    view_data = BathymetryViewData(
+        x=np.array([0.0, 1.0, 0.0, 1.0]),
+        y=np.array([0.0, 0.0, 1.0, 1.0]),
+        values=np.array([-1.0, -0.5, 0.0, 0.5]),
+        variable='bedlevel',
+        input_file=tmp_path / 'input.nc',
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui.load_bathymetry_view_data',
+        lambda *args, **kwargs: view_data,
+    )
+    app = SeedingGuiApp(
+        config_path=config_file,
+        output_path=tmp_path / 'seeded.yaml',
+        points_output_path=tmp_path / 'seeded.points.txt',
+        population_name=None,
+        format_override=None,
+        variable=None,
+    )
+    app.fig.canvas.draw()
+    try:
+        yield app
+    finally:
+        plt.close(app.fig)
 
 
 def _test_output_dir(name: str) -> Path:
@@ -42,6 +96,105 @@ def _cleanup_output_dir(path: Path) -> None:
         root.rmdir()
     except OSError:
         pass
+
+
+def _axis_center_and_span(limits):
+    """Return the center and signed span for axis limits."""
+
+    return (limits[0] + limits[1]) * 0.5, limits[1] - limits[0]
+
+
+def _map_mouse_event(app, *, button=1, xdata=0.5, ydata=0.5, x_fraction=0.5, y_fraction=0.5):
+    """Create a minimal Matplotlib mouse event for the app's map axes."""
+
+    bbox = app.ax.bbox
+    return SimpleNamespace(
+        inaxes=app.ax,
+        button=button,
+        x=float(bbox.x0 + bbox.width * x_fraction),
+        y=float(bbox.y0 + bbox.height * y_fraction),
+        xdata=xdata,
+        ydata=ydata,
+    )
+
+
+def test_gui_zoom_buttons_change_axis_span_without_changing_center(seeding_gui_app):
+    """Zoom controls scale the map around the current view center."""
+
+    app = seeding_gui_app
+    initial_xlim = app.ax.get_xlim()
+    initial_ylim = app.ax.get_ylim()
+    initial_x_center, initial_x_span = _axis_center_and_span(initial_xlim)
+    initial_y_center, initial_y_span = _axis_center_and_span(initial_ylim)
+
+    app._zoom_in()
+    zoom_xlim = app.ax.get_xlim()
+    zoom_ylim = app.ax.get_ylim()
+
+    np.testing.assert_allclose(
+        _axis_center_and_span(zoom_xlim),
+        (initial_x_center, initial_x_span * MAP_ZOOM_IN_FACTOR),
+    )
+    np.testing.assert_allclose(
+        _axis_center_and_span(zoom_ylim),
+        (initial_y_center, initial_y_span * MAP_ZOOM_IN_FACTOR),
+    )
+
+    app._zoom_out()
+
+    np.testing.assert_allclose(_axis_center_and_span(app.ax.get_xlim()), _axis_center_and_span(initial_xlim))
+    np.testing.assert_allclose(_axis_center_and_span(app.ax.get_ylim()), _axis_center_and_span(initial_ylim))
+
+
+def test_gui_map_navigation_buttons_do_not_overlap_x_axis_labels(seeding_gui_app):
+    """Map navigation controls stay clear of x-axis tick labels and label."""
+
+    app = seeding_gui_app
+    app.fig.canvas.draw()
+    renderer = app.fig.canvas.get_renderer()
+    x_axis_bbox = app.ax.xaxis.get_tightbbox(renderer)
+
+    for button in app._map_buttons:
+        assert not button.ax.get_window_extent(renderer).overlaps(x_axis_bbox)
+
+
+def test_gui_pan_button_toggles_drag_panning_without_creating_seed_points(seeding_gui_app):
+    """Pan mode drags the map view and leaves seed selection disabled until toggled off."""
+
+    app = seeding_gui_app
+    initial_xlim = app.ax.get_xlim()
+    initial_ylim = app.ax.get_ylim()
+    press = _map_mouse_event(app)
+
+    app._toggle_pan_mode()
+    assert app._pan_button.color == '0.70'
+    assert app._pan_button.hovercolor == '0.78'
+    np.testing.assert_allclose(app._pan_button.ax.get_facecolor(), (0.70, 0.70, 0.70, 1.0))
+    app._on_map_button_press(press)
+    motion = SimpleNamespace(
+        x=press.x + app.ax.bbox.width * 0.25,
+        y=press.y - app.ax.bbox.height * 0.10,
+    )
+    app._on_map_motion(motion)
+
+    x_delta = 0.25 * (initial_xlim[1] - initial_xlim[0])
+    y_delta = -0.10 * (initial_ylim[1] - initial_ylim[0])
+    np.testing.assert_allclose(app.ax.get_xlim(), (initial_xlim[0] - x_delta, initial_xlim[1] - x_delta))
+    np.testing.assert_allclose(app.ax.get_ylim(), (initial_ylim[0] - y_delta, initial_ylim[1] - y_delta))
+    assert app.points == []
+    assert 'Pan: on' in app.status_text.get_text()
+
+    app._on_map_button_release(motion)
+    assert app._pan_start is None
+
+    app._toggle_pan_mode()
+    assert app._pan_button.color == '0.85'
+    assert app._pan_button.hovercolor == '0.95'
+    np.testing.assert_allclose(app._pan_button.ax.get_facecolor(), (0.85, 0.85, 0.85, 1.0))
+    app._on_map_button_press(_map_mouse_event(app, xdata=2.5, ydata=3.5))
+
+    assert app.points == [(2.5, 3.5)]
+    assert 'Pan: on' not in app.status_text.get_text()
 
 
 def test_update_config_for_file_points_updates_only_selected_population():

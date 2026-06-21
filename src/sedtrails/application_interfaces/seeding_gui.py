@@ -16,6 +16,8 @@ SEEDING_MODES = ('points', 'transect', 'random', 'grid')
 RANDOM_CANDIDATE_BATCH_SIZE = 16_384
 GRID_CANDIDATE_BATCH_SIZE = 100_000
 DEFAULT_GRID_MAX_CANDIDATES = 2_000_000
+MAP_ZOOM_IN_FACTOR = 0.5
+MAP_ZOOM_OUT_FACTOR = 2.0
 SUPPORTED_GUI_INPUT_FORMATS: dict[str, dict[str, tuple[str, ...]]] = {
     'fm_netcdf': {
         'coordinates': ('net_xcc', 'net_ycc'),
@@ -445,6 +447,24 @@ def _clip_points_with_elevation_index(
     return [(float(x), float(y)) for (x, y), keep_point in zip(points, keep, strict=True) if keep_point]
 
 
+def _scaled_axis_limits(limits: tuple[float, float], *, factor: float) -> tuple[float, float]:
+    center = (limits[0] + limits[1]) * 0.5
+    half_span = (limits[1] - limits[0]) * factor * 0.5
+    return center - half_span, center + half_span
+
+
+def _panned_axis_limits(
+    limits: tuple[float, float],
+    *,
+    pixel_delta: float,
+    pixel_span: float,
+) -> tuple[float, float]:
+    if pixel_span <= 0:
+        return limits
+    data_delta = pixel_delta * (limits[1] - limits[0]) / pixel_span
+    return limits[0] - data_delta, limits[1] - data_delta
+
+
 class _Dropdown:
     """Small Matplotlib dropdown widget for compact in-figure selections."""
 
@@ -660,6 +680,8 @@ class SeedingGuiApp:
         self._max_display_points = 500_000
         self._clip_tree: Any | None = None
         self._clip_values: np.ndarray | None = None
+        self._pan_active = False
+        self._pan_start: dict[str, Any] | None = None
 
         self.config = load_config(self.config_path)
         self.population_names = get_population_names(self.config)
@@ -685,7 +707,7 @@ class SeedingGuiApp:
         from sedtrails.pathway_visualizer.colormaps import bathymetry_colormap
 
         self.fig, self.ax = plt.subplots(figsize=(12.4, 7.0))
-        self.fig.subplots_adjust(left=0.07, right=0.66, bottom=0.22, top=0.90)
+        self.fig.subplots_adjust(left=0.07, right=0.66, bottom=0.30, top=0.90)
 
         self.triangulation = mtri.Triangulation(self.view_data.x, self.view_data.y)
         self.bathymetry_cmap, self.bathymetry_norm = bathymetry_colormap(
@@ -720,7 +742,9 @@ class SeedingGuiApp:
         self.ax.set_aspect('equal', adjustable='datalim')
         self.ax.legend(loc='upper right')
 
-        self.fig.canvas.mpl_connect('button_press_event', self._on_map_click)
+        self.fig.canvas.mpl_connect('button_press_event', self._on_map_button_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self._on_map_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self._on_map_button_release)
 
         axes = {
             'save': self.fig.add_axes((0.07, 0.055, 0.105, 0.055)),
@@ -741,6 +765,20 @@ class SeedingGuiApp:
         self._buttons[2].on_clicked(self._validate)
         self._buttons[3].on_clicked(self._undo)
         self._buttons[4].on_clicked(self._clear)
+
+        map_axes = {
+            'zoom_in': self.fig.add_axes((0.07, 0.155, 0.070, 0.040)),
+            'zoom_out': self.fig.add_axes((0.150, 0.155, 0.070, 0.040)),
+            'pan': self.fig.add_axes((0.230, 0.155, 0.070, 0.040)),
+        }
+        self._zoom_in_button = Button(map_axes['zoom_in'], 'Zoom +')
+        self._zoom_out_button = Button(map_axes['zoom_out'], 'Zoom -')
+        self._pan_button = Button(map_axes['pan'], 'Pan')
+        self._map_buttons = [self._zoom_in_button, self._zoom_out_button, self._pan_button]
+        self._zoom_in_button.on_clicked(self._zoom_in)
+        self._zoom_out_button.on_clicked(self._zoom_out)
+        self._pan_button.on_clicked(self._toggle_pan_mode)
+        self._update_pan_button_style()
 
         panel_x = 0.79
         panel_w = 0.17
@@ -817,7 +855,7 @@ class SeedingGuiApp:
         self._set_n_input_state()
         self._set_random_seed_state()
         self._set_grid_input_state()
-        self.status_text = self.fig.text(0.07, 0.145, self._status_message(), fontsize=8)
+        self.status_text = self.fig.text(0.07, 0.125, self._status_message(), fontsize=8)
 
     def show(self) -> None:
         import matplotlib.pyplot as plt
@@ -839,6 +877,75 @@ class SeedingGuiApp:
         if self.strategy_mode in {'random', 'grid'}:
             self._on_polygon_click(event)
             return
+
+    def _on_map_button_press(self, event: Any) -> None:
+        if self._pan_active:
+            self._start_pan(event)
+            return
+
+        self._on_map_click(event)
+
+    def _on_map_motion(self, event: Any) -> None:
+        if self._pan_start is None or event.x is None or event.y is None:
+            return
+
+        bbox_width = self._pan_start['bbox_width']
+        bbox_height = self._pan_start['bbox_height']
+        xlim = _panned_axis_limits(
+            self._pan_start['xlim'],
+            pixel_delta=float(event.x) - self._pan_start['x'],
+            pixel_span=bbox_width,
+        )
+        ylim = _panned_axis_limits(
+            self._pan_start['ylim'],
+            pixel_delta=float(event.y) - self._pan_start['y'],
+            pixel_span=bbox_height,
+        )
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+        self.fig.canvas.draw_idle()
+
+    def _on_map_button_release(self, _event: Any) -> None:
+        self._pan_start = None
+
+    def _start_pan(self, event: Any) -> None:
+        if event.inaxes is not self.ax or event.button != 1 or event.x is None or event.y is None:
+            return
+
+        bbox = self.ax.bbox
+        self._pan_start = {
+            'x': float(event.x),
+            'y': float(event.y),
+            'xlim': self.ax.get_xlim(),
+            'ylim': self.ax.get_ylim(),
+            'bbox_width': float(bbox.width),
+            'bbox_height': float(bbox.height),
+        }
+
+    def _zoom_in(self, _event: Any = None) -> None:
+        self._zoom_map(MAP_ZOOM_IN_FACTOR)
+
+    def _zoom_out(self, _event: Any = None) -> None:
+        self._zoom_map(MAP_ZOOM_OUT_FACTOR)
+
+    def _zoom_map(self, factor: float) -> None:
+        self.ax.set_xlim(_scaled_axis_limits(self.ax.get_xlim(), factor=factor))
+        self.ax.set_ylim(_scaled_axis_limits(self.ax.get_ylim(), factor=factor))
+        self.fig.canvas.draw_idle()
+
+    def _toggle_pan_mode(self, _event: Any = None) -> None:
+        self._pan_active = not self._pan_active
+        self._pan_start = None
+        self._update_pan_button_style()
+        self.status_text.set_text(self._status_message())
+        self.fig.canvas.draw_idle()
+
+    def _update_pan_button_style(self) -> None:
+        facecolor = '0.70' if self._pan_active else '0.85'
+        hovercolor = '0.78' if self._pan_active else '0.95'
+        self._pan_button.color = facecolor
+        self._pan_button.hovercolor = hovercolor
+        self._pan_button.ax.set_facecolor(facecolor)
 
     def _on_points_click(self, event: Any) -> None:
         if event.button == 1:
@@ -1222,9 +1329,10 @@ class SeedingGuiApp:
         warning = ''
         if not self._should_display_points() and self.points:
             warning = f' >{self._max_display_points:,} not displayed.'
+        navigation = ' | Pan: on, drag map' if self._pan_active else ''
         return (
             f'Mode: {self.strategy_mode} | Pop: {self.population_name} | Seeds: {len(self.points)} | Total: {total_points} | '
-            f'Draft: {len(self.draft_vertices)} | {hints.get(self.strategy_mode, "")}.{warning}'
+            f'Draft: {len(self.draft_vertices)} | {hints.get(self.strategy_mode, "")}.{warning}{navigation}'
         )
 
     def _should_display_points(self) -> bool:
