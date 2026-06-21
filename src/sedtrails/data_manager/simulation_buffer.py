@@ -134,5 +134,13 @@ class SimulationDataBuffer:
         )
         if not files:
             raise FileNotFoundError('No .sim_buffer_*.nc files found to merge.')
-        ds = xr.open_mfdataset(files, combine='by_coords')
-        ds.to_netcdf(output_dir / merged_filename)
+        datasets = []
+        for file in files:
+            with xr.open_dataset(file) as ds:
+                datasets.append(ds.load())
+
+        if len(datasets) == 1:
+            merged = datasets[0]
+        else:
+            merged = xr.concat(datasets, dim='time')
+        merged.to_netcdf(output_dir / merged_filename)

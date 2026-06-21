@@ -30,7 +30,7 @@ particles:
           soulsby_gamma_e: 0.1
           soulsby_mu_d: 0.5
           soulsby_freedom_factor: 1
-      transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
+      transport_probability: no_probability   # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
         burial_depth: 
           constant: 0

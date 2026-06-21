@@ -91,10 +91,15 @@ def test_write_to_disk(tmp_path):
         assert arr.size == 0
 
 
-def test_merge_output_files(tmp_path):
+def test_merge_output_files(tmp_path, monkeypatch):
     """
     Test that merge_output_files correctly merges multiple NetCDF chunk files into one.
     """
+    def fail_open_mfdataset(*args, **kwargs):
+        raise AssertionError('merge_output_files should not require xr.open_mfdataset')
+
+    monkeypatch.setattr('sedtrails.data_manager.simulation_buffer.xr.open_mfdataset', fail_open_mfdataset)
+
     # Create test mesh
     node_x = np.array([0, 1, 1, 0])
     node_y = np.array([0, 0, 1, 1])
