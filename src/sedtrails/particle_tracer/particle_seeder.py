@@ -921,10 +921,8 @@ class ParticlePopulation:
         Bound method for temporal updates and crossed boundary class codes.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
-    _particle_simplices_x : ndarray
-        Particle x coordinates corresponding to the cached simplex ids.
-    _particle_simplices_y : ndarray
-        Particle y coordinates corresponding to the cached simplex ids.
+    _particle_simplices_stale : bool
+        Whether particle positions may have changed since ``_particle_simplices`` was refreshed.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -948,8 +946,7 @@ class ParticlePopulation:
     _position_calculator_with_boundary_class: Any = field(init=False)
     _position_calculator_temporal_with_boundary_class: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
-    _particle_simplices_x: ndarray = field(init=False)
-    _particle_simplices_y: ndarray = field(init=False)
+    _particle_simplices_stale: bool = field(init=False, default=True)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -1093,24 +1090,19 @@ class ParticlePopulation:
         )
 
     def _mark_particle_simplices_current(self) -> None:
-        """Record the particle coordinates represented by the simplex cache."""
-        self._particle_simplices_x = np.asarray(self.particles['x']).copy()
-        self._particle_simplices_y = np.asarray(self.particles['y']).copy()
+        """Mark cached simplex ids as representing current particle positions."""
+        self._particle_simplices_stale = False
+
+    def _invalidate_particle_simplices(self) -> None:
+        """Mark cached simplex ids stale after external particle-coordinate edits."""
+        self._particle_simplices_stale = True
 
     def _particle_simplices_match_positions(self) -> bool:
         """Return whether cached simplex ids represent the current particle positions."""
         n_particles = len(self.particles['x'])
         if self._particle_simplices.shape[0] != n_particles:
             return False
-        if (
-            self._particle_simplices_x.shape[0] != n_particles
-            or self._particle_simplices_y.shape[0] != n_particles
-        ):
-            return False
-        return (
-            np.array_equal(self._particle_simplices_x, self.particles['x'], equal_nan=True)
-            and np.array_equal(self._particle_simplices_y, self.particles['y'], equal_nan=True)
-        )
+        return not self._particle_simplices_stale
 
     def _refresh_particle_simplices(self) -> None:
         """Refresh cached simplex ids from the current particle coordinates."""
@@ -1184,7 +1176,7 @@ class ParticlePopulation:
     def _interpolate_particle_fields(self, fields):
         """Interpolate fields at particle positions and refresh cached simplex ids."""
         simplex_ids = self._particle_simplices
-        if simplex_ids.shape[0] != len(self.particles['x']):
+        if self._particle_simplices_stale or simplex_ids.shape[0] != len(self.particles['x']):
             simplex_ids = None
         particle_values, simplices = self._field_interpolator_multi_with_simplex(
             tuple(fields),

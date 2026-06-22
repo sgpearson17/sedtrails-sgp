@@ -1554,14 +1554,15 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, False, True, False]))
 
-    def test_update_status_refreshes_stale_simplex_ids_after_coordinate_mutation(self, monkeypatch):
-        """Direct coordinate edits should refresh domain status before mobile-mask composition."""
+    def test_update_status_refreshes_invalidated_simplex_ids_after_coordinate_mutation(self, monkeypatch):
+        """Invalidated coordinate edits should refresh domain status before mobile-mask composition."""
         population = self._status_test_population(current_time=0.0)
         population.particles['x'][:] = 0.5
         population.particles['y'][:] = 0.5
         population._refresh_particle_simplices()
         population.particles['x'][2] = 2.0
         population.particles['y'][2] = 2.0
+        population._invalidate_particle_simplices()
         monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
 
         population.update_status()
@@ -1605,8 +1606,8 @@ class TestParticlePopulation:
 
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True]))
 
-    def test_update_status_relocates_externally_moved_particles(self, monkeypatch):
-        """Particles whose coordinates change outside update_position should be relocated once."""
+    def test_update_status_relocates_invalidated_externally_moved_particles(self, monkeypatch):
+        """Particles whose coordinates change outside update_position can be relocated once."""
         population = _single_particle_population(release_start='0')
         population._current_time = 0.0
         calls = []
@@ -1618,6 +1619,7 @@ class TestParticlePopulation:
         monkeypatch.setattr(population.grid_geometry, 'locate_points', fake_locate_points)
         population.particles['x'][0] = 0.25
         population.particles['y'][0] = 0.25
+        population._invalidate_particle_simplices()
 
         population.update_status()
 
@@ -1625,8 +1627,32 @@ class TestParticlePopulation:
         np.testing.assert_allclose(calls[0][0], np.array([0.25]))
         np.testing.assert_allclose(calls[0][1], np.array([0.25]))
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True]))
-        np.testing.assert_allclose(population._particle_simplices_x, np.array([0.25]))
-        np.testing.assert_allclose(population._particle_simplices_y, np.array([0.25]))
+        assert not population._particle_simplices_stale
+
+    def test_update_information_skips_stale_simplex_ids_after_invalidation(self, monkeypatch):
+        """Invalidated particle coordinates should not seed interpolation with stale simplex ids."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+        calls = []
+
+        def fake_interpolate(fields, x_points, y_points, simplex_ids=None):
+            calls.append(simplex_ids)
+            return (np.array([[1.0], [1.0], [0.0]]), np.array([0], dtype=np.int64))
+
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate)
+        population.particles['x'][0] = 0.25
+        population.particles['y'][0] = 0.25
+        population._invalidate_particle_simplices()
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=np.array([1.0]),
+            transport_probability=np.array([1.0]),
+            bed_level=np.array([0.0]),
+        )
+
+        assert calls == [None]
+        assert not population._particle_simplices_stale
 
     def test_update_status_uses_active_connectivity_holes_for_domain_mask(self, monkeypatch):
         """Particles inside a mesh hole should be outside the active domain."""

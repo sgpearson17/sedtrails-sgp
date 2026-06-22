@@ -305,25 +305,54 @@ def extract_boundary_edges(connectivity: np.ndarray) -> np.ndarray:
     """
 
     faces = np.asarray(connectivity, dtype=np.int64)
-    edge_counts: dict[tuple[int, int], int] = {}
-    oriented_edges: dict[tuple[int, int], tuple[int, int]] = {}
+    oriented_edges = _oriented_edges_from_uniform_connectivity(faces)
+    if oriented_edges is None:
+        oriented_edges = _oriented_edges_from_ragged_connectivity(faces)
 
-    for face in faces:
-        valid = [int(index) for index in face if index >= 0]
-        if len(valid) < 2:
-            continue
-        for index, start in enumerate(valid):
-            end = valid[(index + 1) % len(valid)]
-            if start == end:
-                continue
-            key = tuple(sorted((start, end)))
-            edge_counts[key] = edge_counts.get(key, 0) + 1
-            oriented_edges.setdefault(key, (start, end))
-
-    boundary_edges = [oriented_edges[key] for key, count in edge_counts.items() if count == 1]
-    if not boundary_edges:
+    if oriented_edges.size == 0:
         return np.empty((0, 2), dtype=np.int64)
-    return np.asarray(boundary_edges, dtype=np.int64)
+
+    sorted_edges = np.sort(oriented_edges, axis=1)
+    _, first_indices, counts = np.unique(
+        sorted_edges,
+        axis=0,
+        return_index=True,
+        return_counts=True,
+    )
+    boundary_first_indices = np.sort(first_indices[counts == 1])
+    if boundary_first_indices.size == 0:
+        return np.empty((0, 2), dtype=np.int64)
+    return oriented_edges[boundary_first_indices]
+
+
+def _oriented_edges_from_uniform_connectivity(faces: np.ndarray) -> np.ndarray | None:
+    """Return oriented edges for fully populated face connectivity."""
+    if faces.ndim != 2 or faces.shape[0] == 0 or faces.shape[1] < 2:
+        return np.empty((0, 2), dtype=np.int64)
+    if np.any(faces < 0):
+        return None
+
+    starts = faces
+    ends = np.roll(faces, shift=-1, axis=1)
+    edges = np.stack((starts, ends), axis=2).reshape(-1, 2)
+    return edges[edges[:, 0] != edges[:, 1]]
+
+
+def _oriented_edges_from_ragged_connectivity(faces: np.ndarray) -> np.ndarray:
+    """Return oriented edges for padded variable-width face connectivity."""
+    edge_blocks = []
+    for face in faces:
+        valid = face[face >= 0]
+        if valid.size < 2:
+            continue
+        starts = valid
+        ends = np.roll(valid, shift=-1)
+        edges = np.column_stack((starts, ends))
+        edge_blocks.append(edges[edges[:, 0] != edges[:, 1]])
+
+    if not edge_blocks:
+        return np.empty((0, 2), dtype=np.int64)
+    return np.vstack(edge_blocks).astype(np.int64, copy=False)
 
 
 def classify_boundary_edges_from_config(
@@ -416,25 +445,19 @@ def classify_boundary_edges(
         if class_name in BOUNDARY_CLASS_NAMES
     }
 
-    edge_classes: list[str] = []
-    class_sources: list[tuple[str, ...]] = []
-    for edge_index in range(edges.shape[0]):
-        matches = tuple(
+    open_matches = matches_by_class.get('open', np.zeros(edges.shape[0], dtype=bool))
+    land_matches = matches_by_class.get('land', np.zeros(edges.shape[0], dtype=bool))
+    class_array = np.full(edges.shape[0], 'unclassified', dtype=object)
+    class_array[open_matches] = 'open'
+    class_array[land_matches] = 'land'
+    class_sources = tuple(
+        tuple(
             class_name
-            for class_name in BOUNDARY_CLASS_NAMES
-            if matches_by_class.get(class_name, np.zeros(edges.shape[0], dtype=bool))[edge_index]
+            for class_name, matches in (('open', open_matches), ('land', land_matches))
+            if matches[edge_index]
         )
-        class_sources.append(matches)
-        if not matches:
-            edge_classes.append('unclassified')
-        elif 'land' in matches:
-            edge_classes.append('land')
-        elif len(matches) == 1:
-            edge_classes.append(matches[0])
-        else:
-            edge_classes.append('ambiguous')
-
-    class_array = np.asarray(edge_classes, dtype=object)
+        for edge_index in range(edges.shape[0])
+    )
     class_counts = {class_name: int(np.count_nonzero(class_array == class_name)) for class_name in BOUNDARY_CLASS_NAMES}
     class_counts['unclassified'] = int(np.count_nonzero(class_array == 'unclassified'))
     class_counts['ambiguous'] = int(np.count_nonzero(class_array == 'ambiguous'))

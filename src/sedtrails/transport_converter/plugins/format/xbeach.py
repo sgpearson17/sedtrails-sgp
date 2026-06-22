@@ -657,26 +657,25 @@ class FormatPlugin(BaseFormatPlugin):
         index_map = np.full(active_mask.size, -1, dtype=np.int64)
         index_map[active_mask] = np.arange(np.count_nonzero(active_mask), dtype=np.int64)
 
-        triangles: list[tuple[int, int, int]] = []
-        for iy in range(ny - 1):
-            row = iy * nx
-            next_row = (iy + 1) * nx
-            for ix in range(nx - 1):
-                lower_left = row + ix
-                lower_right = lower_left + 1
-                upper_left = next_row + ix
-                upper_right = upper_left + 1
-                for triangle in (
-                    (lower_left, lower_right, upper_right),
-                    (lower_left, upper_right, upper_left),
-                ):
-                    mapped_triangle = index_map[np.asarray(triangle, dtype=np.int64)]
-                    if np.all(mapped_triangle >= 0):
-                        triangles.append(tuple(int(index) for index in mapped_triangle))
+        mapped = index_map.reshape(ny, nx)
+        lower_left = mapped[:-1, :-1].ravel()
+        lower_right = mapped[:-1, 1:].ravel()
+        upper_left = mapped[1:, :-1].ravel()
+        upper_right = mapped[1:, 1:].ravel()
 
-        if not triangles:
+        n_cells = lower_left.size
+        candidate_triangles = np.empty((2 * n_cells, 3), dtype=np.int64)
+        candidate_triangles[0::2, 0] = lower_left
+        candidate_triangles[0::2, 1] = lower_right
+        candidate_triangles[0::2, 2] = upper_right
+        candidate_triangles[1::2, 0] = lower_left
+        candidate_triangles[1::2, 1] = upper_right
+        candidate_triangles[1::2, 2] = upper_left
+
+        active_triangles = np.all(candidate_triangles >= 0, axis=1)
+        if not np.any(active_triangles):
             return np.empty((0, 3), dtype=np.int64)
-        return np.asarray(triangles, dtype=np.int64)
+        return candidate_triangles[active_triangles]
 
     def _geometry_cache_matches(self, cache: dict[str, Any] | None, x: np.ndarray, y: np.ndarray) -> bool:
         """Return whether cached particle connectivity matches the active grid."""

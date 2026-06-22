@@ -964,21 +964,41 @@ def _boundary_class_labels(codes) -> np.ndarray:
 
 def _build_triangle_edge_class_codes(triangles, boundary_edges, boundary_edge_class_codes) -> np.ndarray:
     triangle_edge_class_codes = np.zeros((triangles.shape[0], 3), dtype=np.int8)
-    if boundary_edges is None or boundary_edge_class_codes is None:
+    if boundary_edges is None or boundary_edge_class_codes is None or boundary_edges.size == 0:
         return triangle_edge_class_codes
 
-    edge_class_lookup = {
-        tuple(sorted((int(edge[0]), int(edge[1])))): np.int8(class_code)
-        for edge, class_code in zip(boundary_edges, boundary_edge_class_codes, strict=True)
-    }
-    opposite_edges = ((1, 2), (0, 2), (0, 1))
-    for triangle_index, triangle in enumerate(triangles):
-        for edge_index, edge_vertices in enumerate(opposite_edges):
-            edge_key = tuple(sorted((int(triangle[edge_vertices[0]]), int(triangle[edge_vertices[1]]))))
-            triangle_edge_class_codes[triangle_index, edge_index] = edge_class_lookup.get(
-                edge_key,
-                BOUNDARY_CLASS_UNCLASSIFIED,
-            )
+    triangle_array = np.asarray(triangles, dtype=np.int64)
+    if triangle_array.size == 0:
+        return triangle_edge_class_codes
+    boundary_edge_array = np.asarray(boundary_edges, dtype=np.int64)
+    max_node = int(max(np.max(triangle_array), np.max(boundary_edge_array))) + 1
+    if max_node <= 0:
+        return triangle_edge_class_codes
+
+    triangle_edges = np.stack(
+        (
+            triangle_array[:, [1, 2]],
+            triangle_array[:, [0, 2]],
+            triangle_array[:, [0, 1]],
+        ),
+        axis=1,
+    )
+    triangle_edges = np.sort(triangle_edges, axis=2)
+    triangle_keys = triangle_edges[:, :, 0] * max_node + triangle_edges[:, :, 1]
+
+    sorted_boundary_edges = np.sort(boundary_edge_array, axis=1)
+    boundary_keys = sorted_boundary_edges[:, 0] * max_node + sorted_boundary_edges[:, 1]
+    order = np.argsort(boundary_keys)
+    sorted_keys = boundary_keys[order]
+    sorted_codes = np.asarray(boundary_edge_class_codes, dtype=np.int8)[order]
+
+    flat_keys = triangle_keys.ravel()
+    positions = np.searchsorted(sorted_keys, flat_keys)
+    in_range = positions < sorted_keys.size
+    safe_positions = np.minimum(positions, sorted_keys.size - 1)
+    matches = in_range & (sorted_keys[safe_positions] == flat_keys)
+    flat_codes = triangle_edge_class_codes.ravel()
+    flat_codes[matches] = sorted_codes[safe_positions[matches]]
     return triangle_edge_class_codes
 
 
