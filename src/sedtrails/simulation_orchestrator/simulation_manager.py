@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-import xarray as xr
 from tqdm import tqdm
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
@@ -42,6 +41,19 @@ class Simulation:
 
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
+    _OUTPUT_COORDINATE_FIELD_COUNT = 5
+    _OUTPUT_STATUS_FIELD_COUNT = 6
+    _DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB = 1024
+    _OUTPUT_DTYPE_BYTES = {
+        'float32': 4,
+        'f4': 4,
+        'float64': 8,
+        'f8': 8,
+        'uint8': 1,
+        'u1': 1,
+        'int32': 4,
+        'i4': 4,
+    }
 
     def __init__(self, config_file: str, enable_dashboard: Optional[bool] = None):
         """
@@ -91,7 +103,6 @@ class Simulation:
         self.format_converter = FormatConverter(self._get_format_config())
         self.physics_converter = PhysicsConverter(self._get_physics_config())
         self.data_manager = DataManager(self._get_output_dir())
-        self.data_manager.set_mesh()  # TODO: was this ever answered? is it needed?
         self.particles: list[Particle] = []  # List to hold particles
         self.dashboard = self._create_dashboard()  #
         self.writer = self.data_manager.writer
@@ -215,14 +226,6 @@ class Simulation:
         update_interval = self._controller.get('visualization.dashboard.update_interval', '1H')
         return Duration(update_interval).seconds
 
-    def _output_save_interval_seconds(self) -> int:
-        """Return the configured trajectory save interval in seconds."""
-        save_interval = self._controller.get('outputs.save_interval', '1H')
-        seconds = Duration(save_interval).seconds
-        if seconds <= 0:
-            raise ConfigurationError('`outputs.save_interval` must be greater than zero.')
-        return seconds
-
     @staticmethod
     def _missing_particle_field_like(particle_x: np.ndarray) -> np.ndarray:
         """Return a same-shaped NaN particle field for unavailable dashboard data."""
@@ -293,25 +296,6 @@ class Simulation:
     ) -> bool:
         """Return whether the loop should try to load another SedTRAILS data chunk."""
         return not input_data_exhausted and cls._needs_sedtrails_reload(sedtrails_data, current_time_seconds)
-
-    def _ensure_time_capacity(
-        self,
-        xr_data: xr.Dataset,
-        timestep_index: int,
-        max_timesteps: int,
-    ) -> tuple[xr.Dataset, int]:
-        """Expand output storage before writing a timestep index."""
-        required_size = timestep_index + 1
-        if required_size <= max_timesteps:
-            return xr_data, max_timesteps
-
-        old_max = max_timesteps
-        new_max = max_timesteps
-        while required_size > new_max:
-            new_max = max(new_max + 1, int(new_max * 2.0))
-
-        self.logger.info(f'Expanding time dimension from {old_max} to {new_max}')
-        return self._expand_time_dimension(xr_data, new_max), new_max
 
     @staticmethod
     def _map_eulerian_field_time(
@@ -394,6 +378,157 @@ class Simulation:
         if save_interval_seconds <= 0:
             raise ConfigurationError('outputs.save_interval must be a positive duration')
         return save_interval_seconds
+
+    def _output_netcdf_options(self) -> dict[str, Any]:
+        """Return NetCDF writer options, with defaults tuned for large particle tracks."""
+        netcdf_config = self._controller.get('outputs.netcdf', {}) or {}
+        return {
+            'coordinate_dtype': netcdf_config.get('coordinate_dtype', 'float32'),
+            'status_dtype': netcdf_config.get('status_dtype', 'uint8'),
+            'compression': netcdf_config.get('compression', 'auto'),
+            'compression_auto_threshold_mb': int(
+                netcdf_config.get(
+                    'compression_auto_threshold_mb',
+                    self._DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB,
+                )
+            ),
+            'compression_level': int(netcdf_config.get('compression_level', 1)),
+            'shuffle': bool(netcdf_config.get('shuffle', True)),
+            'time_chunk': int(netcdf_config.get('time_chunk', 1)),
+            'particle_chunk': int(netcdf_config.get('particle_chunk', 65_536)),
+            'sync_interval': netcdf_config.get('sync_interval', 10),
+            'reopen_interval': netcdf_config.get('reopen_interval', None),
+        }
+
+    @classmethod
+    def _estimate_netcdf_payload_bytes(
+        cls,
+        n_particles: int,
+        n_output_slots: int,
+        coordinate_dtype: str,
+        status_dtype: str,
+    ) -> int:
+        """Estimate uncompressed particle payload bytes for NetCDF output."""
+        coordinate_bytes = cls._OUTPUT_DTYPE_BYTES[str(coordinate_dtype)]
+        status_bytes = cls._OUTPUT_DTYPE_BYTES[str(status_dtype)]
+        bytes_per_particle_slot = (
+            cls._OUTPUT_COORDINATE_FIELD_COUNT * coordinate_bytes
+            + cls._OUTPUT_STATUS_FIELD_COUNT * status_bytes
+        )
+        return max(0, int(n_particles)) * max(1, int(n_output_slots)) * bytes_per_particle_slot
+
+    @classmethod
+    def _resolve_output_netcdf_options(
+        cls,
+        netcdf_options: dict[str, Any],
+        n_particles: int,
+        n_output_slots: int,
+    ) -> dict[str, Any]:
+        """Resolve auto compression into concrete NetCDF writer options."""
+        resolved_options = dict(netcdf_options)
+        compression = resolved_options.get('compression', 'auto')
+        threshold_mb = int(
+            resolved_options.pop(
+                'compression_auto_threshold_mb',
+                cls._DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB,
+            )
+        )
+
+        if compression == 'auto':
+            estimated_bytes = cls._estimate_netcdf_payload_bytes(
+                n_particles,
+                n_output_slots,
+                resolved_options['coordinate_dtype'],
+                resolved_options['status_dtype'],
+            )
+            resolved_options['compression'] = estimated_bytes >= threshold_mb * 1024 * 1024
+        elif isinstance(compression, bool):
+            resolved_options['compression'] = compression
+        else:
+            raise ConfigurationError(
+                "outputs.netcdf.compression must be true, false, or 'auto'."
+            )
+
+        return resolved_options
+
+    def _output_checkpoint_options(self, writer_options: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Return checkpoint policy and shared NetCDF encoding options."""
+        netcdf_config = self._controller.get('outputs.netcdf', {}) or {}
+        if writer_options is None:
+            writer_options = self._resolve_output_netcdf_options(
+                self._output_netcdf_options(),
+                n_particles=0,
+                n_output_slots=1,
+            )
+        return {
+            'enabled': bool(netcdf_config.get('checkpoint', True)),
+            'interval': int(netcdf_config.get('checkpoint_interval', 0)),
+            'writer_kwargs': {
+                key: writer_options[key]
+                for key in (
+                    'coordinate_dtype',
+                    'status_dtype',
+                    'compression',
+                    'compression_level',
+                    'shuffle',
+                    'particle_chunk',
+                )
+            },
+        }
+
+    def _resolved_output_writer_options(
+        self,
+        total_particles: int,
+        n_output_slots: int,
+        store_tracks: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return concrete trajectory, snapshot, and checkpoint writer options."""
+        raw_netcdf_options = self._output_netcdf_options()
+        netcdf_options = self._resolve_output_netcdf_options(
+            raw_netcdf_options,
+            total_particles,
+            n_output_slots if store_tracks else 1,
+        )
+        snapshot_netcdf_options = self._resolve_output_netcdf_options(
+            raw_netcdf_options,
+            total_particles,
+            1,
+        )
+        checkpoint_options = self._output_checkpoint_options(snapshot_netcdf_options)
+        return netcdf_options, snapshot_netcdf_options, checkpoint_options
+
+    def _output_store_tracks(self) -> bool:
+        """Return whether output should store the full trajectory cube."""
+        if self._controller.get('outputs.store_end_positions', False):
+            return False
+        return bool(self._controller.get('outputs.store_tracks', True))
+
+    def _maybe_write_checkpoint(
+        self,
+        populations,
+        current_time: int | float,
+        simulation_time: Time,
+        saved_slots: int,
+        checkpoint_options: dict[str, Any],
+        *,
+        final: bool = False,
+    ) -> None:
+        """Write the compact checkpoint when the configured checkpoint policy says so."""
+        if not checkpoint_options.get('enabled', True):
+            return
+
+        interval = int(checkpoint_options.get('interval', 0))
+        if not final and (interval <= 0 or saved_slots % interval != 0):
+            return
+
+        self.data_manager.writer.write_checkpoint(
+            'sedtrails_checkpoint.nc',
+            populations,
+            float(current_time),
+            reference_date=str(simulation_time.reference_date),
+            time_units=f'seconds since {simulation_time.reference_date}',
+            **checkpoint_options.get('writer_kwargs', {}),
+        )
 
     @staticmethod
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
@@ -597,6 +732,11 @@ class Simulation:
     def config(self):
         """
         Returns the full configuration settings for the simulation.
+
+        Returns
+        -------
+        dict
+            Full validated simulation configuration.
         """
         if not self._config_is_read:
             self._controller.load_config(self._config_file)
@@ -606,6 +746,11 @@ class Simulation:
     def populations_config(self):
         """
         Returns the configuration paramters for 'populations'.
+
+        Returns
+        -------
+        dict
+            Population configuration mapping.
         """
         if self._populations_config is None:
             self._populations_config = self.config.get('particles', {}).get('populations', {})
@@ -615,6 +760,11 @@ class Simulation:
     def start_time(self):
         """
         Get the start time parameter for the simulation.
+
+        Returns
+        -------
+        object
+            Configured simulation start time value.
         """
         if not self._start_time:
             self._start_time = self._controller.get('time.start_time')  # defaults to Unix epoch
@@ -624,6 +774,11 @@ class Simulation:
     def flow_field(self) -> SedtrailsData:
         """
         Returns input flow field data in SedtrailsData format.
+
+        Returns
+        -------
+        SedtrailsData
+            The flow field value.
         """
 
         return self.format_converter.convert_to_sedtrails()
@@ -632,6 +787,10 @@ class Simulation:
         """
         Validates the configuration file.
 
+        Returns
+        -------
+        bool
+            Boolean result of the check.
         """
         if not self._config_is_read:  # assure config is read only once
             try:
@@ -678,7 +837,14 @@ class Simulation:
         return value
 
     def run(self):
-        """Execute the simulation and flush profile timings on failure."""
+        """
+        Execute the simulation and flush profile timings on failure.
+
+        Returns
+        -------
+        object
+            Value returned by the simulation implementation.
+        """
         try:
             return self._run_impl()
         except Exception:
@@ -750,42 +916,73 @@ class Simulation:
         )
         # Create SedTrails dataset using DataManager's writer (composition)
         total_particles = sum([len(pop.particles['x']) for pop in populations])
-        save_interval_seconds = self._output_save_interval_seconds()
-        n_output_slots = self._estimate_output_timesteps(simulation_time, save_interval_seconds)
-        self.logger.info(
-            'Streaming output: %d slots at %gs interval -> %s',
-            n_output_slots,
-            save_interval_seconds,
-            self.data_manager.writer.output_dir / 'sedtrails_results.nc',
+        store_tracks = self._output_store_tracks()
+        save_interval_seconds = self._output_save_interval_seconds() if store_tracks else None
+        n_output_slots = (
+            self._estimate_output_timesteps(simulation_time, save_interval_seconds)
+            if store_tracks
+            else 0
         )
-
-        nc_handle = self.data_manager.writer.open_output(
-            'sedtrails_results.nc',
-            n_output_slots,
+        netcdf_options, _, checkpoint_options = self._resolved_output_writer_options(
             total_particles,
-            len(populations),
-            len(flow_field_names) if flow_field_names else 1,
-            populations,
-            flow_field_names,
+            n_output_slots,
+            store_tracks,
         )
-        nc_handle.reference_date = str(simulation_time.reference_date)
-        nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
-        nc_handle.time_start = self._controller.get('time.start')
-        nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
-        nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
 
-        # Store the seeded initial state before the first physics update.
         self._initialize_population_output_status(populations, timer.current)
+        nc_handle = None
         slot_idx = 0
-        with self._profile_section('record_output'):
-            nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
-        last_saved_time = timer.current
-        slot_idx += 1
-        next_output_time = self._next_scheduled_output_time(
-            simulation_time,
-            save_interval_seconds,
-            slot_idx,
-        )
+        last_saved_time = None
+        next_output_time = simulation_time.end
+
+        if store_tracks:
+            self.logger.info(
+                'Streaming output: %d slots at %gs interval -> %s',
+                n_output_slots,
+                save_interval_seconds,
+                self.data_manager.writer.output_dir / 'sedtrails_results.nc',
+            )
+
+            nc_handle = self.data_manager.writer.open_output(
+                'sedtrails_results.nc',
+                n_output_slots,
+                total_particles,
+                len(populations),
+                len(flow_field_names) if flow_field_names else 1,
+                populations,
+                flow_field_names,
+                **netcdf_options,
+            )
+            nc_handle.reference_date = str(simulation_time.reference_date)
+            nc_handle.time_units = f'seconds since {simulation_time.reference_date}'
+            nc_handle.time_start = self._controller.get('time.start')
+            nc_handle.time_end_seconds_since_reference_date = float(simulation_time.end)
+            nc_handle.outputs_save_interval_seconds = float(save_interval_seconds)
+            nc_handle['time'].units = nc_handle.time_units
+            nc_handle['time'].reference_date = nc_handle.reference_date
+
+            # Store the seeded initial state before the first physics update.
+            with self._profile_section('record_output'):
+                nc_handle = self.data_manager.writer.record_output(nc_handle, populations, slot_idx, timer.current)
+            last_saved_time = timer.current
+            slot_idx += 1
+            self._maybe_write_checkpoint(
+                populations,
+                timer.current,
+                simulation_time,
+                slot_idx,
+                checkpoint_options,
+            )
+            next_output_time = self._next_scheduled_output_time(
+                simulation_time,
+                save_interval_seconds,
+                slot_idx,
+            )
+        else:
+            self.logger.info(
+                'End-position output enabled: final state will be written to %s',
+                self.data_manager.writer.output_dir / 'sedtrails_results.nc',
+            )
         # Main simulation loop with variable timestep
         input_data_exhausted = False
         input_exhaustion_warning_logged = False
@@ -852,7 +1049,7 @@ class Simulation:
                         sedtrails_data.metadata.timestep,
                     )
                     timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)
-                    if slot_idx < n_output_slots:
+                    if store_tracks and slot_idx < n_output_slots:
                         timer.current_timestep = self._limit_timestep_to_output_schedule(
                             timer.current,
                             timer.current_timestep,
@@ -894,9 +1091,11 @@ class Simulation:
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
-                            population.update_burial_depth()
+                            with self._profile_section('update_burial_depth'):
+                                population.update_burial_depth()
 
-                        population.update_status()
+                        with self._profile_section('update_status'):
+                            population.update_status()
 
                         with self._profile_section('get_flow_field.update_position'):
                             flow_field = retriever.get_flow_field(field_time_seconds, flow_field_name)
@@ -907,7 +1106,8 @@ class Simulation:
                             population.update_position(flow_field=flow_field, current_timestep=timer.current_timestep)
 
                     if tracer_plan.method_name == 'vanwesten':
-                        population.update_bed_level_change_after_movement(bed_level)
+                        with self._profile_section('update_bed_level_after_movement'):
+                            population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if self._should_update_dashboard(sedtrails_data, timer) and dashboard_flow_field is not None:
@@ -936,7 +1136,9 @@ class Simulation:
                 timer.advance()
 
                 if (
-                    slot_idx < n_output_slots
+                    store_tracks
+                    and nc_handle is not None
+                    and slot_idx < n_output_slots
                     and self._is_output_sample_due(timer.current, next_output_time, simulation_time.end)
                 ):
                     with self._profile_section('record_output'):
@@ -945,6 +1147,13 @@ class Simulation:
                         )
                     last_saved_time = timer.current
                     slot_idx += 1
+                    self._maybe_write_checkpoint(
+                        populations,
+                        timer.current,
+                        simulation_time,
+                        slot_idx,
+                        checkpoint_options,
+                    )
                     if slot_idx < n_output_slots:
                         next_output_time = self._next_scheduled_output_time(
                             simulation_time,
@@ -952,44 +1161,6 @@ class Simulation:
                             slot_idx,
                         )
 
-                # Saving and plotting
-                # TODO: enable saving and plotting again: addapt writer with structure issue 297
-                # TODO: remove default insertion on configuration retrieval
-                # interval_output = self._controller.get('output.interval_output', '1H')
-                # interval_plot = self._controller.get('output.interval_plot', '1D')
-
-                # # Data manager
-                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_output > (
-                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_output
-                # ):
-                #     # self.data_manager.add_data()
-
-                # # Plotting
-                # TODO: enable plotting from saved data file and from memory.
-                # if timer.step_count == 1 or (timer.current - simulation_time.start) // interval_plot > (
-                #     (timer.current - simulation_time.start - timer.current_timestep) // interval_plot
-                # ):
-                #     plot_particle_trajectory(
-                #         flow_data=flow_field,
-                #         trajectory_x=self.data_manager.get_trajectory_x(),
-                #         trajectory_y=self.data_manager.get_trajectory_y(),
-                #         title=f'Particle Trajectory - {simulation_time.duration.seconds} seconds, {timer.step_count} steps',
-                #         save_path=f'{self.data_manager.output_dir}/trajectory_plot_{timer.step_count:05d}.png',
-                #     )
-
-                # Calculate progress percentage based on simulation time
-                # elapsed_time = timer.current - simulation_time.start
-                # progress_percent = (elapsed_time / simulation_time.duration.seconds) * 100
-
-                # # Update progress bar
-                # pbar.n = progress_percent
-                # pbar.set_postfix(
-                #     {
-                #         'Step': timer.step_count,
-                #         'Time': f'{timer.current:.0f}s',
-                #         'dt': f'{timer.current_timestep:.2f}s',
-                #     }
-                # )
                 # Update progress bar
                 if simulation_time.duration.seconds > 0:  # Avoid undefined progress when duration is zero
                     elapsed_time = timer.current - simulation_time.start
@@ -1009,15 +1180,33 @@ class Simulation:
             self._active_progress_bar = None
             print('\nSimulation completed successfully!')
 
-            # Save final particle state if simulation ended between two save boundaries
-            if last_saved_time is None or timer.current > last_saved_time:
-                if slot_idx < n_output_slots:
-                    nc_handle = self.data_manager.writer.record_output(
-                        nc_handle, populations, slot_idx, timer.current)
-                    slot_idx += 1
+            if store_tracks:
+                # Save final particle state if simulation ended between two save boundaries
+                if last_saved_time is None or timer.current > last_saved_time:
+                    if slot_idx < n_output_slots:
+                        nc_handle = self.data_manager.writer.record_output(
+                            nc_handle, populations, slot_idx, timer.current)
+                        slot_idx += 1
+                output_file = self.data_manager.writer.close_output(nc_handle)
+                nc_handle = None  # prevent double-close in finally
+            else:
+                output_file = self.data_manager.writer.write_end_positions(
+                    'sedtrails_results.nc',
+                    populations,
+                    float(timer.current),
+                    reference_date=str(simulation_time.reference_date),
+                    time_units=f'seconds since {simulation_time.reference_date}',
+                    **checkpoint_options.get('writer_kwargs', {}),
+                )
+            self._maybe_write_checkpoint(
+                populations,
+                timer.current,
+                simulation_time,
+                slot_idx,
+                checkpoint_options,
+                final=True,
+            )
 
-            output_file = self.data_manager.writer.close_output(nc_handle)
-            nc_handle = None  # prevent double-close in finally
             print(f'Simulation results saved to: {output_file}')
             self._log_profile_summary(status='completed')
 
@@ -1030,82 +1219,6 @@ class Simulation:
                     self.data_manager.writer.close_output(nc_handle)
                 except Exception:
                     pass
-
-    def _expand_time_dimension(
-        self,
-        xr_data: xr.Dataset,
-        new_max_timesteps: int,
-    ) -> xr.Dataset:
-        time_dim = 'n_timesteps' if 'n_timesteps' in xr_data.sizes else 'time'
-
-        current_size = xr_data.sizes[time_dim]
-
-        if new_max_timesteps <= current_size:
-            raise ValueError(f'new_max_timesteps={new_max_timesteps} must be larger than current size={current_size}')
-
-        # Replace/normalize the timestep coordinate to guarantee uniqueness
-        xr_data = xr_data.assign_coords({time_dim: np.arange(current_size)})
-
-        new_coord = np.arange(new_max_timesteps)
-
-        expanded_vars = {}
-
-        for var_name, var in xr_data.data_vars.items():
-            if time_dim not in var.dims:
-                expanded_vars[var_name] = var
-                continue
-
-            time_axis = var.dims.index(time_dim)
-
-            pad_shape = list(var.shape)
-            pad_shape[time_axis] = new_max_timesteps - current_size
-
-            if np.issubdtype(var.dtype, np.floating) or np.issubdtype(var.dtype, np.complexfloating):
-                pad_data = np.full(
-                    pad_shape,
-                    np.nan,
-                    dtype=var.dtype,
-                )
-            else:
-                pad_data = np.zeros(
-                    pad_shape,
-                    dtype=var.dtype,
-                )
-
-            pad_coords = {}
-            for dim in var.dims:
-                if dim == time_dim:
-                    pad_coords[dim] = np.arange(current_size, new_max_timesteps)
-                elif dim in var.coords:
-                    pad_coords[dim] = var.coords[dim]
-
-            pad_array = xr.DataArray(
-                pad_data,
-                dims=var.dims,
-                coords=pad_coords,
-                attrs=var.attrs.copy(),
-            )
-
-            expanded_vars[var_name] = xr.concat(
-                [var, pad_array],
-                dim=time_dim,
-            )
-
-        coords = {}
-        for coord_name, coord in xr_data.coords.items():
-            if coord_name == time_dim:
-                coords[coord_name] = new_coord
-            elif time_dim not in coord.dims:
-                coords[coord_name] = coord
-
-        expanded_dataset = xr.Dataset(
-            expanded_vars,
-            coords=coords,
-            attrs=xr_data.attrs.copy(),
-        )
-
-        return expanded_dataset
-
 
 # if __name__ == '__main__':
 #     sim = Simulation(config_file='examples/config.example_natascia.yaml')

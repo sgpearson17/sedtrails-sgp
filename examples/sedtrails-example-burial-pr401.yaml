@@ -47,5 +47,5 @@ outputs:
   save_interval: 1H
 visualization:
   dashboard:
-    enable: true
+    enable: false
     update_interval: 1H

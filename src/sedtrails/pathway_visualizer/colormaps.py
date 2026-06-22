@@ -56,7 +56,14 @@ SEDTRAILS_BATHYMETRY_COLORS = SEAWAD_BATHYMETRY_COLORS
 
 
 def available_bathymetry_colormaps() -> tuple[str, ...]:
-    """Return available named SedTRAILS bathymetry palettes."""
+    """
+    Return available named SedTRAILS bathymetry palettes.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Tuple containing the computed values.
+    """
 
     return tuple(BATHYMETRY_COLORMAPS)
 
@@ -69,11 +76,30 @@ def bathymetry_colormap(
     vmax: float | None = None,
     clip: bool = True,
 ) -> tuple[LinearSegmentedColormap, Normalize]:
-    """Return a named SedTRAILS bathymetry colormap and normalization.
+    """
+    Return a named SedTRAILS bathymetry colormap and normalization.
 
     ``SEAWAD`` and ``Vintage`` are both (c) Stuart G. Pearson, 2022
     (CC BY 4.0). ``Vintage`` is based on Rijkswaterstaat Studiedienst
     Hoorn (1943); see Elias et al. 2019.
+
+    Parameters
+    ----------
+    colormap_name : str
+        Name of the colormap to use.
+    n_colors : int
+        Number of colors to sample from the colormap.
+    vmin : float | None
+        Lower bound of the normalized color range.
+    vmax : float | None
+        Upper bound of the normalized color range.
+    clip : bool
+        Whether to clip values outside the color range.
+
+    Returns
+    -------
+    tuple[LinearSegmentedColormap, Normalize]
+        Tuple containing the computed values.
     """
 
     canonical_name = _resolve_colormap_name(colormap_name)
@@ -100,11 +126,30 @@ def sedtrails_bathymetry_colormap(
     vmax: float | None = None,
     clip: bool = True,
 ) -> tuple[LinearSegmentedColormap, Normalize]:
-    """Return the default SedTRAILS bathymetry colormap and value normalization.
+    """
+    Return the default SedTRAILS bathymetry colormap and value normalization.
 
     The default ``SEAWAD`` anchors are based on the historical MATLAB bathymetry palette:
     dark blue at -20 m NAP, light blue at -10 m NAP, white at -5 m NAP,
     light/muddy browns around the intertidal range, and dark green above 3 m NAP.
+
+    Parameters
+    ----------
+    name : str
+        Name of the requested object.
+    n_colors : int
+        Number of colors to sample from the colormap.
+    vmin : float | None
+        Lower bound of the normalized color range.
+    vmax : float | None
+        Upper bound of the normalized color range.
+    clip : bool
+        Whether to clip values outside the color range.
+
+    Returns
+    -------
+    tuple[LinearSegmentedColormap, Normalize]
+        Tuple containing the computed values.
     """
 
     return bathymetry_colormap(

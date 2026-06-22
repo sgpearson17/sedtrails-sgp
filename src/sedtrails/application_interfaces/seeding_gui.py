@@ -46,7 +46,19 @@ class BathymetryViewData:
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
-    """Load a SedTRAILS YAML file without converting timestamp strings."""
+    """
+    Load a SedTRAILS YAML file without converting timestamp strings.
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the SedTRAILS configuration file.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing the requested values.
+    """
 
     path = Path(config_path)
     if not path.exists():
@@ -65,7 +77,19 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
 
 
 def get_population_names(config: dict[str, Any]) -> list[str]:
-    """Return configured population names in file order."""
+    """
+    Return configured population names in file order.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Configuration mapping used by the operation.
+
+    Returns
+    -------
+    list[str]
+        String result of the conversion.
+    """
 
     populations = _get_populations(config)
     return [str(pop.get('name', f'population_{idx + 1}')) for idx, pop in enumerate(populations)]
@@ -77,7 +101,23 @@ def add_population_from_existing(
     source_population_name: str | None,
     new_population_name: str | None = None,
 ) -> tuple[dict[str, Any], str]:
-    """Return a copied config with a new population cloned from an existing one."""
+    """
+    Return a copied config with a new population cloned from an existing one.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Configuration mapping used by the operation.
+    source_population_name : str | None
+        Name of the population to copy.
+    new_population_name : str | None
+        Name for the copied population.
+
+    Returns
+    -------
+    tuple[dict[str, Any], str]
+        Dictionary containing the requested values.
+    """
 
     updated = deepcopy(config)
     populations = _get_populations(updated)
@@ -94,7 +134,23 @@ def add_population_from_existing(
 
 
 def rename_population(config: dict[str, Any], *, old_name: str, new_name: str) -> dict[str, Any]:
-    """Return a copied config with one population renamed."""
+    """
+    Return a copied config with one population renamed.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Configuration mapping used by the operation.
+    old_name : str
+        Existing population name to replace.
+    new_name : str
+        New population name to assign.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing the requested values.
+    """
 
     cleaned_name = new_name.strip()
     if not cleaned_name:
@@ -111,7 +167,21 @@ def rename_population(config: dict[str, Any], *, old_name: str, new_name: str) -
 
 
 def remove_population(config: dict[str, Any], *, population_name: str) -> dict[str, Any]:
-    """Return a copied config with one population removed."""
+    """
+    Return a copied config with one population removed.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Configuration mapping used by the operation.
+    population_name : str
+        Name of the particle population.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing the requested values.
+    """
 
     updated = deepcopy(config)
     populations = _get_populations(updated)
@@ -123,7 +193,19 @@ def remove_population(config: dict[str, Any], *, population_name: str) -> dict[s
 
 
 def default_seeded_config_path(config_path: str | Path) -> Path:
-    """Return the default copied-config path beside the source YAML file."""
+    """
+    Return the default copied-config path beside the source YAML file.
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the SedTRAILS configuration file.
+
+    Returns
+    -------
+    Path
+        Computed value returned by the function.
+    """
 
     source = Path(config_path)
     suffix = source.suffix or '.yaml'
@@ -136,7 +218,23 @@ def load_bathymetry_view_data(
     format_override: str | None = None,
     variable: str | None = None,
 ) -> BathymetryViewData:
-    """Load first-timestep map data for the GUI from a SedTRAILS config."""
+    """
+    Load first-timestep map data for the GUI from a SedTRAILS config.
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the SedTRAILS configuration file.
+    format_override : str | None
+        Optional input format override.
+    variable : str | None
+        Name of the variable to inspect or sample.
+
+    Returns
+    -------
+    BathymetryViewData
+        Computed value returned by the function.
+    """
 
     config_file = Path(config_path)
     config = load_config(config_file)
@@ -230,7 +328,23 @@ def update_config_for_file_points(
     population_name: str | None,
     points_path: str,
 ) -> dict[str, Any]:
-    """Return a copied config with one population using the file_points strategy."""
+    """
+    Return a copied config with one population using the file_points strategy.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Configuration mapping used by the operation.
+    population_name : str | None
+        Name of the particle population.
+    points_path : str
+        Path to the seed-point file.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing the requested values.
+    """
 
     updated = deepcopy(config)
     populations = _get_populations(updated)
@@ -251,7 +365,21 @@ def update_config_for_file_points(
 
 
 def write_points_file(points: list[tuple[float, float]], output_path: str | Path) -> Path:
-    """Write selected seed points as two whitespace-separated columns."""
+    """
+    Write selected seed points as two whitespace-separated columns.
+
+    Parameters
+    ----------
+    points : list[tuple[float, float]]
+        Point coordinates to process.
+    output_path : str | Path
+        Path where generated output is written.
+
+    Returns
+    -------
+    Path
+        Computed value returned by the function.
+    """
 
     if not points:
         raise SeedingGuiError('No seed points selected.')
@@ -265,7 +393,21 @@ def write_points_file(points: list[tuple[float, float]], output_path: str | Path
 
 
 def generate_transect_points(vertices: list[tuple[float, float]], points_per_segment: int) -> list[tuple[float, float]]:
-    """Generate equally spaced points from clicked endpoint pairs."""
+    """
+    Generate equally spaced points from clicked endpoint pairs.
+
+    Parameters
+    ----------
+    vertices : list[tuple[float, float]]
+        Polyline vertices used to generate points.
+    points_per_segment : int
+        Number of points generated per line segment.
+
+    Returns
+    -------
+    list[tuple[float, float]]
+        Tuple containing the computed values.
+    """
 
     if points_per_segment < 1:
         raise SeedingGuiError('Transect points per segment must be at least 1.')
@@ -409,7 +551,29 @@ def clip_points_by_elevation(
     threshold: float,
     delete: str,
 ) -> list[tuple[float, float]]:
-    """Delete selected points above or below an elevation using nearest source cell values."""
+    """
+    Delete selected points above or below an elevation using nearest source cell values.
+
+    Parameters
+    ----------
+    points : list[tuple[float, float]]
+        Point coordinates to process.
+    field_x : np.ndarray
+        Field sample x coordinates.
+    field_y : np.ndarray
+        Field sample y coordinates.
+    field_values : np.ndarray
+        Field values sampled at the field coordinates.
+    threshold : float
+        Threshold used to filter points.
+    delete : str
+        Whether points meeting the threshold are removed.
+
+    Returns
+    -------
+    list[tuple[float, float]]
+        Tuple containing the computed values.
+    """
 
     if delete not in {'above', 'below'}:
         raise SeedingGuiError("Clipping delete mode must be 'above' or 'below'.")
@@ -582,7 +746,31 @@ def save_seeded_config(
     config_data: dict[str, Any] | None = None,
     population_points: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[Path, Path]:
-    """Write the point file and copied YAML config, then validate the YAML."""
+    """
+    Write the point file and copied YAML config, then validate the YAML.
+
+    Parameters
+    ----------
+    source_config_path : str | Path
+        Path to the source configuration file.
+    output_config_path : str | Path
+        Path where the updated configuration file is written.
+    points_output_path : str | Path
+        Path where selected seed points are written.
+    points : list[tuple[float, float]]
+        Point coordinates to process.
+    population_name : str | None
+        Name of the particle population.
+    config_data : dict[str, Any] | None
+        Configuration data to update.
+    population_points : dict[str, list[tuple[float, float]]] | None
+        Seed points grouped by population.
+
+    Returns
+    -------
+    tuple[Path, Path]
+        Tuple containing the computed values.
+    """
 
     source_path = Path(source_config_path)
     output_path = Path(output_config_path)
@@ -638,7 +826,24 @@ def launch_seeding_gui(
     format_override: str | None = None,
     variable: str | None = None,
 ) -> None:
-    """Open the Matplotlib seed-point selection GUI."""
+    """
+    Open the Matplotlib seed-point selection GUI.
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the SedTRAILS configuration file.
+    output_path : str | Path | None
+        Path where generated output is written.
+    points_output_path : str | Path | None
+        Path where selected seed points are written.
+    population_name : str | None
+        Name of the particle population.
+    format_override : str | None
+        Optional input format override.
+    variable : str | None
+        Name of the variable to inspect or sample.
+    """
 
     app = SeedingGuiApp(
         config_path=Path(config_path),
@@ -858,6 +1063,7 @@ class SeedingGuiApp:
         self.status_text = self.fig.text(0.07, 0.125, self._status_message(), fontsize=8)
 
     def show(self) -> None:
+        """Run show."""
         import matplotlib.pyplot as plt
 
         plt.show()

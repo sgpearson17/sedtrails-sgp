@@ -410,14 +410,128 @@
           "description": "save interval for output files, e.g., '1H' for 1 hour."
         },
         "store_tracks": {
-          "const": true,
+          "type": "boolean",
           "default": true,
-          "description": "store full particle tracks. The current runtime always writes trajectory output, so this value must be true when provided."
+          "description": "store full particle tracks; set false for compact final-state output"
         },
         "directory": {
           "type": "string",
           "default": "./output",
           "description": "path to directory for storing the results of the simulation"
+        },
+        "netcdf": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {
+            "coordinate_dtype": "float32",
+            "status_dtype": "uint8",
+            "compression": "auto",
+            "compression_auto_threshold_mb": 1024,
+            "compression_level": 1,
+            "shuffle": true,
+            "time_chunk": 1,
+            "particle_chunk": 65536,
+            "sync_interval": 10,
+            "reopen_interval": null,
+            "checkpoint": true,
+            "checkpoint_interval": 0
+          },
+          "properties": {
+            "coordinate_dtype": {
+              "type": "string",
+              "enum": [
+                "float32",
+                "float64"
+              ],
+              "default": "float32",
+              "description": "floating point precision for trajectory coordinate variables"
+            },
+            "status_dtype": {
+              "type": "string",
+              "enum": [
+                "uint8",
+                "int32"
+              ],
+              "default": "uint8",
+              "description": "integer precision for trajectory status flag variables"
+            },
+            "compression": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "auto"
+                  ]
+                }
+              ],
+              "default": "auto",
+              "description": "compress chunked NetCDF variables: true, false, or auto based on estimated output size"
+            },
+            "compression_auto_threshold_mb": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 1024,
+              "description": "estimated uncompressed output size in MiB at which compression auto mode enables compression"
+            },
+            "compression_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9,
+              "default": 1,
+              "description": "zlib compression level for NetCDF output; 0 disables compression"
+            },
+            "shuffle": {
+              "type": "boolean",
+              "default": true,
+              "description": "enable HDF5 shuffle filter when NetCDF compression is enabled"
+            },
+            "time_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "number of saved timesteps per NetCDF chunk"
+            },
+            "particle_chunk": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 65536,
+              "description": "number of particles per NetCDF chunk"
+            },
+            "sync_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10,
+              "description": "flush NetCDF output every N saved samples; 0 flushes only on close"
+            },
+            "reopen_interval": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": null,
+              "description": "proactively close and reopen NetCDF output every N saved samples; null or 0 disables this"
+            },
+            "checkpoint": {
+              "type": "boolean",
+              "default": true,
+              "description": "write a compact sedtrails_checkpoint.nc restart file"
+            },
+            "checkpoint_interval": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "refresh checkpoint every N saved samples; 0 writes only the final checkpoint"
+            }
+          }
+        },
+        "store_end_positions": {
+          "type": "boolean",
+          "default": false,
+          "description": "store only the last position of each particle at the end of the simulation"
         }
       }
     },

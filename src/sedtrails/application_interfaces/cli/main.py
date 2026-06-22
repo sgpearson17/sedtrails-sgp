@@ -7,7 +7,14 @@ from pathlib import Path
 
 
 def version_callback(value: bool):
-    """Callback for version option."""
+    """
+    Callback for version option.
+
+    Parameters
+    ----------
+    value : bool
+        Value to assign or validate.
+    """
     import sedtrails.__version__ as version
 
     if value:
@@ -30,6 +37,11 @@ def main(
 ):
     """
     SedTRAILS: Configure, run, and analyze sediment particle tracking.
+
+    Parameters
+    ----------
+    version : bool
+        The version value.
     """
     pass
 
@@ -51,6 +63,10 @@ def run_simulation_cmd(
 
     Example: sedtrails run --config my_config.yml
 
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
     """
     from sedtrails.application_interfaces.api import run_simulation
 
@@ -80,6 +96,13 @@ def inspect_metadata(
 ):
     """
     Print metadata information about a SedTRAILS netCDF results file.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    populations : bool
+        Particle populations to process.
     """
     from sedtrails.application_interfaces.api import inspect_netcdf
 
@@ -117,6 +140,16 @@ def load_config(
     """
     Checks if a YAML configuration file is a valid SedTRAILS configuration.
     Returns a dictionary with the valid configuration settings.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the requested values.
     """
     from sedtrails.application_interfaces.api import load_configuration
 
@@ -143,6 +176,11 @@ def create_config_template_cmd(
     """
     Create a configuration file for simulations in SedTRAILS.
     The file contains most possible configurations items with default values.
+
+    Parameters
+    ----------
+    output_file : str
+        Path where output is written.
     """
     from sedtrails.application_interfaces.api import create_config_template
 
@@ -192,6 +230,21 @@ def seeding_gui_cmd(
 ):
     """
     Open a small GUI for choosing seed points and writing a copied config.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the SedTRAILS configuration file.
+    output_file : str | None
+        Path where output is written.
+    points_output_path : str | None
+        Path where selected seed points are written.
+    population : str | None
+        Particle population to process.
+    input_format : str | None
+        Input model format identifier.
+    variable : str | None
+        Name of the variable to inspect or sample.
     """
     from sedtrails.application_interfaces.seeding_gui import SeedingGuiError, launch_seeding_gui
 
@@ -237,7 +290,20 @@ def create_restart_config_cmd(
         help='Optional directory for generated restart seed point files.',
     ),
 ):
-    """Create a restart YAML and point files from a partial/full NetCDF output."""
+    """
+    Create a restart YAML and point files from a partial/full NetCDF output.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    base_config_file : str
+        Path to the base configuration file.
+    output_config_file : str
+        Path where the restart configuration file is written.
+    seed_points_dir : str
+        Directory containing restart seed-point files.
+    """
     from sedtrails.application_interfaces.api import create_restart_config
 
     try:
@@ -386,6 +452,15 @@ def plot_trajectories_cmd(
 ):
     """
     Plot particle trajectories from a SedTRAILS netCDF results file.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to the SedTRAILS NetCDF results file.
+    save_fig : bool
+        The save fig value.
+    output_dir : str
+        Directory where output files are written.
     """
     from sedtrails.application_interfaces.api import plot_trajectories
 

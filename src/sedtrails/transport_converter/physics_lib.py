@@ -75,20 +75,20 @@ def compute_shear_velocity(bed_shear_stress: np.ndarray, water_density: float) -
     """
     Compute shear velocity from bed shear stress.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     bed_shear_stress : np.ndarray
         τ = Bed shear stress [N/m²]
     water_density : float
         ρ_w = Water density [kg/m³]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         u* = Shear velocity [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     u* = sqrt(τ / ρ_w)
 
     Reference:
@@ -104,8 +104,8 @@ def compute_shields(
     """
     Compute Shields parameter (dimensionless bed shear stress).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     bed_shear_stress : np.ndarray
         τ = Bed shear stress [N/m²]
     gravity : float
@@ -117,13 +117,13 @@ def compute_shields(
     grain_diameter : float
         d = Grain diameter [m]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Shields parameter [-]
 
-    Notes:
-    ------
+    Notes
+    -----
     θ = τ / (g(ρ_s - ρ_w)d)
 
     Reference:
@@ -139,8 +139,8 @@ def compute_bed_load_velocity(
     """
     Compute bed load velocity using Soulsby et al. (2011) Equation 7.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     shields_number : np.ndarray
         θ_max = Shields parameter [-]
     critical_shields : float
@@ -148,18 +148,18 @@ def compute_bed_load_velocity(
     mean_shear_velocity : np.ndarray
         u*_mean = Mean shear velocity [m/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         U_bed = Bed load velocity [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     U_bed = 10 * u*_mean * (1 - 0.7 * sqrt(θ_cr / θ_max))
 
     Only computed where θ_max > θ_cr (critical conditions).
 
-    References: 
+    References:
     Fredsoe, J., & Deigaard, R. (1992). Mechanics of coastal sediment transport.
     World Scientific. Equation 7.51
 
@@ -186,8 +186,8 @@ def compute_transport_layer_thickness(
     """
     Compute representative thickness of transport layer (bed load or suspended).
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     transport_magnitude : np.ndarray
         Magnitude of sediment transport [kg/m/s]
     velocity_magnitude : np.ndarray
@@ -197,13 +197,13 @@ def compute_transport_layer_thickness(
     porosity : float
         n = Sediment porosity [-]
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Transport layer thickness [m]
 
-    Notes:
-    ------
+    Notes
+    -----
     d_layer = Q_layer / U_layer
     where Q_layer = transport_magnitude / (ρ_s * (1 - n))
 
@@ -235,8 +235,8 @@ def compute_suspended_velocity(
     """
     Compute suspended sediment velocity.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     flow_velocity_magnitude : np.ndarray
         U_c = Flow velocity magnitude [m/s]
     bed_load_velocity : np.ndarray
@@ -258,13 +258,13 @@ def compute_suspended_velocity(
     grain_diameter : float, optional
         d50 = Grain diameter [m]. Required for MACDONALD_2006 (k"_s = 2.5 · d50).
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Suspended velocity [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     SOULSBY_2011 (van Westen et al. 2025 implementation):
     U_sus = U_c * Rs
     where Rs = ((Rb*(1-B))/(8/7-B)) * (((8/7*Rb)^(8-7B) - 1) / ((8/7*Rb)^(7-7B) - 1))
@@ -348,8 +348,8 @@ def compute_directions_from_magnitude(
     """
     Compute velocity direction components from transport components and velocity magnitude.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     velocity_magnitude : np.ndarray
         Velocity magnitude [m/s]
     transport_x : np.ndarray
@@ -359,13 +359,13 @@ def compute_directions_from_magnitude(
     transport_magnitude : np.ndarray
         Magnitude of transport [kg/m/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     Tuple[np.ndarray, np.ndarray]
         (velocity_x, velocity_y) components [m/s]
 
-    Notes:
-    ------
+    Notes
+    -----
     U_x = U_magnitude * (transport_x / transport_magnitude)
     U_y = U_magnitude * (transport_y / transport_magnitude)
 
@@ -391,8 +391,8 @@ def compute_mixing_layer_thickness(
     """
     Compute mixing layer thickness.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     max_bed_shear_stress : np.ndarray
         τ_max = Maximum bed shear stress [N/m²]
     critical_shear_stress : float
@@ -404,13 +404,13 @@ def compute_mixing_layer_thickness(
         d_mix = c * sqrt(max(τ_max − τ_cr, 0)) [m / (N/m²)^0.5].
         Default 0.041 matches the original publication.
 
-    Returns:
-    --------
+    Returns
+    -------
     np.ndarray
         Mixing layer thickness [m]
 
-    Notes:
-    ------
+    Notes
+    -----
     Bertin (2008) method:
     d_mix = c * sqrt(max(τ_max - τ_cr, 0))
 
@@ -441,8 +441,8 @@ def compute_grain_properties(
     """
     Compute all grain-related properties.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     grain_diameter : float
         d50 = Grain diameter [m]
     gravity : float
@@ -454,8 +454,8 @@ def compute_grain_properties(
     kinematic_viscosity : float
         ν = Kinematic viscosity [m²/s]
 
-    Returns:
-    --------
+    Returns
+    -------
     dict[str, float]
 
     Dictionary containing:
