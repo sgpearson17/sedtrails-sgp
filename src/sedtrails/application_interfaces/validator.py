@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,7 +30,21 @@ class SedtrailsYamlLoader(yaml.SafeLoader):
 
 # Add a constructor that treats timestamps as strings instead of datetime objects
 def construct_timestamp_as_string(loader, node):
-    """Construct timestamp nodes as strings instead of datetime objects."""
+    """
+    Construct timestamp nodes as strings instead of datetime objects.
+
+    Parameters
+    ----------
+    loader : object
+        YAML loader instance.
+    node : object
+        YAML scalar node to construct.
+
+    Returns
+    -------
+    str
+        Scalar timestamp text constructed from the YAML node.
+    """
     return loader.construct_scalar(node)
 
 
@@ -53,6 +68,7 @@ class YAMLConfigValidator:
         """
 
         self.config: Dict[str, Any] = {}
+        self.raw_config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
         self.__registry = None
         self.__validator = self._validator()
@@ -290,6 +306,11 @@ class YAMLConfigValidator:
     def schema_content(self) -> Dict[str, Any]:
         """
         Property to access the root schema content.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The schema content value.
         """
         return self._get_root_schema_content()
 
@@ -360,6 +381,7 @@ class YAMLConfigValidator:
                 yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
+        self.raw_config = deepcopy(yaml_data)
 
         # Validate the YAML data against the schema
         try:
@@ -374,7 +396,7 @@ class YAMLConfigValidator:
 
         # Apply default values from the schema
         try:
-            config_with_defaults = self._apply_defaults(self.schema_content, yaml_data.copy())
+            config_with_defaults = self._apply_defaults(self.schema_content, deepcopy(yaml_data))
             self.config = config_with_defaults
             self._applied_defaults = True
         except Exception as e:

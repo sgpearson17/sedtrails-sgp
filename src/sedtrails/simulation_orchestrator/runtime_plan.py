@@ -44,7 +44,23 @@ def build_population_runtime_plans(
     populations: Sequence[Any],
     base_physics_config: PhysicsConfig | Mapping[str, Any],
 ) -> tuple[PopulationRuntimePlan, ...]:
-    """Build population-scoped tracer runtime plans."""
+    """
+    Build population-scoped tracer runtime plans.
+
+    Parameters
+    ----------
+    population_configs : Sequence[Mapping[str, Any]]
+        Population configuration mappings.
+    populations : Sequence[Any]
+        Particle populations to process.
+    base_physics_config : PhysicsConfig | Mapping[str, Any]
+        Base physics configuration shared by populations.
+
+    Returns
+    -------
+    tuple[PopulationRuntimePlan, ...]
+        Tuple containing the computed values.
+    """
 
     if len(population_configs) != len(populations):
         raise ConfigurationError(
@@ -59,7 +75,19 @@ def build_population_runtime_plans(
 
 
 def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> list[str]:
-    """Return configured flow field names across plans, preserving first-seen order."""
+    """
+    Return configured flow field names across plans, preserving first-seen order.
+
+    Parameters
+    ----------
+    runtime_plans : Sequence[PopulationRuntimePlan]
+        Population runtime plans to inspect.
+
+    Returns
+    -------
+    list[str]
+        String result of the conversion.
+    """
 
     return _unique_preserving_order(
         flow_field_name
@@ -69,7 +97,21 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
 
 
 def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
-    """Run plan physics and return a clone containing only plan-required physics fields."""
+    """
+    Run plan physics and return a clone containing only plan-required physics fields.
+
+    Parameters
+    ----------
+    sedtrails_data : Any
+        SedTRAILS data object to process.
+    tracer_plan : TracerRuntimePlan
+        Runtime plan for the tracer population.
+
+    Returns
+    -------
+    Any
+        Requested value.
+    """
 
     working_data = _shallow_sedtrails_data_clone(sedtrails_data)
     tracer_plan.converter.convert_physics(
@@ -139,7 +181,25 @@ def build_physics_config(
     method_name: str,
     method_config: Mapping[str, Any],
 ) -> PhysicsConfig:
-    """Build method-specific physics config for one population."""
+    """
+    Build method-specific physics config for one population.
+
+    Parameters
+    ----------
+    base_physics_config : PhysicsConfig | Mapping[str, Any]
+        Base physics configuration shared by populations.
+    population_config : Mapping[str, Any]
+        Configuration for a single particle population.
+    method_name : str
+        Name of the tracer or physics method.
+    method_config : Mapping[str, Any]
+        Configuration mapping for the selected method.
+
+    Returns
+    -------
+    PhysicsConfig
+        Constructed physics configuration.
+    """
 
     base_config = _physics_config_to_dict(base_physics_config)
     base_config['tracer_method'] = method_name
@@ -157,7 +217,21 @@ def build_physics_config(
 
 
 def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -> tuple[str, ...]:
-    """Return physics fields that must be preserved for a method plan."""
+    """
+    Return physics fields that must be preserved for a method plan.
+
+    Parameters
+    ----------
+    method_name : str
+        Name of the tracer or physics method.
+    flow_field_names : Sequence[str]
+        Flow-field names required by the runtime plans.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Tuple containing the computed values.
+    """
 
     if method_name == 'vanwesten':
         return tuple(

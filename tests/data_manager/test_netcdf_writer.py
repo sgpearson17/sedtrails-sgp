@@ -30,137 +30,7 @@ class MockPopulation:
             'status_domain': np.array([1, 1, 1], dtype=np.int32),
             'status_transported': np.array([0, 1, 0], dtype=np.int32),
             'status_released': np.array([1, 1, 1], dtype=np.int32),
-            'status_beached': np.array([0, 1, 0], dtype=np.int32),
-            'status_left_domain': np.array([0, 0, 1], dtype=np.int32),
         }
-
-
-def test_netcdf_writer_creates_dataset(tmp_output_dir):
-    """
-    Test that NetCDFWriter successfully creates a SedTrails dataset.
-    """
-    writer = NetCDFWriter(tmp_output_dir)
-
-    # Create a SedTrails dataset
-    dataset = writer.create_dataset(N_particles=10, N_populations=2, N_timesteps=5, N_flowfields=1, name_strlen=24)
-
-    # Check that the dataset has the expected structure
-    assert 'x' in dataset.variables
-    assert 'y' in dataset.variables
-    assert 'time' in dataset.variables
-    assert 'population_name' in dataset.variables
-    assert 'flowfield_name' in dataset.variables
-    assert dataset.sizes['n_particles'] == 10
-    assert dataset.sizes['n_populations'] == 2
-    assert dataset.sizes['n_timesteps'] == 5
-    assert dataset.sizes['n_flowfields'] == 1
-
-
-def test_netcdf_writer_adds_metadata(tmp_output_dir):
-    """
-    Test that NetCDFWriter successfully adds metadata to a dataset.
-    """
-    writer = NetCDFWriter(tmp_output_dir)
-
-    # Create dataset
-    dataset = writer.create_dataset(N_particles=3, N_populations=1, N_timesteps=2, N_flowfields=1)
-
-    # Create mock data
-    populations = [MockPopulation('test_pop')]
-    flow_field_names = ['water_velocity']
-    metadata = {'test_attr': 'test_value'}
-
-    # Add metadata
-    writer.add_metadata(dataset, populations, flow_field_names, metadata)
-
-    # Check that metadata was added
-    assert dataset.attrs['title'] == 'SedTRAILS Particle Simulation Results'
-    assert dataset.attrs['institution'] == 'SedTRAILS Particle Tracer System'
-    assert dataset.attrs['test_attr'] == 'test_value'
-    assert 'created_on' in dataset.attrs
-
-
-def test_netcdf_writer_writes_file(tmp_output_dir):
-    """
-    Test that NetCDFWriter successfully writes an xarray Dataset to a NetCDF file.
-    """
-    writer = NetCDFWriter(tmp_output_dir)
-
-    # Create and populate a simple dataset
-    dataset = writer.create_dataset(N_particles=3, N_populations=1, N_timesteps=2, N_flowfields=1)
-
-    # Add some test data
-    dataset['x'][0, 0] = 1.0
-    dataset['y'][0, 0] = 2.0
-    dataset['time'][0, 0] = 0.0
-
-    filename = 'test_output.nc'
-    output_path = writer.write(dataset, filename)
-
-    # Check that file was created
-    assert output_path.exists()
-    assert output_path.name == filename
-
-    # Verify we can read it back
-    loaded_dataset = xr.open_dataset(output_path)
-    assert 'x' in loaded_dataset.variables
-    assert 'y' in loaded_dataset.variables
-    assert loaded_dataset['x'][0, 0] == 1.0
-    loaded_dataset.close()
-
-
-def test_netcdf_writer_writes_with_trimming(tmp_output_dir):
-    """
-    Test that NetCDFWriter successfully trims timesteps when writing.
-    """
-    writer = NetCDFWriter(tmp_output_dir)
-
-    # Create dataset with 5 timesteps
-    dataset = writer.create_dataset(N_particles=2, N_populations=1, N_timesteps=5, N_flowfields=1)
-
-    # Fill only first 2 timesteps with data
-    dataset['x'][:, 0] = [1.0, 2.0]
-    dataset['x'][:, 1] = [1.1, 2.1]
-    dataset['time'][:, 0] = 0.0
-    dataset['time'][:, 1] = 1.0
-
-    filename = 'test_trimmed.nc'
-    output_path = writer.write(dataset, filename, trim_to_actual_timesteps=True, actual_timesteps=2)
-
-    # Check that file was created
-    assert output_path.exists()
-
-    # Verify trimming worked
-    loaded_dataset = xr.open_dataset(output_path)
-    assert loaded_dataset.sizes['n_timesteps'] == 2  # Should be trimmed from 5 to 2
-    loaded_dataset.close()
-
-
-def test_netcdf_writer_create_and_write_simulation_results(tmp_output_dir):
-    """
-    Test the all-in-one convenience method for creating and writing simulation results.
-    """
-    writer = NetCDFWriter(tmp_output_dir)
-
-    # Create mock data
-    populations = [MockPopulation('population_1'), MockPopulation('population_2')]
-    flow_field_names = ['water_velocity']
-
-    filename = 'simulation_results.nc'
-    output_path = writer.create_and_write_simulation_results(
-        populations=populations, flow_field_names=flow_field_names, N_timesteps=3, filename=filename
-    )
-
-    # Check that file was created
-    assert output_path.exists()
-    assert output_path.name == filename
-
-    # Verify the content
-    loaded_dataset = xr.open_dataset(output_path)
-    assert loaded_dataset.sizes['n_particles'] == 6  # 3 particles per population * 2 populations
-    assert loaded_dataset.sizes['n_populations'] == 2
-    assert loaded_dataset.sizes['n_flowfields'] == 1
-    loaded_dataset.close()
 
 
 # ---------------------------------------------------------------------------
@@ -205,14 +75,21 @@ class TestNetCDFWriterStreaming:
         assert ds.dimensions['n_timesteps'].size == self.N_SLOTS
         assert ds.dimensions['n_populations'].size == self.N_POPULATIONS
         assert ds.dimensions['n_flowfields'].size == self.N_FLOWFIELDS
+        assert ds.trajectory_layout == 'time_particle'
 
     def test_open_creates_all_trajectory_variables(self, open_handle):
         expected = {'x', 'y', 'z', 'time', 'burial_depth', 'mixing_depth',
                     'status_alive', 'status_buried', 'status_domain',
-                    'status_transported', 'status_released', 'status_mobile',
-                    'status_beached', 'status_left_domain',
-                    'covered_distance'}
+                    'status_transported', 'status_released', 'status_mobile'}
         assert expected.issubset(set(open_handle.variables))
+        assert 'covered_distance' not in open_handle.variables
+        assert open_handle['time'].dimensions == ('n_timesteps',)
+        assert open_handle['x'].dimensions == ('n_timesteps', 'n_particles')
+        assert open_handle['x'].dtype == np.dtype('float32')
+        assert open_handle['status_mobile'].dtype == np.dtype('uint8')
+        assert open_handle['trajectory_id'].dimensions == ('n_particles',)
+        np.testing.assert_array_equal(open_handle['trajectory_id'][:], np.arange(self.N_PARTICLES))
+        assert open_handle['x'].chunking() == [1, self.N_PARTICLES]
 
     def test_open_writes_population_metadata(self, open_handle):
         assert open_handle['population_count'][0] == self.N_PARTICLES
@@ -231,10 +108,10 @@ class TestNetCDFWriterStreaming:
         writer.record_output(handle, [population], slot_idx=0, current_time=100.0)
         writer.record_output(handle, [population], slot_idx=1, current_time=200.0)
 
-        np.testing.assert_array_almost_equal(handle['x'][:, 0], population.particles['x'])
-        np.testing.assert_array_almost_equal(handle['x'][:, 1], population.particles['x'])
-        assert handle['time'][0, 0] == pytest.approx(100.0)
-        assert handle['time'][0, 1] == pytest.approx(200.0)
+        np.testing.assert_array_almost_equal(handle['x'][0, :], population.particles['x'])
+        np.testing.assert_array_almost_equal(handle['x'][1, :], population.particles['x'])
+        assert handle['time'][0] == pytest.approx(100.0)
+        assert handle['time'][1] == pytest.approx(200.0)
         handle.close()
 
     def test_record_writes_status_fields(self, writer, population):
@@ -245,39 +122,9 @@ class TestNetCDFWriterStreaming:
         writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
 
         np.testing.assert_array_equal(
-            handle['status_mobile'][:, 0], population.particles['status_mobile']
-        )
-        np.testing.assert_array_equal(
-            handle['status_beached'][:, 0], population.particles['status_beached']
-        )
-        np.testing.assert_array_equal(
-            handle['status_left_domain'][:, 0], population.particles['status_left_domain']
+            handle['status_mobile'][0, :], population.particles['status_mobile']
         )
         handle.close()
-
-    def test_record_syncs_at_configured_write_cadence(self, writer, population, monkeypatch):
-        """Streaming output should flush only on configured write intervals."""
-
-        class FakeHandle:
-            def __init__(self):
-                self.sync_count = 0
-
-            def sync(self):
-                self.sync_count += 1
-
-        monkeypatch.setattr(NetCDFWriter, '_write_slot', staticmethod(lambda h, p, s, t: None))
-        writer._write_count = 0
-        writer._sync_every_n_writes = 3
-        handle = FakeHandle()
-
-        for slot_idx in range(5):
-            writer.record_output(handle, [population], slot_idx=slot_idx, current_time=float(slot_idx))
-
-        assert handle.sync_count == 1
-
-        writer.record_output(handle, [population], slot_idx=5, current_time=5.0)
-
-        assert handle.sync_count == 2
 
     def test_unwritten_slots_are_fill_values(self, writer, population):
         """Slots not yet written should contain the declared fill value, not zeros."""
@@ -286,8 +133,8 @@ class TestNetCDFWriterStreaming:
             self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['vel'],
         )
         writer.record_output(handle, [population], slot_idx=0, current_time=0.0)
-        # slot 1 is unwritten — returned as a masked array (fill_value=NaN)
-        slot1 = handle['x'][:, 1]
+        # slot 1 is unwritten; returned as a masked array (fill_value=NaN)
+        slot1 = handle['x'][1, :]
         assert np.all(np.ma.getmaskarray(slot1))
         handle.close()
 
@@ -301,7 +148,7 @@ class TestNetCDFWriterStreaming:
         assert path.exists()
 
     def test_streaming_round_trip(self, writer, population, tmp_path):
-        """Full open→record×N→close cycle produces a valid, readable NetCDF file."""
+        """Full open-record-close cycle produces a valid, readable NetCDF file."""
         times = [0.0, 3600.0, 7200.0]
         handle = writer.open_output(
             'round_trip.nc', len(times), self.N_PARTICLES,
@@ -312,14 +159,13 @@ class TestNetCDFWriterStreaming:
         path = writer.close_output(handle)
 
         # Read back with xarray and verify
-        ds = xr.open_dataset(path)
+        ds = xr.open_dataset(path, engine='netcdf4')
         assert ds.sizes['n_timesteps'] == len(times)
         assert ds.sizes['n_particles'] == self.N_PARTICLES
-        # time shape: (n_particles, n_timesteps) — all particles share the same time per slot
-        time_vals = ds['time'].values[0, :]   # particle 0 across all slots
-        np.testing.assert_array_almost_equal(time_vals, times)
+        assert ds.attrs['trajectory_layout'] == 'time_particle'
+        np.testing.assert_array_almost_equal(ds['time'].values, times)
         np.testing.assert_array_almost_equal(
-            ds['x'].values[:, 0], population.particles['x']  # all particles at slot 0
+            ds['x'].values[0, :], population.particles['x']  # all particles at slot 0
         )
         ds.close()
 
@@ -335,6 +181,46 @@ class TestNetCDFWriterStreaming:
         )
         writer.record_output(handle, [pop_a, pop_b], slot_idx=0, current_time=0.0)
 
-        np.testing.assert_array_almost_equal(handle['x'][:3, 0], pop_a.particles['x'])
-        np.testing.assert_array_almost_equal(handle['x'][3:, 0], pop_b.particles['x'])
+        np.testing.assert_array_almost_equal(handle['x'][0, :3], pop_a.particles['x'])
+        np.testing.assert_array_almost_equal(handle['x'][0, 3:], pop_b.particles['x'])
         handle.close()
+
+    def test_write_checkpoint_stores_current_particle_state(self, writer, population):
+        path = writer.write_checkpoint(
+            'sedtrails_checkpoint.nc',
+            [population],
+            current_time=123.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        assert ds.attrs['sedtrails_file_kind'] == 'checkpoint'
+        assert ds.attrs['reference_date'] == '2020-01-01 00:00:00'
+        assert ds.sizes['n_particles'] == self.N_PARTICLES
+        assert ds['x'].dims == ('n_particles',)
+        assert float(ds['time'].values) == pytest.approx(123.0)
+        np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
+        np.testing.assert_array_equal(ds['population_id'].values, np.zeros(self.N_PARTICLES, dtype=int))
+        ds.close()
+
+    def test_write_end_positions_stores_compact_result_state(self, writer, population):
+        """End-position results should use one particle dimension and no trajectory cube."""
+        path = writer.write_end_positions(
+            'sedtrails_results.nc',
+            [population],
+            current_time=456.0,
+            reference_date='2020-01-01 00:00:00',
+            time_units='seconds since 2020-01-01 00:00:00',
+        )
+
+        ds = xr.open_dataset(path, engine='netcdf4')
+        assert ds.attrs['sedtrails_file_kind'] == 'end_positions'
+        assert ds.attrs['sedtrails_output_schema'] == 'end_positions_v1'
+        assert ds.attrs['trajectory_layout'] == 'end_positions'
+        assert ds.sizes['n_particles'] == self.N_PARTICLES
+        assert 'n_timesteps' not in ds.sizes
+        assert ds['x'].dims == ('n_particles',)
+        assert float(ds['time'].values) == pytest.approx(456.0)
+        np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
+        ds.close()

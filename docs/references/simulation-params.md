@@ -507,8 +507,9 @@ Controls what results are saved and where.
 | --------------------- | ------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------- |
 | `directory`           | string  | Optional    | `./output` | Path to directory for storing simulation results.                                                       |
 | `save_interval`       | string  | Optional    | `1H`       | How often to store trajectory samples. CFL integration can use shorter internal steps; output stores the initial sample, scheduled samples, and final sample. |
-| `sync_interval`       | string  | Optional    | `save_interval` | How often to flush streaming NetCDF output to disk. Use a longer interval to reduce filesystem sync overhead. |
-| `store_tracks`        | boolean | Optional    | `true`     | Store complete particle trajectories over time. The current runtime always writes trajectory output, so this value must be `true` when provided. |
+| `sync_interval`       | string  | Optional    | `save_interval` | Compatibility setting for how often to flush streaming NetCDF output to disk. Prefer `outputs.netcdf.sync_interval` for new configs. |
+| `store_tracks`        | boolean | Optional    | `true`     | Store complete particle trajectories over time. Set to `false` for compact final-state output. |
+| `store_end_positions` | boolean | Optional    | `false`    | Store only final particle positions in `sedtrails_results.nc`. Creates a compact one-state file and skips full trajectory output. |
 
 **Example:**
 
@@ -518,7 +519,14 @@ outputs:
   save_interval: "30M"
   sync_interval: "2H"
   store_tracks: true
+  netcdf:
+    compression: auto
+    compression_auto_threshold_mb: 1024
 ```
+
+### NetCDF Compression
+
+Nested under `outputs.netcdf`, `compression` accepts `true`, `false`, or `auto` and defaults to `auto`. In `auto` mode, SedTRAILS estimates the uncompressed particle output payload before writing. Compression is enabled when the estimate is greater than or equal to `compression_auto_threshold_mb` MiB, which defaults to `1024`. Full-track output estimates all saved trajectory slots; `store_end_positions` and restart checkpoints estimate one particle snapshot.
 
 ---
 

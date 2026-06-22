@@ -420,6 +420,19 @@ class PointStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         locations = getattr(config, 'strategy_settings', {}).get('locations', [])
         if not locations:
             raise MissingConfigurationParameter('"locations" must be provided for PointStrategy.')
@@ -624,6 +637,19 @@ class TransectStrategy(SeedingStrategy):
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
         # expect to return a dictionary with keys 'segments', 'k'
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         segments = getattr(config, 'strategy_settings', {}).get('segments', None)
         if not segments:
             raise MissingConfigurationParameter('"segments" must be provided for TransectStrategy.')
@@ -681,6 +707,19 @@ class FilePointsStrategy(SeedingStrategy):
     """
 
     def seed(self, config: PopulationConfig) -> list[Tuple[int, float, float]]:
+        """
+        Return seed.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Configuration mapping used by the operation.
+
+        Returns
+        -------
+        list[Tuple[int, float, float]]
+            Integer result of the calculation.
+        """
         import os
 
         import pandas as pd
@@ -870,6 +909,8 @@ class ParticlePopulation:
         Bound method for interpolating one nodal field to particle positions.
     _field_interpolator_multi : Any
         Bound method for interpolating multiple nodal fields with one point-location pass.
+    _field_interpolator_multi_with_simplex : Any
+        Bound method for interpolating multiple nodal fields while reusing cached simplex ids.
     _position_calculator_with_simplex : Any
         Bound method for advancing particles while reusing cached simplex ids.
     _position_calculator_temporal_with_simplex : Any
@@ -880,10 +921,10 @@ class ParticlePopulation:
         Bound method for temporal updates and crossed boundary class codes.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
-    _particle_simplex_x, _particle_simplex_y : ndarray
-        Last particle coordinates corresponding to ``_particle_simplices``.
-    _particle_location_known : ndarray
-        True where ``_particle_simplices`` has been located for the cached coordinates, including known-outside points.
+    _particle_simplices_x : ndarray
+        Particle x coordinates corresponding to the cached simplex ids.
+    _particle_simplices_y : ndarray
+        Particle y coordinates corresponding to the cached simplex ids.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -901,14 +942,14 @@ class ParticlePopulation:
     repr_volume: float = field(init=False, default=np.nan)  # representative volume [m³/particle]
     _field_interpolator: Any = field(init=False)
     _field_interpolator_multi: Any = field(init=False)
+    _field_interpolator_multi_with_simplex: Any = field(init=False)
     _position_calculator_with_simplex: Any = field(init=False)
     _position_calculator_temporal_with_simplex: Any = field(init=False)
     _position_calculator_with_boundary_class: Any = field(init=False)
     _position_calculator_temporal_with_boundary_class: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
-    _particle_simplex_x: ndarray = field(init=False)
-    _particle_simplex_y: ndarray = field(init=False)
-    _particle_location_known: ndarray = field(init=False)
+    _particle_simplices_x: ndarray = field(init=False)
+    _particle_simplices_y: ndarray = field(init=False)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -920,6 +961,7 @@ class ParticlePopulation:
         # Reuse methods bound to the shared grid geometry.
         self._field_interpolator = self.grid_geometry.interpolate_field
         self._field_interpolator_multi = self.grid_geometry.interpolate_fields
+        self._field_interpolator_multi_with_simplex = self.grid_geometry.interpolate_fields_with_simplex
         self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
         self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
         self._position_calculator_with_boundary_class = self.grid_geometry.update_particles_with_boundary_class
@@ -941,9 +983,7 @@ class ParticlePopulation:
             'status_beached': np.zeros(len(_particles), dtype=bool),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
-        self._particle_simplex_x = self.particles['x'].copy()
-        self._particle_simplex_y = self.particles['y'].copy()
-        self._particle_location_known = np.ones(len(_particles), dtype=bool)
+        self._mark_particle_simplices_current()
         self._validate_seed_locations_inside_domain()
 
         rv = _compute_repr_volume(self.population_config, len(self.particles['x']))
@@ -1013,6 +1053,7 @@ class ParticlePopulation:
         for key in list(self.particles.keys()):
             self.particles[key] = self.particles[key][keep]
         self._particle_simplices = self._particle_simplices[keep]
+        self._mark_particle_simplices_current()
 
         pct = 100.0 * n_removed / n_total
         if n_removed == n_total:
@@ -1051,6 +1092,38 @@ class ParticlePopulation:
             'Use seed coordinates in the same coordinate system as the input model grid.'
         )
 
+    def _mark_particle_simplices_current(self) -> None:
+        """Record the particle coordinates represented by the simplex cache."""
+        self._particle_simplices_x = np.asarray(self.particles['x']).copy()
+        self._particle_simplices_y = np.asarray(self.particles['y']).copy()
+
+    def _particle_simplices_match_positions(self) -> bool:
+        """Return whether cached simplex ids represent the current particle positions."""
+        n_particles = len(self.particles['x'])
+        if self._particle_simplices.shape[0] != n_particles:
+            return False
+        if (
+            self._particle_simplices_x.shape[0] != n_particles
+            or self._particle_simplices_y.shape[0] != n_particles
+        ):
+            return False
+        return (
+            np.array_equal(self._particle_simplices_x, self.particles['x'], equal_nan=True)
+            and np.array_equal(self._particle_simplices_y, self.particles['y'], equal_nan=True)
+        )
+
+    def _refresh_particle_simplices(self) -> None:
+        """Refresh cached simplex ids from the current particle coordinates."""
+        simplex_ids = self._particle_simplices
+        if simplex_ids.shape[0] != len(self.particles['x']):
+            simplex_ids = None
+        self._particle_simplices = self.grid_geometry.locate_points(
+            self.particles['x'],
+            self.particles['y'],
+            simplex_ids,
+        )
+        self._mark_particle_simplices_current()
+
     def update_information(
         self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
     ) -> None:
@@ -1074,84 +1147,55 @@ class ParticlePopulation:
         if 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
-        self._update_particle_fields(
-            {
-                'mixing_depth': mixing_depth,
-                'transport_probability': transport_probability,
-                'bed_level': bed_level,
-            }
-        )
+        batched_fields = []
+        batched_names = []
+        for name, field_value in (
+            ('mixing_depth', mixing_depth),
+            ('transport_probability', transport_probability),
+            ('bed_level', bed_level),
+        ):
+            if self._can_batch_particle_field(field_value):
+                batched_names.append(name)
+                batched_fields.append(np.asarray(field_value))
+            else:
+                self._update_particle_field(name, field_value)
+
+        if batched_fields:
+            particle_values = self._interpolate_particle_fields(
+                tuple(batched_fields),
+            )
+            for name, values in zip(batched_names, particle_values, strict=True):
+                if np.isnan(values).all():
+                    continue
+                self.particles[name] = values
 
         if 'bed_level_previous' not in self.particles and 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
-    def _update_particle_fields(self, field_values: Dict[str, Any]) -> None:
-        """Update several particle fields while sharing interpolation work."""
-        single_pass_fields = []
-        temporal_fields = []
+    @staticmethod
+    def _can_batch_particle_field(field_value) -> bool:
+        """Return whether a field can join one multi-field interpolation pass."""
+        if field_value is None or np.isscalar(field_value) or _is_temporal_field(field_value):
+            return False
 
-        for name, field_value in field_values.items():
-            if field_value is None:
-                continue
+        field_array = np.asarray(field_value)
+        return field_array.size > 0
 
-            if np.isscalar(field_value):
-                self.particles[name] = np.full(len(self.particles['x']), field_value, dtype=float)
-                continue
-
-            if _is_temporal_field(field_value):
-                lower_values = np.asarray(field_value['lower'])
-                upper_values = np.asarray(field_value['upper'])
-                if lower_values.size == 0:
-                    continue
-
-                weight = field_value['weight']
-                if weight <= 0.0 or lower_values is upper_values:
-                    single_pass_fields.append((name, lower_values))
-                else:
-                    temporal_fields.append((name, lower_values, upper_values, weight))
-                continue
-
-            field_array = np.asarray(field_value)
-            if field_array.size:
-                single_pass_fields.append((name, field_array))
-
-        self._update_single_pass_particle_fields(single_pass_fields)
-        self._update_temporal_particle_fields(temporal_fields)
-
-    def _update_single_pass_particle_fields(self, fields: list[tuple[str, np.ndarray]]) -> None:
-        if not fields:
-            return
-
-        particle_values = self._field_interpolator_multi(
-            tuple(field for _, field in fields),
+    def _interpolate_particle_fields(self, fields):
+        """Interpolate fields at particle positions and refresh cached simplex ids."""
+        simplex_ids = self._particle_simplices
+        if simplex_ids.shape[0] != len(self.particles['x']):
+            simplex_ids = None
+        particle_values, simplices = self._field_interpolator_multi_with_simplex(
+            tuple(fields),
             self.particles['x'],
             self.particles['y'],
+            simplex_ids=simplex_ids,
         )
-        for (name, _), values in zip(fields, particle_values, strict=True):
-            if np.isnan(values).all():
-                continue
-            self.particles[name] = values
-
-    def _update_temporal_particle_fields(self, fields: list[tuple[str, np.ndarray, np.ndarray, float]]) -> None:
-        if not fields:
-            return
-
-        interpolation_fields = []
-        for _, lower_values, upper_values, _ in fields:
-            interpolation_fields.extend((lower_values, upper_values))
-
-        interpolated = self._field_interpolator_multi(
-            tuple(interpolation_fields),
-            self.particles['x'],
-            self.particles['y'],
-        )
-        for field_index, (name, _, _, weight) in enumerate(fields):
-            lower_particle_values = interpolated[2 * field_index]
-            upper_particle_values = interpolated[2 * field_index + 1]
-            if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
-                continue
-            self.particles[name] = lower_particle_values + weight * (upper_particle_values - lower_particle_values)
-
+        if simplices.shape[0] == len(self.particles['x']):
+            self._particle_simplices = simplices
+            self._mark_particle_simplices_current()
+        return particle_values
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -1165,16 +1209,14 @@ class ParticlePopulation:
 
             weight = field_value['weight']
             if weight <= 0.0 or lower_values is upper_values:
-                lower_particle_values = self._field_interpolator(lower_values, self.particles['x'], self.particles['y'])
+                lower_particle_values = self._interpolate_particle_fields((lower_values,))[0]
                 if np.isnan(lower_particle_values).all():
                     return
                 self.particles[name] = lower_particle_values
                 return
 
-            lower_particle_values, upper_particle_values = self._field_interpolator_multi(
+            lower_particle_values, upper_particle_values = self._interpolate_particle_fields(
                 (lower_values, upper_values),
-                self.particles['x'],
-                self.particles['y'],
             )
             if np.isnan(lower_particle_values).all() and np.isnan(upper_particle_values).all():
                 return
@@ -1189,7 +1231,7 @@ class ParticlePopulation:
         if field_array.size == 0:
             return
 
-        particle_values = self._field_interpolator(field_array, self.particles['x'], self.particles['y'])
+        particle_values = self._interpolate_particle_fields((field_array,))[0]
         if np.isnan(particle_values).all():
             return
 
@@ -1272,29 +1314,10 @@ class ParticlePopulation:
                 'transport_probability'
             ]
 
-        # Compute whether particles are inside the active mesh. This respects
-        # any masked-out inner-boundary triangles in shared grid geometry.
-        self._ensure_particle_location_cache(n_particles)
-        current_simplices = self._particle_simplices
-        current_simplices[left_domain] = -1
-
-        particle_x = np.asarray(self.particles['x'])
-        particle_y = np.asarray(self.particles['y'])
-        known_position_changed = self._particle_location_known & (
-            (particle_x != self._particle_simplex_x) | (particle_y != self._particle_simplex_y)
-        )
-        needs_location = ~left_domain & (~self._particle_location_known | known_position_changed)
-        if np.any(needs_location):
-            location_indices = np.flatnonzero(needs_location)
-            current_simplices[location_indices] = self.grid_geometry.locate_points(
-                particle_x[location_indices],
-                particle_y[location_indices],
-                current_simplices[location_indices],
-            )
-            self._particle_simplex_x[location_indices] = particle_x[location_indices]
-            self._particle_simplex_y[location_indices] = particle_y[location_indices]
-            self._particle_location_known[location_indices] = True
-
+        if not self._particle_simplices_match_positions():
+            self._refresh_particle_simplices()
+        self._particle_simplices[left_domain] = -1
+        self._mark_particle_simplices_current()
         self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method
@@ -1399,29 +1422,7 @@ class ParticlePopulation:
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
         self._particle_simplices[particle_indices] = new_simplices
-        self._ensure_particle_location_cache(len(self.particles['x']))
-        self._particle_simplex_x[particle_indices] = new_x
-        self._particle_simplex_y[particle_indices] = new_y
-        self._particle_location_known[particle_indices] = True
-
-    def _ensure_particle_location_cache(self, n_particles: int) -> None:
-        """Ensure cached simplex ids and their coordinate stamps match particle count."""
-        reset_known_locations = False
-        if self._particle_simplices.shape != (n_particles,):
-            self._particle_simplices = np.full(n_particles, -1, dtype=np.int64)
-            reset_known_locations = True
-        if getattr(self, '_particle_simplex_x', None) is None or self._particle_simplex_x.shape != (n_particles,):
-            self._particle_simplex_x = np.full(n_particles, np.nan, dtype=float)
-            reset_known_locations = True
-        if getattr(self, '_particle_simplex_y', None) is None or self._particle_simplex_y.shape != (n_particles,):
-            self._particle_simplex_y = np.full(n_particles, np.nan, dtype=float)
-            reset_known_locations = True
-        if (
-            reset_known_locations
-            or getattr(self, '_particle_location_known', None) is None
-            or self._particle_location_known.shape != (n_particles,)
-        ):
-            self._particle_location_known = np.zeros(n_particles, dtype=bool)
+        self._mark_particle_simplices_current()
 
 
 class ParticleSeeder:
@@ -1497,8 +1498,10 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
         return None
 
     triangles = np.asarray(connectivity, dtype=np.int64)
-    if triangles.ndim != 2 or triangles.shape[1] != 3 or triangles.size == 0:
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
         return None
+    if triangles.shape[0] == 0:
+        return triangles
 
     n_points = np.asarray(sedtrails_data.x).size
     valid = triangles >= 0

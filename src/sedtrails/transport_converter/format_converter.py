@@ -76,7 +76,14 @@ class FormatConverter:
 
     @property
     def input_file(self):
-        """Get the input file path."""
+        """
+        Get the input file path.
+
+        Returns
+        -------
+        str
+            Configured input file path.
+        """
         if self._input_file is None:
             self._input_file = self.config.get('input_file')
             if not self._input_file:
@@ -85,7 +92,14 @@ class FormatConverter:
 
     @property
     def input_format(self) -> str | None:
-        """Get the format to convert to."""
+        """
+        Get the format to convert to.
+
+        Returns
+        -------
+        str | None
+            The input format value.
+        """
         if self._input_format is None:
             self._input_format = self.config.get('input_format')
             if not self._input_format:
@@ -94,7 +108,14 @@ class FormatConverter:
 
     @property
     def reference_date(self) -> np.datetime64:
-        """Get the reference date as a numpy datetime64 object."""
+        """
+        Get the reference date as a numpy datetime64 object.
+
+        Returns
+        -------
+        np.datetime64
+            The reference date value.
+        """
 
         if self._reference_date is None:
             self._reference_date = self.config.get('reference_date', '1970-01-01')
@@ -102,7 +123,14 @@ class FormatConverter:
 
     @property
     def morfac(self) -> float:
-        """Get the morphological acceleration factor."""
+        """
+        Get the morphological acceleration factor.
+
+        Returns
+        -------
+        float
+            The morfac value.
+        """
         if self._morfac is None:
             self._morfac = self.config.get('morfac', 1.0)
         return self._morfac
@@ -111,6 +139,11 @@ class FormatConverter:
     def format_plugin(self):
         """
         Get the format plugin instance based on the specified format.
+
+        Returns
+        -------
+        object
+            Loaded format plugin instance.
         """
 
         import importlib  # lazy import for performance
@@ -146,15 +179,15 @@ class FormatConverter:
         """
         Converts dataset to SedtrailsData format.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
             Reading interval in seconds
 
-        Returns:
-        --------
+        Returns
+        -------
         SedtrailsData:
             Data in SedtrailsData format
         """
@@ -208,13 +241,14 @@ class FormatConverter:
             Minimal coordinate container for seeding workflows.
         """
         plugin = self.format_plugin
+
         seeding_field_data_reader = getattr(plugin, 'get_seeding_field_data', None)
         seeding_coordinate_reader = getattr(plugin, 'get_seeding_coordinates', None)
 
         if callable(seeding_field_data_reader):
             field_data = seeding_field_data_reader()
         elif callable(seeding_coordinate_reader):
-            x, y = seeding_coordinate_reader()
+            x, y = plugin.get_seeding_coordinates()
             field_data = SeederFieldData(x=np.asarray(x), y=np.asarray(y), reference_date=self.reference_date)
         else:
             # Backward-compatible fallback for plugins that only expose full conversion.
@@ -234,6 +268,7 @@ class FormatConverter:
         boundary_edge_classification = getattr(field_data, 'boundary_edge_classification', None)
         if boundary_edge_classification is None and metadata is not None:
             boundary_edge_classification = getattr(metadata, 'boundary_edge_classification', None)
+
         reference_date = getattr(field_data, 'reference_date', None)
         if reference_date is None:
             reference_date = self.reference_date
@@ -241,6 +276,7 @@ class FormatConverter:
         return SeederFieldData(
             x=np.asarray(field_data.x),
             y=np.asarray(field_data.y),
+            reference_date=np.datetime64(reference_date),
             face_node_connectivity=self._optional_connectivity_array(
                 getattr(field_data, 'face_node_connectivity', None)
             ),
@@ -249,11 +285,11 @@ class FormatConverter:
             ),
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
-            reference_date=np.datetime64(reference_date),
         )
 
     @staticmethod
     def _optional_connectivity_array(connectivity):
+        """Return optional connectivity as an integer array."""
         if connectivity is None:
             return None
         return np.asarray(connectivity, dtype=np.int64)

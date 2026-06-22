@@ -45,6 +45,23 @@ class GridGeometry:
 
     @classmethod
     def from_points(cls, grid_x, grid_y, triangles=None, boundary_edge_classification=None):
+        """
+        Build cached grid geometry from point coordinates.
+
+        Parameters
+        ----------
+        grid_x : object
+            Grid node x coordinates.
+        grid_y : object
+            Grid node y coordinates.
+        triangles : object
+            Triangle connectivity array.
+
+        Returns
+        -------
+        GridGeometry
+            Cached grid geometry built from the supplied coordinates.
+        """
         x = np.asarray(grid_x, dtype=np.float64).ravel()
         y = np.asarray(grid_y, dtype=np.float64).ravel()
 
@@ -71,7 +88,10 @@ class GridGeometry:
             if triangle_array.ndim != 2 or triangle_array.shape[1] != 3:
                 raise ValueError('triangles must be an array with shape (n_triangles, 3)')
             triangulation = None
-            triangle_finder = mtri.Triangulation(x, y, triangle_array).get_trifinder()
+            if triangle_array.shape[0] == 0:
+                triangle_finder = None
+            else:
+                triangle_finder = mtri.Triangulation(x, y, triangle_array).get_trifinder()
             triangle_neighbors = _compute_triangle_neighbors(triangle_array)
 
         unique_points = np.unique(finite_points, axis=0)
@@ -115,17 +135,51 @@ class GridGeometry:
         )
 
     def find_triangle(self, x, y) -> int:
-        """Return the containing simplex index, or -1 outside the triangulation."""
+        """
+        Return the containing simplex index, or -1 outside the triangulation.
+
+        Parameters
+        ----------
+        x : object
+            X coordinate value or array.
+        y : object
+            Y coordinate value or array.
+
+        Returns
+        -------
+        int
+            Integer result of the calculation.
+        """
+        if self.triangles.shape[0] == 0:
+            return -1
         if self.triangulation is not None:
             simplex = self.triangulation.find_simplex(np.array([[x, y]], dtype=np.float64), tol=TRIANGLE_TOLERANCE)
             return int(simplex[0])
         return int(self.triangle_finder([x], [y])[0])
 
     def locate_points(self, x_points, y_points, start_simplices=None):
-        """Locate points, using cached simplices first and global search only for misses."""
+        """
+        Locate points, using cached simplices first and global search only for misses.
+
+        Parameters
+        ----------
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+        start_simplices : object
+            Initial simplex ids used to seed local point searches.
+
+        Returns
+        -------
+        np.ndarray
+            Simplex index for each input point, or -1 outside the triangulation.
+        """
         points = _points_array(x_points, y_points)
         if points.size == 0:
             return np.empty(0, dtype=np.int64)
+        if self.triangles.shape[0] == 0:
+            return np.full(points.shape[0], -1, dtype=np.int64)
 
         if start_simplices is None:
             simplices = np.full(points.shape[0], -1, dtype=np.int64)
@@ -165,8 +219,25 @@ class GridGeometry:
         return simplices
 
     def barycentric_weights(self, x_points, y_points):
-        """Return simplex indices and barycentric weights for points."""
+        """
+        Return simplex indices and barycentric weights for points.
+
+        Parameters
+        ----------
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Simplex indices and barycentric weights for each point.
+        """
         points = _points_array(x_points, y_points)
+        if self.triangles.shape[0] == 0:
+            return np.full(points.shape[0], -1, dtype=np.int64), np.zeros((points.shape[0], 3), dtype=np.float64)
+
         weights = np.zeros((points.shape[0], 3), dtype=np.float64)
 
         if self.triangulation is not None:
@@ -197,12 +268,89 @@ class GridGeometry:
 
         return simplices, weights
 
+    def barycentric_weights_with_simplex(self, x_points, y_points, simplex_ids=None):
+        """
+        Return simplex indices and barycentric weights using cached simplex ids.
+
+        Parameters
+        ----------
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+        simplex_ids : object
+            Cached simplex ids for the point coordinates.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Simplex indices and barycentric weights for each point.
+        """
+        if simplex_ids is None:
+            return self.barycentric_weights(x_points, y_points)
+
+        points = _points_array(x_points, y_points)
+        simplices = self.locate_points(x_points, y_points, simplex_ids)
+        weights = np.zeros((points.shape[0], 3), dtype=np.float64)
+
+        valid_indices = np.flatnonzero(simplices >= 0)
+        if valid_indices.size:
+            valid_simplices = simplices[valid_indices]
+            dx = points[valid_indices, 0] - self.p0_x[valid_simplices]
+            dy = points[valid_indices, 1] - self.p0_y[valid_simplices]
+            w1 = self.inv00[valid_simplices] * dx + self.inv01[valid_simplices] * dy
+            w2 = self.inv10[valid_simplices] * dx + self.inv11[valid_simplices] * dy
+            nondegenerate = (
+                (self.inv00[valid_simplices] != 0.0)
+                | (self.inv01[valid_simplices] != 0.0)
+                | (self.inv10[valid_simplices] != 0.0)
+                | (self.inv11[valid_simplices] != 0.0)
+            )
+            local_weights = np.column_stack((1.0 - w1 - w2, w1, w2))
+            weights[valid_indices[nondegenerate]] = local_weights[nondegenerate]
+            simplices[valid_indices[~nondegenerate]] = -1
+
+        return simplices, weights
+
     def interpolate_field(self, field, x_points, y_points):
-        """Barycentrically interpolate a nodal field at point coordinates."""
+        """
+        Barycentrically interpolate a nodal field at point coordinates.
+
+        Parameters
+        ----------
+        field : object
+            Scalar field values defined on grid nodes.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+
+        Returns
+        -------
+        np.ndarray
+            Interpolated scalar field values at the requested points.
+        """
         return self.interpolate_fields((field,), x_points, y_points)[0]
 
     def interpolate_fields(self, fields, x_points, y_points):
-        """Interpolate multiple nodal fields using one point-location pass."""
+        """
+        Interpolate multiple nodal fields using one point-location pass.
+
+        Parameters
+        ----------
+        fields : object
+            Scalar field arrays defined on grid nodes.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+
+        Returns
+        -------
+        tuple[np.ndarray, ...]
+            Interpolated field values for each supplied field.
+        """
+        fields = tuple(fields)
         simplices, weights = self.barycentric_weights(x_points, y_points)
         outputs = [np.full(len(simplices), np.nan, dtype=np.float64) for _ in fields]
 
@@ -216,12 +364,121 @@ class GridGeometry:
 
         return tuple(outputs)
 
+    def interpolate_fields_with_simplex(self, fields, x_points, y_points, simplex_ids=None):
+        """
+        Interpolate nodal fields and return refreshed simplex ids.
+
+        Parameters
+        ----------
+        fields : object
+            Scalar field arrays defined on grid nodes.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+        simplex_ids : object
+            Cached simplex ids for the point coordinates.
+
+        Returns
+        -------
+        tuple[tuple[np.ndarray, ...], np.ndarray]
+            Interpolated field values and the containing simplex index for each point.
+        """
+        fields = tuple(fields)
+        if not fields:
+            simplices = self.locate_points(x_points, y_points, simplex_ids)
+            return (), simplices
+
+        x_values = np.asarray(x_points, dtype=np.float64)
+        y_values = np.asarray(y_points, dtype=np.float64)
+        if y_values.shape != x_values.shape:
+            raise ValueError(
+                f'x_points and y_points must have the same shape, got {x_values.shape} and {y_values.shape}'
+            )
+
+        field_values = []
+        n_nodes = self.grid_x.size
+        for field in fields:
+            values = np.asarray(field, dtype=np.float64).ravel()
+            if values.size != n_nodes:
+                raise ValueError(f'field arrays must have {n_nodes} values, got {values.size}')
+            field_values.append(values)
+
+        simplices = self.locate_points(x_values, y_values, simplex_ids)
+        stacked_fields = np.vstack(field_values)
+        output_values, refreshed_simplices = _interpolate_fields_at_simplices_numba(
+            stacked_fields,
+            simplices,
+            x_values.ravel(),
+            y_values.ravel(),
+            self.triangles,
+            self.p0_x,
+            self.p0_y,
+            self.inv00,
+            self.inv01,
+            self.inv10,
+            self.inv11,
+            TRIANGLE_TOLERANCE,
+        )
+        outputs = tuple(output_values[i].copy() for i in range(output_values.shape[0]))
+        return outputs, refreshed_simplices
+
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
-        """Advance particle positions one RK4 step using barycentric velocity sampling."""
+        """
+        Advance particle positions one RK4 step using barycentric velocity sampling.
+
+        Parameters
+        ----------
+        x0 : object
+            Initial particle x coordinates.
+        y0 : object
+            Initial particle y coordinates.
+        grid_u : object
+            Grid-aligned x velocity component.
+        grid_v : object
+            Grid-aligned y velocity component.
+        dt : object
+            Integration timestep in seconds.
+        igeo : object
+            Coordinate-system flag used by the legacy kernels.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Updated x and y particle positions.
+        """
         return self.update_particles_temporal(x0, y0, grid_u, grid_v, grid_u, grid_v, 0.0, dt, igeo)
 
     def update_particles_temporal(self, x0, y0, lower_u, lower_v, upper_u, upper_v, weight, dt, igeo=0):
-        """Advance particles using lower/upper time-slice velocities blended by weight."""
+        """
+        Advance particles using lower/upper time-slice velocities blended by weight.
+
+        Parameters
+        ----------
+        x0 : object
+            Initial particle x coordinates.
+        y0 : object
+            Initial particle y coordinates.
+        lower_u : object
+            Lower-time x velocity component.
+        lower_v : object
+            Lower-time y velocity component.
+        upper_u : object
+            Upper-time x velocity component.
+        upper_v : object
+            Upper-time y velocity component.
+        weight : object
+            Temporal interpolation weight between lower and upper fields.
+        dt : object
+            Integration timestep in seconds.
+        igeo : object
+            Coordinate-system flag used by the legacy kernels.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Updated x and y particle positions.
+        """
         x_new, y_new, _, _ = self.update_particles_temporal_with_boundary_class(
             x0,
             y0,
@@ -237,7 +494,31 @@ class GridGeometry:
         return x_new, y_new
 
     def update_particles_with_simplex(self, x0, y0, grid_u, grid_v, dt, simplex_ids=None, igeo=0):
-        """Advance particles and return updated simplex ids for the new positions."""
+        """
+        Advance particles and return updated simplex ids for the new positions.
+
+        Parameters
+        ----------
+        x0 : object
+            Initial particle x coordinates.
+        y0 : object
+            Initial particle y coordinates.
+        grid_u : object
+            Grid-aligned x velocity component.
+        grid_v : object
+            Grid-aligned y velocity component.
+        dt : object
+            Integration timestep in seconds.
+        simplex_ids : object
+            Cached simplex ids for particle positions.
+        igeo : object
+            Coordinate-system flag used by the legacy kernels.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Updated x positions, y positions, and simplex ids.
+        """
         x_new, y_new, new_simplices, _ = self.update_particles_with_boundary_class(
             x0,
             y0,
@@ -250,7 +531,17 @@ class GridGeometry:
         return x_new, y_new, new_simplices
 
     def update_particles_with_boundary_class(self, x0, y0, grid_u, grid_v, dt, simplex_ids=None, igeo=0):
-        """Advance particles and return updated simplex ids plus exit boundary classes."""
+        """
+        Advance particles and return updated simplex ids plus exit boundary classes.
+
+        Parameters are the same as ``update_particles_with_simplex``.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Updated x positions, y positions, simplex ids, and boundary class
+            codes for particles that leave the triangulation.
+        """
         return self.update_particles_temporal_with_boundary_class(
             x0,
             y0,
@@ -277,7 +568,37 @@ class GridGeometry:
         simplex_ids=None,
         igeo=0,
     ):
-        """Advance particles with a Numba RK4 kernel and cached simplex ids."""
+        """
+        Advance particles with a Numba RK4 kernel and cached simplex ids.
+
+        Parameters
+        ----------
+        x0 : object
+            Initial particle x coordinates.
+        y0 : object
+            Initial particle y coordinates.
+        lower_u : object
+            Lower-time x velocity component.
+        lower_v : object
+            Lower-time y velocity component.
+        upper_u : object
+            Upper-time x velocity component.
+        upper_v : object
+            Upper-time y velocity component.
+        weight : object
+            Temporal interpolation weight between lower and upper fields.
+        dt : object
+            Integration timestep in seconds.
+        simplex_ids : object
+            Cached simplex ids for particle positions.
+        igeo : object
+            Coordinate-system flag used by the legacy kernels.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Updated x positions, y positions, and simplex ids.
+        """
         x_new, y_new, new_simplices, _ = self.update_particles_temporal_with_boundary_class(
             x0,
             y0,
@@ -305,7 +626,17 @@ class GridGeometry:
         simplex_ids=None,
         igeo=0,
     ):
-        """Advance particles and return exit boundary class codes."""
+        """
+        Advance particles and return exit boundary class codes.
+
+        Parameters are the same as ``update_particles_temporal_with_simplex``.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Updated x positions, y positions, simplex ids, and exit boundary
+            class codes.
+        """
         x0 = np.asarray(x0, dtype=np.float64)
         y0 = np.asarray(y0, dtype=np.float64)
         particle_shape = x0.shape
@@ -355,14 +686,56 @@ class GridGeometry:
         )
 
     def interpolate_vector(self, grid_u, grid_v, x_points, y_points):
-        """Interpolate vector components at point coordinates."""
+        """
+        Interpolate vector components at point coordinates.
+
+        Parameters
+        ----------
+        grid_u : object
+            Grid-aligned x velocity component.
+        grid_v : object
+            Grid-aligned y velocity component.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Interpolated vector components at the requested points.
+        """
         return (
             self.interpolate_field(grid_u, x_points, y_points),
             self.interpolate_field(grid_v, x_points, y_points),
         )
 
     def interpolate_temporal_vector(self, lower_u, lower_v, upper_u, upper_v, weight, x_points, y_points):
-        """Interpolate lower/upper vector fields spatially, then blend in time."""
+        """
+        Interpolate lower/upper vector fields spatially, then blend in time.
+
+        Parameters
+        ----------
+        lower_u : object
+            Lower-time x velocity component.
+        lower_v : object
+            Lower-time y velocity component.
+        upper_u : object
+            Upper-time x velocity component.
+        upper_v : object
+            Upper-time y velocity component.
+        weight : object
+            Temporal interpolation weight between lower and upper fields.
+        x_points : object
+            Point x coordinates to sample.
+        y_points : object
+            Point y coordinates to sample.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Temporally blended vector components at the requested points.
+        """
         if weight <= 0.0:
             return self.interpolate_fields((lower_u, lower_v), x_points, y_points)
 
@@ -879,6 +1252,68 @@ def _locate_points_walk_numba(
     return out
 
 
+@njit(cache=True, parallel=True)
+def _interpolate_fields_at_simplices_numba(
+    fields,
+    simplices,
+    x_points,
+    y_points,
+    triangles,
+    p0_x,
+    p0_y,
+    inv00,
+    inv01,
+    inv10,
+    inv11,
+    tolerance,
+):
+    n_fields = fields.shape[0]
+    n_points = simplices.shape[0]
+    outputs = np.empty((n_fields, n_points), dtype=np.float64)
+    refreshed_simplices = simplices.copy()
+
+    for i in prange(n_points):
+        simplex = simplices[i]
+        if simplex < 0:
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        if (
+            inv00[simplex] == 0.0
+            and inv01[simplex] == 0.0
+            and inv10[simplex] == 0.0
+            and inv11[simplex] == 0.0
+        ):
+            refreshed_simplices[i] = -1
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        dx = x_points[i] - p0_x[simplex]
+        dy = y_points[i] - p0_y[simplex]
+        w1 = inv00[simplex] * dx + inv01[simplex] * dy
+        w2 = inv10[simplex] * dx + inv11[simplex] * dy
+        w0 = 1.0 - w1 - w2
+        if w0 < -tolerance or w1 < -tolerance or w2 < -tolerance:
+            refreshed_simplices[i] = -1
+            for field_index in range(n_fields):
+                outputs[field_index, i] = np.nan
+            continue
+
+        v0 = triangles[simplex, 0]
+        v1 = triangles[simplex, 1]
+        v2 = triangles[simplex, 2]
+        for field_index in range(n_fields):
+            outputs[field_index, i] = (
+                fields[field_index, v0] * w0
+                + fields[field_index, v1] * w1
+                + fields[field_index, v2] * w2
+            )
+
+    return outputs, refreshed_simplices
+
+
 @njit(cache=True)
 def _interpolate_temporal_velocity(
     x,
@@ -1091,7 +1526,23 @@ def _update_particles_temporal_numba(
 
 
 def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classification=None) -> GridGeometry:
-    """Create cached grid geometry for repeated particle interpolation."""
+    """
+    Create cached grid geometry for repeated particle interpolation.
+
+    Parameters
+    ----------
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+
+    Returns
+    -------
+    GridGeometry
+        Cached grid geometry instance.
+    """
     return GridGeometry.from_points(
         grid_x,
         grid_y,
@@ -1111,6 +1562,22 @@ def create_numba_particle_calculator(
     Create particle interpolation/update callables.
 
     The returned dictionary keeps the historical keys used by ParticlePopulation.
+
+    Parameters
+    ----------
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+    grid_geometry : object
+        The grid geometry value.
+
+    Returns
+    -------
+    dict[str, object]
+        Dictionary of geometry and particle interpolation/update callables.
     """
     geometry = (
         grid_geometry
@@ -1129,6 +1596,7 @@ def create_numba_particle_calculator(
         'find_triangle': geometry.find_triangle,
         'interpolate_field': geometry.interpolate_field,
         'interpolate_fields': geometry.interpolate_fields,
+        'interpolate_fields_with_simplex': geometry.interpolate_fields_with_simplex,
         'update_particles': geometry.update_particles,
         'update_particles_temporal': geometry.update_particles_temporal,
         'update_particles_with_simplex': geometry.update_particles_with_simplex,
@@ -1140,20 +1608,118 @@ def create_numba_particle_calculator(
 
 
 def find_triangle(x, y, grid_x, grid_y, triangles=None):
-    """Compatibility wrapper for one-off triangle lookup."""
+    """
+    Compatibility wrapper for one-off triangle lookup.
+
+    Parameters
+    ----------
+    x : object
+        X coordinate value or array.
+    y : object
+        Y coordinate value or array.
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+
+    Returns
+    -------
+    int
+        Index of the containing triangle, or -1 outside the grid.
+    """
     return create_grid_geometry(grid_x, grid_y, triangles=triangles).find_triangle(x, y)
 
 
 def interpolate_field(field, x_points, y_points, grid_x, grid_y, triangles=None):
-    """Compatibility wrapper for one-off scalar interpolation."""
+    """
+    Compatibility wrapper for one-off scalar interpolation.
+
+    Parameters
+    ----------
+    field : object
+        Scalar field values defined on grid nodes.
+    x_points : object
+        Point x coordinates to sample.
+    y_points : object
+        Point y coordinates to sample.
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+
+    Returns
+    -------
+    np.ndarray
+        Interpolated scalar field values at the requested points.
+    """
     return create_grid_geometry(grid_x, grid_y, triangles=triangles).interpolate_field(field, x_points, y_points)
 
 
 def update_particles_rk4(x0, y0, grid_u, grid_v, grid_x, grid_y, triangles, dt, igeo=0):
-    """Compatibility wrapper for one-off RK4 particle updates."""
+    """
+    Compatibility wrapper for one-off RK4 particle updates.
+
+    Parameters
+    ----------
+    x0 : object
+        Initial particle x coordinates.
+    y0 : object
+        Initial particle y coordinates.
+    grid_u : object
+        Grid-aligned x velocity component.
+    grid_v : object
+        Grid-aligned y velocity component.
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+    dt : object
+        Integration timestep in seconds.
+    igeo : object
+        Coordinate-system flag used by the legacy kernels.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Updated x and y particle positions.
+    """
     return create_grid_geometry(grid_x, grid_y, triangles=triangles).update_particles(x0, y0, grid_u, grid_v, dt, igeo)
 
 
 def update_particles_rk4_parallel(x0, y0, grid_u, grid_v, grid_x, grid_y, triangles, dt, igeo=0):
-    """Compatibility wrapper for the historical parallel update function."""
+    """
+    Compatibility wrapper for the historical parallel update function.
+
+    Parameters
+    ----------
+    x0 : object
+        Initial particle x coordinates.
+    y0 : object
+        Initial particle y coordinates.
+    grid_u : object
+        Grid-aligned x velocity component.
+    grid_v : object
+        Grid-aligned y velocity component.
+    grid_x : object
+        Grid node x coordinates.
+    grid_y : object
+        Grid node y coordinates.
+    triangles : object
+        Triangle connectivity array.
+    dt : object
+        Integration timestep in seconds.
+    igeo : object
+        Coordinate-system flag used by the legacy kernels.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Updated x and y particle positions.
+    """
     return update_particles_rk4(x0, y0, grid_u, grid_v, grid_x, grid_y, triangles, dt, igeo)

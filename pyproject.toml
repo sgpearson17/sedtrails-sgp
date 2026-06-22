@@ -58,6 +58,7 @@ classifiers = [
 [project.optional-dependencies]
 cli = ["typer>=0.16.0,<1.0"]
 dev = [
+  "click>=8.0.0",
   "pytest",
   "ruff",
   "sphinx==8.2.0",

@@ -16,7 +16,8 @@ import shutil
 import sys
 import logging
 
-from sedtrails.logger.logger import setup_logging, log_simulation_state
+from sedtrails.logger.example import run_simulation as run_logger_example
+from sedtrails.logger.logger import log_exception, log_simulation_state, setup_logging
 
 LOG_FILENAME = "log.txt"
 
@@ -165,6 +166,33 @@ class TestLoggerBasicFunctionality(LoggerTestBase):
         assert "inner_function" in log_content
         assert "outer_function" in log_content
 
+    def test_log_exception_uses_passed_exception_traceback(self):
+        """Test that log_exception records the traceback from the passed exception."""
+        setup_logging(self.test_results_dir)
+        logger = logging.getLogger(f"sedtrails.{__name__}")
+        captured_exception = None
+
+        def deferred_failure():
+            raise RuntimeError("Deferred failure")
+
+        try:
+            deferred_failure()
+        except RuntimeError as exc:
+            captured_exception = exc
+
+        log_exception(logger, captured_exception, context="Deferred Context")
+
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
+        assert os.path.exists(log_file)
+
+        with open(log_file, 'r', encoding='utf-8') as f:
+            log_content = f.read()
+
+        assert "=== ERROR: Deferred Context ===" in log_content
+        assert "RuntimeError" in log_content
+        assert "Deferred failure" in log_content
+        assert "deferred_failure" in log_content
+
 
 class TestGlobalExceptionHandling(LoggerTestBase):
     """Test global exception handling functionality."""
@@ -234,3 +262,21 @@ class TestLoggerConfiguration(LoggerTestBase):
         log_file = os.path.join(non_existent_dir, LOG_FILENAME)
         assert os.path.exists(non_existent_dir)
         assert os.path.exists(log_file)
+
+
+class TestLoggerExample(LoggerTestBase):
+    """Test the packaged logger example."""
+
+    def test_logger_example_runs_with_packaged_imports(self):
+        """Test that the logger example imports and passes logger objects correctly."""
+        run_logger_example(self.test_results_dir)
+
+        log_file = os.path.join(self.test_results_dir, LOG_FILENAME)
+        assert os.path.exists(log_file)
+
+        with open(log_file, 'r', encoding='utf-8') as f:
+            log_content = f.read()
+
+        assert "Progress: 50% (step 1) at (10.0, 20.0)" in log_content
+        assert "=== ERROR: logger example ===" in log_content
+        assert "Unexpected simulation failure!" in log_content

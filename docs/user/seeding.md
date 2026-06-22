@@ -103,7 +103,7 @@ Useful keywords:
 
 1. Open an existing YAML config with `sedtrails config gui`.
 2. Select a particle population in the population panel. The first population is selected by default.
-3. Choose a seeding mode and create points on the map.
+3. Use **Zoom +**, **Zoom -**, and **Pan** to inspect the map (toggle **Pan** off again to add points), then choose a seeding mode and create points.
 4. Optionally clip generated points by bathymetry elevation.
 5. Save. The original YAML is not edited; a copied YAML and one or more point files are written.
 

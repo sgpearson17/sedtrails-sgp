@@ -4,7 +4,11 @@ SedTRAILS writes run output to a NetCDF4 file named ``sedtrails_results.nc``. Th
 
 The output location is controlled by ``outputs.directory``. The default-like values ``./output``, ``output``, ``./results``, and ``results`` are resolved relative to the configuration file. Other paths are interpreted as normal file-system paths. The filename itself is currently fixed to ``sedtrails_results.nc``.
 
-Trajectory samples are stored at the initial state, at each ``outputs.save_interval`` boundary, and at the final state when the simulation does not end exactly on a save boundary. The model may take shorter internal CFL timesteps between saved samples; those internal steps are not all written to the NetCDF file.
+When ``outputs.store_tracks`` is enabled, the file contains time-varying trajectories and generally follows the spirit of [CF conventions for multidimensional arrays of trajectories](https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#_multidimensional_array_representation_of_trajectories). Trajectory samples are stored at the initial state, at each ``outputs.save_interval`` boundary, and at the final state when the simulation does not end exactly on a save boundary. The model may take shorter internal CFL timesteps between saved samples; those internal steps are not all written to the NetCDF file.
+
+When ``outputs.store_end_positions`` is enabled, or ``outputs.store_tracks`` is disabled, SedTRAILS writes a compact result file with only one final state per particle and no ``n_timesteps`` dimension.
+
+NetCDF compression is controlled by ``outputs.netcdf.compression``, which defaults to ``auto``. Set it to ``true`` or ``false`` to force a mode, or use ``auto`` to enable compression only when the estimated uncompressed particle payload reaches ``outputs.netcdf.compression_auto_threshold_mb``. The default threshold is ``1024`` MiB.
 
 :::warning
 The output file contains the core trajectory and timing metadata used by SedTRAILS tools, but variable-level CF metadata is still limited.

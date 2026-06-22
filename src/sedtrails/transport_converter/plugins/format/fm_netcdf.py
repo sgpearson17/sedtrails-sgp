@@ -67,8 +67,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get the variables in the input dataset.
 
-        Returns:
-        --------
+        Returns
+        -------
         List
             List of variable names in the input dataset.
         """
@@ -108,15 +108,15 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Delft3D from Flexible Mesh NetCDF.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
             Reading interval in seconds
 
-        Returns:
-        --------
+        Returns
+        -------
         SedtrailsData
             The converted SedtrailsData object.
         """
@@ -275,6 +275,11 @@ class FormatPlugin(BaseFormatPlugin):
     def get_seeding_coordinates(self):
         """
         Return only the spatial coordinates required for particle seeding.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            X and Y coordinates used for particle seeding.
         """
         self.load()
 
@@ -387,6 +392,11 @@ class FormatPlugin(BaseFormatPlugin):
     def load(self) -> Any:
         """
         Reads and loads a Delft3D Flexible Mesh NetCDF file using xugrid.
+
+        Returns
+        -------
+        Any
+            Requested value.
         """
 
         if self.input_data is None:

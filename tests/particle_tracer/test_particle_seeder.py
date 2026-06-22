@@ -1179,6 +1179,10 @@ class TestParticlePopulation:
         population._current_time = current_time
         population.particles['x'] = np.array([0.5, 0.5, 2.0, 0.5])
         population.particles['y'] = np.array([0.5, 0.5, 2.0, 0.5])
+        population._particle_simplices = population.grid_geometry.locate_points(
+            population.particles['x'],
+            population.particles['y'],
+        )
         population.particles['burial_depth'] = np.array([0.1, 2.0, 0.1, 0.1])
         population.particles['mixing_depth'] = np.ones(4)
         population.particles['transport_probability'] = np.array([1.0, 1.0, 1.0, 0.0])
@@ -1307,6 +1311,47 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['bed_level'], 0.0)
         assert 'mixing_depth' not in population.particles
 
+    def test_update_information_batches_static_grid_fields(self, point_config_simple):
+        """Static grid fields should share one particle-location pass."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        n_particles = len(population.particles['x'])
+        calls = []
+
+        def fail_single_field(*args, **kwargs):
+            pytest.fail('static grid fields should be batched')
+
+        def interpolate_multi(fields, x_points, y_points, simplex_ids=None):
+            calls.append(len(fields))
+            assert len(fields) == 3
+            np.testing.assert_array_equal(simplex_ids, population._particle_simplices)
+            particle_values = tuple(
+                np.full(len(x_points), value, dtype=float)
+                for value in (0.5, 0.75, 1.25)
+            )
+            return particle_values, np.zeros(len(x_points), dtype=np.int64)
+
+        population._field_interpolator = fail_single_field
+        population._field_interpolator_multi = fail_single_field
+        population._field_interpolator_multi_with_simplex = interpolate_multi
+
+        population.update_information(
+            current_time=0.0,
+            mixing_depth=np.arange(4.0),
+            transport_probability=np.ones(4),
+            bed_level=np.full(4, 2.0),
+        )
+
+        assert calls == [3]
+        np.testing.assert_allclose(population.particles['mixing_depth'], np.full(n_particles, 0.5))
+        np.testing.assert_allclose(population.particles['transport_probability'], np.full(n_particles, 0.75))
+        np.testing.assert_allclose(population.particles['bed_level'], np.full(n_particles, 1.25))
+        np.testing.assert_allclose(population.particles['bed_level_previous'], np.full(n_particles, 1.25))
+        np.testing.assert_array_equal(population._particle_simplices, np.zeros(n_particles, dtype=np.int64))
+
     def test_update_information_accepts_temporal_scalar_bounds(self, point_config_simple):
         """Temporal scalar bounds should match preblended-grid interpolation."""
         population = ParticlePopulation(
@@ -1370,20 +1415,53 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['bed_level'], [1.5])
         np.testing.assert_allclose(population.particles['z'], [1.25])
 
+    def test_update_bed_level_after_movement_reuses_cached_simplex_interpolator(self, point_config_simple):
+        """Post-move bed-level sampling should stay on the cached interpolation path."""
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=point_config_simple,
+        )
+        n_particles = len(population.particles['x'])
+        calls = []
+
+        def fail_uncached(*args, **kwargs):
+            pytest.fail('bed-level resampling should use cached simplex interpolation')
+
+        def interpolate_multi(fields, x_points, y_points, simplex_ids=None):
+            calls.append(len(fields))
+            assert len(fields) == 1
+            np.testing.assert_array_equal(simplex_ids, population._particle_simplices)
+            return (np.full(len(x_points), 1.25, dtype=float),), np.zeros(len(x_points), dtype=np.int64)
+
+        population.particles['burial_depth'] = np.full(n_particles, 0.25)
+        population._field_interpolator = fail_uncached
+        population._field_interpolator_multi = fail_uncached
+        population._field_interpolator_multi_with_simplex = interpolate_multi
+
+        population.update_bed_level_change_after_movement(np.array([1.0, 2.0, 3.0, 2.0]))
+
+        assert calls == [1]
+        np.testing.assert_allclose(population.particles['bed_level'], np.full(n_particles, 1.25))
+        np.testing.assert_allclose(population.particles['z'], np.full(n_particles, 1.0))
+        np.testing.assert_array_equal(population._particle_simplices, np.zeros(n_particles, dtype=np.int64))
+
     def test_update_information_batches_static_field_interpolation(self, point_config_simple, monkeypatch):
-        """Static particle fields should share one interpolation pass."""
+        """Static particle fields should share one cached interpolation pass."""
         population = ParticlePopulation(
             field_x=np.array([0.0, 1.0, 1.0, 0.0]),
             field_y=np.array([0.0, 0.0, 1.0, 1.0]),
             population_config=point_config_simple,
         )
         calls = []
+        initial_simplices = population._particle_simplices.copy()
 
-        def fake_interpolate_fields(fields, x_points, y_points):
-            calls.append(len(fields))
-            return tuple(np.full(len(x_points), float(index + 1)) for index, _ in enumerate(fields))
+        def fake_interpolate_fields(fields, x_points, y_points, simplex_ids=None):
+            calls.append((len(fields), simplex_ids.copy()))
+            values = tuple(np.full(len(x_points), float(index + 1)) for index, _ in enumerate(fields))
+            return values, np.zeros(len(x_points), dtype=np.int64)
 
-        monkeypatch.setattr(population, '_field_interpolator_multi', fake_interpolate_fields)
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate_fields)
 
         population.update_information(
             current_time=0.0,
@@ -1392,14 +1470,16 @@ class TestParticlePopulation:
             bed_level=np.arange(4.0) + 20.0,
         )
 
-        assert calls == [3]
+        assert len(calls) == 1
+        assert calls[0][0] == 3
+        np.testing.assert_array_equal(calls[0][1], initial_simplices)
         np.testing.assert_allclose(population.particles['mixing_depth'], 1.0)
         np.testing.assert_allclose(population.particles['transport_probability'], 2.0)
         np.testing.assert_allclose(population.particles['bed_level'], 3.0)
         np.testing.assert_allclose(population.particles['bed_level_previous'], 3.0)
 
     def test_update_information_batches_temporal_field_interpolation(self, point_config_simple, monkeypatch):
-        """Temporal particle fields should share one lower/upper interpolation pass."""
+        """Temporal particle fields should use the cached lower/upper interpolation path."""
         population = ParticlePopulation(
             field_x=np.array([0.0, 1.0, 1.0, 0.0]),
             field_y=np.array([0.0, 0.0, 1.0, 1.0]),
@@ -1407,12 +1487,13 @@ class TestParticlePopulation:
         )
         calls = []
 
-        def fake_interpolate_fields(fields, x_points, y_points):
+        def fake_interpolate_fields(fields, x_points, y_points, simplex_ids=None):
             calls.append(len(fields))
-            values = (0.0, 10.0, 20.0, 40.0)
-            return tuple(np.full(len(x_points), value) for value in values)
+            raw_values = (0.0, 10.0) if len(calls) == 1 else (20.0, 40.0)
+            values = tuple(np.full(len(x_points), value) for value in raw_values)
+            return values, np.zeros(len(x_points), dtype=np.int64)
 
-        monkeypatch.setattr(population, '_field_interpolator_multi', fake_interpolate_fields)
+        monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', fake_interpolate_fields)
 
         population.update_information(
             current_time=0.0,
@@ -1421,7 +1502,7 @@ class TestParticlePopulation:
             bed_level={'lower': np.arange(4.0), 'upper': np.arange(4.0), 'weight': 0.5},
         )
 
-        assert calls == [4]
+        assert calls == [2, 2]
         np.testing.assert_allclose(population.particles['mixing_depth'], 2.5)
         np.testing.assert_allclose(population.particles['transport_probability'], 1.0)
         np.testing.assert_allclose(population.particles['bed_level'], 30.0)
@@ -1452,6 +1533,42 @@ class TestParticlePopulation:
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, True, True, True]))
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True, True, True, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True, False, False, False]))
+
+    def test_update_status_uses_cached_simplex_ids_for_domain_mask(self, monkeypatch):
+        """Domain status should use cached simplex ids instead of polygon scans."""
+        population = self._status_test_population(current_time=0.0)
+        population._particle_simplices = np.array([0, -1, 3, -1])
+        population._mark_particle_simplices_current()
+        population._outer_envelope = type(
+            'FailingEnvelope',
+            (),
+            {
+                'contains_points': lambda self, points: pytest.fail(
+                    'status_domain should use cached simplex ids'
+                )
+            },
+        )()
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, False, True, False]))
+
+    def test_update_status_refreshes_stale_simplex_ids_after_coordinate_mutation(self, monkeypatch):
+        """Direct coordinate edits should refresh domain status before mobile-mask composition."""
+        population = self._status_test_population(current_time=0.0)
+        population.particles['x'][:] = 0.5
+        population.particles['y'][:] = 0.5
+        population._refresh_particle_simplices()
+        population.particles['x'][2] = 2.0
+        population.particles['y'][2] = 2.0
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: np.zeros(n_particles))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_domain'], np.array([True, True, False, True]))
+        assert population._particle_simplices[2] == -1
+        assert np.all(population._particle_simplices[[0, 1, 3]] >= 0)
 
     def test_update_status_requires_released_particles_for_mobile_mask(self, monkeypatch):
         """Particles that are otherwise mobile should not move before release."""
@@ -1508,8 +1625,8 @@ class TestParticlePopulation:
         np.testing.assert_allclose(calls[0][0], np.array([0.25]))
         np.testing.assert_allclose(calls[0][1], np.array([0.25]))
         np.testing.assert_array_equal(population.particles['status_domain'], np.array([True]))
-        np.testing.assert_allclose(population._particle_simplex_x, np.array([0.25]))
-        np.testing.assert_allclose(population._particle_simplex_y, np.array([0.25]))
+        np.testing.assert_allclose(population._particle_simplices_x, np.array([0.25]))
+        np.testing.assert_allclose(population._particle_simplices_y, np.array([0.25]))
 
     def test_update_status_uses_active_connectivity_holes_for_domain_mask(self, monkeypatch):
         """Particles inside a mesh hole should be outside the active domain."""
