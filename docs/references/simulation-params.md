@@ -89,13 +89,15 @@ inputs:
 (domain-definition)=
 ## Domain Definition
 
-Defines the spatial extent of the simulation area. You must specify **one** of the following methods to define the domain.
+Defines optional custom domain controls. If the `domain` section is omitted, SedTRAILS uses the active grid from the input model without extra cutouts or boundary-class overrides.
+
+If the `domain` section is present, you must specify **exactly one** of the following methods to define the active extent:
 
 ⚠️ **Mutually Exclusive Options**: Choose only ONE method from the following:
 - **Method 1**: `pol_file` - Use a polygon file
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
 
-`inner_boundary_pol_files` and `boundary_class_pol_files` do not define the simulation extent by themselves. They can be used with either domain method above. This means `pol_file` can be omitted when `subset_x` and `subset_y` are present, and boundary classes will still be applied.
+Do not include an empty `domain: {}` block. `inner_boundary_pol_files` and `boundary_class_pol_files` do not define the simulation extent by themselves. They can be used with either domain method above. This means `pol_file` can be omitted when `subset_x` and `subset_y` are present, and boundary classes will still be applied. If no custom extent, inner boundaries, or boundary classes are needed, omit the `domain` section entirely.
 
 | Parameter                  | Type    | Required     | Default | Description                                                                                               |
 | -------------------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
@@ -106,7 +108,7 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 | `boundary_class_pol_files` | object  | Optional     | `{}`    | User override Tekal `.pol` files that classify active boundary edges as `open` or `land`.                 |
 | `flow_field_data`          | object  | Optional     | -       | Flow field format-specific settings. See [Flow Field Data Configuration](#flow-field-data-configuration). |
 
-*Conditional: One method must be specified.
+*Conditional: if `domain` is present, one extent method must be specified. Use either `pol_file` or both `subset_x` and `subset_y`; omit the entire `domain` section when no custom domain controls are needed.
 
 ### Inner Boundaries and Boundary Actions
 
@@ -740,6 +742,7 @@ visualization:
 
 ### Domain Definition
 
+- Omit the `domain` section entirely when the input model's active grid is the intended simulation extent and no cutout or boundary-class overrides are needed
 - Use `domain.pol_file` for complex, irregular simulation domains
 - Use `subset_x` and `subset_y` for simple rectangular domains
 - Use `inner_boundary_pol_files` when the flow grid contains island or cutout regions that should not be valid water for particle tracking

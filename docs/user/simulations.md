@@ -14,7 +14,9 @@ For a detailed reference of all available parameters, please refer to the [Simul
 `seeding.release_start` is interpreted relative to `general.input_model.reference_date`.
 For example, if `reference_date` is `2016-09-21 19:20:00` and `release_start` is `2016-09-21 19:30:00`, particles are released 600 seconds after simulation start.
 
-For FM and SFINCS models, the optional `domain.inner_boundary_pol_files` setting can use Tekal polygons to mask islands/cutouts. For FM, SFINCS, and XBeach models, `domain.boundary_class_pol_files` can classify boundary crossings as `open` or `land`. These boundary-class polygons work with either `domain.pol_file` or a `domain.subset_x`/`domain.subset_y` extent. They select active boundary edges by edge midpoint. Drawing rule: boundary-class polygons may be wider than a thin line as long as they only contain the intended edge midpoints, and do not include neighboring or unrelated boundary-edge midpoints. See the domain section of the parameter reference for the full behavior.
+The `domain` section is optional. If you do not need a custom extent, island/cutout masking, or open/land boundary overrides, omit `domain` entirely and SedTRAILS uses the active grid from the input model. If a `domain` section is present, it must define the active extent with exactly one method: either `domain.pol_file` or both `domain.subset_x` and `domain.subset_y`.
+
+For FM and SFINCS models, the optional `domain.inner_boundary_pol_files` setting can use Tekal polygons to mask islands/cutouts. For FM, SFINCS, and XBeach models, `domain.boundary_class_pol_files` can classify boundary crossings as `open` or `land`. These settings modify the active extent; they do not define an extent by themselves. Boundary-class polygons select active boundary edges by edge midpoint. Drawing rule: boundary-class polygons may be wider than a thin line as long as they only contain the intended edge midpoints, and do not include neighboring or unrelated boundary-edge midpoints. See the domain section of the parameter reference for the full behavior.
 
 ![Domain polygon definition schematic](../_static/img/domain-polygon-definitions.png)
 
@@ -35,7 +37,8 @@ inputs:
   read_interval: 10D  # Time chunk size for reading input data
 # Optional domain controls for islands/cutouts and boundary actions.
 # Tekal .pol paths are resolved relative to this configuration file.
-# Use either pol_file or subset_x/subset_y to define the domain extent.
+# Omit domain entirely if no custom extent, cutouts, or boundary overrides are needed.
+# If domain is present, use either pol_file or subset_x/subset_y to define the extent.
 # Boundary-class polygons classify edge midpoints; they need not be thin lines,
 # but should not include unintended neighboring edge midpoints.
 # domain:

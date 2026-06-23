@@ -17,6 +17,10 @@ Domain Masks and Boundary Classes
 FM and SFINCS converters accept the optional ``domain.inner_boundary_pol_files``
 setting from the simulation configuration. FM, SFINCS, and XBeach converters
 accept ``domain.boundary_class_pol_files``.
+When a ``domain`` block is present in a YAML configuration, it must also define
+the active extent with either ``pol_file`` or ``subset_x``/``subset_y``. Omit
+the entire ``domain`` block when no custom extent, cutout, or boundary-class
+override is needed.
 
 ``inner_boundary_pol_files`` points to one or more Tekal ``.pol`` files. Each
 file may contain multiple polygon blocks. Candidate mesh faces or triangles with
