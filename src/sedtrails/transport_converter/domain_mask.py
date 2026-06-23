@@ -541,6 +541,9 @@ def points_inside_any_polygon(points: np.ndarray, polygons: Iterable[np.ndarray]
     """
 
     points_array = np.asarray(points, dtype=float)
+    if points_array.ndim != 2 or points_array.shape[1] < 2:
+        raise ValueError(f'points must have shape (n_points, 2), got {points_array.shape}')
+    points_array = points_array[:, :2]
     inside = np.zeros(points_array.shape[0], dtype=bool)
     finite = np.isfinite(points_array).all(axis=1)
     if not np.any(finite):
