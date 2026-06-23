@@ -95,6 +95,8 @@ Defines the spatial extent of the simulation area. You must specify **one** of t
 - **Method 1**: `pol_file` - Use a polygon file
 - **Method 2**: `subset_x` and `subset_y` - Use coordinate ranges
 
+`inner_boundary_pol_files` and `boundary_class_pol_files` do not define the simulation extent by themselves. They can be used with either domain method above. This means `pol_file` can be omitted when `subset_x` and `subset_y` are present, and boundary classes will still be applied.
+
 | Parameter                  | Type    | Required     | Default | Description                                                                                               |
 | -------------------------- | ------- | ------------ | ------- | --------------------------------------------------------------------------------------------------------- |
 | `pol_file`                 | string  | Conditional* | -       | Path to Deltares `.pol` file containing domain boundary polygon.                                          |
@@ -119,6 +121,8 @@ For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/
 
 If an edge midpoint is selected by both `open` and `land` override polygons, `land` takes priority. The source match is still kept in diagnostics.
 
+Boundary-class polygons therefore do not need to be thin lines that exactly trace the boundary. A wider swath is allowed as long as it selects only the intended boundary-edge midpoints. Avoid polygons that are so wide they also contain midpoints from neighboring or unrelated open/land edges.
+
 **Example:**
 
 ```yaml
@@ -134,6 +138,19 @@ domain:
     land:
       - ./coastline_edges.pol
       - ./island_edges.pol
+```
+
+The same boundary-class configuration can be used with a rectangular subset instead of `pol_file`:
+
+```yaml
+domain:
+  subset_x: "35000:65000"
+  subset_y: "12000:45000"
+  boundary_class_pol_files:
+    open:
+      - ./offshore_open_edges.pol
+    land:
+      - ./coastline_edges.pol
 ```
 
 Relative polygon paths are resolved relative to the YAML configuration file.

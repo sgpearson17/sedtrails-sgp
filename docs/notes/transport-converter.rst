@@ -26,11 +26,15 @@ turns islands and grid cutouts into holes for particle-domain checks.
 
 ``boundary_class_pol_files`` assigns classes to active boundary edges by testing
 edge midpoints against class-specific polygons. Supported classes are
-``open`` and ``land``. Land takes priority when an edge is selected by both
-classes. The resulting edge ids, midpoints, assigned classes, source matches,
-and counts are stored in ``boundary_edge_classification`` metadata and are used
-by the particle tracer to decide whether a boundary crossing means leaving the
-domain or temporary beaching.
+``open`` and ``land``. These polygons can be used with either a ``pol_file``
+domain or a ``subset_x``/``subset_y`` domain. They may be wider than a thin
+line around the edge because only edge midpoints are tested, but they should
+not contain midpoint locations from unrelated neighboring boundary edges. Land
+takes priority when an edge is selected by both classes. The resulting edge
+ids, midpoints, assigned classes, source matches, and counts are stored in
+``boundary_edge_classification`` metadata and are used by the particle tracer
+to decide whether a boundary crossing means leaving the domain or temporary
+beaching.
 
 .. automodule:: sedtrails.transport_converter.tekal
                     :members:
