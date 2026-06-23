@@ -41,11 +41,14 @@ Nested under `general.input_model`:
 When configuration defaults are applied, `general.input_model` is created if it
 is omitted and populated with the nested defaults below.
 
-| Parameter        | Type   | Required | Default      | Description                                                                                                          |
-| ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
-| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
-| `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
+| Parameter           | Type   | Required | Default      | Description                                                                                                          |
+| ------------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `format`            | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
+| `reference_date`    | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
+| `morfac`            | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
+| `coordinate_system` | string | Optional | `auto`       | Coordinate-system handling for model x/y coordinates. Use `auto` to infer from NetCDF coordinate attributes, `projected` for metre-like Cartesian grids, or `geographic`/`spherical` for longitude/latitude degrees. Geographic/spherical grids are projected through `pyproj` to `metric_crs` for runtime geometry. |
+| `source_crs`        | string | Optional | `EPSG:4326` | CRS for geographic input coordinates. |
+| `metric_crs`        | string | Optional | `auto_utm`   | Projected metric CRS for geographic runtime geometry. Use `auto_utm` to infer a local UTM EPSG zone, or provide an explicit CRS such as `EPSG:32631`. |
 
 **Example:**
 
@@ -58,6 +61,9 @@ general:
     format: fm_netcdf
     reference_date: "2020-01-01 00:00:00"
     morfac: 1.0
+    coordinate_system: auto
+    source_crs: EPSG:4326
+    metric_crs: auto_utm
 ```
 
 ---

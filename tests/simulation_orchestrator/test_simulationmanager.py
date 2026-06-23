@@ -10,6 +10,7 @@ import yaml
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
 from sedtrails.particle_tracer.timer import Duration, Time
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
@@ -932,6 +933,32 @@ class TestSimulationDashboardThrottle:
         np.testing.assert_array_equal(particle_data['burial_depth'], np.array([0.1, 0.2]))
         np.testing.assert_array_equal(particle_data['mixing_depth'], np.array([np.nan, np.nan]))
 
+    def test_dashboard_particle_data_uses_source_coordinates_for_geographic_grid(self):
+        """Dashboard particle payload should match native lon/lat grid coordinates."""
+        transform = build_coordinate_transform(
+            np.array([4.0, 4.001]),
+            np.array([52.0, 52.001]),
+            coordinate_system='geographic',
+        )
+        source_x = np.array([4.0002, 4.0004])
+        source_y = np.array([52.0002, 52.0004])
+        metric_x, metric_y = transform.source_to_metric(source_x, source_y)
+        population = SimpleNamespace(
+            particles={
+                'x': metric_x,
+                'y': metric_y,
+                'burial_depth': np.array([0.1, 0.2]),
+            },
+            grid_geometry=SimpleNamespace(coordinate_transform=transform),
+        )
+
+        particle_data = Simulation._dashboard_particle_data(population)
+
+        np.testing.assert_allclose(particle_data['x'], source_x, rtol=0.0, atol=1.0e-10)
+        np.testing.assert_allclose(particle_data['y'], source_y, rtol=0.0, atol=1.0e-10)
+        np.testing.assert_allclose(population.particles['x'], metric_x, rtol=0.0, atol=0.0)
+        np.testing.assert_allclose(population.particles['y'], metric_y, rtol=0.0, atol=0.0)
+
     def test_dashboard_particle_data_includes_boundary_statuses(self):
         """Dashboard particle payload should include boundary status arrays for plotting."""
         class Population:
@@ -946,6 +973,30 @@ class TestSimulationDashboardThrottle:
 
         np.testing.assert_array_equal(particle_data['status_left_domain'], np.array([False, True]))
         np.testing.assert_array_equal(particle_data['status_beached'], np.array([True, False]))
+
+    def test_coordinate_output_metadata_strips_projected_crs_defaults(self):
+        """Projected output metadata should not keep geographic CRS defaults."""
+        metadata = {
+            'coordinate_system': 'projected',
+            'runtime_coordinate_system': 'source',
+            'metric_coordinate_system': 'source',
+            'source_crs': 'EPSG:4326',
+            'metric_crs': 'auto_utm',
+            'utm_zone': 31,
+            'utm_hemisphere': 'north',
+            'min_resolution_m': 2.0,
+        }
+
+        output_metadata = Simulation._coordinate_output_metadata(metadata)
+
+        assert output_metadata['coordinate_system'] == 'projected'
+        assert output_metadata['runtime_coordinate_system'] == 'source'
+        assert output_metadata['metric_coordinate_system'] == 'source'
+        assert output_metadata['min_resolution_m'] == pytest.approx(2.0)
+        assert 'source_crs' not in output_metadata
+        assert 'metric_crs' not in output_metadata
+        assert 'utm_zone' not in output_metadata
+        assert 'utm_hemisphere' not in output_metadata
 
     def test_large_grid_dashboard_updates_are_throttled(self):
         """Large grids should throttle dashboard refreshes to periodic steps."""

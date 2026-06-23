@@ -7,6 +7,9 @@ general:
     format: fm_netcdf
     reference_date: '1970-01-01'
     morfac: 1
+    coordinate_system: auto
+    source_crs: EPSG:4326
+    metric_crs: auto_utm
   preprocess: true
   compute_pathways: true
   n_runs: 1

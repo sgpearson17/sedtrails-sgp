@@ -10,6 +10,7 @@ import numpy as np
 from matplotlib.path import Path as MplPath
 from scipy.spatial import Delaunay
 
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
 from sedtrails.transport_converter.tekal import read_tekal_polygons
 
 
@@ -173,13 +174,25 @@ def load_boundary_class_polygons(domain_config: Mapping[str, Any] | None) -> dic
     }
 
 
-def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
+def delaunay_connectivity(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+) -> np.ndarray:
     """Build triangular candidate connectivity from node coordinates.
 
     Parameters
     ----------
     node_x, node_y : np.ndarray
         One-dimensional or flattenable arrays with node x and y coordinates.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before triangulation.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -203,7 +216,15 @@ def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
         raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     if x.size < 3:
         return np.empty((0, 3), dtype=np.int64)
-    return np.asarray(Delaunay(np.column_stack((x, y))).simplices, dtype=np.int64)
+    transform = build_coordinate_transform(
+        x,
+        y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+    )
+    metric_x, metric_y = transform.source_to_metric(x, y)
+    return np.asarray(Delaunay(np.column_stack((metric_x, metric_y))).simplices, dtype=np.int64)
 
 
 def filter_connectivity_by_inner_polygons(
@@ -211,6 +232,9 @@ def filter_connectivity_by_inner_polygons(
     node_y: np.ndarray,
     connectivity: np.ndarray,
     polygons: Iterable[np.ndarray],
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
 ) -> ConnectivityMaskResult:
     """Remove faces or triangles whose centroid falls inside any polygon.
 
@@ -224,6 +248,12 @@ def filter_connectivity_by_inner_polygons(
     polygons : Iterable[np.ndarray]
         Polygon coordinate arrays. Polygons with fewer than three vertices are
         ignored.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -246,7 +276,16 @@ def filter_connectivity_by_inner_polygons(
         )
 
     centroids = face_centroids(node_x, node_y, faces)
-    inside = points_inside_any_polygon(centroids, polygon_list)
+    transform = build_coordinate_transform(
+        node_x,
+        node_y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+    )
+    centroid_x, centroid_y = transform.source_to_metric(centroids[:, 0], centroids[:, 1])
+    metric_centroids = np.column_stack((centroid_x, centroid_y))
+    inside = points_inside_any_polygon(metric_centroids, transform.polygons_to_metric(polygon_list))
     active_mask = ~inside
     return ConnectivityMaskResult(
         connectivity=faces[active_mask],
@@ -360,6 +399,9 @@ def classify_boundary_edges_from_config(
     node_y: np.ndarray,
     connectivity: np.ndarray,
     domain_config: Mapping[str, Any] | None,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
 ) -> BoundaryEdgeClassification | None:
     """Classify active boundary edges using configured polygon overrides.
 
@@ -372,6 +414,12 @@ def classify_boundary_edges_from_config(
     domain_config : Mapping[str, Any] or None
         Domain configuration mapping containing optional
         ``boundary_class_pol_files`` entries for ``open`` and ``land``.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -391,7 +439,16 @@ def classify_boundary_edges_from_config(
     if not any(class_files.values()):
         return None
     class_polygons = load_boundary_class_polygons(domain_config)
-    return classify_boundary_edges(node_x, node_y, connectivity, class_polygons, class_files=class_files)
+    return classify_boundary_edges(
+        node_x,
+        node_y,
+        connectivity,
+        class_polygons,
+        class_files=class_files,
+        coordinate_system=coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+    )
 
 
 def classify_boundary_edges(
@@ -400,6 +457,9 @@ def classify_boundary_edges(
     connectivity: np.ndarray,
     class_polygons: Mapping[str, Iterable[np.ndarray]],
     class_files: Mapping[str, list[str]] | None = None,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
 ) -> BoundaryEdgeClassification:
     """Classify active boundary edges by polygon-contained edge midpoints.
 
@@ -415,6 +475,12 @@ def classify_boundary_edges(
     class_files : Mapping[str, list[str]], optional
         Configured polygon file paths by class, carried through for
         diagnostics.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -441,8 +507,18 @@ def classify_boundary_edges(
         midpoints[valid_edges, 0] = np.mean(x[edges[valid_edges]], axis=1)
         midpoints[valid_edges, 1] = np.mean(y[edges[valid_edges]], axis=1)
 
+    transform = build_coordinate_transform(
+        x,
+        y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+    )
+    midpoint_x, midpoint_y = transform.source_to_metric(midpoints[:, 0], midpoints[:, 1])
+    metric_midpoints = np.column_stack((midpoint_x, midpoint_y))
+
     matches_by_class = {
-        class_name: points_inside_any_polygon(midpoints, polygons)
+        class_name: points_inside_any_polygon(metric_midpoints, transform.polygons_to_metric(polygons))
         for class_name, polygons in class_polygons.items()
         if class_name in BOUNDARY_CLASS_NAMES
     }

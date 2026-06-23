@@ -114,6 +114,27 @@
           "type": "number",
           "default": 1,
           "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
+        },
+        "coordinate_system": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "projected",
+            "geographic",
+            "spherical"
+          ],
+          "default": "auto",
+          "description": "Coordinate system for model x/y coordinates. Use 'geographic' or 'spherical' for longitude/latitude degrees when input metadata is missing or ambiguous. Geographic/spherical grids are projected internally through pyproj to a metric CRS for runtime geometric calculations."
+        },
+        "source_crs": {
+          "type": "string",
+          "default": "EPSG:4326",
+          "description": "CRS for geographic input coordinates. Defaults to WGS84 longitude/latitude."
+        },
+        "metric_crs": {
+          "type": "string",
+          "default": "auto_utm",
+          "description": "Projected metric CRS for geographic runtime geometry. Use 'auto_utm' to infer a local UTM EPSG zone from the grid, or provide an explicit CRS such as 'EPSG:32631'."
         }
       }
     },

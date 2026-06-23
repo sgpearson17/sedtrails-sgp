@@ -1,7 +1,7 @@
 """
 Unit tests for the ParticlePositionCalculator class, covering field interpolation,
 particle updates with and without diffusion, parallel vs serial consistency,
-geographic adjustments, and mixed network interpolation.
+legacy geographic-mode rejection, and mixed network interpolation.
 """
 
 import numpy as np
@@ -122,24 +122,15 @@ def test_particle_parallel_and_serial_match(simple_grid):
     np.testing.assert_allclose(y_serial, y_parallel, rtol=1e-6, atol=1e-8)
 
 
-def test_igeo_scaling_applies_correctly():
+def test_igeo_scaling_is_rejected():
     triangles = np.array([[0, 1, 2]])
     grid_x = np.array([0.0, 1.0, 0.0])
     grid_y = np.array([0.0, 0.0, 1.0])  # 3 points forming a right triangle
     grid_u = np.array([1.0, 1.0, 1.0])
     grid_v = np.array([0.0, 0.0, 0.0])
 
-    calc = ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, triangles, igeo=1)
-
-    x0 = np.array([0.0])
-    y0 = np.array([0.0])
-    dt = np.float32(1.0)
-
-    x_new, y_new = calc.update_particles(x0, y0, dt)
-    # Expect scaled movement: u = 1 / geofac
-    expected_dx = 1.0 / calc.geofac
-    assert np.allclose(x_new[0], x0[0] + expected_dx, atol=1e-8)
-    assert np.allclose(y_new[0], y0[0], atol=1e-8)
+    with pytest.raises(ValueError, match='igeo=1'):
+        ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, triangles, igeo=1)
 
 
 # -----------------------------------------------------------------------------
@@ -198,31 +189,19 @@ def test_parallel_vs_serial(simple_interpolator):
 
 
 # -----------------------------------------------------------------------------
-# Test for geographic adjustment (igeo==1)
+# Test for rejected geographic adjustment (igeo==1)
 # -----------------------------------------------------------------------------
 
 
-def test_geographic_adjustment():
-    """
-    For geographic coordinates (igeo==1), grid_u values should be scaled by
-    1/(cos(latitude)*geofac) and grid_v by 1/geofac. For a constant field,
-    the RK4 update should yield x_new = x0 + dt * adjusted_u.
-    """
-    # Define a nondegenerate triangle with constant latitude.
+def test_geographic_adjustment_is_rejected():
+    """Legacy geographic velocity adjustment must not be used for advection."""
     grid_x = np.array([0.0, 1.0, 0.0], dtype=np.float64)
     grid_y = np.array([45.0, 45.0, 46.0], dtype=np.float64)
     grid_u = np.array([1.0, 1.0, 1.0], dtype=np.float64)
     grid_v = np.array([0.0, 0.0, 0.0], dtype=np.float64)
 
-    interpolator = ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=1)
-    dt = 1.0
-    part_x = np.array([0.2], dtype=np.float64)
-    part_y = np.array([0.2], dtype=np.float64)
-    expected_u = 1.0 / (np.cos(np.deg2rad(45.0)) * interpolator.geofac)
-    expected_x_new = part_x + dt * expected_u
-    x_new, y_new = interpolator.update_particles(part_x, part_y, dt, parallel=False)
-    np.testing.assert_allclose(x_new, expected_x_new, rtol=1e-5)
-    np.testing.assert_allclose(y_new, part_y, rtol=1e-5)
+    with pytest.raises(ValueError, match='igeo=1'):
+        ParticlePositionCalculator(grid_x, grid_y, grid_u, grid_v, igeo=1)
 
 
 # -----------------------------------------------------------------------------

@@ -4,6 +4,8 @@ This page collects the practical differences between the input model formats Sed
 
 Note: the format converter interpolates data at all U/V points to cell centers and flattens structured grids to 1D spatial vectors so downstream modules can treat all inputs consistently.
 
+SedTRAILS keeps particle input/output coordinates in the model's native coordinate system. For geometric work such as triangulation, point location, boundary checks, and CFL spacing, longitude/latitude grids are projected internally through `pyproj` to a metric CRS. The converter infers this from NetCDF coordinate attributes such as `degrees_east` and `degrees_north`; set `general.input_model.coordinate_system: geographic` when those attributes are missing. By default SedTRAILS uses `metric_crs: auto_utm` to choose a local UTM EPSG zone from the grid, or you can set an explicit projected CRS such as `EPSG:32631`.
+
 ## D-Flow FM
 
 D-Flow FM input is the most direct path through SedTRAILS. The seeding GUI and the simulation workflow expect a NetCDF-based flow field with cell-center coordinates and a bathymetry variable that can be used to preview the domain.
@@ -44,6 +46,8 @@ cctot
 ```
 
 In practice, the GUI uses the spatial coordinates from `globalx` and `globaly`, and bathymetry preview defaults to `zb_mean` when it is available.
+
+XBeach coordinate names alone do not prove whether a grid is projected or longitude/latitude. If `globalx`/`globaly` do not carry longitude/latitude units, configure `general.input_model.coordinate_system` explicitly.
 
 ## SFINCS
 

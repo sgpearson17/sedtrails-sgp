@@ -14,6 +14,7 @@ import numpy as np
 from numba import njit, prange
 from scipy.spatial import ConvexHull, Delaunay
 
+from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform, build_coordinate_transform
 
 TRIANGLE_TOLERANCE = 1e-10
 MAX_SIMPLEX_WALK_STEPS = 128
@@ -28,6 +29,9 @@ class GridGeometry:
 
     grid_x: np.ndarray
     grid_y: np.ndarray
+    metric_grid_x: np.ndarray
+    metric_grid_y: np.ndarray
+    coordinate_transform: CoordinateTransform
     triangulation: Any
     triangles: np.ndarray
     outer_envelope: np.ndarray
@@ -42,9 +46,22 @@ class GridGeometry:
     boundary_edges: np.ndarray | None = None
     boundary_edge_class_codes: np.ndarray | None = None
     triangle_edge_class_codes: np.ndarray | None = None
+    velocity_east_x: np.ndarray | None = None
+    velocity_east_y: np.ndarray | None = None
+    velocity_north_x: np.ndarray | None = None
+    velocity_north_y: np.ndarray | None = None
 
     @classmethod
-    def from_points(cls, grid_x, grid_y, triangles=None, boundary_edge_classification=None):
+    def from_points(
+        cls,
+        grid_x,
+        grid_y,
+        triangles=None,
+        boundary_edge_classification=None,
+        coordinate_system=None,
+        source_crs=None,
+        metric_crs=None,
+    ):
         """
         Build cached grid geometry from point coordinates.
 
@@ -68,11 +85,21 @@ class GridGeometry:
         if x.shape != y.shape:
             raise ValueError(f'grid_x and grid_y must have the same shape, got {x.shape} and {y.shape}')
 
-        points = np.column_stack((x, y))
-        finite_points = points[np.isfinite(points).all(axis=1)]
+        coordinate_transform = build_coordinate_transform(
+            x,
+            y,
+            coordinate_system,
+            source_crs=source_crs,
+            metric_crs=metric_crs,
+        )
+        metric_x, metric_y = coordinate_transform.source_to_metric(x, y)
+
+        points = np.column_stack((metric_x, metric_y))
+        source_points = np.column_stack((x, y))
+        finite_points = points[np.isfinite(source_points).all(axis=1)]
         if finite_points.shape[0] < 3:
             raise ValueError('At least three finite grid points are required for particle interpolation')
-        if finite_points.shape[0] != points.shape[0]:
+        if finite_points.shape[0] != source_points.shape[0]:
             raise ValueError('grid_x and grid_y must contain only finite coordinates')
 
         triangle_finder = None
@@ -91,7 +118,7 @@ class GridGeometry:
             if triangle_array.shape[0] == 0:
                 triangle_finder = None
             else:
-                triangle_finder = mtri.Triangulation(x, y, triangle_array).get_trifinder()
+                triangle_finder = mtri.Triangulation(metric_x, metric_y, triangle_array).get_trifinder()
             triangle_neighbors = _compute_triangle_neighbors(triangle_array)
 
         unique_points = np.unique(finite_points, axis=0)
@@ -103,7 +130,7 @@ class GridGeometry:
         else:
             outer_envelope = _bounding_box(unique_points)
 
-        p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(x, y, triangle_array)
+        p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(metric_x, metric_y, triangle_array)
 
         boundary_edges, boundary_edge_class_codes = _parse_boundary_edge_classification(boundary_edge_classification)
         boundary_edges, boundary_edge_class_codes = _prepare_boundary_edge_geometry(
@@ -114,10 +141,23 @@ class GridGeometry:
             boundary_edges,
             boundary_edge_class_codes,
         )
+        velocity_east_x = velocity_east_y = velocity_north_x = velocity_north_y = None
+        if coordinate_transform.is_geographic:
+            velocity_east_x, velocity_east_y, velocity_north_x, velocity_north_y = (
+                coordinate_transform.metric_velocity_basis(
+                    x,
+                    y,
+                    metric_x=metric_x,
+                    metric_y=metric_y,
+                )
+            )
 
         return cls(
             grid_x=x,
             grid_y=y,
+            metric_grid_x=metric_x,
+            metric_grid_y=metric_y,
+            coordinate_transform=coordinate_transform,
             triangulation=triangulation,
             triangles=triangle_array,
             outer_envelope=outer_envelope,
@@ -132,6 +172,10 @@ class GridGeometry:
             boundary_edges=boundary_edges,
             boundary_edge_class_codes=boundary_edge_class_codes,
             triangle_edge_class_codes=triangle_edge_class_codes,
+            velocity_east_x=velocity_east_x,
+            velocity_east_y=velocity_east_y,
+            velocity_north_x=velocity_north_x,
+            velocity_north_y=velocity_north_y,
         )
 
     def find_triangle(self, x, y) -> int:
@@ -152,10 +196,15 @@ class GridGeometry:
         """
         if self.triangles.shape[0] == 0:
             return -1
+        metric_x = float(np.asarray(x, dtype=np.float64))
+        metric_y = float(np.asarray(y, dtype=np.float64))
         if self.triangulation is not None:
-            simplex = self.triangulation.find_simplex(np.array([[x, y]], dtype=np.float64), tol=TRIANGLE_TOLERANCE)
+            simplex = self.triangulation.find_simplex(
+                np.array([[metric_x, metric_y]], dtype=np.float64),
+                tol=TRIANGLE_TOLERANCE,
+            )
             return int(simplex[0])
-        return int(self.triangle_finder([x], [y])[0])
+        return int(self.triangle_finder([metric_x], [metric_y])[0])
 
     def locate_points(self, x_points, y_points, start_simplices=None):
         """
@@ -175,7 +224,7 @@ class GridGeometry:
         np.ndarray
             Simplex index for each input point, or -1 outside the triangulation.
         """
-        points = _points_array(x_points, y_points)
+        points = self._metric_points_array(x_points, y_points)
         if points.size == 0:
             return np.empty(0, dtype=np.int64)
         if self.triangles.shape[0] == 0:
@@ -234,7 +283,7 @@ class GridGeometry:
         tuple[np.ndarray, np.ndarray]
             Simplex indices and barycentric weights for each point.
         """
-        points = _points_array(x_points, y_points)
+        points = self._metric_points_array(x_points, y_points)
         if self.triangles.shape[0] == 0:
             return np.full(points.shape[0], -1, dtype=np.int64), np.zeros((points.shape[0], 3), dtype=np.float64)
 
@@ -258,8 +307,8 @@ class GridGeometry:
         if valid_indices.size:
             vertices = self.triangles[simplices[valid_indices]]
             local_weights, nondegenerate = _triangle_barycentric_weights(
-                self.grid_x,
-                self.grid_y,
+                self.metric_grid_x,
+                self.metric_grid_y,
                 vertices,
                 points[valid_indices],
             )
@@ -289,7 +338,7 @@ class GridGeometry:
         if simplex_ids is None:
             return self.barycentric_weights(x_points, y_points)
 
-        points = _points_array(x_points, y_points)
+        points = self._metric_points_array(x_points, y_points)
         simplices = self.locate_points(x_points, y_points, simplex_ids)
         weights = np.zeros((points.shape[0], 3), dtype=np.float64)
 
@@ -389,6 +438,7 @@ class GridGeometry:
             simplices = self.locate_points(x_points, y_points, simplex_ids)
             return (), simplices
 
+        points = self._metric_points_array(x_points, y_points)
         x_values = np.asarray(x_points, dtype=np.float64)
         y_values = np.asarray(y_points, dtype=np.float64)
         if y_values.shape != x_values.shape:
@@ -409,8 +459,8 @@ class GridGeometry:
         output_values, refreshed_simplices = _interpolate_fields_at_simplices_numba(
             stacked_fields,
             simplices,
-            x_values.ravel(),
-            y_values.ravel(),
+            points[:, 0],
+            points[:, 1],
             self.triangles,
             self.p0_x,
             self.p0_y,
@@ -637,13 +687,13 @@ class GridGeometry:
             Updated x positions, y positions, simplex ids, and exit boundary
             class codes.
         """
-        x0 = np.asarray(x0, dtype=np.float64)
-        y0 = np.asarray(y0, dtype=np.float64)
-        particle_shape = x0.shape
-        if x0.size == 0:
+        x0_metric = np.asarray(x0, dtype=np.float64)
+        y0_metric = np.asarray(y0, dtype=np.float64)
+        particle_shape = x0_metric.shape
+        if x0_metric.size == 0:
             return (
-                x0.copy(),
-                y0.copy(),
+                x0_metric.copy(),
+                y0_metric.copy(),
                 np.empty(0, dtype=np.int64),
                 np.empty(0, dtype=np.int8),
             )
@@ -655,10 +705,10 @@ class GridGeometry:
         else:
             upper_u_adj, upper_v_adj = self._velocity_arrays(upper_u, upper_v, igeo)
 
-        starts = self.locate_points(x0, y0, simplex_ids)
+        starts = self.locate_points(x0_metric, y0_metric, simplex_ids)
         x_new, y_new, new_simplices, boundary_class_codes = _update_particles_temporal_numba(
-            x0.ravel(),
-            y0.ravel(),
+            x0_metric.ravel(),
+            y0_metric.ravel(),
             np.asarray(lower_u_adj).ravel(),
             np.asarray(lower_v_adj).ravel(),
             np.asarray(upper_u_adj).ravel(),
@@ -687,7 +737,7 @@ class GridGeometry:
 
     def interpolate_vector(self, grid_u, grid_v, x_points, y_points):
         """
-        Interpolate vector components at point coordinates.
+        Interpolate runtime vector components at point coordinates.
 
         Parameters
         ----------
@@ -703,8 +753,9 @@ class GridGeometry:
         Returns
         -------
         tuple[np.ndarray, np.ndarray]
-            Interpolated vector components at the requested points.
+            Interpolated vector components in the runtime metric basis.
         """
+        grid_u, grid_v = self._velocity_arrays(grid_u, grid_v, igeo=0)
         return (
             self.interpolate_field(grid_u, x_points, y_points),
             self.interpolate_field(grid_v, x_points, y_points),
@@ -712,7 +763,7 @@ class GridGeometry:
 
     def interpolate_temporal_vector(self, lower_u, lower_v, upper_u, upper_v, weight, x_points, y_points):
         """
-        Interpolate lower/upper vector fields spatially, then blend in time.
+        Interpolate lower/upper runtime vector fields, then blend in time.
 
         Parameters
         ----------
@@ -736,9 +787,11 @@ class GridGeometry:
         tuple[np.ndarray, np.ndarray]
             Temporally blended vector components at the requested points.
         """
+        lower_u, lower_v = self._velocity_arrays(lower_u, lower_v, igeo=0)
         if weight <= 0.0:
             return self.interpolate_fields((lower_u, lower_v), x_points, y_points)
 
+        upper_u, upper_v = self._velocity_arrays(upper_u, upper_v, igeo=0)
         lower_u_values, lower_v_values, upper_u_values, upper_v_values = self.interpolate_fields(
             (lower_u, lower_v, upper_u, upper_v),
             x_points,
@@ -753,12 +806,22 @@ class GridGeometry:
         grid_u = np.asarray(grid_u).ravel()
         grid_v = np.asarray(grid_v).ravel()
 
-        if igeo != 1:
-            return grid_u, grid_v
-
-        geofac = 6378137.0
-        cos_lat = np.cos(np.deg2rad(self.grid_y))
-        return grid_u.astype(np.float64, copy=False) / (geofac * cos_lat), grid_v.astype(np.float64, copy=False) / geofac
+        if int(igeo) == 1:
+            raise ValueError(
+                'igeo=1 local geographic scaling is no longer supported; build the geometry with '
+                'coordinate_system="geographic" and a projected metric CRS.'
+            )
+        if self.coordinate_transform.is_geographic:
+            east_x = self.velocity_east_x
+            east_y = self.velocity_east_y
+            north_x = self.velocity_north_x
+            north_y = self.velocity_north_y
+            if east_x is None or east_y is None or north_x is None or north_y is None:
+                raise ValueError('Geographic grid geometry is missing projected velocity basis arrays.')
+            u = grid_u.astype(np.float64, copy=False)
+            v = grid_v.astype(np.float64, copy=False)
+            return u * east_x + v * north_x, u * east_y + v * north_y
+        return grid_u, grid_v
 
     def classify_boundary_crossings(self, x0, y0, x1, y1) -> np.ndarray:
         """Return nearest boundary-edge class for particle movement segments.
@@ -784,8 +847,8 @@ class GridGeometry:
         segment-to-segment distance to each particle movement segment. Exact
         segment intersections have zero distance.
         """
-        start_points = _points_array(x0, y0)
-        end_points = _points_array(x1, y1)
+        start_points = self._metric_points_array(x0, y0)
+        end_points = self._metric_points_array(x1, y1)
         if start_points.shape != end_points.shape:
             raise ValueError(
                 f'start and end coordinates must have the same flattened shape, '
@@ -801,10 +864,10 @@ class GridGeometry:
         ):
             return classes.reshape(np.asarray(x0).shape)
 
-        edge_start_x = np.asarray(self.grid_x[self.boundary_edges[:, 0]], dtype=np.float64)
-        edge_start_y = np.asarray(self.grid_y[self.boundary_edges[:, 0]], dtype=np.float64)
-        edge_end_x = np.asarray(self.grid_x[self.boundary_edges[:, 1]], dtype=np.float64)
-        edge_end_y = np.asarray(self.grid_y[self.boundary_edges[:, 1]], dtype=np.float64)
+        edge_start_x = np.asarray(self.metric_grid_x[self.boundary_edges[:, 0]], dtype=np.float64)
+        edge_start_y = np.asarray(self.metric_grid_y[self.boundary_edges[:, 0]], dtype=np.float64)
+        edge_end_x = np.asarray(self.metric_grid_x[self.boundary_edges[:, 1]], dtype=np.float64)
+        edge_end_y = np.asarray(self.metric_grid_y[self.boundary_edges[:, 1]], dtype=np.float64)
         edge_indices = _nearest_boundary_edge_indices_numba(
             start_points[:, 0],
             start_points[:, 1],
@@ -820,6 +883,9 @@ class GridGeometry:
         classes[valid] = _boundary_class_labels(self.boundary_edge_class_codes[edge_indices[valid]])
 
         return classes.reshape(np.asarray(x0).shape)
+
+    def _metric_points_array(self, x_points, y_points):
+        return _points_array(x_points, y_points)
 
 
 def _bounding_box(points):
@@ -1545,7 +1611,15 @@ def _update_particles_temporal_numba(
     return x_new, y_new, simplex_new, boundary_class_codes
 
 
-def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classification=None) -> GridGeometry:
+def create_grid_geometry(
+    grid_x,
+    grid_y,
+    triangles=None,
+    boundary_edge_classification=None,
+    coordinate_system=None,
+    source_crs=None,
+    metric_crs=None,
+) -> GridGeometry:
     """
     Create cached grid geometry for repeated particle interpolation.
 
@@ -1557,7 +1631,15 @@ def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classific
         Grid node y coordinates.
     triangles : object
         Triangle connectivity array.
-
+    boundary_edge_classification : object
+        Boundary-edge classification metadata.
+    coordinate_system : str, optional
+        ``"geographic"`` for lon/lat degrees, otherwise projected source
+        coordinates are used directly.
+    source_crs : str, optional
+        CRS for geographic source coordinates.
+    metric_crs : str, optional
+        Projected metric CRS. Use ``"auto_utm"`` to infer from the grid.
     Returns
     -------
     GridGeometry
@@ -1568,6 +1650,9 @@ def create_grid_geometry(grid_x, grid_y, triangles=None, boundary_edge_classific
         grid_y,
         triangles=triangles,
         boundary_edge_classification=boundary_edge_classification,
+        coordinate_system=coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
     )
 
 
@@ -1577,6 +1662,9 @@ def create_numba_particle_calculator(
     triangles=None,
     grid_geometry=None,
     boundary_edge_classification=None,
+    coordinate_system=None,
+    source_crs=None,
+    metric_crs=None,
 ):
     """
     Create particle interpolation/update callables.
@@ -1593,7 +1681,12 @@ def create_numba_particle_calculator(
         Triangle connectivity array.
     grid_geometry : object
         The grid geometry value.
-
+    coordinate_system : str, optional
+        Coordinate-system label passed to :func:`create_grid_geometry`.
+    source_crs : str, optional
+        CRS for geographic source coordinates.
+    metric_crs : str, optional
+        Projected metric CRS. Use ``"auto_utm"`` to infer from the grid.
     Returns
     -------
     dict[str, object]
@@ -1607,6 +1700,9 @@ def create_numba_particle_calculator(
             grid_y,
             triangles=triangles,
             boundary_edge_classification=boundary_edge_classification,
+            coordinate_system=coordinate_system,
+            source_crs=source_crs,
+            metric_crs=metric_crs,
         )
     )
 

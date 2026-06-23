@@ -5,7 +5,7 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
-def _build_sedtrails_data(x, y):
+def _build_sedtrails_data(x, y, coordinate_system=None):
     """Builds a minimal SedtrailsData instance for metadata resolution tests."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -27,6 +27,8 @@ def _build_sedtrails_data(x, y):
             'y_max': float(np.max(y)),
         }
     )
+    if coordinate_system is not None:
+        metadata.add('coordinate_system', coordinate_system)
 
     # Keep all dynamic fields simple/zeroed so tests isolate spatial metadata behavior.
     return SedtrailsData(
@@ -67,3 +69,20 @@ def test_min_resolution_none_when_no_distinct_points():
 
     assert data.metadata.min_resolution is None
     assert data.metadata.outer_envelope == []
+
+
+def test_geographic_min_resolution_is_stored_in_meters():
+    """Checks lon/lat grids compute CFL resolution in metres, not degrees."""
+    data = _build_sedtrails_data(
+        x=[4.0, 4.001, 4.0],
+        y=[52.0, 52.0, 52.001],
+        coordinate_system='geographic',
+    )
+
+    assert data.metadata.coordinate_system == 'geographic'
+    assert data.metadata.runtime_coordinate_system == 'metric_projected'
+    assert data.metadata.metric_coordinate_system == 'utm'
+    assert data.metadata.source_crs == 'EPSG:4326'
+    assert data.metadata.metric_crs == 'EPSG:32631'
+    assert data.metadata.min_resolution_m == pytest.approx(68.45, rel=0.02)
+    assert data.metadata.min_resolution == pytest.approx(data.metadata.min_resolution_m)

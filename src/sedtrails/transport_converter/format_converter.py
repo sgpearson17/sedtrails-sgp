@@ -12,6 +12,7 @@ from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
 
@@ -36,6 +37,7 @@ class SeederFieldData:
     particle_face_connectivity: np.ndarray | None = None
     boundary_edge_classification: dict | None = None
     face_node_fill_value: int = -1
+    metadata: SedtrailsMetadata | None = None
 
 
 class FormatConverter:
@@ -167,13 +169,26 @@ class FormatConverter:
 
     def _configure_format_plugin(self, plugin):
         """Apply converter-level options supported by format plugins."""
-        if 'domain_config' not in self.config:
-            return
-
-        try:
-            plugin.domain_config = self.config.get('domain_config') or {}
-        except AttributeError:
-            pass
+        if 'domain_config' in self.config:
+            try:
+                plugin.domain_config = self.config.get('domain_config') or {}
+            except AttributeError:
+                pass
+        if 'coordinate_system' in self.config and self.config.get('coordinate_system') is not None:
+            try:
+                plugin.coordinate_system = self.config.get('coordinate_system')
+            except AttributeError:
+                pass
+        if 'source_crs' in self.config and self.config.get('source_crs') is not None:
+            try:
+                plugin.source_crs = self.config.get('source_crs')
+            except AttributeError:
+                pass
+        if 'metric_crs' in self.config and self.config.get('metric_crs') is not None:
+            try:
+                plugin.metric_crs = self.config.get('metric_crs')
+            except AttributeError:
+                pass
 
     def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """
@@ -273,6 +288,28 @@ class FormatConverter:
         if reference_date is None:
             reference_date = self.reference_date
 
+        coordinate_system = getattr(field_data, 'coordinate_system', None)
+        if coordinate_system is None and metadata is not None:
+            coordinate_system = getattr(metadata, 'coordinate_system', None)
+        seeding_metadata = metadata
+        if seeding_metadata is None:
+            seeding_metadata = SedtrailsMetadata(
+                flowfield_domain={
+                    'x_min': np.nanmin(field_data.x),
+                    'x_max': np.nanmax(field_data.x),
+                    'y_min': np.nanmin(field_data.y),
+                    'y_max': np.nanmax(field_data.y),
+                }
+            )
+        if coordinate_system is not None:
+            seeding_metadata.add('coordinate_system', coordinate_system)
+        for attr_name in ('source_crs', 'metric_crs'):
+            attr_value = getattr(field_data, attr_name, None)
+            if attr_value is None and metadata is not None:
+                attr_value = getattr(metadata, attr_name, None)
+            if attr_value is not None:
+                seeding_metadata.add(attr_name, attr_value)
+
         return SeederFieldData(
             x=np.asarray(field_data.x),
             y=np.asarray(field_data.y),
@@ -285,6 +322,7 @@ class FormatConverter:
             ),
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
+            metadata=seeding_metadata,
         )
 
     @staticmethod

@@ -13,6 +13,7 @@ from sedtrails.application_interfaces.configuration_controller import Configurat
 from sedtrails.data_manager import DataManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer import ParticleSeeder
+from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.timer import Duration, Time, Timer
@@ -414,10 +415,15 @@ class Simulation:
     @classmethod
     def _dashboard_particle_data(cls, population) -> dict[str, np.ndarray]:
         """Build dashboard particle arrays from a population."""
-        particle_x = population.particles['x']
+        particle_x = np.asarray(population.particles['x'])
+        particle_y = np.asarray(population.particles['y'])
+        transform = getattr(getattr(population, 'grid_geometry', None), 'coordinate_transform', None)
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            particle_x, particle_y = transform.metric_to_source(particle_x, particle_y)
+
         particle_data = {
             'x': particle_x,
-            'y': population.particles['y'],
+            'y': particle_y,
         }
 
         burial_depth = population.particles.get('burial_depth')
@@ -769,6 +775,41 @@ class Simulation:
         )
 
     @staticmethod
+    def _coordinate_output_metadata(metadata) -> dict[str, Any]:
+        """Return lightweight coordinate metadata for particle output files."""
+        if metadata is None:
+            return {}
+
+        keys = (
+            'coordinate_system',
+            'runtime_coordinate_system',
+            'metric_coordinate_system',
+            'source_crs',
+            'metric_crs',
+            'utm_zone',
+            'utm_hemisphere',
+            'min_resolution_m',
+        )
+        output_metadata: dict[str, Any] = {}
+        for key in keys:
+            if hasattr(metadata, 'get'):
+                value = metadata.get(key, None)
+            else:
+                value = getattr(metadata, key, None)
+            if value is not None:
+                output_metadata[key] = value
+        if str(output_metadata.get('coordinate_system', 'projected')).lower() not in (
+            'geographic',
+            'spherical',
+            'lonlat',
+            'longlat',
+            'latitude_longitude',
+        ):
+            for key in ('source_crs', 'metric_crs', 'utm_zone', 'utm_hemisphere'):
+                output_metadata.pop(key, None)
+        return output_metadata
+
+    @staticmethod
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
         """Count output slots for initial, scheduled, and final trajectory samples."""
         if save_interval_seconds <= 0:
@@ -857,6 +898,9 @@ class Simulation:
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
+            'coordinate_system': self._controller.get('general.input_model.coordinate_system', None),
+            'source_crs': self._controller.get('general.input_model.source_crs', None),
+            'metric_crs': self._controller.get('general.input_model.metric_crs', None),
             'domain_config': self._get_domain_config(),
         }
 
@@ -1200,6 +1244,11 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
+        coordinate_metadata = self._coordinate_output_metadata(getattr(seeding_field_data, 'metadata', None))
+        if populations:
+            coordinate_metadata.update(populations[0].grid_geometry.coordinate_transform.metadata())
+        netcdf_options['coordinate_metadata'] = coordinate_metadata
+        checkpoint_options.setdefault('writer_kwargs', {})['coordinate_metadata'] = coordinate_metadata
 
         self._initialize_population_output_status(populations, timer.current)
         nc_handle = None
@@ -1319,7 +1368,7 @@ class Simulation:
                 with self._profile_section('compute_cfl_timestep'):
                     timer.compute_cfl_timestep_from_max_velocity(
                         max_velocity,
-                        sedtrails_data.metadata.min_resolution,
+                        getattr(sedtrails_data.metadata, 'min_resolution_m', sedtrails_data.metadata.min_resolution),
                         sedtrails_data.metadata.timestep,
                     )
                     timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)

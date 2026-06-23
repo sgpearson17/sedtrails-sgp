@@ -48,6 +48,10 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
         },
     )
     ds['meantime'].attrs['units'] = 's'
+    ds['globalx'].attrs['units'] = 'degrees_east'
+    ds['globalx'].attrs['standard_name'] = 'longitude'
+    ds['globaly'].attrs['units'] = 'degrees_north'
+    ds['globaly'].attrs['standard_name'] = 'latitude'
 
     def fake_load(self):
         """Injects synthetic XBeach mean-output dataset."""
@@ -73,6 +77,7 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
     assert sedtrails_data.suspended_transport['y'].shape == (2, 4)
     assert sedtrails_data.fractions == 1
     assert sedtrails_data.metadata.source_sediment_classes == 2
+    assert sedtrails_data.metadata.coordinate_system == 'geographic'
     assert sedtrails_data.metadata.sediment_transport_fraction_handling == 'sum_over_source_sediment_classes'
     np.testing.assert_array_equal(sedtrails_data.face_node_connectivity, expected_connectivity)
     np.testing.assert_array_equal(sedtrails_data.bed_load_transport['x'], np.array([[4.0, 6.0, 8.0, 10.0], [20.0, 22.0, 24.0, 26.0]]))

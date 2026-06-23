@@ -30,6 +30,12 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.particle import Particle
+from sedtrails.particle_tracer.coordinate_transform import (
+    CoordinateTransform,
+    coordinate_system_from_metadata,
+    metric_crs_from_metadata,
+    source_crs_from_metadata,
+)
 from sedtrails.particle_tracer.position_calculator_numba import (
     BOUNDARY_CLASS_LAND,
     BOUNDARY_CLASS_OPEN,
@@ -183,9 +189,13 @@ def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float 
 
     poly = strategy_settings.get('poly')
     bbox = strategy_settings.get('bbox')
+    transform = strategy_settings.get('_coordinate_transform')
 
     if poly is not None:
         vertices = _parse_polygon(poly)
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            x_metric, y_metric = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+            vertices = np.column_stack((x_metric, y_metric))
         n = len(vertices)
         area = 0.5 * abs(
             sum(
@@ -202,6 +212,8 @@ def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float 
             xmin, ymin, xmax, ymax = map(float, parts)
         else:
             xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            xmin, ymin, xmax, ymax = _metric_bbox_from_source_bbox(transform, xmin, ymin, xmax, ymax)
         return (xmax - xmin) * (ymax - ymin)
 
     return None
@@ -223,6 +235,43 @@ def _compute_repr_volume(config, n_particles: int) -> float | None:
     if area is None or n_particles == 0:
         return None
     return area * max_depth / n_particles
+
+
+def _seed_positions_to_metric(
+    positions: list[Tuple[int, float, float]],
+    transform: CoordinateTransform | None,
+) -> list[Tuple[int, float, float]]:
+    """Project source-coordinate seed positions to runtime metric coordinates."""
+    if not isinstance(transform, CoordinateTransform) or not transform.is_geographic or not positions:
+        return positions
+    quantities = [int(qty) for qty, *_ in positions]
+    source_x = np.asarray([x for _, x, _ in positions], dtype=float)
+    source_y = np.asarray([y for _, _, y in positions], dtype=float)
+    metric_x, metric_y = transform.source_to_metric(source_x, source_y)
+    return [
+        (quantity, float(x), float(y))
+        for quantity, x, y in zip(quantities, metric_x, metric_y, strict=True)
+    ]
+
+
+def _metric_bbox_from_source_bbox(
+    transform: CoordinateTransform,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+) -> tuple[float, float, float, float]:
+    """Project all source bbox corners and return a metric axis-aligned bbox."""
+    corners_x, corners_y = transform.source_to_metric(
+        np.array([xmin, xmin, xmax, xmax], dtype=float),
+        np.array([ymin, ymax, ymin, ymax], dtype=float),
+    )
+    return (
+        float(np.min(corners_x)),
+        float(np.min(corners_y)),
+        float(np.max(corners_x)),
+        float(np.max(corners_y)),
+    )
 
 
 def _log_seeding_box_volume(config, positions: list) -> None:
@@ -513,9 +562,16 @@ class RandomStrategy(SeedingStrategy):
 
         if poly is not None:
             vertices = _parse_polygon(poly)
-            xmin, ymin = vertices.min(axis=0)
-            xmax, ymax = vertices.max(axis=0)
-            poly_path = Path(vertices)
+            transform = settings.get('_coordinate_transform')
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                vx, vy = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+                sample_vertices = np.column_stack((vx, vy))
+            else:
+                transform = None
+                sample_vertices = vertices
+            xmin, ymin = sample_vertices.min(axis=0)
+            xmax, ymax = sample_vertices.max(axis=0)
+            poly_path = Path(sample_vertices)
 
             seed_locations: list[Tuple[int, float, float]] = []
             max_attempts = max(nlocations * 1000, 10_000)
@@ -534,11 +590,26 @@ class RandomStrategy(SeedingStrategy):
                 )
         else:
             _bbox = bbox.replace(',', ' ').split()
+            xmin, ymin, xmax, ymax = map(float, _bbox[:4])
+            transform = settings.get('_coordinate_transform')
             seed_locations = []
-            for _ in range(nlocations):
-                x = random.uniform(float(_bbox[0]), float(_bbox[2]))
-                y = random.uniform(float(_bbox[1]), float(_bbox[3]))
-                seed_locations.append((quantity, x, y))
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                metric_xmin, metric_ymin, metric_xmax, metric_ymax = _metric_bbox_from_source_bbox(
+                    transform,
+                    xmin,
+                    ymin,
+                    xmax,
+                    ymax,
+                )
+                for _ in range(nlocations):
+                    metric_sample_x = random.uniform(metric_xmin, metric_xmax)
+                    metric_sample_y = random.uniform(metric_ymin, metric_ymax)
+                    seed_locations.append((quantity, metric_sample_x, metric_sample_y))
+            else:
+                for _ in range(nlocations):
+                    x = random.uniform(xmin, xmax)
+                    y = random.uniform(ymin, ymax)
+                    seed_locations.append((quantity, x, y))
 
         return seed_locations
 
@@ -598,12 +669,19 @@ class GridStrategy(SeedingStrategy):
         quantity = int(config.quantity)
         dx = separation['dx']
         dy = separation['dy']
+        transform = settings.get('_coordinate_transform')
 
         if poly is not None:
             vertices = _parse_polygon(poly)
-            xmin, ymin = vertices.min(axis=0)
-            xmax, ymax = vertices.max(axis=0)
-            poly_path = Path(vertices)
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                vx, vy = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+                grid_vertices = np.column_stack((vx, vy))
+            else:
+                transform = None
+                grid_vertices = vertices
+            xmin, ymin = grid_vertices.min(axis=0)
+            xmax, ymax = grid_vertices.max(axis=0)
+            poly_path = Path(grid_vertices)
         else:
             poly_path = None
             if isinstance(bbox, str):
@@ -613,6 +691,10 @@ class GridStrategy(SeedingStrategy):
                 xmin, ymin, xmax, ymax = map(float, _bbox)
             else:
                 xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                xmin, ymin, xmax, ymax = _metric_bbox_from_source_bbox(transform, xmin, ymin, xmax, ymax)
+            else:
+                transform = None
 
         seed_locations = []
         x = xmin
@@ -862,6 +944,9 @@ class ParticleFactory:
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
+        transform = getattr(config, 'strategy_settings', {}).get('_coordinate_transform', None)
+        if strategy_name.lower() not in {'random', 'grid'}:
+            positions = _seed_positions_to_metric(positions, transform)
         _log_seeding_box_volume(config, positions)
 
         # Build a dedicated local RNG for burial-depth sampling, isolated from
@@ -965,6 +1050,9 @@ class ParticlePopulation:
         self._position_calculator_temporal_with_boundary_class = (
             self.grid_geometry.update_particles_temporal_with_boundary_class
         )
+
+        if isinstance(getattr(self.population_config, 'strategy_settings', None), dict):
+            self.population_config.strategy_settings['_coordinate_transform'] = self.grid_geometry.coordinate_transform
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -1461,11 +1549,15 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
+        metadata = getattr(sedtrails_data, 'metadata', None)
         grid_geometry = create_grid_geometry(
             sedtrails_data.x,
             sedtrails_data.y,
             triangles=_geometry_triangles_from_field_data(sedtrails_data),
             boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
+            coordinate_system=coordinate_system_from_metadata(metadata),
+            source_crs=source_crs_from_metadata(metadata),
+            metric_crs=metric_crs_from_metadata(metadata),
         )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)

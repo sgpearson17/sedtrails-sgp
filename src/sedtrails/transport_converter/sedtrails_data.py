@@ -5,6 +5,12 @@ from typing import Any, Dict
 import numpy as np
 from scipy.spatial import ConvexHull, cKDTree
 
+from sedtrails.particle_tracer.coordinate_transform import (
+    build_coordinate_transform,
+    coordinate_system_from_metadata,
+    metric_crs_from_metadata,
+    source_crs_from_metadata,
+)
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
@@ -195,16 +201,27 @@ class SedtrailsData:
             self.metadata.add('outer_envelope', [])
             return
 
-        # Compute minimum resolution using nearest-neighbor search on unique points.
-        tree = cKDTree(unique_coords)
-        distances, _ = tree.query(unique_coords, k=2)
+        coordinate_system = coordinate_system_from_metadata(self.metadata)
+        transform = build_coordinate_transform(
+            unique_coords[:, 0],
+            unique_coords[:, 1],
+            coordinate_system,
+            source_crs=source_crs_from_metadata(self.metadata),
+            metric_crs=metric_crs_from_metadata(self.metadata),
+        )
+        metric_x, metric_y = transform.source_to_metric(unique_coords[:, 0], unique_coords[:, 1])
+        unique_metric_coords = np.column_stack((metric_x, metric_y))
+
+        # Compute minimum resolution using nearest-neighbor search on metric points.
+        tree = cKDTree(unique_metric_coords)
+        distances, _ = tree.query(unique_metric_coords, k=2)
         nearest_distances = distances[:, 1]
         positive_distances = nearest_distances[nearest_distances > 0.0]
 
         if positive_distances.size == 0:
-            min_resolution = None
+            min_resolution_m = None
         else:
-            min_resolution = float(np.min(positive_distances))
+            min_resolution_m = float(np.min(positive_distances))
 
         min_x = float(np.min(unique_coords[:, 0]))
         max_x = float(np.max(unique_coords[:, 0]))
@@ -223,9 +240,13 @@ class SedtrailsData:
                 warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
                 outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
 
-        # Add to metadata
-        self.metadata.add('min_resolution', min_resolution)
+        # Add to metadata. For projected grids this preserves the historical
+        # meaning; for geographic grids it becomes the metric CFL spacing.
+        self.metadata.add('min_resolution', min_resolution_m)
+        self.metadata.add('min_resolution_m', min_resolution_m)
         self.metadata.add('outer_envelope', outer_envelope)
+        for key, value in transform.metadata().items():
+            self.metadata.add(key, value)
 
     def _validate_metadata(self):
         """Validate that metadata field exists and is the correct type."""

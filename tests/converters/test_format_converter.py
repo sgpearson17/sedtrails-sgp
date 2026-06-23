@@ -95,6 +95,7 @@ class _PluginWithSeedingFieldData:
             particle_face_connectivity=[[0, 2, 1]],
             boundary_edge_classification={'edge_nodes': [[0, 1]], 'edge_classes': ['open']},
             face_node_fill_value=-99,
+            coordinate_system='geographic',
         )
 
     def get_seeding_coordinates(self):
@@ -138,6 +139,7 @@ def test_get_seeding_field_data_prefers_field_data_reader():
     np.testing.assert_array_equal(field_data.particle_face_connectivity, np.array([[0, 2, 1]]))
     assert field_data.boundary_edge_classification == {'edge_nodes': [[0, 1]], 'edge_classes': ['open']}
     assert field_data.face_node_fill_value == -99
+    assert field_data.metadata.coordinate_system == 'geographic'
     assert field_data.reference_date == np.datetime64('1999-12-31')
     assert not plugin.coordinate_reader_called
     assert not plugin.convert_called
@@ -167,6 +169,28 @@ def test_get_seeding_field_data_falls_back_to_convert():
     np.testing.assert_array_equal(field_data.x, np.array([10.0, 20.0]))
     np.testing.assert_array_equal(field_data.y, np.array([30.0, 40.0]))
     assert field_data.reference_date == np.datetime64('2001-02-03')
+
+
+def test_configure_format_plugin_sets_coordinate_system_override():
+    """Converter-level coordinate-system overrides should reach format plugins."""
+    converter = FormatConverter(
+        {
+            'input_file': 'dummy.nc',
+            'input_format': 'dummy',
+            'coordinate_system': 'geographic',
+            'source_crs': 'EPSG:4326',
+            'metric_crs': 'EPSG:32631',
+            'domain_config': {'x_range': '0:1'},
+        }
+    )
+    plugin = SimpleNamespace()
+
+    converter._configure_format_plugin(plugin)
+
+    assert plugin.coordinate_system == 'geographic'
+    assert plugin.source_crs == 'EPSG:4326'
+    assert plugin.metric_crs == 'EPSG:32631'
+    assert plugin.domain_config == {'x_range': '0:1'}
 
 
 def test_fm_convert_masks_inner_boundary_faces_from_domain_config(monkeypatch, tmp_path):
@@ -314,7 +338,7 @@ def test_fm_active_geometry_and_boundary_classification_are_cached(monkeypatch):
     connectivity = np.array([[0, 1, 2]], dtype=np.int64)
     call_counts = {'delaunay': 0, 'classify': 0}
 
-    def fake_delaunay(_node_x, _node_y):
+    def fake_delaunay(_node_x, _node_y, **_kwargs):
         call_counts['delaunay'] += 1
         return connectivity
 

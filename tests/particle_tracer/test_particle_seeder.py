@@ -2,6 +2,7 @@
 Unit tests for particle seeding strategies.
 """
 
+import random
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,6 +10,7 @@ import pytest
 
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError, DateFormatError
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
 from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     GridStrategy,
@@ -50,6 +52,91 @@ def transect_strategy():
 @pytest.fixture
 def file_points_strategy():
     return FilePointsStrategy()
+
+
+def test_grid_seeding_uses_meter_spacing_on_geographic_grids():
+    """Grid seeding should interpret dx/dy as metres for lon/lat model grids."""
+    sedtrails_data = SimpleNamespace(
+        x=np.array([4.0, 4.001, 4.001, 4.0]),
+        y=np.array([52.0, 52.0, 52.001, 52.001]),
+        metadata=SimpleNamespace(coordinate_system='geographic'),
+        reference_date=np.datetime64('1970-01-01T00:00:00'),
+    )
+    seeder = ParticleSeeder(
+        [
+            {
+                'name': 'geo-grid',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'bbox': {
+                                'xmin': 4.0,
+                                'ymin': 52.0,
+                                'xmax': 4.001,
+                                'ymax': 52.001,
+                            },
+                            'separation': {'dx': 20.0, 'dy': 20.0},
+                        }
+                    },
+                    'quantity': 1,
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        ]
+    )
+
+    population = seeder.seed(sedtrails_data)[0]
+    source_x, source_y = population.grid_geometry.coordinate_transform.metric_to_source(
+        population.particles['x'],
+        population.particles['y'],
+    )
+
+    assert population.grid_geometry.coordinate_transform.is_geographic
+    assert population.grid_geometry.coordinate_transform.metric_crs == 'EPSG:32631'
+    assert np.nanmin(source_x) >= 4.0 - 5.0e-5
+    assert np.nanmax(source_x) <= 4.001 + 5.0e-5
+    assert np.nanmin(source_y) >= 52.0 - 5.0e-5
+    assert np.nanmax(source_y) <= 52.001 + 5.0e-5
+    assert np.min(np.diff(np.unique(np.round(population.particles['y'], 9)))) == pytest.approx(20.0)
+
+
+def test_random_bbox_seeding_samples_metric_space_on_geographic_grids():
+    """Random bbox seeding should draw uniformly in local metres for lon/lat grids."""
+    transform = build_coordinate_transform(
+        np.array([4.0, 4.001]),
+        np.array([52.0, 52.001]),
+        coordinate_system='geographic',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'geo-random-bbox',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'random': {
+                        'bbox': '4.0,52.0 4.001,52.001',
+                        'nlocations': 1,
+                        'seed': 13,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 3,
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+    )
+
+    result = RandomStrategy().seed(config)
+
+    rng = random.Random(13)
+    mx, my = transform.source_to_metric(
+        np.array([4.0, 4.0, 4.001, 4.001]),
+        np.array([52.0, 52.001, 52.0, 52.001]),
+    )
+    expected_x = rng.uniform(float(np.min(mx)), float(np.max(mx)))
+    expected_y = rng.uniform(float(np.min(my)), float(np.max(my)))
+    assert result == pytest.approx([(3, expected_x, expected_y)])
 
 
 # Config fixtures

@@ -6,6 +6,10 @@ import numpy as np
 import xarray as xr
 import xugrid as xu
 
+from sedtrails.particle_tracer.coordinate_transform import (
+    build_coordinate_transform,
+    infer_coordinate_system_from_attrs,
+)
 from sedtrails.transport_converter.domain_mask import (
     classify_boundary_edges_from_config,
     delaunay_connectivity,
@@ -44,6 +48,9 @@ class FormatPlugin(BaseFormatPlugin):
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
         self.domain_config: Dict[str, Any] = {}
+        self.coordinate_system: str | None = None
+        self.source_crs: str | None = None
+        self.metric_crs: str | None = None
         self._inner_boundary_polygons: list[np.ndarray] | None = None
         self._inner_boundary_polygons_signature: str | None = None
         self._last_inner_boundary_mask: SimpleNamespace | None = None
@@ -152,6 +159,8 @@ class FormatPlugin(BaseFormatPlugin):
                 'y_max': np.max(mapped_data['y']),
             }
         )
+        metadata.add('coordinate_system', self._coordinate_system())
+        self._add_crs_metadata(metadata)
 
         # Create SedtrailsData object
         sedtrails_data = SedtrailsData(
@@ -223,6 +232,9 @@ class FormatPlugin(BaseFormatPlugin):
             particle_face_connectivity=particle_triangles,
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
+            coordinate_system=self._coordinate_system(),
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         )
 
     def get_seeding_coordinates(self):
@@ -580,6 +592,7 @@ class FormatPlugin(BaseFormatPlugin):
         if x.shape != y.shape:
             raise ValueError(f'face_x and face_y must have the same shape, got {x.shape} and {y.shape}')
 
+        coordinate_system = self._coordinate_system()
         cache = self._active_face_mask_cache
         if self._geometry_cache_matches(cache, x, y):
             self._last_inner_boundary_mask = cache['mask_result']
@@ -590,7 +603,18 @@ class FormatPlugin(BaseFormatPlugin):
             active_mask = np.ones(x.shape[0], dtype=bool)
             removed_count = 0
         else:
-            inside = points_inside_any_polygon(np.column_stack((x, y)), polygons)
+            transform = build_coordinate_transform(
+                x,
+                y,
+                coordinate_system,
+                source_crs=self.source_crs,
+                metric_crs=self.metric_crs,
+            )
+            metric_x, metric_y = transform.source_to_metric(x, y)
+            inside = points_inside_any_polygon(
+                np.column_stack((metric_x, metric_y)),
+                transform.polygons_to_metric(polygons),
+            )
             active_mask = ~inside
             removed_count = int(np.count_nonzero(inside))
 
@@ -606,6 +630,9 @@ class FormatPlugin(BaseFormatPlugin):
             'node_x': x,
             'node_y': y,
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'active_mask': active_mask,
             'mask_result': self._last_inner_boundary_mask,
         }
@@ -613,21 +640,34 @@ class FormatPlugin(BaseFormatPlugin):
 
     def _active_face_center_triangles(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
         """Build active particle-location triangles over SFINCS face-centre coordinates."""
+        coordinate_system = self._coordinate_system()
         cache = self._active_face_center_triangles_cache
         if self._geometry_cache_matches(cache, face_x, face_y):
             return cache['triangles']
 
-        candidate_connectivity = delaunay_connectivity(face_x, face_y)
+        candidate_connectivity = delaunay_connectivity(
+            face_x,
+            face_y,
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
+        )
         triangles = filter_connectivity_by_inner_polygons(
             face_x,
             face_y,
             candidate_connectivity,
             self._get_inner_boundary_polygons(),
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         ).connectivity
         self._active_face_center_triangles_cache = {
             'node_x': np.asarray(face_x),
             'node_y': np.asarray(face_y),
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'triangles': triangles,
         }
         return triangles
@@ -680,6 +720,7 @@ class FormatPlugin(BaseFormatPlugin):
         if connectivity is None:
             return None
 
+        coordinate_system = self._coordinate_system()
         cache = self._boundary_edge_classification_cache
         if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
             return cache['metadata']
@@ -689,6 +730,9 @@ class FormatPlugin(BaseFormatPlugin):
             node_y,
             connectivity,
             getattr(self, 'domain_config', {}),
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         )
         classification_metadata = None if classification is None else classification.to_metadata()
         self._boundary_edge_classification_cache = {
@@ -696,12 +740,37 @@ class FormatPlugin(BaseFormatPlugin):
             'node_y': np.asarray(node_y),
             'connectivity': np.asarray(connectivity),
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'metadata': classification_metadata,
         }
         return classification_metadata
 
     def _domain_config_signature(self) -> str:
         return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _coordinate_system(self) -> str:
+        """Return the coordinate-system label inferred from SFINCS mesh coordinates."""
+        if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
+            return str(self.coordinate_system)
+        if self.input_data is None:
+            return 'projected'
+        try:
+            x_var = self._get_variable('mesh2d_node_x')
+            y_var = self._get_variable('mesh2d_node_y')
+        except Exception:
+            return 'projected'
+        return infer_coordinate_system_from_attrs(x_var, y_var)
+
+    def _add_crs_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Add configured CRS labels to SedTRAILS metadata."""
+        if self._coordinate_system() != 'geographic':
+            return
+        if self.source_crs is not None:
+            metadata.add('source_crs', self.source_crs)
+        if self.metric_crs is not None:
+            metadata.add('metric_crs', self.metric_crs)
 
     def _geometry_cache_matches(
         self,
@@ -711,6 +780,10 @@ class FormatPlugin(BaseFormatPlugin):
         connectivity: np.ndarray | None = None,
     ) -> bool:
         if cache is None or cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if cache.get('coordinate_system') != self._coordinate_system():
+            return False
+        if cache.get('source_crs') != self.source_crs or cache.get('metric_crs') != self.metric_crs:
             return False
         if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
             return False

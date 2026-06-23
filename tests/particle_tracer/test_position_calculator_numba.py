@@ -213,6 +213,117 @@ def test_rk4_update_with_constant_velocity():
     np.testing.assert_allclose(y_new, y0 + 0.5 * dt, rtol=1e-12, atol=1e-12)
 
 
+def test_geographic_update_uses_metric_geometry_and_returns_metric():
+    """Geographic grids should project once and advect in runtime metres."""
+    grid_x = np.array([4.0, 4.001, 4.001, 4.0])
+    grid_y = np.array([52.0, 52.0, 52.001, 52.001])
+    geometry = create_grid_geometry(
+        grid_x,
+        grid_y,
+        coordinate_system='geographic',
+        metric_crs='EPSG:3857',
+    )
+    x0, y0 = geometry.coordinate_transform.source_to_metric(
+        np.array([4.0002]),
+        np.array([52.0002]),
+    )
+    grid_u = np.ones_like(grid_x)
+    grid_v = np.zeros_like(grid_y)
+    dt = 1.0e-3
+
+    u_metric, v_metric = geometry.interpolate_vector(grid_u, grid_v, x0, y0)
+    x_new, y_new = geometry.update_particles(x0, y0, grid_u, grid_v, dt, igeo=0)
+    expected_x = x0 + u_metric * dt
+    expected_y = y0 + v_metric * dt
+
+    assert not np.allclose(u_metric, np.ones_like(u_metric), rtol=0.0, atol=1.0e-3)
+    np.testing.assert_allclose(x_new, expected_x, rtol=1e-9, atol=1e-9)
+    np.testing.assert_allclose(y_new, expected_y, rtol=1e-9, atol=1e-9)
+
+
+def test_geographic_velocity_arrays_project_east_north_components():
+    """East/north source velocities should be mapped into the projected metric basis."""
+    grid_x = np.array([4.0, 4.001, 4.001, 4.0])
+    grid_y = np.array([52.0, 52.0, 52.001, 52.001])
+    geometry = create_grid_geometry(
+        grid_x,
+        grid_y,
+        coordinate_system='geographic',
+        metric_crs='EPSG:3857',
+    )
+
+    u_metric, v_metric = geometry._velocity_arrays(np.ones_like(grid_x), np.zeros_like(grid_y), igeo=0)
+
+    np.testing.assert_allclose(u_metric, geometry.velocity_east_x, rtol=0.0, atol=0.0)
+    np.testing.assert_allclose(v_metric, geometry.velocity_east_y, rtol=0.0, atol=0.0)
+    assert not np.allclose(u_metric, np.ones_like(u_metric), rtol=0.0, atol=1.0e-3)
+
+
+def test_geographic_update_does_not_call_pyproj_during_movement(monkeypatch):
+    """Per-timestep movement should use precomputed projected geometry and basis arrays."""
+    grid_x = np.array([4.0, 4.001, 4.001, 4.0])
+    grid_y = np.array([52.0, 52.0, 52.001, 52.001])
+    geometry = create_grid_geometry(grid_x, grid_y, coordinate_system='geographic')
+    x0, y0 = geometry.coordinate_transform.source_to_metric(
+        np.array([4.0002]),
+        np.array([52.0002]),
+    )
+
+    def fail_transform(*args, **kwargs):
+        raise AssertionError('pyproj transform should not run during particle movement')
+
+    monkeypatch.setattr(geometry.coordinate_transform, 'source_to_metric', fail_transform)
+    monkeypatch.setattr(geometry.coordinate_transform, 'metric_to_source', fail_transform)
+
+    x_new, y_new = geometry.update_particles(
+        x0,
+        y0,
+        np.ones_like(grid_x),
+        np.zeros_like(grid_y),
+        1.0,
+    )
+
+    assert np.isfinite(x_new).all()
+    assert np.isfinite(y_new).all()
+
+
+def test_geographic_cached_simplex_interpolation_uses_metric_coordinates():
+    """Cached-simplex field interpolation should use projected runtime coordinates."""
+    grid_x = np.array([4.0, 4.001, 4.001, 4.0])
+    grid_y = np.array([52.0, 52.0, 52.001, 52.001])
+    triangles = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+    geometry = create_grid_geometry(grid_x, grid_y, triangles=triangles, coordinate_system='geographic')
+    x0, y0 = geometry.coordinate_transform.source_to_metric(
+        np.array([4.0002]),
+        np.array([52.0002]),
+    )
+    field = geometry.metric_grid_x + 2.0 * geometry.metric_grid_y
+
+    (values,), simplices = geometry.interpolate_fields_with_simplex((field,), x0, y0)
+    (cached_values,), refreshed = geometry.interpolate_fields_with_simplex((field,), x0, y0, simplices)
+
+    expected = x0 + 2.0 * y0
+    np.testing.assert_allclose(values, expected, rtol=1.0e-9, atol=1.0e-9)
+    np.testing.assert_allclose(cached_values, expected, rtol=1.0e-9, atol=1.0e-9)
+    np.testing.assert_array_equal(refreshed, simplices)
+
+
+def test_legacy_igeo_scaling_is_rejected():
+    """The old per-step spherical scaling mode must not bypass pyproj geometry."""
+    grid_x, grid_y = square_grid()
+    geometry = create_grid_geometry(grid_x, grid_y)
+
+    with pytest.raises(ValueError, match='igeo=1'):
+        geometry.update_particles(
+            np.array([0.2]),
+            np.array([0.2]),
+            np.ones_like(grid_x),
+            np.zeros_like(grid_y),
+            1.0,
+            igeo=1,
+        )
+
+
 def test_temporal_rk4_update_matches_preblended_grid():
     """Ensures temporal RK4 equals RK4 on a preblended velocity field."""
     grid_x, grid_y = square_grid()

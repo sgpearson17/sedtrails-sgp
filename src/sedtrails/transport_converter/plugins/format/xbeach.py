@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 from scipy.spatial import Delaunay
 
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform, infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.domain_mask import classify_boundary_edges_from_config
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
@@ -15,7 +16,13 @@ from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
-def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
+def delaunay_connectivity(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+) -> np.ndarray:
     """Build triangular connectivity from flattened node coordinates."""
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
@@ -23,7 +30,15 @@ def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
         raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     if x.size < 3:
         return np.empty((0, 3), dtype=np.int64)
-    return np.asarray(Delaunay(np.column_stack((x, y))).simplices, dtype=np.int64)
+    transform = build_coordinate_transform(
+        x,
+        y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+    )
+    metric_x, metric_y = transform.source_to_metric(x, y)
+    return np.asarray(Delaunay(np.column_stack((metric_x, metric_y))).simplices, dtype=np.int64)
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -70,6 +85,9 @@ class FormatPlugin(BaseFormatPlugin):
         self.input_data: xr.Dataset | None = None
         self._input_variables: List[str] = []
         self.domain_config: Dict[str, Any] = {}
+        self.coordinate_system: str | None = None
+        self.source_crs: str | None = None
+        self.metric_crs: str | None = None
         self._particle_connectivity_cache: dict[str, Any] | None = None
         self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
@@ -209,6 +227,8 @@ class FormatPlugin(BaseFormatPlugin):
                 'max_bed_shear_stress_source': 'taubx_mean/tauby_mean magnitude',
             }
         )
+        metadata.add('coordinate_system', self._coordinate_system())
+        self._add_crs_metadata(metadata)
         particle_connectivity = self._particle_face_connectivity(mapped_data['x'], mapped_data['y'])
         boundary_edge_classification = self._boundary_edge_classification(
             mapped_data['x'],
@@ -266,6 +286,9 @@ class FormatPlugin(BaseFormatPlugin):
             particle_face_connectivity=particle_connectivity,
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
+            coordinate_system=self._coordinate_system(),
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         )
 
     def get_seeding_coordinates(self):
@@ -624,16 +647,26 @@ class FormatPlugin(BaseFormatPlugin):
 
     def _particle_face_connectivity(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Return particle-tracking triangles for the active XBeach grid."""
+        coordinate_system = self._coordinate_system()
         cache = self._particle_connectivity_cache
         if self._geometry_cache_matches(cache, x, y):
             return cache['connectivity']
 
         connectivity = self._structured_grid_connectivity()
         if connectivity is None:
-            connectivity = delaunay_connectivity(x, y)
+            connectivity = delaunay_connectivity(
+                x,
+                y,
+                coordinate_system=coordinate_system,
+                source_crs=self.source_crs,
+                metric_crs=self.metric_crs,
+            )
         self._particle_connectivity_cache = {
             'x': np.asarray(x),
             'y': np.asarray(y),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'connectivity': connectivity,
         }
         return connectivity
@@ -681,7 +714,13 @@ class FormatPlugin(BaseFormatPlugin):
         """Return whether cached particle connectivity matches the active grid."""
         if cache is None:
             return False
-        return self._arrays_equal(cache.get('x'), x) and self._arrays_equal(cache.get('y'), y)
+        return (
+            cache.get('coordinate_system') == self._coordinate_system()
+            and cache.get('source_crs') == self.source_crs
+            and cache.get('metric_crs') == self.metric_crs
+            and self._arrays_equal(cache.get('x'), x)
+            and self._arrays_equal(cache.get('y'), y)
+        )
 
     def _boundary_edge_classification(
         self,
@@ -693,10 +732,14 @@ class FormatPlugin(BaseFormatPlugin):
         if connectivity is None:
             return None
 
+        coordinate_system = self._coordinate_system()
         cache = self._boundary_edge_classification_cache
         if (
             cache is not None
             and cache.get('domain_signature') == self._domain_config_signature()
+            and cache.get('coordinate_system') == coordinate_system
+            and cache.get('source_crs') == self.source_crs
+            and cache.get('metric_crs') == self.metric_crs
             and self._arrays_equal(cache.get('x'), x)
             and self._arrays_equal(cache.get('y'), y)
             and self._arrays_equal(cache.get('connectivity'), connectivity)
@@ -708,6 +751,9 @@ class FormatPlugin(BaseFormatPlugin):
             y,
             connectivity,
             getattr(self, 'domain_config', {}),
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         )
         metadata = None if classification is None else classification.to_metadata()
         self._boundary_edge_classification_cache = {
@@ -715,6 +761,9 @@ class FormatPlugin(BaseFormatPlugin):
             'y': np.asarray(y),
             'connectivity': np.asarray(connectivity),
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'metadata': metadata,
         }
         return metadata
@@ -722,6 +771,26 @@ class FormatPlugin(BaseFormatPlugin):
     def _domain_config_signature(self) -> str:
         """Return a cache signature for configured domain polygons."""
         return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _coordinate_system(self) -> str:
+        """Return the coordinate-system label inferred from XBeach coordinates."""
+        if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
+            return str(self.coordinate_system)
+        if self.input_data is None:
+            return 'projected'
+        return infer_coordinate_system_from_attrs(
+            self.input_data.get('globalx'),
+            self.input_data.get('globaly'),
+        )
+
+    def _add_crs_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Add configured CRS labels to SedTRAILS metadata."""
+        if self._coordinate_system() != 'geographic':
+            return
+        if self.source_crs is not None:
+            metadata.add('source_crs', self.source_crs)
+        if self.metric_crs is not None:
+            metadata.add('metric_crs', self.metric_crs)
 
     @staticmethod
     def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
