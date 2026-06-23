@@ -77,6 +77,8 @@ DATA VARIABLES:
   status_transported: ('n_particles', 'n_timesteps') int32 (15, 25)
   status_released: ('n_particles', 'n_timesteps') int32 (15, 25)
   status_mobile: ('n_particles', 'n_timesteps') int32 (15, 25)
+  status_beached: ('n_particles', 'n_timesteps') int32 (15, 25)
+  status_left_domain: ('n_particles', 'n_timesteps') int32 (15, 25)
   covered_distance: ('n_flowfields', 'n_particles', 'n_timesteps') float64 (2, 15, 25)
 
 ====================================================================================
@@ -131,10 +133,12 @@ The main output variables are:
 - ``mixing_depth``: Local mixing-layer depth sampled for each particle at each saved output slot, when available.
 - ``status_alive``: ``1`` for particles still active in the simulation, ``0`` for particles removed from consideration.
 - ``status_buried``: ``1`` for particles considered buried and therefore not mobile, ``0`` for particles considered exposed.
-- ``status_domain``: ``1`` for particles inside the domain envelope, ``0`` for particles outside it.
+- ``status_domain``: ``1`` for particles inside the active particle-tracking mesh, ``0`` for particles outside it. The active mesh excludes holes created by ``domain.inner_boundary_pol_files``.
 - ``status_transported``: ``1`` for particles selected for transport during the current update, ``0`` for particles not selected for transport.
 - ``status_released``: ``1`` for particles whose release time has passed, ``0`` for particles waiting for release.
 - ``status_mobile``: ``1`` only when all mobility gates pass: in domain, alive, exposed, released, and selected for transport.
+- ``status_beached``: ``1`` for particles that touched or crossed a boundary edge classified as ``land`` during that timestep. Beached particles remain at their last valid in-domain position and can become mobile again later.
+- ``status_left_domain``: ``1`` for particles that crossed a boundary edge classified as ``open``. This state is persistent; those particles are marked not alive and are removed from subsequent movement calculations.
 - ``covered_distance``: Reserved for per-flow-field distance accounting. The current streaming writer creates this variable for schema compatibility but does not populate it, so values remain ``NaN``.
 
 Floating-point variables use ``NaN`` for missing or unwritten values. Integer status variables use ``-1`` for unwritten slots. Written status values are stored as ``0`` or ``1``.

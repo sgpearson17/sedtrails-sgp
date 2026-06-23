@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -67,6 +68,7 @@ class YAMLConfigValidator:
         """
 
         self.config: Dict[str, Any] = {}
+        self.raw_config: Dict[str, Any] = {}
         self._applied_defaults: bool = False
         self.__registry = None
         self.__validator = self._validator()
@@ -379,6 +381,7 @@ class YAMLConfigValidator:
                 yaml_data: Dict[str, Any] = yaml.load(f, Loader=SedtrailsYamlLoader)
         except Exception as e:
             raise YamlParsingError(f'Error reading YAML file: {e}') from e
+        self.raw_config = deepcopy(yaml_data)
 
         # Validate the YAML data against the schema
         try:
@@ -393,7 +396,7 @@ class YAMLConfigValidator:
 
         # Apply default values from the schema
         try:
-            config_with_defaults = self._apply_defaults(self.schema_content, yaml_data.copy())
+            config_with_defaults = self._apply_defaults(self.schema_content, deepcopy(yaml_data))
             self.config = config_with_defaults
             self._applied_defaults = True
         except Exception as e:

@@ -152,6 +152,11 @@
           "default": false,
           "description": "display all metadata"
         },
+        "report_domain_exit_updates": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, log per-timestep messages when particles newly leave the domain or beach on land. Final domain-exit and beaching summaries are controlled by the CLI report-domain-exits option."
+        },
         "numerical_scheme": {
           "$ref": "#/$defs/numerical_scheme_type",
           "default": "rk4",
@@ -201,6 +206,38 @@
         "pol_file": {
           "type": "string",
           "description": "path to Detares a '.pol' file contatining geometries definitions for the domain of interest."
+        },
+        "inner_boundary_pol_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "paths to Deltares/Tekal '.pol' files containing island or cutout polygons to exclude from the active particle-tracking mesh."
+        },
+        "boundary_class_pol_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "open": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as open/offshore boundaries."
+            },
+            "land": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "paths to Deltares/Tekal '.pol' files containing polygons that select active boundary edges to classify as land/cutout boundaries."
+            }
+          },
+          "default": {},
+          "description": "User override polygons for active boundary edge classes. Edge midpoints inside these polygons are classified by boundary class."
         },
         "flow_field_data": {
           "type": "object",
@@ -408,6 +445,10 @@
           "type": "string",
           "default": "1H",
           "description": "save interval for output files, e.g., '1H' for 1 hour."
+        },
+        "sync_interval": {
+          "type": "string",
+          "description": "optional cadence for flushing streaming NetCDF output to disk. Defaults to outputs.save_interval. Use a longer interval to reduce filesystem sync overhead."
         },
         "store_tracks": {
           "type": "boolean",

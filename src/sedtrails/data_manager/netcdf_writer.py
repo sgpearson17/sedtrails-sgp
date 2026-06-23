@@ -40,6 +40,8 @@ _STATUS_DEFAULTS = {
     'status_transported': 0,
     'status_released': 1,
     'status_mobile': 0,
+    'status_beached': 0,
+    'status_left_domain': 0,
 }
 
 

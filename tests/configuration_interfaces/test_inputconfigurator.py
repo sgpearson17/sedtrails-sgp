@@ -219,6 +219,143 @@ class TestYAMLConfigValidator:
 
         assert result['inputs']['repeat_eulerian_fields'] is False
 
+    def test_validate_yaml_accepts_report_domain_exit_updates(self, tmp_path):
+        """General config accepts optional per-timestep domain-exit update logging."""
+
+        config_data = {
+            'general': {
+                'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'},
+                'report_domain_exit_updates': True,
+            },
+            'inputs': {'data': 'dummy.nc'},
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['general']['report_domain_exit_updates'] is True
+
+    def test_validate_yaml_accepts_output_sync_interval(self, tmp_path):
+        """Output config accepts an optional NetCDF flush cadence."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'outputs': {
+                'save_interval': '30M',
+                'sync_interval': '2H',
+                'store_tracks': True,
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['outputs']['sync_interval'] == '2H'
+
+    def test_validate_yaml_accepts_inner_boundary_pol_files(self, tmp_path):
+        """Domain config accepts one or more island/cutout polygon files."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'inner_boundary_pol_files': ['island_01.pol', 'island_02.pol'],
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['domain']['inner_boundary_pol_files'] == ['island_01.pol', 'island_02.pol']
+
+    def test_validate_yaml_rejects_non_string_inner_boundary_pol_files(self, tmp_path):
+        """Inner boundary file entries must be paths encoded as strings."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'inner_boundary_pol_files': [123],
+            },
+        }
+        config_file = tmp_path / 'invalid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        with pytest.raises(YamlValidationError, match='YAML config validation error'):
+            validator.validate_yaml(str(config_file))
+
+    def test_validate_yaml_accepts_boundary_class_pol_files(self, tmp_path):
+        """Domain config accepts open and land boundary override polygon files."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'boundary_class_pol_files': {
+                    'open': ['offshore_01.pol', 'offshore_02.pol'],
+                    'land': ['coastline.pol'],
+                },
+            },
+        }
+        config_file = tmp_path / 'valid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        result = validator.validate_yaml(str(config_file))
+
+        assert result['domain']['boundary_class_pol_files']['open'] == ['offshore_01.pol', 'offshore_02.pol']
+        assert result['domain']['boundary_class_pol_files']['land'] == ['coastline.pol']
+
+    def test_validate_yaml_rejects_boundary_class_pol_files_without_domain_extent(self, tmp_path):
+        """Boundary class polygons modify a domain but do not define one."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'boundary_class_pol_files': {
+                    'open': ['offshore.pol'],
+                },
+            },
+        }
+        config_file = tmp_path / 'invalid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        with pytest.raises(YamlValidationError, match='YAML config validation error'):
+            validator.validate_yaml(str(config_file))
+
+    def test_validate_yaml_rejects_non_string_boundary_class_pol_files(self, tmp_path):
+        """Boundary override file entries must be paths encoded as strings."""
+
+        config_data = {
+            'general': {'input_model': {'format': 'fm_netcdf', 'reference_date': '2023-01-01'}},
+            'inputs': {'data': 'dummy.nc'},
+            'domain': {
+                'pol_file': 'outer.pol',
+                'boundary_class_pol_files': {
+                    'open': [123],
+                },
+            },
+        }
+        config_file = tmp_path / 'invalid_config.yml'
+        config_file.write_text(yaml.dump(config_data))
+
+        validator = YAMLConfigValidator()
+        with pytest.raises(YamlValidationError, match='YAML config validation error'):
+            validator.validate_yaml(str(config_file))
+
     def test_validate_yaml_validation_error(self, tmp_path):
         """
         Test YAML file validation error is generated

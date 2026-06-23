@@ -30,7 +30,11 @@ from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.particle import Particle
-from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.position_calculator_numba import (
+    BOUNDARY_CLASS_LAND,
+    BOUNDARY_CLASS_OPEN,
+    create_grid_geometry,
+)
 from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
 
 logger = logging.getLogger(__name__)
@@ -911,12 +915,14 @@ class ParticlePopulation:
         Bound method for advancing particles while reusing cached simplex ids.
     _position_calculator_temporal_with_simplex : Any
         Bound method for temporal particle updates while reusing cached simplex ids.
+    _position_calculator_with_boundary_class : Any
+        Bound method for advancing particles and returning crossed boundary class codes.
+    _position_calculator_temporal_with_boundary_class : Any
+        Bound method for temporal updates and crossed boundary class codes.
     _particle_simplices : ndarray
         Cached containing-triangle ids for each particle, used to avoid global point location on every update.
-    _particle_simplices_x : ndarray
-        Particle x coordinates corresponding to the cached simplex ids.
-    _particle_simplices_y : ndarray
-        Particle y coordinates corresponding to the cached simplex ids.
+    _particle_simplices_stale : bool
+        Whether particle positions may have changed since ``_particle_simplices`` was refreshed.
     _current_time : ndarray
         The current time in the simulation, used for updating particle positions.
     _field_mixing_depth : ndarray
@@ -937,9 +943,10 @@ class ParticlePopulation:
     _field_interpolator_multi_with_simplex: Any = field(init=False)
     _position_calculator_with_simplex: Any = field(init=False)
     _position_calculator_temporal_with_simplex: Any = field(init=False)
+    _position_calculator_with_boundary_class: Any = field(init=False)
+    _position_calculator_temporal_with_boundary_class: Any = field(init=False)
     _particle_simplices: ndarray = field(init=False)
-    _particle_simplices_x: ndarray = field(init=False)
-    _particle_simplices_y: ndarray = field(init=False)
+    _particle_simplices_stale: bool = field(init=False, default=True)
     _current_time: float = field(init=False)
     _field_mixing_depth: ndarray = field(init=False)  # TODO: reserved for later particle-behavior logic
     _field_transport_probability: ndarray = field(init=False)  # TODO: reserved for later pickup logic
@@ -954,6 +961,10 @@ class ParticlePopulation:
         self._field_interpolator_multi_with_simplex = self.grid_geometry.interpolate_fields_with_simplex
         self._position_calculator_with_simplex = self.grid_geometry.update_particles_with_simplex
         self._position_calculator_temporal_with_simplex = self.grid_geometry.update_particles_temporal_with_simplex
+        self._position_calculator_with_boundary_class = self.grid_geometry.update_particles_with_boundary_class
+        self._position_calculator_temporal_with_boundary_class = (
+            self.grid_geometry.update_particles_temporal_with_boundary_class
+        )
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -965,6 +976,8 @@ class ParticlePopulation:
                 dtype=float,
             ),
             'burial_depth': np.array([p.burial_depth for p in _particles]),
+            'status_left_domain': np.zeros(len(_particles), dtype=bool),
+            'status_beached': np.zeros(len(_particles), dtype=bool),
         }
         self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
@@ -1077,24 +1090,19 @@ class ParticlePopulation:
         )
 
     def _mark_particle_simplices_current(self) -> None:
-        """Record the particle coordinates represented by the simplex cache."""
-        self._particle_simplices_x = np.asarray(self.particles['x']).copy()
-        self._particle_simplices_y = np.asarray(self.particles['y']).copy()
+        """Mark cached simplex ids as representing current particle positions."""
+        self._particle_simplices_stale = False
+
+    def _invalidate_particle_simplices(self) -> None:
+        """Mark cached simplex ids stale after external particle-coordinate edits."""
+        self._particle_simplices_stale = True
 
     def _particle_simplices_match_positions(self) -> bool:
         """Return whether cached simplex ids represent the current particle positions."""
         n_particles = len(self.particles['x'])
         if self._particle_simplices.shape[0] != n_particles:
             return False
-        if (
-            self._particle_simplices_x.shape[0] != n_particles
-            or self._particle_simplices_y.shape[0] != n_particles
-        ):
-            return False
-        return (
-            np.array_equal(self._particle_simplices_x, self.particles['x'], equal_nan=True)
-            and np.array_equal(self._particle_simplices_y, self.particles['y'], equal_nan=True)
-        )
+        return not self._particle_simplices_stale
 
     def _refresh_particle_simplices(self) -> None:
         """Refresh cached simplex ids from the current particle coordinates."""
@@ -1128,7 +1136,6 @@ class ParticlePopulation:
 
         self._current_time = current_time
 
-        # Store previous bed level for bed level change calculation (if needed)
         if 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
 
@@ -1154,9 +1161,8 @@ class ParticlePopulation:
                     continue
                 self.particles[name] = values
 
-        if 'bed_level_previous' not in self.particles: # (only for the first update, after seeding)
+        if 'bed_level_previous' not in self.particles and 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
-
 
     @staticmethod
     def _can_batch_particle_field(field_value) -> bool:
@@ -1170,7 +1176,7 @@ class ParticlePopulation:
     def _interpolate_particle_fields(self, fields):
         """Interpolate fields at particle positions and refresh cached simplex ids."""
         simplex_ids = self._particle_simplices
-        if simplex_ids.shape[0] != len(self.particles['x']):
+        if self._particle_simplices_stale or simplex_ids.shape[0] != len(self.particles['x']):
             simplex_ids = None
         particle_values, simplices = self._field_interpolator_multi_with_simplex(
             tuple(fields),
@@ -1272,6 +1278,14 @@ class ParticlePopulation:
         updates status of particles in the population.
         """
         n_particles = len(self.particles['x'])
+        left_domain = self.particles.get('status_left_domain')
+        if left_domain is None or left_domain.shape != (n_particles,):
+            left_domain = np.zeros(n_particles, dtype=bool)
+        else:
+            left_domain = np.asarray(left_domain, dtype=bool)
+        self.particles['status_left_domain'] = left_domain
+        self.particles['status_beached'] = np.zeros(n_particles, dtype=bool)
+
         if n_particles == 0:
             for status_name in (
                 'status_alive',
@@ -1284,16 +1298,22 @@ class ParticlePopulation:
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
 
-        # Compute whether particles are transported (or trapped) based on transport probability
-        # Note: If "reduced_velocity" is chosen, "transport_probability" always equals one.
-        self.particles['status_transported'] = np.random.rand(n_particles) < self.particles['transport_probability']
+        transport_probability_method = self.population_config.population_config['transport_probability']
+        if transport_probability_method == 'no_probability':
+            self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
+        else:
+            self.particles['status_transported'] = np.random.rand(n_particles) < self.particles[
+                'transport_probability'
+            ]
 
         if not self._particle_simplices_match_positions():
             self._refresh_particle_simplices()
-        self.particles['status_domain'] = self._particle_simplices >= 0
+        self._particle_simplices[left_domain] = -1
+        self._mark_particle_simplices_current()
+        self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
         # New conditional logic based on transport_probability_method
-        if self.population_config.population_config['transport_probability'] == 'no_probability':
+        if transport_probability_method == 'no_probability':
             # For no_probability method, all particles are considered exposed (not buried)
             self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
         else:
@@ -1310,7 +1330,7 @@ class ParticlePopulation:
         self.particles['status_released'] = self._current_time >= self.particles['release_time']
 
         # Compute whether particles are alive (or dead) (still TODO)
-        self.particles['status_alive'] = np.ones(n_particles, dtype=bool)
+        self.particles['status_alive'] = ~left_domain
 
         # Compute whether particles are mobile (or static) - combination of all status flags
         self.particles['status_mobile'] = (
@@ -1337,13 +1357,16 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
-        ix = self.particles['status_mobile']  # Get indices of mobile particles
+        ix = np.asarray(self.particles['status_mobile'], dtype=bool).copy()  # Freeze current mobile-particle mask.
         particle_indices = np.flatnonzero(ix)
         if particle_indices.size == 0:
             return
+        old_x = self.particles['x'][ix].copy()
+        old_y = self.particles['y'][ix].copy()
+        old_simplices = self._particle_simplices[particle_indices].copy()
 
         if _is_temporal_flow_field(flow_field):
-            new_x, new_y, new_simplices = self._position_calculator_temporal_with_simplex(
+            new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_temporal_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['lower']['u'],
@@ -1355,7 +1378,7 @@ class ParticlePopulation:
                 simplex_ids=self._particle_simplices[particle_indices],
             )
         else:
-            new_x, new_y, new_simplices = self._position_calculator_with_simplex(
+            new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
                 flow_field['u'],
@@ -1365,6 +1388,28 @@ class ParticlePopulation:
             )
 
         # TODO: implement Bart's solution for gross/net values here. Add
+        outside_domain = new_simplices < 0
+        if np.any(outside_domain):
+            outside_boundary_class_codes = np.asarray(boundary_class_codes[outside_domain], dtype=np.int8)
+            outside_particle_indices = particle_indices[outside_domain]
+            self.particles['status_domain'][outside_particle_indices] = False
+            self.particles['status_mobile'][outside_particle_indices] = False
+
+            open_boundary = outside_boundary_class_codes == BOUNDARY_CLASS_OPEN
+            if np.any(open_boundary):
+                open_indices = outside_particle_indices[open_boundary]
+                self.particles['status_left_domain'][open_indices] = True
+                self.particles['status_alive'][open_indices] = False
+
+            land_boundary = outside_boundary_class_codes == BOUNDARY_CLASS_LAND
+            if np.any(land_boundary):
+                land_local_indices = np.flatnonzero(outside_domain)[land_boundary]
+                land_particle_indices = outside_particle_indices[land_boundary]
+                new_x[land_local_indices] = old_x[land_local_indices]
+                new_y[land_local_indices] = old_y[land_local_indices]
+                new_simplices[land_local_indices] = old_simplices[land_local_indices]
+                self.particles['status_beached'][land_particle_indices] = True
+                self.particles['status_domain'][land_particle_indices] = True
 
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
@@ -1420,6 +1465,7 @@ class ParticleSeeder:
             sedtrails_data.x,
             sedtrails_data.y,
             triangles=_geometry_triangles_from_field_data(sedtrails_data),
+            boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
         )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
