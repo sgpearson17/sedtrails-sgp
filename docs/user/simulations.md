@@ -22,6 +22,15 @@ For FM and SFINCS models, the optional `domain.inner_boundary_pol_files` setting
 
 This conceptual schematic shows the roles of the different polygon settings. The outer polygon or rectangular subset defines the active extent, inner-boundary polygons remove cutouts, and boundary-class polygons classify active boundary edges by midpoint.
 
+The "regular closed boundary" is defined by the edge of the "active domain", and comes from:
+-	the input model grid, if domain is omitted
+-	the clipped/masked domain from `domain.pol_file`, if supplied
+-	the rectangular clipped domain from `subset_x` + `subset_y`, if supplied
+plus any holes/cutouts created by `inner_boundary_pol_files`
+
+After that is settled, the `boundary_class_pol_files.open` and `.land` only override parts of that active boundary by testing boundary-edge midpoints, and set the particle behaviour according to that.
+
+
 
 ### Example Configuration File
 
