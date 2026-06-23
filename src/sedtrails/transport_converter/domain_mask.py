@@ -431,6 +431,8 @@ def classify_boundary_edges(
 
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
+    if x.shape != y.shape:
+        raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     edges = extract_boundary_edges(connectivity)
     midpoints = np.full((edges.shape[0], 2), np.nan, dtype=float)
     if edges.size:
