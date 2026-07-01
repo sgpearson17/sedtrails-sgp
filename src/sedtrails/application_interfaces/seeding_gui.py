@@ -23,6 +23,7 @@ MAP_ZOOM_OUT_FACTOR = 2.0
 class GuiInputFormatSpec(TypedDict):
     coordinate_candidates: tuple[tuple[str, str], ...]
     bathymetry_variables: tuple[str, ...]
+    variable_multipliers: dict[str, float]
 
 
 SUPPORTED_GUI_INPUT_FORMATS: dict[str, GuiInputFormatSpec] = {
@@ -32,6 +33,7 @@ SUPPORTED_GUI_INPUT_FORMATS: dict[str, GuiInputFormatSpec] = {
             ('mesh2d_face_x', 'mesh2d_face_y'),
         ),
         'bathymetry_variables': ('bedlevel', 'bed_level'),
+        'variable_multipliers': {},
     },
     'd3d4_netcdf': {
         'coordinate_candidates': (
@@ -39,6 +41,7 @@ SUPPORTED_GUI_INPUT_FORMATS: dict[str, GuiInputFormatSpec] = {
             ('XCOR', 'YCOR'),
         ),
         'bathymetry_variables': ('DPS0', 'DP0', 'bedlevel', 'bed_level'),
+        'variable_multipliers': {'DPS0': -1.0, 'DP0': -1.0},
     },
     'xbeach': {
         'coordinate_candidates': (
@@ -46,13 +49,16 @@ SUPPORTED_GUI_INPUT_FORMATS: dict[str, GuiInputFormatSpec] = {
             ('x', 'y'),
         ),
         'bathymetry_variables': ('zb_mean', 'zb'),
+        'variable_multipliers': {},
     },
     'sfincs': {
         'coordinate_candidates': (
+            ('mesh2d_node_x', 'mesh2d_node_y'),
             ('mesh2d_face_x', 'mesh2d_face_y'),
             ('x', 'y'),
         ),
         'bathymetry_variables': ('zb', 'bedlevel', 'bed_level'),
+        'variable_multipliers': {},
     },
 }
 
@@ -284,11 +290,6 @@ def load_bathymetry_view_data(
 
     dataset = _open_netcdf_dataset(input_file)
 
-    coordinate_x, coordinate_y = _resolve_coordinate_variables(
-        dataset,
-        format_spec['coordinate_candidates'],
-    )
-
     variable_name = _resolve_bathymetry_variable(
         dataset,
         variable,
@@ -296,8 +297,16 @@ def load_bathymetry_view_data(
     )
     try:
         values = _first_timestep_values(dataset[variable_name])
-        x = np.asarray(dataset[coordinate_x].values, dtype=float).reshape(-1)
-        y = np.asarray(dataset[coordinate_y].values, dtype=float).reshape(-1)
+        value_multiplier = float(format_spec.get('variable_multipliers', {}).get(variable_name, 1.0))
+        if value_multiplier != 1.0:
+            values = values * value_multiplier
+        values = np.asarray(values, dtype=float).reshape(-1)
+
+        x, y = _resolve_coordinate_arrays(
+            dataset,
+            format_spec['coordinate_candidates'],
+            expected_size=len(values),
+        )
     except Exception as exc:
         raise SeedingGuiError(f'Could not extract map data: {exc}') from exc
     finally:
@@ -305,7 +314,6 @@ def load_bathymetry_view_data(
         if close is not None:
             close()
 
-    values = np.asarray(values, dtype=float).reshape(-1)
     if not (len(x) == len(y) == len(values)):
         raise SeedingGuiError(
             f'Map arrays have incompatible lengths: x={len(x)}, y={len(y)}, {variable_name}={len(values)}.'
@@ -345,7 +353,22 @@ def _filter_finite_map_points(
     finite = np.isfinite(x_array) & np.isfinite(y_array) & np.isfinite(value_array)
     if not np.any(finite):
         raise SeedingGuiError(f"No finite map points found for bathymetry variable '{variable_name}'.")
-    return x_array[finite], y_array[finite], value_array[finite]
+
+    x_finite = x_array[finite]
+    y_finite = y_array[finite]
+    values_finite = value_array[finite]
+
+    # Some source files contain repeated/fill coordinates (often at origin),
+    # which can distort triangulation. Collapse duplicates to one averaged value.
+    xy = np.column_stack((x_finite, y_finite))
+    unique_xy, inverse = np.unique(xy, axis=0, return_inverse=True)
+    if unique_xy.shape[0] == xy.shape[0]:
+        return x_finite, y_finite, values_finite
+
+    value_sums = np.bincount(inverse, weights=values_finite)
+    value_counts = np.bincount(inverse)
+    unique_values = value_sums / value_counts
+    return unique_xy[:, 0], unique_xy[:, 1], unique_values
 
 
 def update_config_for_file_points(
@@ -940,7 +963,7 @@ class SeedingGuiApp:
         self.fig, self.ax = plt.subplots(figsize=(12.4, 7.0))
         self.fig.subplots_adjust(left=0.07, right=0.66, bottom=0.30, top=0.90)
 
-        self.triangulation = mtri.Triangulation(self.view_data.x, self.view_data.y)
+        self.triangulation = _create_masked_triangulation(self.view_data.x, self.view_data.y, mtri_module=mtri)
         self.bathymetry_cmap, self.bathymetry_norm = bathymetry_colormap(
             self.colormap_name,
             vmin=self._bathymetry_vmin,
@@ -1601,6 +1624,45 @@ def _first_timestep_values(variable: Any) -> np.ndarray:
     return np.asarray(data.values)
 
 
+def _create_masked_triangulation(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    mtri_module: Any,
+) -> Any:
+    """Build a triangulation and mask triangles likely to be rendering artifacts."""
+
+    triangulation = mtri_module.Triangulation(x, y)
+    triangles = getattr(triangulation, 'triangles', None)
+    if triangles is None or len(triangles) == 0:
+        return triangulation
+
+    points = np.column_stack((np.asarray(x, dtype=float), np.asarray(y, dtype=float)))
+    triangle_points = points[triangles]
+    edge_01 = np.linalg.norm(triangle_points[:, 0] - triangle_points[:, 1], axis=1)
+    edge_12 = np.linalg.norm(triangle_points[:, 1] - triangle_points[:, 2], axis=1)
+    edge_20 = np.linalg.norm(triangle_points[:, 2] - triangle_points[:, 0], axis=1)
+    max_edge = np.maximum.reduce((edge_01, edge_12, edge_20))
+
+    q1, q3 = np.percentile(max_edge, (25.0, 75.0))
+    iqr = q3 - q1
+    if iqr > 0:
+        long_edge_threshold = q3 + 10.0 * iqr
+    else:
+        q95 = np.percentile(max_edge, 95.0)
+        if q3 > 0 and q95 > (3.0 * q3):
+            long_edge_threshold = 3.0 * q3
+        else:
+            long_edge_threshold = float('inf')
+
+    long_edge_mask = max_edge > long_edge_threshold
+    flat_mask = mtri_module.TriAnalyzer(triangulation).get_flat_tri_mask(min_circle_ratio=0.01)
+    combined_mask = np.asarray(flat_mask, dtype=bool) | np.asarray(long_edge_mask, dtype=bool)
+    if np.any(combined_mask):
+        triangulation.set_mask(combined_mask)
+    return triangulation
+
+
 def _polygon_path(polygon: list[tuple[float, float]]) -> Any:
     if len(polygon) < 3:
         raise SeedingGuiError('A polygon needs at least three clicked vertices.')
@@ -1626,17 +1688,80 @@ def _resolve_bathymetry_variable(
     raise SeedingGuiError(f'No bathymetry variable found. Tried {defaults}. Available variables: {available}')
 
 
-def _resolve_coordinate_variables(
+def _resolve_coordinate_arrays(
     dataset: Any,
     coordinate_candidates: tuple[tuple[str, str], ...],
-) -> tuple[str, str]:
+    *,
+    expected_size: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    available_pairs: list[tuple[str, str, np.ndarray, np.ndarray]] = []
     for x_name, y_name in coordinate_candidates:
         if x_name in dataset and y_name in dataset:
-            return x_name, y_name
+            x_values = np.asarray(dataset[x_name].values, dtype=float).reshape(-1)
+            y_values = np.asarray(dataset[y_name].values, dtype=float).reshape(-1)
+            available_pairs.append((x_name, y_name, x_values, y_values))
+            if expected_size is None:
+                return x_values, y_values
+
+            if x_values.size == y_values.size == expected_size:
+                return x_values, y_values
+
+    # SFINCS fallback: derive face centroids from node coordinates + face connectivity.
+    if (
+        expected_size is not None
+        and 'mesh2d_node_x' in dataset
+        and 'mesh2d_node_y' in dataset
+        and 'mesh2d_face_nodes' in dataset
+    ):
+        node_x = np.asarray(dataset['mesh2d_node_x'].values, dtype=float).reshape(-1)
+        node_y = np.asarray(dataset['mesh2d_node_y'].values, dtype=float).reshape(-1)
+        face_nodes_var = dataset['mesh2d_face_nodes']
+        face_nodes = np.asarray(face_nodes_var.values)
+        start_index = int(face_nodes_var.attrs.get('start_index', 0))
+        fill_value = face_nodes_var.encoding.get('_FillValue', face_nodes_var.attrs.get('_FillValue', -1))
+        face_x, face_y = _compute_face_centroids(
+            node_x,
+            node_y,
+            face_nodes,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
+        if face_x.size == face_y.size == expected_size:
+            return face_x, face_y
+
+    if available_pairs:
+        return available_pairs[0][2], available_pairs[0][3]
 
     tried = ', '.join(f"'{x_name}/{y_name}'" for x_name, y_name in coordinate_candidates)
     available = ', '.join(str(name) for name in dataset.variables)
     raise SeedingGuiError(f'Missing coordinate variable pair. Tried {tried}. Available variables: {available}')
+
+
+def _compute_face_centroids(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    face_nodes: np.ndarray,
+    *,
+    start_index: int,
+    fill_value: int | float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    normalized = np.asarray(face_nodes, dtype=np.int64) - int(start_index)
+    invalid = normalized < 0
+    if fill_value is not None:
+        invalid |= np.asarray(face_nodes) == fill_value
+    normalized[invalid] = -1
+
+    face_x = np.empty(normalized.shape[0], dtype=float)
+    face_y = np.empty(normalized.shape[0], dtype=float)
+    for idx, nodes in enumerate(normalized):
+        valid = nodes[nodes >= 0]
+        if valid.size == 0:
+            face_x[idx] = np.nan
+            face_y[idx] = np.nan
+            continue
+        face_x[idx] = float(np.mean(node_x[valid]))
+        face_y[idx] = float(np.mean(node_y[valid]))
+    return face_x, face_y
 
 
 def _get_populations(config: dict[str, Any]) -> list[dict[str, Any]]:
