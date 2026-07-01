@@ -78,4 +78,4 @@ For configuration details, start from the SFINCS example and the converter-speci
 
 ## Other models
 To add other models as input, you need to construct a format converter plugin as per the
-[Plugin Guidelines](../docs/developer/plugins.md).
+[Plugin Guidelines](../developer/plugins.md).
