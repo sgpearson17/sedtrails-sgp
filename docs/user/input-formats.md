@@ -4,9 +4,23 @@ This page collects the practical differences between the input model formats Sed
 
 Note: the format converter interpolates data at all U/V points to cell centers and flattens structured grids to 1D spatial vectors so downstream modules can treat all inputs consistently.
 
-## D-Flow FM
 
-D-Flow FM input is the most direct path through SedTRAILS. The seeding GUI and the simulation workflow expect a NetCDF-based flow field with cell-center coordinates and a bathymetry variable that can be used to preview the domain.
+## Input Models
+
+SedTRAILS computes particle pathways based on pre-existing hydrodynamic and/or sediment transport model output. At present we support output from several models:
+1. D-Flow FM
+2. Delft3D-4
+3. XBeach
+4. SFINCS
+
+In the sections below we provide information about the output settings required in these models in order to be used in SedTRAILS.
+
+
+## D-Flow FM
+```
+format: fm_netcdf
+```
+D-Flow FM input is the most direct path through SedTRAILS. The map output from D-Flow FM is written to binary `*.nc` files which can be directly read by SedTRAILS using the `fm_netcdf.py` format converter plugin. The seeding GUI and the simulation workflow expect a NetCDF-based flow field with cell-center coordinates and a bathymetry variable that can be used to preview the domain.
 
 Typical variables used by the GUI and runtime are:
 
@@ -15,14 +29,23 @@ Typical variables used by the GUI and runtime are:
 - `bedlevel` or `bed_level`
 
 ## Delft3D 4
+```
+format: d3d4_netcdf
+```
 
-Delft3D 4 input is not currently a supported SedTRAILS runtime format. The repository contains a Delft3D 4 converter scaffold, but it raises `NotImplementedError`, and `d3d4` is not a valid value for `general.input_model.format`.
+By default, the map output from Delft3D-4 is written to binary `trim-*.dat` files. At present it is not possible to directly read these files directly with Python, so it is better to instead write the map output as `*.nc` files. To enable `*.nc` output in Delft3D-4, add the following lines to the `*.mdf` file:
+```
+FlNcdf= #maphis#
+ncFormat=4
+```
+The resulting  `*.nc` file can then be directly read by SedTRAILS using the `d3d4_netcdf.py` format converter plugin.
 
-Convert Delft3D 4 results to one of the supported NetCDF-based formats before using them with SedTRAILS.
 
 ## XBeach
-
-We wrote this explicitly to work with `*_mean` variables only. Otherwise, especially in surfbeat mode, the global output provides randomly-phased long wave flow fields, which don't provide meaningful information on flow or transport for SedTRAILS- just instantaneous snapshots. This means that we work with `zb_mean`, which is the average bed level over that time avg interval (defined by `tintg` in the params file).
+```
+format: xbeach
+```
+The map output from D-Flow FM is written to binary `*.nc` files which can  be directly read by SedTRAILS using the `xbeach.py` format converter plugin. We wrote this explicitly to work with `*_mean` variables only. Otherwise, especially in surfbeat mode, the global output provides randomly-phased long wave flow fields, which don't provide meaningful information on flow or transport for SedTRAILS- just instantaneous snapshots. This means that we work with `zb_mean`, which is the average bed level over that time avg interval (defined by `tintg` in the params file).
 
 The variables expected in the output section of the XBeach `params.txt` file are:
 
@@ -46,8 +69,13 @@ cctot
 In practice, the GUI uses the spatial coordinates from `globalx` and `globaly`, and bathymetry preview defaults to `zb_mean` when it is available.
 
 ## SFINCS
-
-SFINCS input is supported through the same general configuration flow, but it has its own conventions for reference dates, grid layout, and file naming. The main thing to watch is whether the file contains the coordinate and time variables required by the converter and by any visualization path you plan to use.
+```
+format: sfincs
+```
+The map output from D-Flow FM is written to binary `*.nc` files which can  be directly read by SedTRAILS using the `sfincs.py` format converter plugin. SFINCS input is supported through the same general configuration flow, but it has its own conventions for reference dates, grid layout, and file naming. The main thing to watch is whether the file contains the coordinate and time variables required by the converter and by any visualization path you plan to use.
 
 For configuration details, start from the SFINCS example and the converter-specific documentation, then verify the exact variable names in your NetCDF file.
 
+## Other models
+To add other models as input, you need to construct a format converter plugin as per the
+[Plugin Guidelines](../docs/developer/plugins.md).

@@ -367,6 +367,78 @@ def test_load_bathymetry_view_data_supports_xbeach(tmp_path, monkeypatch):
     assert view_data.variable == 'zb_mean'
 
 
+def test_load_bathymetry_view_data_supports_d3d4_netcdf(tmp_path, monkeypatch):
+    """Bathymetry loading extracts Delft3D4 XZ/YZ and DPS0 values."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'd3d4_netcdf'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'XZ': (('m', 'n'), np.array([[0.0, 1.0], [2.0, 3.0]])),
+            'YZ': (('m', 'n'), np.array([[10.0, 11.0], [12.0, 13.0]])),
+            'DPS0': (('m', 'n'), np.array([[-5.0, -6.0], [-7.0, -8.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([0.0, 1.0, 2.0, 3.0]))
+    np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-5.0, -6.0, -7.0, -8.0]))
+    assert view_data.variable == 'DPS0'
+
+
+def test_load_bathymetry_view_data_supports_sfincs(tmp_path, monkeypatch):
+    """Bathymetry loading extracts SFINCS face coordinates and first-time zb values."""
+
+    config_file = tmp_path / 'config.yaml'
+    input_file = tmp_path / 'input.nc'
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'sfincs'}},
+                'inputs': {'data': str(input_file.name)},
+            }
+        ),
+        encoding='utf-8',
+    )
+    input_file.write_text('', encoding='utf-8')
+
+    dataset = xr.Dataset(
+        {
+            'mesh2d_face_x': (('mesh2d_nFaces',), np.array([100.0, 200.0, 300.0])),
+            'mesh2d_face_y': (('mesh2d_nFaces',), np.array([5.0, 15.0, 25.0])),
+            'zb': (('time', 'mesh2d_nFaces'), np.array([[-1.5, -2.0, -2.5], [-1.0, -1.5, -2.0]])),
+        }
+    )
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.seeding_gui._open_netcdf_dataset',
+        lambda _: dataset,
+    )
+
+    view_data = load_bathymetry_view_data(config_file)
+
+    np.testing.assert_allclose(view_data.x, np.array([100.0, 200.0, 300.0]))
+    np.testing.assert_allclose(view_data.y, np.array([5.0, 15.0, 25.0]))
+    np.testing.assert_allclose(view_data.values, np.array([-1.5, -2.0, -2.5]))
+    assert view_data.variable == 'zb'
+
+
 def test_load_bathymetry_view_data_filters_xbeach_cutout_points(tmp_path, monkeypatch):
     """Bathymetry loading omits non-finite XBeach cutout coordinates."""
 

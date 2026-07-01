@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import yaml
@@ -18,14 +18,41 @@ GRID_CANDIDATE_BATCH_SIZE = 100_000
 DEFAULT_GRID_MAX_CANDIDATES = 2_000_000
 MAP_ZOOM_IN_FACTOR = 0.5
 MAP_ZOOM_OUT_FACTOR = 2.0
-SUPPORTED_GUI_INPUT_FORMATS: dict[str, dict[str, tuple[str, ...]]] = {
+
+
+class GuiInputFormatSpec(TypedDict):
+    coordinate_candidates: tuple[tuple[str, str], ...]
+    bathymetry_variables: tuple[str, ...]
+
+
+SUPPORTED_GUI_INPUT_FORMATS: dict[str, GuiInputFormatSpec] = {
     'fm_netcdf': {
-        'coordinates': ('net_xcc', 'net_ycc'),
+        'coordinate_candidates': (
+            ('net_xcc', 'net_ycc'),
+            ('mesh2d_face_x', 'mesh2d_face_y'),
+        ),
         'bathymetry_variables': ('bedlevel', 'bed_level'),
     },
+    'd3d4_netcdf': {
+        'coordinate_candidates': (
+            ('XZ', 'YZ'),
+            ('XCOR', 'YCOR'),
+        ),
+        'bathymetry_variables': ('DPS0', 'DP0', 'bedlevel', 'bed_level'),
+    },
     'xbeach': {
-        'coordinates': ('globalx', 'globaly'),
+        'coordinate_candidates': (
+            ('globalx', 'globaly'),
+            ('x', 'y'),
+        ),
         'bathymetry_variables': ('zb_mean', 'zb'),
+    },
+    'sfincs': {
+        'coordinate_candidates': (
+            ('mesh2d_face_x', 'mesh2d_face_y'),
+            ('x', 'y'),
+        ),
+        'bathymetry_variables': ('zb', 'bedlevel', 'bed_level'),
     },
 }
 
@@ -257,11 +284,10 @@ def load_bathymetry_view_data(
 
     dataset = _open_netcdf_dataset(input_file)
 
-    coordinate_x, coordinate_y = format_spec['coordinates']
-    missing_coordinates = [name for name in (coordinate_x, coordinate_y) if name not in dataset]
-    if missing_coordinates:
-        missing = ', '.join(missing_coordinates)
-        raise SeedingGuiError(f'Missing coordinate variable(s): {missing}')
+    coordinate_x, coordinate_y = _resolve_coordinate_variables(
+        dataset,
+        format_spec['coordinate_candidates'],
+    )
 
     variable_name = _resolve_bathymetry_variable(
         dataset,
@@ -1598,6 +1624,19 @@ def _resolve_bathymetry_variable(
         raise SeedingGuiError(f"Requested bathymetry variable '{requested}' was not found. Available variables: {available}")
     defaults = ' and '.join(f"'{name}'" for name in default_candidates)
     raise SeedingGuiError(f'No bathymetry variable found. Tried {defaults}. Available variables: {available}')
+
+
+def _resolve_coordinate_variables(
+    dataset: Any,
+    coordinate_candidates: tuple[tuple[str, str], ...],
+) -> tuple[str, str]:
+    for x_name, y_name in coordinate_candidates:
+        if x_name in dataset and y_name in dataset:
+            return x_name, y_name
+
+    tried = ', '.join(f"'{x_name}/{y_name}'" for x_name, y_name in coordinate_candidates)
+    available = ', '.join(str(name) for name in dataset.variables)
+    raise SeedingGuiError(f'Missing coordinate variable pair. Tried {tried}. Available variables: {available}')
 
 
 def _get_populations(config: dict[str, Any]) -> list[dict[str, Any]]:

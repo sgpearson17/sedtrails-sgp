@@ -142,7 +142,7 @@
         },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, d3d4_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",

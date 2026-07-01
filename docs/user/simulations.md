@@ -153,40 +153,6 @@ sedtrails run -c ./examples/sedtrails-example.yaml
 The simulation will start running, and a dashboard will open if it is enabled in the configuration. Output is written to `examples/results/sedtrails_results.nc` unless you change `outputs.directory`.
 :::
 
-## Input Models
-
-SedTRAILS computes particle pathways based on pre-existing hydrodynamic and/or sediment transport model output. At present we support output from several models:
-1. D-Flow FM
-2. XBeach
-3. SFINCS
-4. Delft3D-4
-
-In the sections below we provide information about the output settings required in these models in order to be used in SedTRAILS.
-
-### 1. D-Flow FM
-The map output from D-Flow FM is written to binary `*.nc` files which can be directly read by SedTRAILS using the `fm_netcdf.py` format converter plugin.
-
-### 2. XBeach
-The map output from D-Flow FM is written to binary `*.nc` files which can  be directly read by SedTRAILS using the `xbeach.py` format converter plugin. 
-
-### 3. SFINCS
-The map output from D-Flow FM is written to binary `*.nc` files which can  be directlyread by SedTRAILS using the `sfincs.py` format converter plugin.
-
-### 4. Delft3D-4
-By default, the map output from Delft3D-4 is written to binary `trim-*.dat` files. At present it is not possible to directly read these files in with Python, so it is better to instead write the map output as `*.nc` files. To enable `*.nc` output in Delft3D-4, add the following lines to the `*.mdf` file:
-```
-FlNcdf= #maphis#
-ncFormat=4
-```
-The resulting  `*.nc` file can then be directly read by SedTRAILS using the `d3d4_netcdf.py` format converter plugin.
-
-Note: the format converter interpolates data at all U/V points to cell centers and
-flattens structured grids to 1D spatial vectors so downstream modules can treat
-all inputs consistently.
-
-### Other models
-To add other models as input, you need to construct a format converter plugin as per the
-[Plugin Guidelines](../docs/developer/plugins.md).
 ## Restarting a Simulation
 
 If a simulation is interrupted or needs to continue from a specific point, you can generate a restart configuration that uses the last valid particle positions from a previous run as seed points for a new simulation.
