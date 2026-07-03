@@ -358,7 +358,7 @@ def _distance_line_segments(
     y_data: np.ndarray,
     time_data: np.ndarray,
     min_time: float,
-) -> tuple[list[np.ndarray], list[np.ndarray], dict[int, tuple[np.ndarray, np.ndarray]]]:
+) -> tuple[list[np.ndarray], np.ndarray, dict[int, tuple[np.ndarray, np.ndarray]]]:
     distance_segments = []
     distance_indices = []
     particle_distances = {}
@@ -402,12 +402,11 @@ def _resolve_output_file(ds: xr.Dataset, save_plot: bool, output_dir, output_fil
         return Path(output_file)
     if not save_plot:
         return None
-    if output_dir is None or output_dir == '.':
+    output_dir_path = Path(output_dir) if output_dir is not None else Path('.')
+    if output_dir is None or output_dir_path == Path('.'):
         source_file = ds.encoding.get('source', '.')
-        output_dir = Path(source_file).parent
-    else:
-        output_dir = Path(output_dir)
-    return output_dir / 'particle_trajectories.png'
+        output_dir_path = Path(source_file).parent
+    return output_dir_path / 'particle_trajectories.png'
 
 
 def _normalize_panels(panels: str | list[str] | tuple[str, ...]) -> list[str]:
