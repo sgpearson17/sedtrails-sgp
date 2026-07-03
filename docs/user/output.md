@@ -171,8 +171,8 @@ The following options can be used to save and customize the plot:
 
 - ``--file`` or ``-f``: Path to the SedTRAILS NetCDF file to visualize. By default, it expects ``sedtrails_results.nc`` in the current directory.
 - ``--output``: Exact plot file path to write. When used, the plot is saved directly and no figure window is opened by default.
-- ``--save`` or ``-s``: Save the figure as ``particle_trajectories.png``.
-- ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--save`` is used. The default is the current directory.
+ - ``--save``/``--no-save`` or ``-s``: Save the figure as ``particle_trajectories.png`` (default). Use ``--no-save`` to display the figure instead.
+ - ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--output`` is not provided. Defaults to the NetCDF file directory.
 - ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
 - ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
 - ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.

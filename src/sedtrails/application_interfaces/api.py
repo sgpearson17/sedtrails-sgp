@@ -305,8 +305,8 @@ def plot_trajectories(
     save : bool, optional
         Whether to save the plot as a PNG file. Default is False (display only).
     output_dir : str, optional
-        Directory where the plot will be saved if save=True.
-        Default is current directory.
+        Directory where the plot will be saved if save=True (and output_file is not set).
+        Default ``'.'`` uses the NetCDF file directory when available.
     output_file : str, optional
         Exact path where the plot should be written. This enables headless
         file output and takes precedence over ``save``/``output_dir``.
