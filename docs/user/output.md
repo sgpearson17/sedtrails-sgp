@@ -151,6 +151,18 @@ Use ``sedtrails viz trajectories`` to plot the saved ``x``, ``y``, and ``time`` 
 sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc
 ```
 
+By default, the command draws only the spatial trajectory panel so it remains usable for large particle sets. Write directly to a file and plot a deterministic sample for the fastest workflow:
+
+```text
+sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc --output trajectories.png --max-particles 2000 --markers end
+```
+
+Use ``--panels all`` to draw the previous four-panel summary, or request selected optional panels:
+
+```text
+sedtrails viz trajectories -f C:\your-filepath-here\sedtrails_results.nc --panels spatial,population --output trajectories.png
+```
+
 ![SedTRAILS trajectory example](../_static/img/example-trajectory-plots.png)
 
 The built-in trajectory plotter reads the saved particle coordinates directly. Its distance panel is computed from each particle's saved ``x`` and ``y`` positions relative to that particle's first valid position; it does not use ``covered_distance``.
@@ -158,8 +170,16 @@ The built-in trajectory plotter reads the saved particle coordinates directly. I
 The following options can be used to save and customize the plot:
 
 - ``--file`` or ``-f``: Path to the SedTRAILS NetCDF file to visualize. By default, it expects ``sedtrails_results.nc`` in the current directory.
+- ``--output``: Exact plot file path to write. When used, the plot is saved directly and no figure window is opened by default.
 - ``--save`` or ``-s``: Save the figure as ``particle_trajectories.png``.
 - ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--save`` is used. The default is the current directory.
+- ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
+- ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
+- ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.
+- ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default preserves both start and end markers.
+- ``--marker-size``: Marker size for start/end points. The default is ``12``, which is smaller than earlier SedTRAILS versions.
+- ``--panels``: Panels to draw. The default is ``spatial``. Use ``all`` for the previous four-panel plot, or a comma-separated subset of ``spatial``, ``distance``, ``population``, and ``population-distance``.
+- ``--show`` or ``--no-show``: Override whether an interactive figure window is displayed. By default, saved plots are not shown and unsaved plots are shown.
 - ``--help`` or ``-h``: Show the command help.
 
 :::warning
