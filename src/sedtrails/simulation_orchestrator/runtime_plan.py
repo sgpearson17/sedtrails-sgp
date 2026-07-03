@@ -156,6 +156,12 @@ def _build_population_runtime_plan(
     transport_probability_method = population_config.get(
         'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
     )
+    if method_name == 'passive_tracer':
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
     physics_config = build_physics_config(base_physics_config, population_config, method_name, method_config)
     tracer_config = {method_name: dict(method_config)}
     converter = PhysicsConverter(physics_config, tracer_config)
@@ -272,6 +278,26 @@ def _get_flow_field_names(
         )
 
     return tuple(flow_field_names)
+
+
+def _validate_passive_tracer_configuration(
+    population_index: int,
+    population_config: Mapping[str, Any],
+    transport_probability_method: str,
+) -> None:
+    particle_type = population_config.get('particle_type')
+    if particle_type != 'passive':
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" but particle_type is '
+            f'{particle_type!r}. Set particle_type to "passive".'
+        )
+
+    if transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" with '
+            f'transport_probability={transport_probability_method!r}. Only "no_probability" is allowed '
+            'for passive_tracer.'
+        )
 
 
 def _physics_config_to_dict(config: PhysicsConfig | Mapping[str, Any]) -> dict[str, Any]:

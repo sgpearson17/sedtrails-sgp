@@ -330,6 +330,12 @@ The `characteristics` object varies by `particle_type`:
 
 Exactly one tracer method must be specified per population. Supported method keys are `vanwesten`, `soulsby`, and `passive_tracer`.
 
+For `passive_tracer` populations:
+
+- `particle_type` must be `passive`.
+- `transport_probability` must be `no_probability`.
+- `seeding.burial_depth` is not supported and must be omitted.
+
 #### Van Westen Method
 
 | Parameter         | Type   | Required | Default | Description                                                                           |
@@ -356,6 +362,8 @@ Exactly one tracer method must be specified per population. Supported method key
 | ----------------- | ----- | -------- | ----------------------------- | ----------------------------------------------------- |
 | `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
+`passive_tracer` is intended for passive particles only. Configure `particle_type: passive`, keep `transport_probability: no_probability`, and omit `seeding.burial_depth`.
+
 (particle-seeding)=
 ### Particle Seeding
 
@@ -370,7 +378,7 @@ Controls where, when, and how particles are released.
 | `lifespan`      | number  | Optional     | `9e+99`         | Maximum particle lifetime [seconds]. Use very large value for unlimited.                      |
 | `release_start` | string  | Optional     | simulation start | Release start time for the population (format: `YYYY-MM-DD HH:MM:SS`). Converted to seconds relative to `general.input_model.reference_date`. |
 | `release_stop`  | string  | Optional     | -               | Release stop time for continuous release. Defaults to immediate stop after first release.     |
-| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration. See [Burial Depth](#burial-depth).                        |
+| `burial_depth`  | object  | Optional     | -               | Initial burial depth configuration (not allowed for `passive_tracer`). See [Burial Depth](#burial-depth). |
 | `strategy`      | object  | **Required** | -               | Spatial release strategy. See [Release Strategies](#release-strategies).                      |
 
 (burial-depth)=

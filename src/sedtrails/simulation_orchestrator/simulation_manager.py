@@ -1155,7 +1155,24 @@ class Simulation:
             seeding_field_data = self.format_converter.get_seeding_field_data()
 
         populations_config = self._controller.get('particles.populations', [])
-        seeder = ParticleSeeder(populations_config, config_dir=Path(self._config_file).parent)  # intialize seeder with population config
+        raw_populations = []
+        raw_particles = getattr(self._controller, 'raw_config_data', {}).get('particles', {})
+        if isinstance(raw_particles, dict):
+            raw_populations = raw_particles.get('populations', [])
+        for population_index, population_config in enumerate(populations_config):
+            tracer_methods = population_config.get('tracer_methods', {})
+            if not isinstance(tracer_methods, dict) or 'passive_tracer' not in tracer_methods:
+                continue
+
+            raw_population = raw_populations[population_index] if population_index < len(raw_populations) else {}
+            raw_seeding = raw_population.get('seeding', {}) if isinstance(raw_population, dict) else {}
+            if isinstance(raw_seeding, dict) and 'burial_depth' in raw_seeding:
+                raise ConfigurationError(
+                    f'Population {population_index} uses tracer method "passive_tracer" but defines '
+                    'seeding.burial_depth. Passive tracer does not support burial depth; remove '
+                    'seeding.burial_depth from this population.'
+                )
+        seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
@@ -1348,8 +1365,11 @@ class Simulation:
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
-                        mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
+                    if tracer_plan.transport_probability_method == 'no_probability':
+                        mixing_depth = None
+                    else:
+                        with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
+                            mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
                     with self._profile_section('get_scalar_field_bounds.bed_level'):
                         bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 

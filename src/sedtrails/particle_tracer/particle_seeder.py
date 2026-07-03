@@ -379,10 +379,11 @@ class PopulationConfig:
         self.particle_type = find_value(self.population_config, 'particle_type', '')
         if not self.particle_type:
             raise MissingConfigurationParameter('"particle_type" is not defined in the population configuration.')
-        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', {})
-        if not _burial_depth:
-            raise MissingConfigurationParameter('"burial_depth" is not defined in the population configuration.')
-        self.burial_depth = _burial_depth
+        _burial_depth = find_value(self.population_config, 'seeding.burial_depth', None)
+        if _burial_depth is None:
+            self.burial_depth = {'constant': 0.0}
+        else:
+            self.burial_depth = _burial_depth
         self.remove_permanently_buried = bool(
             find_value(self.population_config, 'seeding.remove_permanently_buried', False)
         )
@@ -1307,7 +1308,7 @@ class ParticlePopulation:
                 self.particles[status_name] = np.zeros(0, dtype=bool)
             return
 
-        transport_probability_method = self.population_config.population_config['transport_probability']
+        transport_probability_method = self.population_config.population_config.get('transport_probability', 'no_probability')
         if transport_probability_method == 'no_probability':
             self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
         else:
