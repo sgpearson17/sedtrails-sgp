@@ -176,8 +176,8 @@ The following options can be used to save and customize the plot:
 - ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
 - ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
 - ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.
-- ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default preserves both start and end markers.
-- ``--marker-size``: Marker size for start/end points. The default is ``12``, which is smaller than earlier SedTRAILS versions.
+- ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default is ``end``.
+- ``--marker-size``: Marker size for start/end points. The default is ``3``.
 - ``--panels``: Panels to draw. The default is ``spatial``. Use ``all`` for the previous four-panel plot, or a comma-separated subset of ``spatial``, ``distance``, ``population``, and ``population-distance``.
 - ``--show`` or ``--no-show``: Override whether an interactive figure window is displayed. By default, saved plots are not shown and unsaved plots are shown.
 - ``--help`` or ``-h``: Show the command help.
