@@ -257,11 +257,8 @@ def load_bathymetry_view_data(
 
     dataset = _open_netcdf_dataset(input_file)
 
-    coordinate_x, coordinate_y = format_spec['coordinates']
-    missing_coordinates = [name for name in (coordinate_x, coordinate_y) if name not in dataset]
-    if missing_coordinates:
-        missing = ', '.join(missing_coordinates)
-        raise SeedingGuiError(f'Missing coordinate variable(s): {missing}')
+    x_name = _resolve_coordinate_variable(dataset, 'x')
+    y_name = _resolve_coordinate_variable(dataset, 'y')
 
     variable_name = _resolve_bathymetry_variable(
         dataset,
@@ -270,8 +267,8 @@ def load_bathymetry_view_data(
     )
     try:
         values = _first_timestep_values(dataset[variable_name])
-        x = np.asarray(dataset[coordinate_x].values, dtype=float).reshape(-1)
-        y = np.asarray(dataset[coordinate_y].values, dtype=float).reshape(-1)
+        x = np.asarray(dataset[x_name].values, dtype=float).reshape(-1)
+        y = np.asarray(dataset[y_name].values, dtype=float).reshape(-1)
     except Exception as exc:
         raise SeedingGuiError(f'Could not extract map data: {exc}') from exc
     finally:
@@ -1583,21 +1580,35 @@ def _polygon_path(polygon: list[tuple[float, float]]) -> Any:
     return MplPath(np.asarray(polygon, dtype=float))
 
 
-def _resolve_bathymetry_variable(
-    dataset: Any,
-    requested: str | None,
-    *,
-    default_candidates: tuple[str, ...] = ('bedlevel', 'bed_level'),
-) -> str:
-    candidates = [requested] if requested else list(default_candidates)
+_COORDINATE_ALTERNATIVES: dict[str, list[str]] = {
+    'x': ['net_xcc', 'FlowElem_xcc', 'mesh2d_face_x', 'xcc', 'x'],
+    'y': ['net_ycc', 'FlowElem_ycc', 'mesh2d_face_y', 'ycc', 'y'],
+}
+
+
+def _resolve_coordinate_variable(dataset: Any, axis: str) -> str:
+    """Return the first matching coordinate variable name for the given axis."""
+    candidates = _COORDINATE_ALTERNATIVES.get(axis, [])
+    for candidate in candidates:
+        if candidate in dataset:
+            return candidate
+    available = ', '.join(str(name) for name in list(dataset.coords) + list(dataset.data_vars))
+    tried = ', '.join(candidates)
+    raise SeedingGuiError(
+        f"No {axis}-coordinate variable found. Tried: {tried}. Available variables: {available}"
+    )
+
+
+def _resolve_bathymetry_variable(dataset: Any, requested: str | None) -> str:
+    candidates = [requested] if requested else ['bedlevel', 'bed_level', 'mesh2d_flowelem_bl']
     for candidate in candidates:
         if candidate and candidate in dataset:
             return candidate
     available = ', '.join(str(name) for name in dataset.data_vars)
     if requested:
         raise SeedingGuiError(f"Requested bathymetry variable '{requested}' was not found. Available variables: {available}")
-    defaults = ' and '.join(f"'{name}'" for name in default_candidates)
-    raise SeedingGuiError(f'No bathymetry variable found. Tried {defaults}. Available variables: {available}')
+    tried = ', '.join(candidates)
+    raise SeedingGuiError(f"No bathymetry variable found. Tried: {tried}. Available variables: {available}")
 
 
 def _get_populations(config: dict[str, Any]) -> list[dict[str, Any]]:

@@ -235,98 +235,55 @@ class FormatPlugin(BaseFormatPlugin):
 
         return sedtrails_data
 
-    def get_seeding_field_data(self):
-        """Return active geometry required for particle seeding.
+    _COORDINATE_ALTERNATIVES: dict[str, list[str]] = {
+        'x': ['net_xcc', 'FlowElem_xcc', 'mesh2d_face_x', 'xcc', 'x'],
+        'y': ['net_ycc', 'FlowElem_ycc', 'mesh2d_face_y', 'ycc', 'y'],
+    }
 
-        Returns
-        -------
-        types.SimpleNamespace
-            Object with ``x`` and ``y`` node coordinates, active triangular
-            ``face_node_connectivity``, optional
-            ``boundary_edge_classification`` metadata, and
-            ``face_node_fill_value``.
+    _VARIABLE_ALTERNATIVES: dict[str, list[str]] = {
+        'bed_level':              ['bedlevel', 'bed_level', 'mesh2d_flowelem_bl'],
+        'water_depth':            ['waterdepth', 'water_depth', 'mesh2d_s1'],
+        'flow_velocity_x':        ['sea_water_x_velocity', 'mesh2d_ucx'],
+        'flow_velocity_y':        ['sea_water_y_velocity', 'mesh2d_ucy'],
+        'mean_bed_shear_stress':  ['mean_bss_magnitude', 'mesh2d_taus'],
+        'max_bed_shear_stress':   ['max_bss_magnitude', 'mesh2d_taus'],
+        'bed_load_transport_x':   ['bedload_x_comp'],
+        'bed_load_transport_y':   ['bedload_y_comp'],
+        'suspended_transport_x':  ['susload_x_comp'],
+        'suspended_transport_y':  ['susload_y_comp'],
+        'sediment_concentration': ['suspended_sed_conc'],
+    }
 
-        Raises
-        ------
-        KeyError
-            If the required ``net_xcc`` or ``net_ycc`` variables are missing.
-        FileNotFoundError
-            If configured inner-boundary or boundary-class polygon files do
-            not exist.
-        ValueError
-            If configured Tekal polygon blocks are malformed.
-        """
-        self.load()
-        if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
-            raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
-
-        x = self.input_data['net_xcc'].values
-        y = self.input_data['net_ycc'].values
-        connectivity = self._active_triangular_connectivity(x, y)
-        boundary_edge_classification = self._boundary_edge_classification(x, y, connectivity)
-        return SimpleNamespace(
-            x=x,
-            y=y,
-            face_node_connectivity=connectivity,
-            boundary_edge_classification=boundary_edge_classification,
-            face_node_fill_value=-1,
+    def _resolve_coordinate(self, axis: str) -> str:
+        """Return the first matching coordinate variable name for the given axis."""
+        candidates = self._COORDINATE_ALTERNATIVES.get(axis, [])
+        for candidate in candidates:
+            if candidate in self.input_data:
+                return candidate
+        available = ', '.join(str(k) for k in self.input_data.keys())
+        tried = ', '.join(candidates)
+        raise KeyError(
+            f"No {axis}-coordinate variable found. Tried: {tried}. Available variables: {available}"
         )
+
+    def _resolve_variable(self, key: str) -> str:
+        """Return the first matching dataset variable name for a logical field name."""
+        candidates = self._VARIABLE_ALTERNATIVES.get(key, [])
+        for candidate in candidates:
+            if candidate in self.input_data:
+                return candidate
+        # Fall back to first candidate name so the existing 'zeros' fallback still works.
+        return candidates[0] if candidates else key
 
     def get_seeding_coordinates(self):
         """
         Return only the spatial coordinates required for particle seeding.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray]
-            X and Y coordinates used for particle seeding.
         """
         self.load()
 
-        if 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
-            raise KeyError("Required variables 'net_xcc' and/or 'net_ycc' not found in dataset")
-
-        return self.input_data['net_xcc'].values, self.input_data['net_ycc'].values
-
-    def get_max_exposure_depth_fields(self):
-        """
-        Compute per-node maximum erosion depth and maximum bed shear stress over the
-        full dataset (all time steps), without loading every time step into memory.
-
-        Returns
-        -------
-        max_erosion : np.ndarray, shape (n_nodes,)
-            Maximum erosion depth per node [m]: max(bed_level_t0 - bed_level_t) over all t,
-            clipped to >= 0.  Zero for nodes with a static bed level.
-        max_bss : np.ndarray, shape (n_nodes,)
-            Maximum bed shear stress per node over all time steps [N/m²].
-        """
-        self.load()
-
-        bed_var = 'bedlevel'
-        bss_var = 'max_bss_magnitude'
-
-        if bed_var not in self.input_data:
-            raise KeyError(f"Required variable '{bed_var}' not found in dataset")
-        if bss_var not in self.input_data:
-            raise KeyError(f"Required variable '{bss_var}' not found in dataset")
-
-        bed = self.input_data[bed_var]
-        bss = self.input_data[bss_var]
-
-        if 'time' in bed.dims:
-            bed_initial = bed.isel(time=0).values.astype(float)
-            bed_min = bed.min(dim='time').values.astype(float)
-            max_erosion = np.maximum(bed_initial - bed_min, 0.0)
-        else:
-            max_erosion = np.zeros(np.asarray(bed.values).shape, dtype=float)
-
-        if 'time' in bss.dims:
-            max_bss = bss.max(dim='time').values.astype(float)
-        else:
-            max_bss = np.asarray(bss.values, dtype=float)
-
-        return max_erosion, max_bss
+        x_name = self._resolve_coordinate('x')
+        y_name = self._resolve_coordinate('y')
+        return self.input_data[x_name].values, self.input_data[y_name].values
 
     def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
         """
@@ -508,21 +465,11 @@ class FormatPlugin(BaseFormatPlugin):
             else slice(None)
         )
 
-        # Variable mapping for DFM files
+        # Variable mapping for DFM files (resolved with fallbacks for alternative naming conventions)
         variable_map = {
-            'x': 'net_xcc',  # X-coordinates
-            'y': 'net_ycc',  # Y-coordinates
-            'bed_level': 'bedlevel',  # Bed level
-            'water_depth': 'waterdepth',  # Water depth
-            'flow_velocity_x': 'sea_water_x_velocity',  # X-component of flow velocity
-            'flow_velocity_y': 'sea_water_y_velocity',  # Y-component of flow velocity
-            'mean_bed_shear_stress': 'mean_bss_magnitude',  # Mean bed shear stress
-            'max_bed_shear_stress': 'max_bss_magnitude',  # Max bed shear stress
-            'bed_load_transport_x': 'bedload_x_comp',  # X-component of bed load sediment transport
-            'bed_load_transport_y': 'bedload_y_comp',  # Y-component of bed load sediment transport
-            'suspended_transport_x': 'susload_x_comp',  # X-component of suspended sediment transport
-            'suspended_transport_y': 'susload_y_comp',  # Y-component of suspended sediment transport
-            'sediment_concentration': 'suspended_sed_conc',  # Suspended sediment concentration
+            'x': self._resolve_coordinate('x'),
+            'y': self._resolve_coordinate('y'),
+            **{key: self._resolve_variable(key) for key in self._VARIABLE_ALTERNATIVES},
         }
 
         # Extract data from dataset

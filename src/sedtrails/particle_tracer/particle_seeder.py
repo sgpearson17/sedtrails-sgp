@@ -353,6 +353,7 @@ class PopulationConfig:
     """
 
     population_config: Dict  # configuration for a single population
+    config_dir: Any = field(default=None)  # directory of the config file, for resolving relative paths
     strategy: str = field(init=False)
     particle_type: str = field(init=False)
     release_start: str | int | float = field(init=False, default=DEFAULT_RELEASE_START)
@@ -731,6 +732,14 @@ class FilePointsStrategy(SeedingStrategy):
 
         # Windows path safety
         path = os.path.expanduser(str(path))
+
+        # Resolve relative paths against the config file directory
+        if not os.path.isabs(path):
+            config_dir = getattr(config, 'config_dir', None)
+            if config_dir is not None:
+                resolved = os.path.join(str(config_dir), path)
+                if os.path.isfile(resolved):
+                    path = resolved
 
         x_col = settings.get('x_col', 0)
         y_col = settings.get('y_col', 1)
@@ -1433,8 +1442,9 @@ class ParticleSeeder:
 
     """
 
-    def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any]):
+    def __init__(self, population_configs: List[Dict[str, Any]] | Dict[str, Any], config_dir: Any = None):
         self.population_configs = population_configs
+        self.config_dir = config_dir
 
     def seed(self, sedtrails_data: HasFieldCoordinates) -> List[ParticlePopulation]:
         """
@@ -1468,7 +1478,7 @@ class ParticleSeeder:
             boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
         )
         for pop_config in self.population_configs:
-            config = PopulationConfig(population_config=pop_config)
+            config = PopulationConfig(population_config=pop_config, config_dir=self.config_dir)
             pop = ParticlePopulation(
                 field_x=sedtrails_data.x,
                 field_y=sedtrails_data.y,
