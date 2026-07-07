@@ -8,9 +8,9 @@ This document provides an overview of how to create and integrate plugins into S
 
 ## Creating a Plugin
 
-We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](dev-environment.md).
+We assume you have set up a development environment for SedTRAILS. If you haven't done this yet, please refer to the [Developer Guide](./developer/dev-environment.md).
 In essence, a plugin for the  Physics Converter must implement a class that inherits from `BasePhysicsPlugin` and implements the `add_physics` method.
-The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversiont) to the `SedtrailsData` object itself.
+The `add_physics` method takes as input a `SedtrailsData` object, which contains data to perform the physics calculations, and add the results (physics conversion) to the `SedtrailsData` object itself.
 To **create a physics plugin for SedTRAILS**, follow these steps:
 
 1. Create a new Python file for your plugin in `src/sedtrails/transport_converter/plugins/physics/`. For example, `myplugin.py`.
@@ -164,3 +164,12 @@ sim.validate_config()  # this should pass without errors
 Validation of the configuration file will fail if the plugin is not correctly registered in the JSON schema, but not if the plugin itself has errors. Make sure to test your plugin thoroughly.
 If you need help, please reach out the [SedTRAILS Team in GitHub](https://github.com/sedtrails/sedtrails/issues).
 :::
+
+## Delft3D4 NetCDF Notes
+
+The Delft3D4 NetCDF format stores vector components on staggered grids (U/V points)
+while scalars live on cell centers. The Delft3D4 converter interpolates these
+vector components to cell centers during conversion so that all quantities share
+the same coordinate grid for downstream SedTRAILS computations. Structured
+grids are flattened to 1D spatial vectors to match the SedTRAILS data model and
+avoid misinterpreting M/N dimensions as sediment fractions.

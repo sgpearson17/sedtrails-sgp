@@ -99,11 +99,12 @@
           "type": "string",
           "enum": [
             "fm_netcdf",
+            "d3d4_netcdf",
             "xbeach",
             "sfincs"
           ],
           "default": "fm_netcdf",
-          "description": "'fm_netcdf' = D-Flow FM, 'xbeach' = XBeach, 'sfincs' = SFINCS"
+          "description": "'fm_netcdf' = D-Flow FM, 'd3d4_netcdf' = Delft3D-4 NetCDF, 'xbeach' = XBeach, 'sfincs' = SFINCS"
         },
         "reference_date": {
           "type": "string",
@@ -141,7 +142,7 @@
         },
         "input_model": {
           "$ref": "#/$defs/input_model_type",
-          "description": "input model for the simulations (supported formats: fm_netcdf, xbeach, sfincs)"
+          "description": "input model for the simulations (supported formats: fm_netcdf, d3d4_netcdf, xbeach, sfincs)"
         },
         "n_runs": {
           "type": "integer",

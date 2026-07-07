@@ -98,6 +98,31 @@ Run all physics lib tests:
 python -m pytest tests/transport_converter/test_physics_lib.py -v
 ```
 
+## Integration Tests and Diagnostic Plots
+
+Some converter tests are marked as integration tests and rely on sample datasets
+stored in the repository (for example, Delft3D4 NetCDF conversion uses
+``sample-data/trim-inlet.nc``). Run these tests with:
+
+```bash
+python -m pytest -m integration tests/transport_converter/plugins/test_d3d4_netcdf.py
+```
+
+The Delft3D4 converter test can optionally emit diagnostic plots for visual
+inspection. Plotting is opt-in and controlled via environment variables:
+
+- ``SEDTRAILS_PLOT_DIR``: directory where plots are written. If not set, no
+    plots are produced.
+- ``SEDTRAILS_PLOT_TIME_INDEX``: optional time index to plot (default: 0).
+
+Example:
+
+```bash
+set SEDTRAILS_PLOT_DIR=tests_output/plots
+set SEDTRAILS_PLOT_TIME_INDEX=10
+python -m pytest -m integration tests/transport_converter/plugins/test_d3d4_netcdf.py
+```
+
 ## Adding Your Own Known Value Tests
 
 1. **Collect your known input/output data**: Gather the specific parameter values and expected results you want to test.
