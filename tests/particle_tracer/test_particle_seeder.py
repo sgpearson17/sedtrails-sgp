@@ -1592,6 +1592,36 @@ class TestParticlePopulation:
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
 
+    def test_update_status_no_probability_does_not_require_mixing_depth(self, monkeypatch):
+        """No-probability mode should remain independent from mixing-depth fields."""
+        config = PopulationConfig(
+            {
+                'name': 'No Probability Population',
+                'particle_type': 'sand',
+                'transport_probability': 'no_probability',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5']}},
+                    'quantity': 1,
+                    'release_start': '0',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+            reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+        )
+        population._current_time = 0.0
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_buried'], np.array([False]))
+
+
     def test_update_status_reuses_cached_particle_locations(self, monkeypatch):
         """Unchanged particles should not be relocated on every status update."""
         population = _single_particle_population(release_start='0')

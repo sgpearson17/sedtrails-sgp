@@ -286,6 +286,14 @@ def plot_trajectories(
     results_file: str,
     save: bool = False,
     output_dir: str = '.',
+    output_file: str | None = None,
+    max_particles: int | None = None,
+    sample_fraction: float | None = None,
+    sample_seed: int = 0,
+    markers: str = 'start-end',
+    marker_size: float = 12.0,
+    panels: str = 'spatial',
+    show: bool | None = None,
 ) -> None:
     """
     Plot particle trajectories from a SedTRAILS NetCDF results file.
@@ -297,8 +305,31 @@ def plot_trajectories(
     save : bool, optional
         Whether to save the plot as a PNG file. Default is False (display only).
     output_dir : str, optional
-        Directory where the plot will be saved if save=True.
-        Default is current directory.
+        Directory where the plot will be saved if save=True (and output_file is not set).
+        Default ``'.'`` uses the NetCDF file directory when available.
+    output_file : str, optional
+        Exact path where the plot should be written. This enables headless
+        file output and takes precedence over ``save``/``output_dir``.
+    max_particles : int, optional
+        Maximum number of particles to plot. Mutually exclusive with
+        ``sample_fraction``.
+    sample_fraction : float, optional
+        Fraction of particles to plot. Mutually exclusive with
+        ``max_particles``.
+    sample_seed : int, optional
+        Seed used for deterministic sampling.
+    markers : str, optional
+        Endpoint marker mode: ``none``, ``end``, or ``start-end``.
+    marker_size : float, optional
+        Marker size for start/end points. Default is 12.
+    panels : str, optional
+        Panels to draw. Default is ``spatial`` for the fast single-panel plot.
+        Use ``all`` for the previous four-panel figure, or a comma-separated
+        subset of ``spatial``, ``distance``, ``population``, and
+        ``population-distance``.
+    show : bool, optional
+        Whether to display the figure. Defaults to display-only when no output
+        path is requested.
 
     Examples
     --------
@@ -312,7 +343,22 @@ def plot_trajectories(
     from sedtrails.pathway_visualizer import read_netcdf
 
     ds = read_netcdf(results_file)
-    _plot(ds, save_plot=save, output_dir=output_dir)
+    try:
+        _plot(
+            ds,
+            save_plot=save,
+            output_dir=output_dir,
+            output_file=output_file,
+            max_particles=max_particles,
+            sample_fraction=sample_fraction,
+            sample_seed=sample_seed,
+            markers=markers,
+            marker_size=marker_size,
+            panels=panels,
+            show=show,
+        )
+    finally:
+        ds.close()
 
 
 def inspect_netcdf(results_file: str) -> 'NetCDFInspector':
