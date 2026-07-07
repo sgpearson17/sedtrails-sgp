@@ -45,7 +45,7 @@ particles:
           random:
             bbox: "39400,16800 40600,17800"
             seed: 42
-            nlocations: 10
+            nlocations: 5
     - name: population_2
       particle_type: sand
       characteristics:
@@ -66,7 +66,7 @@ particles:
           random:
             bbox: "39400,16800 40600,17800"
             seed: 42
-            nlocations: 10
+            nlocations: 1
 outputs:
   directory: ./results
   store_tracks: true

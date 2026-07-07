@@ -17,6 +17,8 @@ from sedtrails.simulation_analysis.path_sampling import (
     interpolation_indices,
     sample_field_at_trajectories,
 )
+from sedtrails.simulation_analysis.light_exposure_plotting import plot_particle_bleaching_potential
+from sedtrails.simulation_analysis.solar_radiation import compute_clear_sky_surface_light
 
 __all__ = [
     'ExposureResult',
@@ -32,4 +34,6 @@ __all__ = [
     'SampledField',
     'interpolation_indices',
     'sample_field_at_trajectories',
+    'plot_particle_bleaching_potential',
+    'compute_clear_sky_surface_light',
 ]

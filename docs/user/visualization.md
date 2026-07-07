@@ -24,3 +24,5 @@ cmap, norm = bathymetry_colormap("Vintage", vmin=-12, vmax=6)
 ```
 
 Planned additions for this page include examples for applying these colormaps to model input fields, dashboard plots, and output trajectory maps.
+
+For offline light-exposure and luminescence workflows, including solar-forcing assumptions and standalone usage examples, see [Luminescence workflow](luminescence.md).

@@ -46,8 +46,19 @@ def _time_to_float(value: np.ndarray) -> np.ndarray:
     return array.astype(float)
 
 
-def interpolation_indices(field_time: ArrayLike, target_time: ArrayLike) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return lower/upper field-time indices and linear interpolation weights."""
+def interpolation_indices(
+    field_time: ArrayLike,
+    target_time: ArrayLike,
+    *,
+    repeat_eulerian_fields: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return lower/upper field-time indices and linear interpolation weights.
+
+    When ``repeat_eulerian_fields`` is True, target times after the final
+    source timestamp are wrapped to the source window using modulo arithmetic.
+    Times before the first source timestamp keep the existing clamp-to-first
+    behavior.
+    """
 
     source_time = _as_1d_array(field_time, 'field_time')
     target = np.asarray(target_time)
@@ -56,6 +67,14 @@ def interpolation_indices(field_time: ArrayLike, target_time: ArrayLike) -> tupl
 
     if np.any(np.diff(source_float) < 0):
         raise ValueError('field_time must be monotonically increasing')
+
+    if repeat_eulerian_fields and source_float.size > 1:
+        start = float(source_float[0])
+        end = float(source_float[-1])
+        cycle_duration = end - start
+        if cycle_duration > 0:
+            after = target_float > end
+            target_float = np.where(after, start + ((target_float - start) % cycle_duration), target_float)
 
     lower = np.searchsorted(source_float, target_float, side='right') - 1
     lower = np.clip(lower, 0, source_float.size - 1)
@@ -119,6 +138,7 @@ def sample_field_at_trajectories(
     *,
     sediment_fraction: int | None = None,
     nearest_fallback: bool = False,
+    repeat_eulerian_fields: bool = False,
 ) -> SampledField:
     """Sample a time-varying spatial field at saved particle positions.
 
@@ -138,6 +158,10 @@ def sample_field_at_trajectories(
         Fraction index for fields with a sediment-fraction dimension.
     nearest_fallback : bool
         Fill spatially outside-triangulation values using nearest-neighbor sampling.
+    repeat_eulerian_fields : bool
+        Repeat the Eulerian forcing window for trajectory times after the final
+        field timestamp. This mirrors the simulation setting
+        ``repeat_eulerian_fields: true`` used in SedTRAILS runs.
 
     Returns
     -------
@@ -164,7 +188,11 @@ def sample_field_at_trajectories(
     if x_path.shape[0] != target_time.size:
         raise ValueError('trajectory path first dimension must match trajectory_time length')
 
-    lower, upper, weight = interpolation_indices(source_time, target_time)
+    lower, upper, weight = interpolation_indices(
+        source_time,
+        target_time,
+        repeat_eulerian_fields=repeat_eulerian_fields,
+    )
     out = np.full(x_path.shape, np.nan, dtype=float)
 
     valid_nodes = np.isfinite(x_grid) & np.isfinite(y_grid)

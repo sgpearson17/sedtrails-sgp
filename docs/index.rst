@@ -56,6 +56,7 @@ Features
    user/simulations
    user/output
    user/visualization
+   user/luminescence
    user/dashboard
    user/input-formats
    user/seeding
@@ -83,6 +84,7 @@ Features
    :caption: References
 
    references/simulation-params
+   references/luminescence-methods
    apidocs/index
 
 
