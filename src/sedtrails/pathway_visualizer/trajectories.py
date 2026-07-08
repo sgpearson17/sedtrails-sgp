@@ -7,6 +7,9 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
+from matplotlib.animation import FuncAnimation, PillowWriter
+
+from .colormaps import bathymetry_colormap
 
 
 def _decode_netcdf_name(raw_value) -> str:
@@ -140,6 +143,170 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
         raise ValueError("Unsupported 'time' variable shape for trajectory plotting.")
 
     return x_data, y_data, time_data
+
+
+def save_trajectories_animation_with_bathymetry(
+    ds: xr.Dataset,
+    *,
+    bathy_x: np.ndarray,
+    bathy_y: np.ndarray,
+    bathy_values: np.ndarray,
+    output_gif: str | Path | None = None,
+    output_png: str | Path | None = None,
+    bathymetry_colormap_name: str = 'SEAWAD',
+    bathymetry_levels: int = 20,
+    interval_ms: int = 150,
+    gif_fps: int = 8,
+    dpi: int = 140,
+) -> tuple[Path | None, Path | None]:
+    """Render trajectories over bathymetry and save GIF/final-frame PNG.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        SedTRAILS results dataset containing at least ``x``, ``y``, and
+        ``population_id`` trajectory variables.
+    bathy_x, bathy_y, bathy_values : np.ndarray
+        Bathymetry sampling coordinates and values (same length, flattened).
+    output_gif : str | Path | None
+        Optional path for the animation GIF.
+    output_png : str | Path | None
+        Optional path for a static PNG at the final timestep.
+    bathymetry_colormap_name : str
+        Named SedTRAILS bathymetry colormap (for example ``SEAWAD``).
+    bathymetry_levels : int
+        Number of contour fill levels for bathymetry.
+    interval_ms : int
+        Delay between animation frames in milliseconds.
+    gif_fps : int
+        GIF frames per second.
+    dpi : int
+        Output resolution for GIF and PNG.
+
+    Returns
+    -------
+    tuple[Path | None, Path | None]
+        ``(gif_path, png_path)`` for files that were requested.
+    """
+
+    x_pt, y_pt, _ = _trajectory_arrays(ds)
+    n_particles, n_timesteps = x_pt.shape
+
+    population_ids = np.asarray(ds['population_id'].values, dtype=int) if 'population_id' in ds else np.zeros(
+        n_particles, dtype=int
+    )
+    n_populations = int(ds.sizes.get('n_populations', int(np.nanmax(population_ids) + 1)))
+
+    population_names = [f'Population {i}' for i in range(n_populations)]
+    if 'population_name' in ds:
+        pop_var = ds['population_name']
+        n_decode = min(n_populations, int(pop_var.sizes.get('n_populations', pop_var.shape[0])))
+        for i in range(n_decode):
+            raw = pop_var[i].values if pop_var.ndim == 1 else pop_var[i, :].values
+            population_names[i] = _decode_netcdf_name(raw) or population_names[i]
+
+    bathy_x = np.asarray(bathy_x, dtype=float).reshape(-1)
+    bathy_y = np.asarray(bathy_y, dtype=float).reshape(-1)
+    bathy_values = np.asarray(bathy_values, dtype=float).reshape(-1)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    bathy_cmap, bathy_norm = bathymetry_colormap(bathymetry_colormap_name)
+    ax.tricontourf(
+        bathy_x,
+        bathy_y,
+        bathy_values,
+        levels=bathymetry_levels,
+        cmap=bathy_cmap,
+        norm=bathy_norm,
+    )
+    try:
+        ax.tricontour(bathy_x, bathy_y, bathy_values, levels=[0], colors='black', linewidths=1.5)
+    except ValueError:
+        pass
+
+    pop_cmap = plt.get_cmap('Set1')
+    pop_colors = pop_cmap(np.linspace(0, 1, n_populations))
+
+    ax.set_title('Particle Trajectories by Population')
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.2)
+
+    trail_lines = []
+    for i in range(n_particles):
+        pop_idx = int(population_ids[i])
+        (line,) = ax.plot([], [], color=pop_colors[pop_idx], linewidth=0.8, alpha=0.65)
+        trail_lines.append(line)
+
+    head_scatters = []
+    for pop_idx in range(n_populations):
+        scat = ax.scatter(
+            [],
+            [],
+            s=50,
+            color=pop_colors[pop_idx],
+            marker='o',
+            edgecolors='black',
+            linewidths=0.6,
+            label=population_names[pop_idx],
+            zorder=5,
+        )
+        head_scatters.append(scat)
+
+    ax.legend(loc='upper right')
+
+    def init():
+        for line in trail_lines:
+            line.set_data([], [])
+        for scat in head_scatters:
+            scat.set_offsets(np.empty((0, 2)))
+        return trail_lines + head_scatters
+
+    def update(frame: int):
+        for i, line in enumerate(trail_lines):
+            x = x_pt[i, : frame + 1]
+            y = y_pt[i, : frame + 1]
+            valid = np.isfinite(x) & np.isfinite(y)
+            line.set_data(x[valid], y[valid])
+
+        for pop_idx, scat in enumerate(head_scatters):
+            in_pop = population_ids == pop_idx
+            x_now = x_pt[in_pop, frame]
+            y_now = y_pt[in_pop, frame]
+            valid_now = np.isfinite(x_now) & np.isfinite(y_now)
+            if np.any(valid_now):
+                scat.set_offsets(np.column_stack((x_now[valid_now], y_now[valid_now])))
+            else:
+                scat.set_offsets(np.empty((0, 2)))
+
+        ax.set_title(f'Particle Trajectories by Population (frame {frame + 1}/{n_timesteps})')
+        return trail_lines + head_scatters
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        init_func=init,
+        frames=n_timesteps,
+        interval=interval_ms,
+        blit=False,
+    )
+
+    gif_path = Path(output_gif) if output_gif is not None else None
+    png_path = Path(output_png) if output_png is not None else None
+
+    if gif_path is not None:
+        gif_path.parent.mkdir(parents=True, exist_ok=True)
+        anim.save(gif_path, writer=PillowWriter(fps=max(1, int(gif_fps))), dpi=dpi)
+
+    if png_path is not None:
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        update(n_timesteps - 1)
+        fig.savefig(png_path, dpi=dpi, bbox_inches='tight')
+
+    plt.close(fig)
+    return gif_path, png_path
 
 
 def plot_trajectories(ds, save_plot=False, output_dir=None):

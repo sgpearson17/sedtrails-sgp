@@ -1406,9 +1406,11 @@ class Simulation:
                             timer.current_timestep,
                         )
 
-                    if tracer_plan.method_name == 'vanwesten':
-                        with self._profile_section('update_bed_level_after_movement'):
-                            population.update_bed_level_change_after_movement(bed_level)
+                        if tracer_plan.method_name == 'vanwesten':
+                            # Keep bed level synchronized with the post-move position
+                            # before the next flow field step in this same timestep.
+                            with self._profile_section('update_bed_level_after_movement'):
+                                population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:

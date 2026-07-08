@@ -1244,6 +1244,13 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
+        transport_probability_method = self.population_config.population_config['transport_probability']
+        if transport_probability_method == 'no_probability':
+            # no_probability is treated as strict surface transport.
+            self.particles['burial_depth'] = np.zeros_like(self.particles['burial_depth'], dtype=float)
+            self.particles['z'] = self.particles['bed_level']
+            return
+
         bed_level_change = self.particles['bed_level'] - self.particles['bed_level_previous']
         self.particles['burial_depth'] += bed_level_change
         self.particles['burial_depth'] = np.maximum(self.particles['burial_depth'], 0.0)
@@ -1312,19 +1319,13 @@ class ParticlePopulation:
         self._mark_particle_simplices_current()
         self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
 
-        # New conditional logic based on transport_probability_method
         if transport_probability_method == 'no_probability':
-            # For no_probability method, all particles are considered exposed (not buried)
             self.particles['status_buried'] = np.zeros(n_particles, dtype=bool)
         else:
-            # For stochastic_transport and reduced_velocity methods, use burial_depth vs mixing_depth
-
-            # if van westen method:
-            # a particle is considered buried if it is deeper than or equal to the mixing depth
             self.particles['status_buried'] = self.particles['burial_depth'] >= self.particles['mixing_depth']
 
-            # if soulsby method:
-            # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
+        # if soulsby method:
+        # self.particles['status_buried'] = (this is where we implement Soulsby's F based on a and b)
 
         # Compute whether particles are released (or retained)
         self.particles['status_released'] = self._current_time >= self.particles['release_time']

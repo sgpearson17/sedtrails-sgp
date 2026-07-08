@@ -1399,6 +1399,35 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['burial_depth'], [1.5, 0.0])
         np.testing.assert_allclose(population.particles['z'], [9.0, 8.0])
 
+    def test_update_burial_depth_no_probability_keeps_particles_at_surface(self):
+        """no_probability transport should not accumulate burial depth."""
+        config = PopulationConfig(
+            {
+                'name': 'No Probability Surface Config',
+                'particle_type': 'sand',
+                'transport_probability': 'no_probability',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.25,0.25', '0.75,0.75']}},
+                    'quantity': 1,
+                    'release_start': '2025-06-18 13:00:00',
+                    'burial_depth': {'constant': 1.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population.particles['bed_level_previous'] = np.array([10.0, 10.0])
+        population.particles['bed_level'] = np.array([10.5, 8.0])
+        population.particles['burial_depth'] = np.array([1.0, 1.0])
+
+        population.update_burial_depth()
+
+        np.testing.assert_allclose(population.particles['burial_depth'], [0.0, 0.0])
+        np.testing.assert_allclose(population.particles['z'], [10.5, 8.0])
+
     def test_update_bed_level_after_movement_resamples_current_position(self, point_config_simple):
         """Post-move bed levels should update both bed_level and particle z."""
         population = ParticlePopulation(
@@ -1590,6 +1619,21 @@ class TestParticlePopulation:
         population.update_status()
 
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
+
+    def test_update_status_no_probability_forces_particles_to_surface(self, monkeypatch):
+        """Deterministic no_probability mode should always report not buried."""
+        population = _single_particle_population(release_start='0')
+        population._current_time = 0.0
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        population.particles['burial_depth'][:] = 2.0
+        population.particles['mixing_depth'][:] = 1.0
+
+        population.update_status()
+
+        np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
+        np.testing.assert_array_equal(population.particles['status_buried'], np.array([False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
 
     def test_update_status_reuses_cached_particle_locations(self, monkeypatch):
