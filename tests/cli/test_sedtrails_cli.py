@@ -191,3 +191,50 @@ class TestSedtrailsCLI:
                 output_config_file='restart.yaml',
                 seed_points_dir=None,
             )
+
+    def test_network_adjacency_command_success(self, runner, cli_command):
+        """Test connectivity adjacency compilation via CLI."""
+        with patch('sedtrails.application_interfaces.api.compile_connectivity_adjacency') as mock_compile:
+            mock_compile.return_value = SimpleNamespace(
+                output_file='adjacency.nc',
+                n_particles=12,
+                n_nodes=3,
+                mode='all',
+                weight='raw_counts',
+            )
+
+            result = runner.invoke(
+                cli_command,
+                [
+                    'network',
+                    'adjacency',
+                    '--input',
+                    'results.nc',
+                    '--output',
+                    'adjacency.nc',
+                    '--mode',
+                    'final',
+                    '--polygon-mode',
+                    'n_cells',
+                    '--n-cells',
+                    '3',
+                    '--unique-visits',
+                    '--zero-self-links',
+                ],
+            )
+
+            assert result.exit_code == 0
+            assert "Adjacency matrix written to 'adjacency.nc'" in result.stdout
+            assert 'Connectivity nodes: 3' in result.stdout
+            mock_compile.assert_called_once_with(
+                input_file='results.nc',
+                output_file='adjacency.nc',
+                mode='final',
+                polygon_mode='n_cells',
+                n_cells=3,
+                group_sources_by_initial_position=True,
+                source_group_tolerance=0.0,
+                count_repeated_visits=False,
+                weight='raw_counts',
+                include_self_links=False,
+            )

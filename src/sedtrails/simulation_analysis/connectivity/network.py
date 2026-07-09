@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import networkx as nx
+import pandas as pd
 import xarray as xr
 
 
@@ -62,6 +63,32 @@ def compute_node_metrics(graph: nx.DiGraph) -> dict[str, dict[int, float]]:
         'betweenness': nx.betweenness_centrality(graph, weight='weight', normalized=True),
         'pagerank': nx.pagerank(graph, weight='weight') if graph.number_of_nodes() else {},
     }
+
+
+def node_metrics_to_dataframe(node_metrics: dict[str, dict[int, float]]) -> pd.DataFrame:
+    """Convert node metric dictionaries to a node-indexed DataFrame."""
+
+    return pd.DataFrame(node_metrics).sort_index().rename_axis('node')
+
+
+def detect_communities(graph: nx.DiGraph) -> tuple[dict[int, int], float]:
+    """Detect weighted graph communities and return node labels plus modularity."""
+
+    if graph.number_of_nodes() == 0:
+        return {}, 0.0
+
+    undirected = graph.to_undirected()
+    if undirected.number_of_edges() == 0:
+        labels = {node: index for index, node in enumerate(undirected.nodes())}
+        return labels, 0.0
+
+    communities = list(nx.community.greedy_modularity_communities(undirected, weight='weight'))
+    labels = {}
+    for community_id, community in enumerate(communities):
+        for node in community:
+            labels[node] = community_id
+    modularity = nx.community.modularity(undirected, communities, weight='weight')
+    return labels, float(modularity)
 
 
 def _matrix_and_nodes(

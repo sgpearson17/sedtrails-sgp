@@ -408,6 +408,67 @@ def analyze_network(
     )
 
 
+def compile_connectivity_adjacency(
+    input_file: str,
+    output_file: str = 'sedtrails_connectivity_adjacency.nc',
+    *,
+    mode: str = 'all',
+    polygon_mode: str = 'per_source',
+    n_cells: int | None = None,
+    group_sources_by_initial_position: bool = True,
+    source_group_tolerance: float = 0.0,
+    count_repeated_visits: bool = True,
+    weight: str = 'raw_counts',
+    include_self_links: bool = True,
+):
+    """
+    Compile a SedTRAILS connectivity adjacency matrix from trajectory output.
+
+    Parameters
+    ----------
+    input_file : str
+        SedTRAILS trajectory NetCDF file.
+    output_file : str
+        NetCDF file where the adjacency matrix is written.
+    mode : {'all', 'final', 'time'}
+        Adjacency compilation mode.
+    polygon_mode : {'per_source', 'n_cells'}
+        How connectivity polygons are generated from initial particle positions.
+    n_cells : int or None
+        Number of aggregated cells when ``polygon_mode='n_cells'``.
+    group_sources_by_initial_position : bool
+        Group particles with identical or near-identical initial positions.
+    source_group_tolerance : float
+        Coordinate tolerance for initial-position grouping.
+    count_repeated_visits : bool
+        Count repeated visits by the same particle to a sink.
+    weight : {'raw_counts', 'probability', 'representative_volume'}
+        Matrix weighting mode.
+    include_self_links : bool
+        Retain source-to-same-sink links.
+
+    Returns
+    -------
+    ConnectivityAdjacencySummary
+        Summary of the generated adjacency file.
+    """
+
+    from sedtrails.simulation_analysis.connectivity import compile_adjacency_from_results
+
+    return compile_adjacency_from_results(
+        results_file=input_file,
+        output_file=output_file,
+        mode=mode,
+        polygon_mode=polygon_mode,
+        n_cells=n_cells,
+        group_sources_by_initial_position=group_sources_by_initial_position,
+        source_group_tolerance=source_group_tolerance,
+        count_repeated_visits=count_repeated_visits,
+        weight=weight,
+        include_self_links=include_self_links,
+    )
+
+
 # ============================================================================
 # Advanced API Classes
 # ============================================================================
@@ -571,4 +632,5 @@ __all__ = [
     # Analysis (not yet implemented)
     'analyze_simulation',
     'analyze_network',
+    'compile_connectivity_adjacency',
 ]

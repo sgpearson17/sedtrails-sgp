@@ -384,48 +384,104 @@ def analyze(
 # NETWORK subcommands
 ######################################################################################################
 network_app = typer.Typer(
-    help='Commands to perform network analysi on simulation results. NOT IMPLEMENTED.',
+    help='Commands to compile and analyze connectivity networks.',
     context_settings={'help_option_names': ['-h', '--help']},
 )
 app.add_typer(network_app, name='network')
 
 
-# Subcommand to perform network analysis on the simulation results.
-@network_app.command('analysis')
-def analysis(
+def _compile_connectivity_adjacency_cli(
     input_file: Path = typer.Option(
-        'sedtrails.nc',
+        'sedtrails_results.nc',
         '--input',
         '-i',
-        help='Input netCDF file containing particle tracking results.',
+        help='Input SedTRAILS trajectory NetCDF file.',
     ),
     output_file: Path = typer.Option(
-        'analysis.nc',
+        'sedtrails_connectivity_adjacency.nc',
         '--output',
         '-o',
-        help='Path to the output SedTRAILS netCDF file containing statistical and connectivity results.',
+        help='Output NetCDF file for the connectivity adjacency matrix.',
+    ),
+    mode: str = typer.Option(
+        'all',
+        '--mode',
+        help="Adjacency mode: 'all', 'final', or 'time'.",
+    ),
+    polygon_mode: str = typer.Option(
+        'per_source',
+        '--polygon-mode',
+        help="Connectivity polygon mode: 'per_source' or 'n_cells'.",
+    ),
+    n_cells: int | None = typer.Option(
+        None,
+        '--n-cells',
+        help="Number of cells when --polygon-mode is 'n_cells'.",
+    ),
+    group_sources: bool = typer.Option(
+        True,
+        '--group-sources/--no-group-sources',
+        help='Group particles with identical initial positions into one source node.',
+    ),
+    source_group_tolerance: float = typer.Option(
+        0.0,
+        '--source-group-tolerance',
+        help='Coordinate tolerance for grouping initial source positions.',
+    ),
+    count_repeated_visits: bool = typer.Option(
+        True,
+        '--count-repeated-visits/--unique-visits',
+        help='Count repeated particle-position visits, or count each particle once per sink.',
+    ),
+    weight: str = typer.Option(
+        'raw_counts',
+        '--weight',
+        help="Weighting mode: 'raw_counts', 'probability', or 'representative_volume'.",
+    ),
+    include_self_links: bool = typer.Option(
+        True,
+        '--include-self-links/--zero-self-links',
+        help='Include or zero source-to-same-sink links.',
     ),
 ):
     """
-    Perform a network analysis on the simulation results.
-    The network analysis results are written to a netCDF file.
+    Compile a connectivity adjacency matrix from SedTRAILS particle tracks.
 
     Parameters
     ----------
       input_file : Path
-         Path to the input netCDF file containing particle tracking results.
+         Path to the input NetCDF file containing particle tracking results.
       output_file : Path
-         Path to the output netCDF file containing statistical and connectivity results.
+         Path to the output NetCDF file containing connectivity adjacency results.
     """
+    from sedtrails.application_interfaces.api import compile_connectivity_adjacency
+
     try:
-        typer.echo(f"Performing network analysis on '{input_file}'...")
-        pass
-        typer.echo(f"Network analysis complete. Results saved to '{output_file}'.")
-        typer.echo('THIS IS HAS NOT BEEN IMPLEMENTED YET.')
+        typer.echo(f"Compiling connectivity adjacency from '{input_file}'...")
+        summary = compile_connectivity_adjacency(
+            input_file=str(input_file),
+            output_file=str(output_file),
+            mode=mode,
+            polygon_mode=polygon_mode,
+            n_cells=n_cells,
+            group_sources_by_initial_position=group_sources,
+            source_group_tolerance=source_group_tolerance,
+            count_repeated_visits=count_repeated_visits,
+            weight=weight,
+            include_self_links=include_self_links,
+        )
+        typer.echo(f"Adjacency matrix written to '{summary.output_file}'.")
+        typer.echo(f'Particles: {summary.n_particles}')
+        typer.echo(f'Connectivity nodes: {summary.n_nodes}')
+        typer.echo(f'Mode: {summary.mode}; weight: {summary.weight}')
 
     except Exception as e:
-        typer.echo(f'Error performing network analysis: {e}')
+        typer.echo(f'Error compiling connectivity adjacency: {e}')
         raise typer.Exit(code=1) from e
+
+
+network_app.command('adjacency')(_compile_connectivity_adjacency_cli)
+network_app.command('analysis')(_compile_connectivity_adjacency_cli)
 
 
 ######################################################################################################

@@ -81,6 +81,98 @@ def plot_network_layout(
     return ax
 
 
+def plot_node_metric_map(
+    graph: nx.DiGraph,
+    metric: dict[int, float],
+    *,
+    metric_name: str = 'metric',
+    ax: plt.Axes | None = None,
+    cmap: str = 'viridis',
+    width_scale: float = 2.0,
+    node_size: float = 160.0,
+) -> plt.Axes:
+    """Plot a node metric on graph node coordinates."""
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 6))
+    pos = _geographic_positions(graph)
+    values = np.asarray([metric.get(node, np.nan) for node in graph.nodes()], dtype=float)
+    _draw_weighted_edges(graph, pos, ax=ax, width_scale=width_scale)
+    nodes = nx.draw_networkx_nodes(
+        graph,
+        pos,
+        node_size=node_size,
+        node_color=values,
+        cmap=cmap,
+        edgecolors='black',
+        ax=ax,
+    )
+    nx.draw_networkx_labels(graph, pos, font_size=8, ax=ax)
+    plt.colorbar(nodes, ax=ax, label=metric_name)
+    ax.set_aspect('equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title(metric_name)
+    return ax
+
+
+def plot_node_metric_bars(
+    metric: dict[int, float],
+    *,
+    metric_name: str = 'metric',
+    ax: plt.Axes | None = None,
+    top_n: int | None = None,
+) -> plt.Axes:
+    """Plot node metric values as ranked bars."""
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 4))
+    items = sorted(metric.items(), key=lambda item: item[1], reverse=True)
+    if top_n is not None:
+        items = items[: int(top_n)]
+    nodes = [str(node) for node, _ in items]
+    values = [value for _, value in items]
+    ax.bar(nodes, values, color='0.35')
+    ax.set_xlabel('Node')
+    ax.set_ylabel(metric_name)
+    ax.set_title(f'Node {metric_name}')
+    return ax
+
+
+def plot_community_map(
+    graph: nx.DiGraph,
+    community_labels: dict[int, int],
+    *,
+    ax: plt.Axes | None = None,
+    cmap: str = 'tab20',
+    width_scale: float = 2.0,
+    node_size: float = 160.0,
+) -> plt.Axes:
+    """Plot detected community labels on graph node coordinates."""
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 6))
+    pos = _geographic_positions(graph)
+    values = np.asarray([community_labels.get(node, -1) for node in graph.nodes()], dtype=float)
+    _draw_weighted_edges(graph, pos, ax=ax, width_scale=width_scale)
+    nodes = nx.draw_networkx_nodes(
+        graph,
+        pos,
+        node_size=node_size,
+        node_color=values,
+        cmap=cmap,
+        edgecolors='black',
+        ax=ax,
+    )
+    nx.draw_networkx_labels(graph, pos, font_size=8, ax=ax)
+    plt.colorbar(nodes, ax=ax, label='Community')
+    ax.set_aspect('equal')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Connectivity communities')
+    return ax
+
+
 def _draw_graph(
     graph: nx.DiGraph,
     pos: dict,
@@ -89,13 +181,23 @@ def _draw_graph(
     width_scale: float,
     node_size: float,
 ) -> None:
+    _draw_weighted_edges(graph, pos, ax=ax, width_scale=width_scale)
+    nx.draw_networkx_nodes(graph, pos, node_size=node_size, node_color='white', edgecolors='black', ax=ax)
+    nx.draw_networkx_labels(graph, pos, font_size=8, ax=ax)
+
+
+def _draw_weighted_edges(
+    graph: nx.DiGraph,
+    pos: dict,
+    *,
+    ax: plt.Axes,
+    width_scale: float,
+) -> None:
     weights = np.asarray([data.get('weight', 1.0) for _, _, data in graph.edges(data=True)], dtype=float)
     if weights.size:
         widths = width_scale * weights / np.nanmax(weights)
     else:
         widths = 1.0
-    nx.draw_networkx_nodes(graph, pos, node_size=node_size, node_color='white', edgecolors='black', ax=ax)
-    nx.draw_networkx_labels(graph, pos, font_size=8, ax=ax)
     nx.draw_networkx_edges(
         graph,
         pos,
@@ -107,6 +209,13 @@ def _draw_graph(
         alpha=0.75,
         ax=ax,
     )
+
+
+def _geographic_positions(graph: nx.DiGraph) -> dict:
+    pos = {node: (data['x'], data['y']) for node, data in graph.nodes(data=True) if 'x' in data and 'y' in data}
+    if len(pos) != graph.number_of_nodes():
+        raise ValueError("All graph nodes must have 'x' and 'y' attributes for geographic plotting.")
+    return pos
 
 
 def _matrix(adjacency: xr.Dataset | xr.DataArray | np.ndarray) -> np.ndarray:

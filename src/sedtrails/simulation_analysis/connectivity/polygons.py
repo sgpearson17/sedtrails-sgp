@@ -9,7 +9,6 @@ import numpy as np
 from scipy.cluster.vq import kmeans2
 from shapely import MultiPoint, Point, Polygon, voronoi_polygons
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
 
 
 @dataclass(frozen=True)
@@ -105,15 +104,15 @@ def generate_connectivity_polygons(
     else:
         raise ValueError("mode must be one of {'per_source', 'n_cells', 'grouped'}.")
 
-    per_source = _source_voronoi_cells(source_xy, clip_polygon)
+    node_seed_xy = _node_seed_positions(source_xy, labels)
+    node_voronoi = _source_voronoi_cells(node_seed_xy, clip_polygon)
     polygons = []
     node_x = []
     node_y = []
     node_ids = []
 
     for node in range(int(labels.max()) + 1):
-        pieces = [per_source[i] for i in np.flatnonzero(labels == node)]
-        merged = unary_union(pieces).intersection(clip_polygon)
+        merged = node_voronoi[node].intersection(clip_polygon)
         polygons.append(merged)
         centroid = merged.centroid
         node_x.append(float(centroid.x))
@@ -129,10 +128,33 @@ def generate_connectivity_polygons(
     )
 
 
+def group_sources_by_position(source_xy: np.ndarray, *, tolerance: float = 0.0) -> np.ndarray:
+    """Return dense source-group labels for identical or near-identical source positions."""
+
+    source_xy = np.asarray(source_xy, dtype=float)
+    if source_xy.ndim != 2 or source_xy.shape[1] != 2:
+        raise ValueError('source_xy must have shape (n_sources, 2).')
+    if tolerance < 0:
+        raise ValueError('tolerance must be non-negative.')
+    if tolerance == 0:
+        keys = source_xy
+    else:
+        keys = np.round(source_xy / float(tolerance)).astype(np.int64)
+    _, labels = np.unique(keys, axis=0, return_inverse=True)
+    return labels.astype(int)
+
+
 def _dense_labels(labels: np.ndarray) -> np.ndarray:
     labels = np.asarray(labels)
     _, dense = np.unique(labels, return_inverse=True)
     return dense.astype(int)
+
+
+def _node_seed_positions(source_xy: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    seeds = []
+    for node in range(int(labels.max()) + 1):
+        seeds.append(np.nanmean(source_xy[labels == node], axis=0))
+    return np.asarray(seeds, dtype=float)
 
 
 def _domain_polygon(
