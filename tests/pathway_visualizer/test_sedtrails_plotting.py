@@ -3,6 +3,11 @@ import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.sedtrails_plotting import load_from_xarray
+from sedtrails.pathway_visualizer.sedtrails_plotting import (
+    TrajectoryArrays,
+    particles_include_exclude,
+    source_distance_from_baseline,
+)
 
 
 def test_load_from_xarray_accepts_time_major_layout():
@@ -83,3 +88,37 @@ def test_load_from_xarray_rejects_particle_major_layout():
 
     with pytest.raises(ValueError, match='time-major trajectory arrays'):
         load_from_xarray(ds)
+
+
+def test_source_distance_from_baseline_defaults_to_minimum_source_distance():
+    tr = TrajectoryArrays(
+        time=np.array([[0.0], [0.0], [0.0]]),
+        x=np.array([[10.0], [20.0], [15.0]]),
+        y=np.array([[0.0], [0.0], [0.0]]),
+    )
+
+    distance = source_distance_from_baseline(tr)
+
+    np.testing.assert_allclose(distance, np.array([0.0, 10.0, 5.0]))
+
+
+def test_particles_include_exclude_can_require_all_include_polygons():
+    tr = TrajectoryArrays(
+        time=np.tile(np.array([0.0, 1.0, 2.0]), (3, 1)),
+        x=np.array(
+            [
+                [0.0, 5.0, 10.0],
+                [0.0, 5.0, 6.0],
+                [0.0, 10.0, 20.0],
+            ]
+        ),
+        y=np.zeros((3, 3)),
+    )
+    poly_a = np.array([[4.0, -1.0], [6.0, -1.0], [6.0, 1.0], [4.0, 1.0]])
+    poly_b = np.array([[9.0, -1.0], [11.0, -1.0], [11.0, 1.0], [9.0, 1.0]])
+
+    any_mask = particles_include_exclude(tr, [poly_a, poly_b])
+    all_mask = particles_include_exclude(tr, [poly_a, poly_b], require_all_include=True)
+
+    np.testing.assert_array_equal(any_mask, np.array([True, True, True]))
+    np.testing.assert_array_equal(all_mask, np.array([True, False, False]))

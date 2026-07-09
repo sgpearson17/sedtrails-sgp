@@ -281,6 +281,26 @@ def _rotate_points(
     return xr2, yr2
 
 
+def source_distance_from_baseline(
+    tr: TrajectoryArrays,
+    rotation_deg: float = 0.0,
+    first_stable_index: int = 0,
+    origin_xy: Optional[Tuple[float, float]] = None,
+) -> np.ndarray:
+    """Return per-particle source distance in a rotated baseline frame.
+
+    The default origin is the lower-left corner of the model-domain extent
+    inferred from the trajectory arrays. The returned value is the source
+    rotated-X coordinate shifted so the minimum source distance is zero.
+    """
+    x0 = tr.x[:, first_stable_index]
+    y0 = tr.y[:, first_stable_index]
+    if origin_xy is None:
+        origin_xy = (np.nanmin(tr.x), np.nanmin(tr.y))
+    rx0, _ = _rotate_points(x0, y0, rotation_deg, origin_xy)
+    return rx0 - np.nanmin(rx0)
+
+
 def plot_trajectories_by_baseline(
     tr: TrajectoryArrays,
     rotation_deg: float = 0.0,
@@ -289,6 +309,7 @@ def plot_trajectories_by_baseline(
     units_scale: float = 1.0,
     point_size: float = 8.0,
     cmap: str = 'viridis',
+    color_limits: Optional[Tuple[float, float]] = None,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
     """Plot positions colored by distance from a rotated baseline.
@@ -330,18 +351,18 @@ def plot_trajectories_by_baseline(
     mask = tr.valid_mask()
     mask[:, :first_stable_index] = False
 
-    x0 = tr.x[:, first_stable_index]
-    y0 = tr.y[:, first_stable_index]
-
-    if origin_xy is None:
-        origin_xy = (np.nanmin(tr.x), np.nanmin(tr.y))
-
-    rx0, ry0 = _rotate_points(x0, y0, rotation_deg, origin_xy)
-    c_particle = rx0 - np.nanmin(rx0)
+    c_particle = source_distance_from_baseline(
+        tr,
+        rotation_deg=rotation_deg,
+        first_stable_index=first_stable_index,
+        origin_xy=origin_xy,
+    )
     c_full = np.broadcast_to(c_particle[:, None], tr.x.shape)
 
     xf, yf, cf = _flatten_valid(tr.x * units_scale, tr.y * units_scale, c_full, mask)
     sc = ax.scatter(xf, yf, s=point_size, c=cf, cmap=cmap, edgecolor='none')
+    if color_limits is not None:
+        sc.set_clim(*color_limits)
     cb = plt.colorbar(sc, ax=ax)
     cb.set_label('Source distance from baseline')
 
@@ -377,6 +398,7 @@ def animate_particles(
     color_mode: str = 'baseline',  # "baseline" or "age"
     units_scale: float = 1.0,
     point_size: float = 12.0,
+    cmap: str = 'viridis',
     interval_ms: int = 80,
     t_indices: Optional[Sequence[int]] = None,
     save_path: Optional[str] = None,
@@ -434,12 +456,12 @@ def animate_particles(
         color_arr = age
         cbar_label = 'Age'
     elif color_mode == 'baseline':
-        x0 = tr.x[:, first_stable_index]
-        y0 = tr.y[:, first_stable_index]
-        if origin_xy is None:
-            origin_xy = (np.nanmin(tr.x), np.nanmin(tr.y))
-        rx0, _ = _rotate_points(x0, y0, rotation_deg, origin_xy)
-        c_particle = rx0 - np.nanmin(rx0)
+        c_particle = source_distance_from_baseline(
+            tr,
+            rotation_deg=rotation_deg,
+            first_stable_index=first_stable_index,
+            origin_xy=origin_xy,
+        )
         color_arr = np.broadcast_to(c_particle[:, None], (N, T))
         cbar_label = 'Source distance from baseline'
     else:
@@ -452,7 +474,7 @@ def animate_particles(
         tr.y[m0, t0] * units_scale,
         s=point_size,
         c=color_arr[m0, t0],
-        cmap='viridis',
+        cmap=cmap,
         edgecolor='none',
     )
     cb = plt.colorbar(scat, ax=ax)
@@ -601,10 +623,14 @@ def particles_between_two_polygons(
 
 
 def particles_include_exclude(
-    tr: TrajectoryArrays, include_polys: List[np.ndarray], exclude_polys: Optional[List[np.ndarray]] = None
+    tr: TrajectoryArrays,
+    include_polys: List[np.ndarray],
+    exclude_polys: Optional[List[np.ndarray]] = None,
+    *,
+    require_all_include: bool = False,
 ) -> np.ndarray:
     """
-    Particles that pass through *any* include polygon and *none* of the exclude polygons.
+    Particles that pass through include polygons and none of the exclude polygons.
 
     Parameters
     ----------
@@ -614,6 +640,9 @@ def particles_include_exclude(
         Polygons that particles must pass through.
     exclude_polys : Optional[List[np.ndarray]]
         Polygons that particles must avoid.
+    require_all_include : bool
+        If true, particles must pass through every include polygon. If false,
+        passing through any include polygon is sufficient.
 
     Returns
     -------
@@ -621,9 +650,13 @@ def particles_include_exclude(
         Array containing the computed values.
     """
     mask_valid = tr.valid_mask()
-    include_any = np.zeros(tr.x.shape[0], dtype=bool)
+    include_mask = np.ones(tr.x.shape[0], dtype=bool) if require_all_include else np.zeros(tr.x.shape[0], dtype=bool)
     for poly in include_polys:
-        include_any |= (_points_in_poly(tr.x, tr.y, poly) & mask_valid).any(axis=1)
+        hits = (_points_in_poly(tr.x, tr.y, poly) & mask_valid).any(axis=1)
+        if require_all_include:
+            include_mask &= hits
+        else:
+            include_mask |= hits
 
     if exclude_polys:
         exclude_any = np.zeros(tr.x.shape[0], dtype=bool)
@@ -632,7 +665,7 @@ def particles_include_exclude(
     else:
         exclude_any = np.zeros(tr.x.shape[0], dtype=bool)
 
-    return include_any & (~exclude_any)
+    return include_mask & (~exclude_any)
 
 
 class InteractivePolygonTool:
