@@ -1406,9 +1406,19 @@ class Simulation:
                             timer.current_timestep,
                         )
 
-                    if tracer_plan.method_name == 'vanwesten':
-                        with self._profile_section('update_bed_level_after_movement'):
-                            population.update_bed_level_change_after_movement(bed_level)
+                        # Re-sample bed level at the new positions after EVERY
+                        # update_position. This must stay INSIDE the flow-field
+                        # loop: the next update_information copies bed_level to
+                        # bed_level_previous, and update_burial_depth treats the
+                        # difference as a temporal bed change. If the re-sample
+                        # runs only once per timestep, the second flow field's
+                        # update pairs a post-move bed with a pre-move previous,
+                        # leaking the spatial bed gradient into burial_depth
+                        # (see commit message: regression of bdf7a99 via merge
+                        # 90d0b5a).
+                        if tracer_plan.method_name == 'vanwesten':
+                            with self._profile_section('update_bed_level_after_movement'):
+                                population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:
