@@ -1348,10 +1348,17 @@ class Simulation:
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
-                        mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
-                    with self._profile_section('get_scalar_field_bounds.bed_level'):
-                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                    # Passive runs do not require sediment-layer diagnostics.
+                    if tracer_plan.method_name == 'passive_tracer':
+                        mixing_depth = None
+                        bed_level = None
+                    else:
+                        with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
+                            mixing_depth = retriever.get_scalar_field_bounds(
+                                field_time_seconds, 'mixing_layer_thickness'
+                            )
+                        with self._profile_section('get_scalar_field_bounds.bed_level'):
+                            bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':

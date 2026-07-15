@@ -368,6 +368,40 @@ class FormatPlugin(BaseFormatPlugin):
             return values.reshape(new_shape)
         return values
 
+    def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
+        """
+        Return input time bounds in seconds since the configured reference date.
+
+        This avoids running a full ``convert`` call at startup when only the
+        forcing time window is needed.
+
+        Parameters
+        ----------
+        reference_date : np.datetime64, optional
+            Reference date used to convert the input time coordinate to seconds.
+            If omitted, the Unix epoch is used.
+
+        Returns
+        -------
+        tuple of float
+            First and last input timestamps, in seconds since ``reference_date``.
+
+        Raises
+        ------
+        ValueError
+            If the input data contains no time values.
+        """
+        if reference_date is None:
+            reference_date = np.datetime64('1970-01-01T00:00:00')
+
+        self.load()
+        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        time_info = self._decompress_time(time_info)
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times.size == 0:
+            raise ValueError('Input data contains no time values')
+        return float(times[0]), float(times[-1])
+
     def _interpolate_to_centers(self, values: np.ndarray, axis: int) -> np.ndarray:
         """Interpolate staggered-grid values to cell centers along a given axis."""
         if values.ndim < 2:
