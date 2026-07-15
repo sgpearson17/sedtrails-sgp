@@ -16,7 +16,7 @@ def tmp_output_dir(tmp_path):
 class MockPopulation:
     """Mock population class for testing."""
 
-    def __init__(self, name, particle_type=0):
+    def __init__(self, name, particle_type='sand'):
         self.name = name
         self.particle_type = particle_type
         self.particles = {
@@ -94,6 +94,36 @@ class TestNetCDFWriterStreaming:
     def test_open_writes_population_metadata(self, open_handle):
         assert open_handle['population_count'][0] == self.N_PARTICLES
         assert open_handle['population_start_idx'][0] == 0
+        particle_type_chars = open_handle['population_particle_type'][0, :].data
+        particle_type = b''.join(particle_type_chars).decode('ascii').strip()
+        assert particle_type == 'sand'
+
+    def test_open_writes_particle_type_from_population_config(self, writer):
+        class MockPopulationFromConfig:
+            def __init__(self, name, particle_type='passive'):
+                self.name = name
+                self.population_config = type('Config', (), {'particle_type': particle_type})()
+                self.particles = {
+                    'x': np.array([1.0, 2.0, 3.0]),
+                    'y': np.array([1.5, 2.5, 3.5]),
+                    'burial_depth': np.array([0.1, 0.2, 0.0]),
+                }
+
+        population = MockPopulationFromConfig('config_pop', particle_type='passive')
+        handle = writer.open_output(
+            'stream_config_type.nc',
+            self.N_SLOTS,
+            self.N_PARTICLES,
+            self.N_POPULATIONS,
+            self.N_FLOWFIELDS,
+            [population],
+            ['water_velocity'],
+        )
+
+        particle_type_chars = handle['population_particle_type'][0, :].data
+        particle_type = b''.join(particle_type_chars).decode('ascii').strip()
+        assert particle_type == 'passive'
+        handle.close()
 
     def test_open_writes_flowfield_metadata(self, open_handle):
         name_chars = open_handle['flowfield_name'][0, :].data

@@ -4,11 +4,34 @@ Functions to inspect metadata of SedTrails NetCDF results.
 """
 
 from pathlib import Path
+import numpy as np
 import xarray as xr
 
 
 class NetCDFInspector:
     """A class to inspect and print metadata from SedTRAILS NetCDF files."""
+
+    @staticmethod
+    def _decode_text_value(value) -> str:
+        """Decode NetCDF text values from bytes, strings, or char arrays."""
+        if isinstance(value, bytes):
+            return value.decode('utf-8', errors='replace').replace('\x00', '').strip()
+        if isinstance(value, str):
+            return value.replace('\x00', '').strip()
+        if isinstance(value, np.ndarray):
+            flat = value.ravel()
+            chars: list[str] = []
+            for item in flat:
+                if isinstance(item, bytes):
+                    decoded = item.decode('utf-8', errors='replace')
+                    if decoded != '\x00':
+                        chars.append(decoded)
+                else:
+                    text = str(item)
+                    if text != '\x00':
+                        chars.append(text)
+            return ''.join(chars).replace('\x00', '').strip()
+        return str(value)
 
     def __init__(self, nc_file: str) -> None:
         """Initialize the Inspector with the path to a NetCDF file.
@@ -108,13 +131,19 @@ class NetCDFInspector:
             n_populations = self.data.sizes['n_populations']
 
             for i in range(n_populations):
-                # Decode population name (stored as bytes)
-                name_bytes = self.data['population_name'][i, :].values
-                name = ''.join([char.decode('utf-8') for char in name_bytes if char != b'\x00'])
+                population_name_var = self.data['population_name']
+                if population_name_var.ndim == 2:
+                    name = self._decode_text_value(population_name_var[i, :].values)
+                else:
+                    name = self._decode_text_value(population_name_var[i].values)
 
                 start_idx = self.data['population_start_idx'][i].values
                 count = self.data['population_count'][i].values
-                particle_type = self.data['population_particle_type'][i].values
+                particle_type_var = self.data['population_particle_type']
+                if particle_type_var.ndim == 2:
+                    particle_type = self._decode_text_value(particle_type_var[i, :].values)
+                else:
+                    particle_type = self._decode_text_value(particle_type_var[i].values)
 
                 print(f'  Population {i + 1}: {name}')
                 print(f'    Particle type: {particle_type}')

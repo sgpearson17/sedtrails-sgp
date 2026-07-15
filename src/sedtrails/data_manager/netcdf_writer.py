@@ -117,6 +117,30 @@ class NetCDFWriter:
     def _write_name(var, index: int, value: str, name_strlen: int) -> None:
         var[index, :] = np.array(list(value[:name_strlen].ljust(name_strlen)), dtype='S1')
 
+    @staticmethod
+    def _resolve_population_particle_type(population, pop_idx: int) -> str:
+        """Resolve particle type from population metadata for NetCDF output."""
+        particle_type = getattr(population, 'particle_type', None)
+        if particle_type is None or str(particle_type).strip() == '':
+            population_config = getattr(population, 'population_config', None)
+            if population_config is not None:
+                particle_type = getattr(population_config, 'particle_type', None)
+                if (particle_type is None or str(particle_type).strip() == '') and isinstance(population_config, dict):
+                    particle_type = population_config.get('particle_type')
+                if particle_type is None or str(particle_type).strip() == '':
+                    nested_config = getattr(population_config, 'population_config', None)
+                    if isinstance(nested_config, dict):
+                        particle_type = nested_config.get('particle_type')
+
+        if particle_type is None or str(particle_type).strip() == '':
+            logger.warning(
+                "Population %d has no configured particle_type; storing 'unknown' in output metadata.",
+                pop_idx,
+            )
+            return 'unknown'
+
+        return str(particle_type)
+
     @classmethod
     def _create_static_metadata(
         cls,
@@ -130,7 +154,7 @@ class NetCDFWriter:
     ) -> None:
         """Create and write metadata that does not vary with output time."""
         ds.createVariable('population_name', 'S1', ('n_populations', 'name_strlen'))
-        ds.createVariable('population_particle_type', 'i4', ('n_populations',))
+        ds.createVariable('population_particle_type', 'S1', ('n_populations', 'name_strlen'))
         ds.createVariable('population_start_idx', 'i8', ('n_populations',))
         ds.createVariable('population_count', 'i8', ('n_populations',))
         ds.createVariable('population_repr_volume', 'f8', ('n_populations',))
@@ -144,7 +168,8 @@ class NetCDFWriter:
         for pop_idx, population in enumerate(populations):
             pop_name = getattr(population, 'name', f'population_{pop_idx}')
             cls._write_name(ds['population_name'], pop_idx, str(pop_name), name_strlen)
-            ds['population_particle_type'][pop_idx] = int(getattr(population, 'particle_type', 0))
+            particle_type = cls._resolve_population_particle_type(population, pop_idx)
+            cls._write_name(ds['population_particle_type'], pop_idx, particle_type, name_strlen)
             ds['population_start_idx'][pop_idx] = particle_offset
             n_part = len(population.particles['x'])
             ds['population_count'][pop_idx] = n_part
