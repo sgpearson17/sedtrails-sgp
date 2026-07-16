@@ -1420,6 +1420,10 @@ class Simulation:
                         # (see commit message: regression of bdf7a99 via merge
                         # 90d0b5a).
                         if tracer_plan.method_name == 'vanwesten':
+                            # note, maybe this should be moved out of this if 
+                            # block because other methods 
+                            # like soulsby or passive should also be able to 
+                            # navigate a morphodynamic input model
                             transport_probability_method = tracer_plan.transport_probability_method
                             if transport_probability_method != 'no_probability':
                                 with self._profile_section('update_bed_level_after_movement'):
