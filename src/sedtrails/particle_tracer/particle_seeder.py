@@ -398,10 +398,15 @@ class PopulationConfig:
         diffusion_coefficient = diffusion_config.get(
             'coefficient', find_value(self.population_config, 'characteristics.diffusion_coefficient', 0.0)
         )
-        if isinstance(diffusion_coefficient, (bool, np.bool_)) or not isinstance(diffusion_coefficient, (int, float, np.number)) or not np.isfinite(diffusion_coefficient):
-            raise ValueError('"diffusion_coefficient" must be a finite non-negative number.')
-        if diffusion_coefficient < 0.0:
-            raise ValueError('"diffusion_coefficient" must be a finite non-negative number.')
+        if (
+            isinstance(diffusion_coefficient, (bool, np.bool_))
+            or not isinstance(diffusion_coefficient, (int, float, np.number))
+            or not np.isfinite(diffusion_coefficient)
+            or diffusion_coefficient < 0.0
+        ):
+            raise ValueError(
+                '"diffusion.coefficient" (or legacy "characteristics.diffusion_coefficient") must be a finite non-negative number.'
+            )
         self.diffusion_coefficient = float(diffusion_coefficient)
         diffusion_seed = diffusion_config.get('seed')
         if diffusion_seed is not None and (
