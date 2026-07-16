@@ -402,15 +402,15 @@ def _select_fraction_value(value: Any, fractions: int, fraction_index: int) -> A
 
 def _available_fraction_labels(sedtrails_data: Any) -> list[str] | None:
     """Return normalized sediment fraction labels from data metadata when available."""
-    metadata = getattr(sedtrails_data, 'metadata', None)
-    if metadata is None:
+    if not hasattr(sedtrails_data, 'metadata'):
         return None
+    metadata = sedtrails_data.metadata
 
     labels = None
     if hasattr(metadata, 'get'):
         labels = metadata.get('sediment_fraction_labels', None)
     elif hasattr(metadata, 'sediment_fraction_labels'):
-        labels = getattr(metadata, 'sediment_fraction_labels')
+        labels = metadata.sediment_fraction_labels
 
     if labels is None:
         return None
