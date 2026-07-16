@@ -130,8 +130,8 @@ class DiffusionCalculator:
 
     def calc_diffusion(
         self,
-        x: float,
-        y: float,
+        x: np.ndarray,
+        y: np.ndarray,
         u: np.ndarray,
         v: np.ndarray,
         kh: float,
@@ -142,15 +142,15 @@ class DiffusionCalculator:
 
         Parameters
         ----------
-            x: Current x position
-            y: Current y position
-            u: Velocity field x-component (2D array)
-            v: Velocity field y-component (2D array)
-            kh: Diffusion coefficient
-            dt: Current time step
+            x: Current x-coordinate array.
+            y: Current y-coordinate array.
+            u: X-velocity array matching ``x`` and ``y``.
+            v: Y-velocity array matching ``x`` and ``y``.
+            kh: Horizontal diffusivity coefficient.
+            dt: Current time step in seconds.
 
         Returns
         -------
-            Tuple of (x_diffusion, y_diffusion) representing position changes
+            Tuple of updated ``(x, y)`` coordinate arrays.
         """
         return self._strategy.calculate(dt, x, y, u, v, kh, rng=self._rng)
