@@ -344,17 +344,22 @@ def _select_population_fraction_data(
         if not available_labels:
             raise ConfigurationError(
                 f"Configured sediment_fraction_name '{selected_fraction_name}' could not be resolved because "
-                'fraction labels are not available in input metadata.'
+                f'fraction labels are not available in input metadata. Detected {fractions} sediment fractions. '
+                'Set sediment_fraction_index explicitly for this population, for example:\n'
+                'particles:\n'
+                '  populations:\n'
+                '    - name: your_population_name\n'
+                '      sediment_fraction_index: 0'
             )
-
-        normalized_labels = [str(label).strip().lower() for label in available_labels]
-        requested_name = str(selected_fraction_name).strip().lower()
-        if requested_name not in normalized_labels:
-            raise ConfigurationError(
-                f"Configured sediment_fraction_name '{selected_fraction_name}' was not found. "
-                f'Available labels: {available_labels}'
-            )
-        selected_fraction_index = normalized_labels.index(requested_name)
+        else:
+            normalized_labels = [str(label).strip().lower() for label in available_labels]
+            requested_name = str(selected_fraction_name).strip().lower()
+            if requested_name not in normalized_labels:
+                raise ConfigurationError(
+                    f"Configured sediment_fraction_name '{selected_fraction_name}' was not found. "
+                    f'Available labels: {available_labels}'
+                )
+            selected_fraction_index = normalized_labels.index(requested_name)
 
     try:
         selected_fraction_index = int(selected_fraction_index)
