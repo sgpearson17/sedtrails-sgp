@@ -309,7 +309,7 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
+| `diffusion_coefficient` | number | **Required** | `0.0`   | Non-negative horizontal diffusivity $K_h$ [m^2/s] for an isotropic Brownian step after each advection update. |
 
 #### Sand Particles
 

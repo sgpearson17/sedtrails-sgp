@@ -6,8 +6,6 @@ import numpy as np
 
 __all__ = [
     "DiffusionStrategy",
-    "GradientDiffusionStrategy",
-    "RandomDiffusionStrategy",
     "BrownianDiffusionStrategy",
     "DiffusionCalculator",
 ]
@@ -195,9 +193,12 @@ class BrownianDiffusionStrategy(DiffusionStrategy):
         Tuple[np.ndarray, np.ndarray]
             Array containing the computed values.
         """
+        if kh == 0.0 or dt == 0.0:
+            return x.copy(), y.copy()
+
         sigma = math.sqrt(2.0 * kh * dt)
-        dx = np.random.normal(0.0, sigma, size=x.shape)
-        dy = np.random.normal(0.0, sigma, size=y.shape)
+        dx = sigma * np.random.standard_normal(x.shape)
+        dy = sigma * np.random.standard_normal(y.shape)
         return x + dx, y + dy
 
 
