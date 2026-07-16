@@ -1371,8 +1371,11 @@ class Simulation:
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('update_burial_depth'):
-                                population.update_burial_depth()
+                            transport_probability_method = tracer_plan.transport_probability_method
+                            if transport_probability_method != 'no_probability':
+                                with self._profile_section('update_burial_depth'):
+                                    population.update_burial_depth()
+                        
 
                         with self._profile_section('update_status'):
                             population.update_status()
@@ -1417,8 +1420,10 @@ class Simulation:
                         # (see commit message: regression of bdf7a99 via merge
                         # 90d0b5a).
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('update_bed_level_after_movement'):
-                                population.update_bed_level_change_after_movement(bed_level)
+                            transport_probability_method = tracer_plan.transport_probability_method
+                            if transport_probability_method != 'no_probability':
+                                with self._profile_section('update_bed_level_after_movement'):
+                                    population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:
