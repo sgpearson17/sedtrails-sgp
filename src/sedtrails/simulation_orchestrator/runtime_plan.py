@@ -96,7 +96,13 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
     )
 
 
-def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePlan) -> Any:
+def build_plan_sedtrails_data(
+    sedtrails_data: Any,
+    tracer_plan: TracerRuntimePlan,
+    population_config: Mapping[str, Any] | None = None,
+    default_fraction_index: int = 0,
+    default_fraction_name: str | None = None,
+) -> Any:
     """
     Run plan physics and return a clone containing only plan-required physics fields.
 
@@ -113,13 +119,20 @@ def build_plan_sedtrails_data(sedtrails_data: Any, tracer_plan: TracerRuntimePla
         Requested value.
     """
 
-    working_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    fraction_selected_data = _select_population_fraction_data(
+        sedtrails_data,
+        population_config=population_config,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+    )
+
+    working_data = _shallow_sedtrails_data_clone(fraction_selected_data)
     tracer_plan.converter.convert_physics(
         sedtrails_data=working_data,
         transport_probability_method=tracer_plan.transport_probability_method,
     )
 
-    plan_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    plan_data = _shallow_sedtrails_data_clone(fraction_selected_data)
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
             plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
@@ -306,3 +319,99 @@ def _copy_physics_value(value: Any) -> Any:
     if hasattr(value, 'copy'):
         return value.copy()
     return copy.deepcopy(value)
+
+
+def _select_population_fraction_data(
+    sedtrails_data: Any,
+    population_config: Mapping[str, Any] | None,
+    default_fraction_index: int,
+    default_fraction_name: str | None,
+) -> Any:
+    """Return a fraction-selected clone when multi-fraction data is available."""
+    fractions = int(getattr(sedtrails_data, 'fractions', 1) or 1)
+    if fractions <= 1:
+        return sedtrails_data
+
+    selected_fraction_index = default_fraction_index
+    selected_fraction_name = default_fraction_name
+    if isinstance(population_config, Mapping) and 'sediment_fraction_index' in population_config:
+        selected_fraction_index = population_config.get('sediment_fraction_index')
+    if isinstance(population_config, Mapping) and 'sediment_fraction_name' in population_config:
+        selected_fraction_name = population_config.get('sediment_fraction_name')
+
+    if selected_fraction_name:
+        available_labels = _available_fraction_labels(sedtrails_data)
+        if not available_labels:
+            raise ConfigurationError(
+                f"Configured sediment_fraction_name '{selected_fraction_name}' could not be resolved because "
+                'fraction labels are not available in input metadata.'
+            )
+
+        normalized_labels = [str(label).strip().lower() for label in available_labels]
+        requested_name = str(selected_fraction_name).strip().lower()
+        if requested_name not in normalized_labels:
+            raise ConfigurationError(
+                f"Configured sediment_fraction_name '{selected_fraction_name}' was not found. "
+                f'Available labels: {available_labels}'
+            )
+        selected_fraction_index = normalized_labels.index(requested_name)
+
+    try:
+        selected_fraction_index = int(selected_fraction_index)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            f'Configured sediment_fraction_index must be an integer, got {selected_fraction_index!r}'
+        ) from exc
+
+    if selected_fraction_index < 0 or selected_fraction_index >= fractions:
+        raise ConfigurationError(
+            f'Configured sediment_fraction_index={selected_fraction_index} is out of bounds for '
+            f'available fractions={fractions}.'
+        )
+
+    selected_data = _shallow_sedtrails_data_clone(sedtrails_data)
+    selected_data.fractions = 1
+
+    for field_name, value in list(vars(selected_data).items()):
+        if field_name.startswith('_') or field_name == 'fractions':
+            continue
+        selected_value = _select_fraction_value(value, fractions, selected_fraction_index)
+        if selected_value is not value:
+            setattr(selected_data, field_name, selected_value)
+
+    return selected_data
+
+
+def _select_fraction_value(value: Any, fractions: int, fraction_index: int) -> Any:
+    """Select a single fraction from arrays or vector-field dictionaries when present."""
+    if isinstance(value, dict) and {'x', 'y', 'magnitude'}.issubset(value.keys()):
+        x_array = np.asarray(value['x'])
+        if x_array.ndim >= 3 and x_array.shape[1] == fractions:
+            return {
+                'x': np.asarray(value['x'])[:, fraction_index, ...],
+                'y': np.asarray(value['y'])[:, fraction_index, ...],
+                'magnitude': np.asarray(value['magnitude'])[:, fraction_index, ...],
+            }
+        return value
+
+    if isinstance(value, np.ndarray) and value.ndim >= 3 and value.shape[1] == fractions:
+        return value[:, fraction_index, ...]
+
+    return value
+
+
+def _available_fraction_labels(sedtrails_data: Any) -> list[str] | None:
+    """Return normalized sediment fraction labels from data metadata when available."""
+    metadata = getattr(sedtrails_data, 'metadata', None)
+    if metadata is None:
+        return None
+
+    labels = None
+    if hasattr(metadata, 'get'):
+        labels = metadata.get('sediment_fraction_labels', None)
+    elif hasattr(metadata, 'sediment_fraction_labels'):
+        labels = getattr(metadata, 'sediment_fraction_labels')
+
+    if labels is None:
+        return None
+    return [str(label).strip() for label in labels]

@@ -857,6 +857,8 @@ class Simulation:
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
+            'sediment_fraction_index': self._controller.get('general.input_model.sediment_fraction_index', 0),
+            'sediment_fraction_name': self._controller.get('general.input_model.sediment_fraction_name'),
             'domain_config': self._get_domain_config(),
         }
 
@@ -1141,6 +1143,8 @@ class Simulation:
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
         repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
+        default_fraction_index = self._controller.get('general.input_model.sediment_fraction_index', 0)
+        default_fraction_name = self._controller.get('general.input_model.sediment_fraction_name')
         input_time_bounds = self.format_converter.get_time_bounds()
         self._validate_simulation_start_matches_input(simulation_time, input_time_bounds)
         if repeat_eulerian_fields and input_time_bounds is not None:
@@ -1287,7 +1291,13 @@ class Simulation:
                         )
                     plan_retrievers = {
                         runtime_plan.population_index: FieldDataRetriever(
-                            build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
+                            build_plan_sedtrails_data(
+                                sedtrails_data,
+                                runtime_plan.tracer,
+                                population_config=runtime_plan.population_config,
+                                default_fraction_index=default_fraction_index,
+                                default_fraction_name=default_fraction_name,
+                            )
                         )
                         for runtime_plan in runtime_plans
                     }

@@ -197,6 +197,35 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_accepts_sediment_fraction_index(tmp_path):
+    """Accept per-population sediment fraction selection by index."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = 2
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_index'] == 2
+
+
+def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
+    """Reject invalid negative per-population sediment fraction index values."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = -1
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_accepts_sediment_fraction_name(tmp_path):
+    """Accept per-population sediment fraction selection by label."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_name'] = 'sediment300_nat'
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
+
+
 def _validate_config(tmp_path, config):
     """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'

@@ -115,6 +115,16 @@
           "type": "number",
           "default": 1,
           "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
+        },
+        "sediment_fraction_index": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Delft3D4 only: zero-based sediment fraction index to select when multiple fractions are present (e.g. LSED/LSEDTOT dimensions)."
+        },
+        "sediment_fraction_name": {
+          "type": "string",
+          "description": "Delft3D4 only: sediment fraction name to select when available in fraction coordinates (takes precedence over sediment_fraction_index)."
         }
       }
     },

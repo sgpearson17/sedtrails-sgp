@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from sedtrails.transport_converter.plugins.format import d3d4_netcdf
 
@@ -274,3 +275,67 @@ def test_delft3d4_netcdf_conversion() -> None:
         mask_type = _resolve_plot_mask()
         mask = _build_kcs_mask() if mask_type == 'kcs' else None
         _plot_if_requested(data, Path(plot_dir), time_idx, mask)
+
+
+def test_selects_configured_fraction_index_from_lsed_dimension(tmp_path: Path) -> None:
+    """The plugin should select the configured sediment fraction index for LSED data."""
+    input_file = tmp_path / 'dummy.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.sediment_fraction_index = 2
+
+    var = xr.DataArray(
+        np.arange(12).reshape(3, 4),
+        dims=('LSED', 'M'),
+        coords={'LSED': ['sediment100_nat', 'sediment200_nat', 'sediment_mud']},
+    )
+
+    selected = plugin._select_first_dims(var)
+    np.testing.assert_array_equal(selected.values, var.values[2])
+
+
+def test_selects_configured_fraction_name_from_lsed_dimension(tmp_path: Path) -> None:
+    """The plugin should resolve sediment fraction by coordinate name when configured."""
+    input_file = tmp_path / 'dummy.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.sediment_fraction_index = 0
+    plugin.sediment_fraction_name = 'sediment300_nat'
+
+    var = xr.DataArray(
+        np.arange(12).reshape(3, 4),
+        dims=('LSED', 'M'),
+        coords={'LSED': ['sediment100_nat', 'sediment200_nat', 'sediment300_nat']},
+    )
+
+    selected = plugin._select_first_dims(var)
+    np.testing.assert_array_equal(selected.values, var.values[2])
+
+
+def test_raises_for_out_of_bounds_fraction_index(tmp_path: Path) -> None:
+    """An invalid fraction index should fail fast with a clear error."""
+    input_file = tmp_path / 'dummy.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.sediment_fraction_index = 99
+
+    var = xr.DataArray(np.arange(8).reshape(2, 4), dims=('LSED', 'M'))
+
+    with pytest.raises(ValueError, match='out of bounds'):
+        plugin._select_first_dims(var)
+
+
+def test_preserves_fraction_dimension_when_requested(tmp_path: Path) -> None:
+    """Sediment variables should keep LSED when selection is deferred to population level."""
+    input_file = tmp_path / 'dummy.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+
+    var = xr.DataArray(
+        np.arange(12).reshape(3, 4),
+        dims=('LSED', 'M'),
+    )
+
+    selected = plugin._select_first_dims(var, select_fraction_dims=False)
+    assert selected.dims == ('LSED', 'M')
+    np.testing.assert_array_equal(selected.values, var.values)

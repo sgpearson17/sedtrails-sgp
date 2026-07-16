@@ -250,12 +250,104 @@ def test_plan_local_physics_data_keeps_same_named_fields_from_overwriting():
     assert source_data.get_physics_fields() == []
 
 
+def test_build_plan_sedtrails_data_selects_population_fraction_before_conversion():
+    """Select the configured population fraction before running tracer physics conversion."""
+    source_data = _FakeSedtrailsData(
+        fractions=3,
+        bed_load_transport={
+            'x': np.array([[[1.0, 2.0], [10.0, 20.0], [100.0, 200.0]]]),
+            'y': np.array([[[3.0, 4.0], [30.0, 40.0], [300.0, 400.0]]]),
+            'magnitude': np.array([[[5.0, 6.0], [50.0, 60.0], [500.0, 600.0]]]),
+        },
+    )
+    converter = _InspectingFractionPhysicsConverter(expected=np.array([[100.0, 200.0]]))
+    tracer_plan = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('mixing_layer_thickness',),
+        converter=converter,
+    )
+
+    plan_data = build_plan_sedtrails_data(
+        source_data,
+        tracer_plan,
+        population_config={'sediment_fraction_index': 2},
+    )
+
+    assert converter.saw_fraction_shape == (1, 2)
+    assert plan_data.fractions == 1
+    np.testing.assert_array_equal(plan_data.bed_load_transport['x'], np.array([[100.0, 200.0]]))
+
+
+def test_build_plan_sedtrails_data_rejects_out_of_bounds_population_fraction():
+    """Fail fast when a population requests a sediment fraction index outside available bounds."""
+    source_data = _FakeSedtrailsData(
+        fractions=2,
+        bed_load_transport={
+            'x': np.array([[[1.0], [2.0]]]),
+            'y': np.array([[[1.0], [2.0]]]),
+            'magnitude': np.array([[[1.0], [2.0]]]),
+        },
+    )
+    tracer_plan = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('mixing_layer_thickness',),
+        converter=_NamedScalarPhysicsConverter('mixing_layer_thickness', np.array([0.1])),
+    )
+
+    with pytest.raises(ConfigurationError, match='out of bounds'):
+        build_plan_sedtrails_data(
+            source_data,
+            tracer_plan,
+            population_config={'sediment_fraction_index': 3},
+        )
+
+
+def test_build_plan_sedtrails_data_selects_population_fraction_by_name():
+    """Resolve population fraction labels from metadata when selecting by name."""
+    source_data = _FakeSedtrailsData(
+        fractions=3,
+        bed_load_transport={
+            'x': np.array([[[1.0], [10.0], [100.0]]]),
+            'y': np.array([[[1.0], [10.0], [100.0]]]),
+            'magnitude': np.array([[[1.0], [10.0], [100.0]]]),
+        },
+        metadata=_FakeMetadata(['sediment100_nat', 'sediment200_nat', 'sediment300_nat']),
+    )
+    converter = _InspectingFractionPhysicsConverter(expected=np.array([[10.0]]))
+    tracer_plan = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('mixing_layer_thickness',),
+        converter=converter,
+    )
+
+    plan_data = build_plan_sedtrails_data(
+        source_data,
+        tracer_plan,
+        population_config={'sediment_fraction_name': 'sediment200_nat'},
+    )
+
+    assert converter.saw_fraction_shape == (1, 1)
+    np.testing.assert_array_equal(plan_data.bed_load_transport['x'], np.array([[10.0]]))
+
+
 class _FakeSedtrailsData:
     """Minimal sedtrails-data test double storing physics fields by name."""
 
-    def __init__(self):
+    def __init__(self, fractions=1, bed_load_transport=None, metadata=None):
         """Initialize an empty physics field store."""
         self._physics_fields = {}
+        self.fractions = fractions
+        self.bed_load_transport = bed_load_transport
+        self.metadata = metadata
 
     def add_physics_field(self, name, data):
         """Store a named physics field and expose it as an attribute."""
@@ -303,3 +395,29 @@ class _NamedScalarPhysicsConverter:
     def convert_physics(self, sedtrails_data, transport_probability_method):
         """Add the configured scalar field to the provided sedtrails data."""
         sedtrails_data.add_physics_field(self.field_name, self.field_value)
+
+
+class _InspectingFractionPhysicsConverter:
+    """Converter test double that records the fraction-selected transport slice."""
+
+    def __init__(self, expected):
+        self.expected = expected
+        self.saw_fraction_shape = None
+
+    def convert_physics(self, sedtrails_data, transport_probability_method):
+        bed_load_x = np.asarray(sedtrails_data.bed_load_transport['x'])
+        self.saw_fraction_shape = bed_load_x.shape
+        np.testing.assert_array_equal(bed_load_x, self.expected)
+        sedtrails_data.add_physics_field('mixing_layer_thickness', np.array([0.1]))
+
+
+class _FakeMetadata:
+    """Metadata test double exposing sediment fraction labels through get()."""
+
+    def __init__(self, labels):
+        self._labels = labels
+
+    def get(self, key, default=None):
+        if key == 'sediment_fraction_labels':
+            return self._labels
+        return default

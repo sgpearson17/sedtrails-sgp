@@ -40,6 +40,8 @@ class FormatPlugin(BaseFormatPlugin):
         if not self.input_file.exists():
             raise FileNotFoundError(f'Input file not found: {self.input_file}')
         self.morfac = morfac
+        self.sediment_fraction_index: Optional[int] = None
+        self.sediment_fraction_name: Optional[str] = None
         self.input_data: Optional[xr.Dataset] = None
         self._input_variables: List[str] = []
 
@@ -155,6 +157,16 @@ class FormatPlugin(BaseFormatPlugin):
             }
         )
 
+        fractions = 1
+        for candidate_name in ('bed_load_transport_x', 'suspended_transport_x', 'sediment_concentration'):
+            candidate_values = mapped_data.get(candidate_name)
+            if isinstance(candidate_values, np.ndarray) and candidate_values.ndim >= 3:
+                fractions = int(candidate_values.shape[1])
+                break
+
+        if mapped_data.get('sediment_fraction_labels'):
+            metadata.add('sediment_fraction_labels', mapped_data['sediment_fraction_labels'])
+
         return SedtrailsData(
             times=seconds_since_ref,
             reference_date=self.reference_date,
@@ -162,7 +174,7 @@ class FormatPlugin(BaseFormatPlugin):
             y=mapped_data['y'],
             bed_level=mapped_data['bed_level'],
             depth_avg_flow_velocity=depth_avg_flow_velocity,
-            fractions=1,
+            fractions=fractions,
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
             water_depth=mapped_data['water_depth'],
@@ -326,9 +338,49 @@ class FormatPlugin(BaseFormatPlugin):
 
         return start_idx, end_idx
 
-    def _select_first_dims(self, var: xr.DataArray) -> xr.DataArray:
-        """Select the first index for known extra dimensions (layers, fractions)."""
+    def _resolve_fraction_index(self, var: xr.DataArray, dim: str) -> int:
+        """Resolve the configured sediment fraction index for a given fraction dimension."""
+        size = int(var.sizes.get(dim, 0))
+        if size <= 0:
+            raise ValueError(f"Invalid fraction dimension '{dim}' with size {size}")
+
+        if self.sediment_fraction_name:
+            candidate_labels = None
+            if dim in var.coords:
+                candidate_labels = var.coords[dim].values
+            elif self.input_data is not None and dim in self.input_data.coords:
+                candidate_labels = self.input_data[dim].values
+
+            if candidate_labels is not None:
+                normalized_labels = [str(label).strip().lower() for label in np.asarray(candidate_labels).tolist()]
+                requested_name = str(self.sediment_fraction_name).strip().lower()
+                if requested_name in normalized_labels:
+                    return int(normalized_labels.index(requested_name))
+                raise ValueError(
+                    f"Configured sediment_fraction_name '{self.sediment_fraction_name}' was not found "
+                    f"in dimension '{dim}'. Available values: {candidate_labels.tolist()}"
+                )
+
+        if self.sediment_fraction_index is None:
+            return 0
+
+        try:
+            index = int(self.sediment_fraction_index)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'Configured sediment_fraction_index must be an integer, got {self.sediment_fraction_index!r}'
+            ) from exc
+
+        if index < 0 or index >= size:
+            raise ValueError(
+                f"Configured sediment_fraction_index={index} is out of bounds for dimension '{dim}' with size {size}"
+            )
+        return index
+
+    def _select_first_dims(self, var: xr.DataArray, *, select_fraction_dims: bool = True) -> xr.DataArray:
+        """Select extra dimensions, optionally preserving LSED-like fraction dimensions."""
         selection = {}
+        fraction_dims = {'LSED', 'LSEDTOT', 'LSTSCI'}
         for dim in [
             'KMAXOUT_RESTR',
             'KMAXOUT',
@@ -342,7 +394,10 @@ class FormatPlugin(BaseFormatPlugin):
             'layer',
         ]:
             if dim in var.dims:
-                selection[dim] = 0
+                if dim in fraction_dims and select_fraction_dims:
+                    selection[dim] = self._resolve_fraction_index(var, dim)
+                elif dim not in fraction_dims:
+                    selection[dim] = 0
         if selection:
             var = var.isel(**selection)
         return var
@@ -429,6 +484,14 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
         data: Dict[str, np.ndarray] = {}
+        sediment_keys = {
+            'bed_load_transport_x',
+            'bed_load_transport_y',
+            'suspended_transport_x',
+            'suspended_transport_y',
+            'sediment_concentration',
+        }
+        fraction_labels = None
 
         if 'XZ' in self.input_data and 'YZ' in self.input_data:
             data['x'] = self.input_data['XZ'].values
@@ -470,7 +533,19 @@ class FormatPlugin(BaseFormatPlugin):
 
         for key, var_name in variable_map.items():
             if var_name in self.input_data:
-                var = self._select_first_dims(self.input_data[var_name])
+                select_fraction_dims = key not in sediment_keys
+                var = self._select_first_dims(self.input_data[var_name], select_fraction_dims=select_fraction_dims)
+
+                if key in sediment_keys and fraction_labels is None:
+                    for fraction_dim in ('LSED', 'LSEDTOT', 'LSTSCI'):
+                        if fraction_dim in self.input_data[var_name].dims:
+                            if fraction_dim in self.input_data[var_name].coords:
+                                fraction_labels = [
+                                    str(label).strip()
+                                    for label in np.asarray(self.input_data[var_name].coords[fraction_dim].values).tolist()
+                                ]
+                            break
+
                 if 'time' in var.dims:
                     values = var.isel(time=time_slice).values
                 else:
@@ -509,5 +584,8 @@ class FormatPlugin(BaseFormatPlugin):
             if key in {'x', 'y'}:
                 continue
             data[key] = self._flatten_spatial(values, grid_shape)
+
+        if fraction_labels is not None:
+            data['sediment_fraction_labels'] = fraction_labels
 
         return data
