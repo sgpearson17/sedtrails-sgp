@@ -1592,6 +1592,28 @@ class TestParticlePopulation:
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([True]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([True]))
 
+    def test_no_probability_keeps_burial_and_buried_status_zero_over_time(self, monkeypatch):
+        """With no_probability, burial/state stay zero and z follows bed level each timestep."""
+        population = _single_particle_population(release_start='0')
+        monkeypatch.setattr(np.random, 'rand', lambda n_particles: pytest.fail('np.random.rand should not be called'))
+
+        bed_levels = [0.0, 0.35, -0.2, 0.8]
+        for step, bed_level in enumerate(bed_levels):
+            current_time = float(step)
+            population.update_information(
+                current_time=current_time,
+                mixing_depth=1.0,
+                transport_probability=0.2,
+                bed_level=bed_level,
+            )
+            population.update_status()
+            population.update_bed_level_change_after_movement(bed_level)
+
+            np.testing.assert_allclose(population.particles['burial_depth'], np.array([0.0]))
+            np.testing.assert_array_equal(population.particles['status_buried'], np.array([False]))
+            np.testing.assert_allclose(population.particles['z'], np.array([bed_level]))
+            np.testing.assert_allclose(population.particles['bed_level'], np.array([bed_level]))
+
     def test_update_status_reuses_cached_particle_locations(self, monkeypatch):
         """Unchanged particles should not be relocated on every status update."""
         population = _single_particle_population(release_start='0')
