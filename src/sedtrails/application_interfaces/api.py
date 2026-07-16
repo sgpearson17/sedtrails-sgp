@@ -284,9 +284,7 @@ def create_restart_config(
 
 def plot_trajectories(
     results_file: str,
-    save: bool = False,
-    output_dir: str = '.',
-    output_file: str | None = None,
+    output: str | None = None,
     max_particles: int | None = None,
     sample_fraction: float | None = None,
     sample_seed: int = 0,
@@ -302,14 +300,11 @@ def plot_trajectories(
     ----------
     results_file : str
         Path to the SedTRAILS NetCDF results file.
-    save : bool, optional
-        Whether to save the plot as a PNG file. Default is False (display only).
-    output_dir : str, optional
-        Directory where the plot will be saved if save=True (and output_file is not set).
-        Default ``'.'`` uses the NetCDF file directory when available.
-    output_file : str, optional
-        Exact path where the plot should be written. This enables headless
-        file output and takes precedence over ``save``/``output_dir``.
+    output : str, optional
+        Output target. If ``output`` is an existing directory, the plot is
+        written as ``particle_trajectories.png`` inside it. Otherwise,
+        ``output`` is treated as a filename. If omitted, the default output
+        is ``particle_trajectories.png`` in the NetCDF file directory.
     max_particles : int, optional
         Maximum number of particles to plot. Mutually exclusive with
         ``sample_fraction``.
@@ -334,10 +329,13 @@ def plot_trajectories(
     Examples
     --------
     >>> import sedtrails
-    >>> sedtrails.plot_trajectories('results.nc', save=True)
-
-    >>> # Display without saving
     >>> sedtrails.plot_trajectories('results.nc')
+
+    >>> # Save in an existing folder using the default file name
+    >>> sedtrails.plot_trajectories('results.nc', output='plots')
+
+    >>> # Save to an explicit file
+    >>> sedtrails.plot_trajectories('results.nc', output='plots/custom_name.png')
     """
     from sedtrails.pathway_visualizer import plot_trajectories as _plot
     from sedtrails.pathway_visualizer import read_netcdf
@@ -346,9 +344,7 @@ def plot_trajectories(
     try:
         _plot(
             ds,
-            save_plot=save,
-            output_dir=output_dir,
-            output_file=output_file,
+            output=output,
             max_particles=max_particles,
             sample_fraction=sample_fraction,
             sample_seed=sample_seed,

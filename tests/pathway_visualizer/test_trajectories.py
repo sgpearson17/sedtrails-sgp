@@ -151,7 +151,7 @@ def test_plot_trajectories_output_file_skips_show_by_default(tmp_path, monkeypat
     monkeypatch.setattr('matplotlib.pyplot.show', _show)
 
     output_file = tmp_path / 'trajectories.png'
-    plot_trajectories(ds, output_file=output_file)
+    plot_trajectories(ds, output=output_file)
 
     assert output_file.exists()
     assert not show_called
@@ -174,9 +174,31 @@ def test_plot_trajectories_saves_next_to_source_file_by_default(tmp_path, monkey
 
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
-    plot_trajectories(ds, save_plot=True)
+    plot_trajectories(ds)
 
     assert (tmp_path / 'particle_trajectories.png').exists()
+
+
+def test_plot_trajectories_output_existing_directory_uses_default_filename(tmp_path, monkeypatch):
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+        },
+        coords={
+            'n_particles': np.arange(1),
+            'n_timesteps': np.arange(2),
+        },
+    )
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    output_dir = tmp_path / 'plots'
+    output_dir.mkdir()
+
+    plot_trajectories(ds, output=output_dir)
+
+    assert (output_dir / 'particle_trajectories.png').exists()
 
 
 def test_plot_trajectories_draws_spatial_panel_by_default(monkeypatch):
@@ -250,7 +272,7 @@ def test_plot_trajectories_show_can_be_forced_with_output_file(tmp_path, monkeyp
 
     monkeypatch.setattr('matplotlib.pyplot.show', _show)
 
-    plot_trajectories(ds, output_file=tmp_path / 'trajectories.png', show=True)
+    plot_trajectories(ds, output=tmp_path / 'trajectories.png', show=True)
 
     assert show_called
 

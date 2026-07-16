@@ -140,7 +140,7 @@ class TestSedtrailsCLI:
             report_domain_exits=False,
         )
 
-    def test_viz_trajectories_defaults_to_saving_and_new_plot_settings(
+    def test_viz_trajectories_defaults_to_output_path_and_new_plot_settings(
         self, runner, cli_command, tmp_path, monkeypatch
     ):
         """Test default trajectories visualization settings."""
@@ -152,9 +152,7 @@ class TestSedtrailsCLI:
         assert result.exit_code == 0
         mock_plot_trajectories.assert_called_once_with(
             'sedtrails_results.nc',
-            save=True,
-            output_dir='.',
-            output_file=None,
+            output=None,
             max_particles=10000,
             sample_fraction=None,
             sample_seed=0,
