@@ -5,9 +5,9 @@ from typing import Tuple
 import numpy as np
 
 __all__ = [
-    "DiffusionStrategy",
-    "BrownianDiffusionStrategy",
-    "DiffusionCalculator",
+    'DiffusionStrategy',
+    'BrownianDiffusionStrategy',
+    'DiffusionCalculator',
 ]
 
 
@@ -23,6 +23,7 @@ class DiffusionStrategy(ABC):
         u: np.ndarray,
         v: np.ndarray,
         kh: float,
+        rng: np.random.Generator | None = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply diffusion to the given positions and velocities.
 
@@ -34,128 +35,13 @@ class DiffusionStrategy(ABC):
             u: Array of x-velocity components.
             v: Array of y-velocity components.
             kh: Diffusion coefficient.
+            rng: Optional random-number generator for reproducible diffusion.
 
         Returns
         -------
             Tuple of updated x and y positions after diffusion (xdif, ydif).
         """
         pass
-
-
-class GradientDiffusionStrategy(DiffusionStrategy):
-    """
-    Diffusion based on spatial gradients of the velocity field.
-    """
-
-    def calculate(
-        self,
-        dt: float,
-        x: np.ndarray,
-        y: np.ndarray,
-        u: np.ndarray,
-        v: np.ndarray,
-        kh: float,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Example dummy diffusion calculation using gradients of the velocity field.
-
-        For unstructured grids, gradients are approximated using nearest-neighbor differences.
-
-        Parameters
-        ----------
-        dt : float
-            Integration timestep in seconds.
-        x : np.ndarray
-            X coordinate value or array.
-        y : np.ndarray
-            Y coordinate value or array.
-        u : np.ndarray
-            X velocity component.
-        v : np.ndarray
-            Y velocity component.
-        kh : float
-            Horizontal diffusivity value or array.
-
-        Returns
-        -------
-        Tuple[np.ndarray, np.ndarray]
-            Array containing the computed values.
-        """
-        n = len(x)
-        dudx = np.zeros(n)
-        dudy = np.zeros(n)
-        dvdx = np.zeros(n)
-        dvdy = np.zeros(n)
-
-        for i in range(n):
-            distances = np.sqrt((x - x[i]) ** 2 + (y - y[i]) ** 2)
-            if np.all(distances == 0):  # Only one point
-                continue
-            distances[i] = np.inf
-            nearest_idx = np.argmin(distances)
-            dx = x[nearest_idx] - x[i]
-            dy = y[nearest_idx] - y[i]
-            if dx != 0 or dy != 0:
-                scale = 1.0 / (dx**2 + dy**2 + 1e-10)
-                dudx[i] = (u[nearest_idx] - u[i]) * dx * scale
-                dudy[i] = (u[nearest_idx] - u[i]) * dy * scale
-                dvdx[i] = (v[nearest_idx] - v[i]) * dx * scale
-                dvdy[i] = (v[nearest_idx] - v[i]) * dy * scale
-
-        # Diffusion terms: kh * Laplacian
-        xdif = kh * (dudx + dvdy)
-        ydif = kh * (dudy + dvdx)
-        return xdif, ydif
-
-
-class RandomDiffusionStrategy(DiffusionStrategy):
-    """
-    Random walk diffusion model.
-    """
-
-    def calculate(
-        self,
-        dt: float,
-        x: np.ndarray,
-        y: np.ndarray,
-        u: np.ndarray,
-        v: np.ndarray,
-        kh: float,
-    ) -> Tuple[float, float]:
-        """
-        Return calculate.
-
-        Parameters
-        ----------
-        dt : float
-            Integration timestep in seconds.
-        x : np.ndarray
-            X coordinate value or array.
-        y : np.ndarray
-            Y coordinate value or array.
-        u : np.ndarray
-            X velocity component.
-        v : np.ndarray
-            Y velocity component.
-        kh : float
-            Horizontal diffusivity value or array.
-
-        Returns
-        -------
-        Tuple[float, float]
-            Floating-point result of the calculation.
-        """
-        vel_mag = np.sqrt(u**2 + v**2)
-        rndnr_mag = np.random.randn(*vel_mag.shape)
-        mag_diff = np.abs(rndnr_mag * kh) * vel_mag
-        rndnr_angle = np.random.rand(*vel_mag.shape)
-        angle_diff = rndnr_angle * 2 * math.pi
-        dx_diff = mag_diff * np.cos(angle_diff) * dt
-        dy_diff = mag_diff * np.sin(angle_diff) * dt
-        xdif = x + dx_diff
-        ydif = y + dy_diff
-
-        return xdif, ydif
 
 
 class BrownianDiffusionStrategy(DiffusionStrategy):
@@ -169,6 +55,7 @@ class BrownianDiffusionStrategy(DiffusionStrategy):
         u: np.ndarray,
         v: np.ndarray,
         kh: float,
+        rng: np.random.Generator | None = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Return calculate.
@@ -197,8 +84,9 @@ class BrownianDiffusionStrategy(DiffusionStrategy):
             return x.copy(), y.copy()
 
         sigma = math.sqrt(2.0 * kh * dt)
-        dx = sigma * np.random.standard_normal(x.shape)
-        dy = sigma * np.random.standard_normal(y.shape)
+        normal = np.random.standard_normal if rng is None else rng.standard_normal
+        dx = sigma * normal(x.shape)
+        dy = sigma * normal(y.shape)
         return x + dx, y + dy
 
 
@@ -207,14 +95,16 @@ class DiffusionCalculator:
     Main class for calculating diffusion effects.
     """
 
-    def __init__(self, strategy: DiffusionStrategy):
+    def __init__(self, strategy: DiffusionStrategy, rng: np.random.Generator | None = None):
         """Initialize with a diffusion strategy.
 
         Parameters
         ----------
-            strategy: DiffusionStrategy object to use
+            strategy: DiffusionStrategy object to use.
+            rng: Optional population-specific random-number generator.
         """
         self._strategy = strategy
+        self._rng = rng
 
     @property
     def strategy(self) -> DiffusionStrategy:
@@ -263,4 +153,4 @@ class DiffusionCalculator:
         -------
             Tuple of (x_diffusion, y_diffusion) representing position changes
         """
-        return self._strategy.calculate(dt, x, y, u, v, kh)
+        return self._strategy.calculate(dt, x, y, u, v, kh, rng=self._rng)

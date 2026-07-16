@@ -361,7 +361,9 @@ class PopulationConfig:
     burial_depth: float | dict[str, float] = field(init=False, default=0.0)  # burial depth configuration for the particles
     strategy_settings: Dict = field(init=False, default_factory=dict)
     remove_permanently_buried: bool = field(init=False, default=False)
+    diffusion_method: str = field(init=False, default='brownian')
     diffusion_coefficient: float = field(init=False, default=0.0)
+    diffusion_seed: int | None = field(init=False, default=None)
 
     def __post_init__(self):
         _strategy = find_value(self.population_config, 'seeding.strategy', {}).keys()
@@ -387,14 +389,26 @@ class PopulationConfig:
         self.remove_permanently_buried = bool(
             find_value(self.population_config, 'seeding.remove_permanently_buried', False)
         )
-        diffusion_coefficient = find_value(self.population_config, 'characteristics.diffusion_coefficient', 0.0)
+        diffusion_config = find_value(self.population_config, 'diffusion', {})
+        if not isinstance(diffusion_config, dict):
+            raise ValueError('"diffusion" must be a mapping.')
+        self.diffusion_method = diffusion_config.get('method', 'brownian')
+        if self.diffusion_method not in {'none', 'brownian'}:
+            raise ValueError('"diffusion.method" must be "none" or "brownian".')
+        diffusion_coefficient = diffusion_config.get(
+            'coefficient', find_value(self.population_config, 'characteristics.diffusion_coefficient', 0.0)
+        )
         if isinstance(diffusion_coefficient, (bool, np.bool_)) or not isinstance(diffusion_coefficient, (int, float, np.number)) or not np.isfinite(diffusion_coefficient):
             raise ValueError('"diffusion_coefficient" must be a finite non-negative number.')
         if diffusion_coefficient < 0.0:
             raise ValueError('"diffusion_coefficient" must be a finite non-negative number.')
-        if self.particle_type != 'passive' and diffusion_coefficient != 0.0:
-            raise ValueError('"diffusion_coefficient" is only supported for passive particles.')
         self.diffusion_coefficient = float(diffusion_coefficient)
+        diffusion_seed = diffusion_config.get('seed')
+        if diffusion_seed is not None and (
+            isinstance(diffusion_seed, (bool, np.bool_)) or not isinstance(diffusion_seed, (int, np.integer))
+        ):
+            raise ValueError('"diffusion.seed" must be an integer.')
+        self.diffusion_seed = None if diffusion_seed is None else int(diffusion_seed)
 
 
 class SeedingStrategy(ABC):
@@ -976,8 +990,11 @@ class ParticlePopulation:
         self._position_calculator_temporal_with_boundary_class = (
             self.grid_geometry.update_particles_temporal_with_boundary_class
         )
-        if self.population_config.diffusion_coefficient > 0.0:
-            self._diffusion_calculator = DiffusionCalculator(BrownianDiffusionStrategy())
+        if self.population_config.diffusion_method == 'brownian' and self.population_config.diffusion_coefficient > 0.0:
+            rng = None
+            if self.population_config.diffusion_seed is not None:
+                rng = np.random.default_rng(self.population_config.diffusion_seed)
+            self._diffusion_calculator = DiffusionCalculator(BrownianDiffusionStrategy(), rng=rng)
 
         # generate particles based on the configuration
         _particles = ParticleFactory.create_particles(self.population_config)
@@ -1432,7 +1449,7 @@ class ParticlePopulation:
                 start_y = new_y[local_indices]
                 start_simplices = new_simplices[local_indices]
                 diffused_x, diffused_y = self._diffusion_calculator.calc_diffusion(
-                    start_x, start_y, np.empty(0), np.empty(0),
+                    start_x, start_y, np.zeros_like(start_x), np.zeros_like(start_y),
                     self.population_config.diffusion_coefficient, current_timestep,
                 )
                 diffused_simplices = self.grid_geometry.locate_points(
