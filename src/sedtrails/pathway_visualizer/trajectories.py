@@ -2,12 +2,13 @@
 Module for visualizing particle trajectories from SedTRAILS NetCDF output files.
 """
 
-from pathlib import Path
 import re
-import numpy as np
-from matplotlib.collections import LineCollection
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 import xarray as xr
+from matplotlib.collections import LineCollection
 
 
 def _decode_netcdf_name(raw_value) -> str:
@@ -22,6 +23,13 @@ def _decode_netcdf_name(raw_value) -> str:
         return raw_value.decode('utf-8', errors='ignore').strip('\x00').strip()
 
     arr = np.asarray(raw_value)
+
+    # Scalar numpy bytes/str (0-dim array or item)
+    if arr.ndim == 0:
+        item = arr.item()
+        if isinstance(item, (bytes, np.bytes_)):
+            return item.decode('utf-8', errors='ignore').strip('\x00').strip()
+        return str(item).strip()
 
     # Char-array representation (e.g., dtype='|S1' with trailing nulls)
     if arr.ndim > 0 and arr.size > 0 and arr.dtype.kind in ('S', 'U'):
@@ -200,7 +208,9 @@ def _select_sample_indices(
     if selected_indices.size < target:
         remaining_pool = np.setdiff1d(np.arange(n_particles, dtype=int), selected_indices, assume_unique=True)
         if remaining_pool.size:
-            extra = rng.choice(remaining_pool, size=min(target - selected_indices.size, remaining_pool.size), replace=False)
+            extra = rng.choice(
+                remaining_pool, size=min(target - selected_indices.size, remaining_pool.size), replace=False
+            )
             selected_indices = np.concatenate((selected_indices, extra))
     elif selected_indices.size > target:
         selected_indices = rng.choice(selected_indices, size=target, replace=False)
@@ -258,8 +268,8 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
         y_data = np.asarray(y_var.values, dtype=float).T
     else:
         raise ValueError(
-            "Expected SedTRAILS time-major trajectory arrays shaped as "
-            "(n_timesteps, n_particles), or 1D checkpoint arrays."
+            'Expected SedTRAILS time-major trajectory arrays shaped as '
+            '(n_timesteps, n_particles), or 1D checkpoint arrays.'
         )
 
     n_particles, n_timesteps = x_data.shape
@@ -425,8 +435,7 @@ def _normalize_panels(panels: str | list[str] | tuple[str, ...]) -> list[str]:
     invalid = sorted(set(requested) - set(valid_panels))
     if invalid:
         raise ValueError(
-            "'panels' contains invalid values: "
-            f"{', '.join(invalid)}. Valid values are: all, {', '.join(valid_panels)}."
+            f"'panels' contains invalid values: {', '.join(invalid)}. Valid values are: all, {', '.join(valid_panels)}."
         )
 
     ordered = [panel for panel in valid_panels if panel in requested]
@@ -607,9 +616,9 @@ def plot_trajectories(
     if ax2 is not None:
         ax2.grid(True, alpha=0.3)
 
-    if 'population' in selected_panels or 'population-distance' in selected_panels:
-        population_names = _decode_population_names(sampled_ds, n_populations)
-        pop_colors = _population_colors(n_populations)
+    # if 'population' in selected_panels or 'population-distance' in selected_panels:
+    population_names = _decode_population_names(sampled_ds, n_populations)
+    pop_colors = _population_colors(n_populations)
 
     # Plot 3: Trajectories colored by population
     ax3 = axes_by_panel.get('population')
@@ -635,9 +644,7 @@ def plot_trajectories(
                     pop_ends.append(points[-1])
 
             if pop_segments:
-                ax3.add_collection(
-                    LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1)
-                )
+                ax3.add_collection(LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1))
                 ax3.plot([], [], color=pop_colors[pop_idx], alpha=0.7, linewidth=1, label=population_names[pop_idx])
             if pop_starts:
                 marker_colors = [pop_colors[pop_idx]] * len(pop_starts)
