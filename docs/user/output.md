@@ -49,7 +49,6 @@ DIMENSIONS:
   n_populations: 2
   n_timesteps: 25
   n_flowfields: 2
-  name_strlen: 24
 
 COORDINATES:
 ------------------------------------------------------------
@@ -57,14 +56,14 @@ COORDINATES:
 
 DATA VARIABLES:
 ------------------------------------------------------------
-  population_name: ('n_populations', 'name_strlen') |S1 (2, 24)
-  population_particle_type: ('n_populations',) int32 (2,)
+  population_name: ('n_populations',) str (2,)
+  population_particle_type: ('n_populations',) str (2,)
   population_start_idx: ('n_populations',) int32 (2,)
   population_count: ('n_populations',) int32 (2,)
   population_repr_volume: ('n_populations',) float64 (2,)
-  trajectory_id: ('n_particles', 'name_strlen') |S1 (15, 24)
+  trajectory_id: ('n_particles',) int64 (15,)
   population_id: ('n_particles',) int32 (15,)
-  flowfield_name: ('n_flowfields', 'name_strlen') |S1 (2, 24)
+  flowfield_name: ('n_flowfields',) str (2,)
   time: ('n_particles', 'n_timesteps') float64 (15, 25)
   x: ('n_particles', 'n_timesteps') float64 (15, 25)
   y: ('n_particles', 'n_timesteps') float64 (15, 25)
@@ -109,24 +108,23 @@ Dimensions define the axes used by the data variables.
 - ``n_populations``: Number of particle populations in the configuration.
 - ``n_timesteps``: Number of saved output slots. This is not the number of internal CFL timesteps.
 - ``n_flowfields``: Number of transport flow fields recorded in the output metadata. If no flow-field names are available, the writer still creates one flow-field slot.
-- ``name_strlen``: Fixed string length used for character-array variables such as ``population_name`` and ``trajectory_id``.
 
 ### Coordinates
 
-The current streaming writer creates dimensions but does not create separate coordinate variables for those dimensions. As a result, the ``COORDINATES`` section can be empty even though the dimensions are valid. Consumers should use zero-based positional indices for ``n_particles``, ``n_populations``, ``n_timesteps``, ``n_flowfields``, and ``name_strlen`` when needed.
+The current streaming writer creates dimensions but does not create separate coordinate variables for those dimensions. As a result, the ``COORDINATES`` section can be empty even though the dimensions are valid. Consumers should use zero-based positional indices for ``n_particles``, ``n_populations``, ``n_timesteps``, ``n_flowfields`` when needed.
 
 ### Data Variables
 
 The main output variables are:
 
-- ``population_name``: Fixed-width character array containing the configured population names.
-- ``population_particle_type``: Numeric particle-type code stored by the runtime population object. Use ``population_name`` and the original configuration for the human-readable particle type when needed.
+- ``population_name``: NetCDF-4 variable-length string array containing the configured population names.
+- ``population_particle_type``: NetCDF-4 variable-length string array containing the configured particle types.
 - ``population_start_idx``: Start index of each population in the combined particle axis.
 - ``population_count``: Number of particles in each population.
 - ``population_repr_volume``: Representative volume for each population when available; otherwise ``NaN``.
-- ``trajectory_id``: Fixed-width generated trajectory identifiers, such as ``traj_0``.
+- ``trajectory_id``: Zero-based numeric identifier for each particle along the combined particle axis.
 - ``population_id``: Population index for each particle along the combined particle axis.
-- ``flowfield_name``: Names of the transport flow fields used by the runtime tracer plans, such as ``bed_load_velocity`` or ``suspended_velocity``.
+- ``flowfield_name``: NetCDF-4 variable-length string array naming the transport flow fields used by the runtime tracer plans, such as ``bed_load_velocity`` or ``suspended_velocity``.
 - ``time``: Numeric simulation time for each particle and saved output slot, following the global ``time_units`` attribute.
 - ``x``, ``y``, ``z``: Particle coordinates at each saved output slot.
 - ``burial_depth``: Particle burial depth at each saved output slot.
