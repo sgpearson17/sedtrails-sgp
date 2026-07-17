@@ -179,6 +179,37 @@ def test_plot_trajectories_saves_next_to_source_file_by_default(tmp_path, monkey
     assert (tmp_path / 'particle_trajectories.png').exists()
 
 
+def test_plot_trajectories_output_dot_uses_current_working_directory(tmp_path, monkeypatch):
+    """An explicit dot output should not fall back to the NetCDF source directory."""
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [0.5]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+        },
+        coords={
+            'n_particles': np.arange(1),
+            'n_timesteps': np.arange(2),
+        },
+    )
+    source_dir = tmp_path / 'source'
+    current_dir = tmp_path / 'current'
+    source_dir.mkdir()
+    current_dir.mkdir()
+    ds.encoding['source'] = str(source_dir / 'results.nc')
+    monkeypatch.chdir(current_dir)
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    fig, _ = plot_trajectories(ds, output='.')
+    try:
+        assert (current_dir / 'particle_trajectories.png').exists()
+        assert not (source_dir / 'particle_trajectories.png').exists()
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)
+
+
 def test_plot_trajectories_output_existing_directory_uses_default_filename(tmp_path, monkeypatch):
     ds = xr.Dataset(
         data_vars={
