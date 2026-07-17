@@ -817,6 +817,23 @@ class Simulation:
         return sample_time + tolerance >= next_output_time or sample_time + tolerance >= end_time
 
     @staticmethod
+    def _should_update_bed_level_after_movement(tracer_plan) -> bool:
+        """Return whether post-move bed-level resampling should run.
+
+        Rules for current 2D workflows:
+        - Always run for ``vanwesten`` to preserve burial-depth bookkeeping.
+        - Also run for any tracer configured with ``no_probability`` so
+          particle ``z`` follows bed level after movement (passive/soulsby included).
+
+        Future quasi-3D tracers can introduce exceptions here when vertical
+        position is solved independently from bed level.
+        """
+        return (
+            tracer_plan.method_name == 'vanwesten'
+            or tracer_plan.transport_probability_method == 'no_probability'
+        )
+
+    @staticmethod
     def _initialize_population_output_status(populations, current_time: int | float) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
@@ -1377,8 +1394,11 @@ class Simulation:
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('update_burial_depth'):
-                                population.update_burial_depth()
+                            transport_probability_method = tracer_plan.transport_probability_method
+                            if transport_probability_method != 'no_probability':
+                                with self._profile_section('update_burial_depth'):
+                                    population.update_burial_depth()
+                        
 
                         with self._profile_section('update_status'):
                             population.update_status()
@@ -1412,9 +1432,14 @@ class Simulation:
                             timer.current_timestep,
                         )
 
-                    if tracer_plan.method_name == 'vanwesten':
-                        with self._profile_section('update_bed_level_after_movement'):
-                            population.update_bed_level_change_after_movement(bed_level)
+                        # Re-sample bed level at the new positions after movement.
+                        # Keep this INSIDE the flow-field loop so vanwesten
+                        # burial bookkeeping compares temporal bed change only,
+                        # and so no_probability tracers keep z aligned to bed
+                        # level after advection.
+                        if self._should_update_bed_level_after_movement(tracer_plan):
+                            with self._profile_section('update_bed_level_after_movement'):
+                                population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:

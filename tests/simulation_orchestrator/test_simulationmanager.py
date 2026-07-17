@@ -466,6 +466,32 @@ class TestSimulationManagerTimeConfig:
         """Samples should be saved only on configured boundaries or at final time."""
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
 
+    @pytest.mark.parametrize(
+        'method_name,transport_probability_method,expected',
+        [
+            ('vanwesten', 'stochastic_transport', True),
+            ('vanwesten', 'reduced_velocity', True),
+            ('vanwesten', 'no_probability', True),
+            ('soulsby', 'no_probability', True),
+            ('passive_tracer', 'no_probability', True),
+            ('soulsby', 'reduced_velocity', False),
+            ('passive_tracer', 'stochastic_transport', False),
+        ],
+    )
+    def test_should_update_bed_level_after_movement_policy(
+        self,
+        method_name,
+        transport_probability_method,
+        expected,
+    ):
+        """Post-move bed-level updates should follow tracer and transport policy rules."""
+        tracer_plan = SimpleNamespace(
+            method_name=method_name,
+            transport_probability_method=transport_probability_method,
+        )
+
+        assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected
+
     def test_initialize_population_output_status_supplies_required_fields(self):
         """The seeded initial sample should have status fields before the first physics update."""
 
