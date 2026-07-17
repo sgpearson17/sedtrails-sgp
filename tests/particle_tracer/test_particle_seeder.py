@@ -1155,6 +1155,183 @@ def population_config():
 
 class TestParticlePopulation:
     @staticmethod
+    def _diffusing_passive_population(diffusion_coefficient=0.5):
+        """Create mobile passive particles on a unit-square grid."""
+        config = PopulationConfig(
+            {
+                'name': 'Diffusing Passive Particles',
+                'particle_type': 'passive',
+                'characteristics': {'diffusion_coefficient': diffusion_coefficient},
+                'transport_probability': 'no_probability',
+                'seeding': {
+                    'strategy': {'point': {'locations': ['0.5,0.5', '0.6,0.6']}},
+                    'quantity': 1,
+                    'release_start': '0',
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        )
+        population = ParticlePopulation(
+            field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+            field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+            population_config=config,
+        )
+        population.particles['status_mobile'] = np.ones(2, dtype=bool)
+        return population
+
+    def test_passive_diffusion_is_applied_after_advection(self, monkeypatch):
+        """Configured passive diffusivity adds one Brownian displacement per axis."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.5)
+
+        draws = iter((np.array([1.0, -1.0]), np.array([0.5, -0.5])))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position(
+            flow_field={'u': np.zeros(4), 'v': np.zeros(4)},
+            current_timestep=0.02,
+        )
+
+        sigma = np.sqrt(2.0 * 0.5 * 0.02)
+        np.testing.assert_allclose(population.particles['x'], np.array([0.5, 0.6]) + sigma * np.array([1.0, -1.0]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]) + sigma * np.array([0.5, -0.5]))
+
+    def test_diffusion_receives_velocity_arrays_matching_particle_coordinates(self, monkeypatch):
+        """Diffusion strategies always receive coordinate-shaped velocity inputs."""
+        population = self._diffusing_passive_population()
+        observed = {}
+
+        def check_velocity_shapes(x, y, u, v, kh, dt):
+            observed['x_shape'] = x.shape
+            observed['y_shape'] = y.shape
+            observed['u_shape'] = u.shape
+            observed['v_shape'] = v.shape
+            np.testing.assert_allclose(u, 0.0)
+            np.testing.assert_allclose(v, 0.0)
+            return x, y
+
+        monkeypatch.setattr(population._diffusion_calculator, 'calc_diffusion', check_velocity_shapes)
+        population.update_position({'u': np.zeros(4), 'v': np.zeros(4)}, 0.02)
+
+        assert observed['u_shape'] == observed['x_shape']
+        assert observed['v_shape'] == observed['y_shape']
+
+    def test_zero_diffusivity_skips_random_draws(self, monkeypatch):
+        """The zero-diffusion default keeps the optimized advection-only path."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.0)
+        monkeypatch.setattr(
+            np.random,
+            'standard_normal',
+            lambda size: pytest.fail('zero diffusivity must not draw random values'),
+        )
+
+        population.update_position(
+            flow_field={'u': np.ones(4), 'v': np.zeros(4)},
+            current_timestep=0.1,
+        )
+
+        np.testing.assert_allclose(population.particles['x'], np.array([0.6, 0.7]))
+        np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]))
+
+    def test_diffusion_open_boundary_exit_marks_particle_left_domain(self, monkeypatch):
+        """A Brownian step through an open edge removes the particle."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        draws = iter((np.zeros(1), -np.ones(1)))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position({'u': np.zeros(3), 'v': np.zeros(3)}, 0.5)
+
+        assert population.particles['status_left_domain'].tolist() == [True]
+        assert population.particles['status_alive'].tolist() == [False]
+        assert population.particles['status_domain'].tolist() == [False]
+
+    def test_diffusion_land_boundary_exit_rolls_back_to_advected_position(self, monkeypatch):
+        """A Brownian step through land keeps the particle at its prior position."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        draws = iter((-np.ones(1), np.zeros(1)))
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: next(draws))
+
+        population.update_position({'u': np.zeros(3), 'v': np.zeros(3)}, 0.5)
+
+        np.testing.assert_allclose(population.particles['x'], [0.2])
+        np.testing.assert_allclose(population.particles['y'], [0.2])
+        assert population.particles['status_beached'].tolist() == [True]
+        assert population.particles['status_domain'].tolist() == [True]
+        assert population.particles['status_mobile'].tolist() == [False]
+
+    def test_advection_land_contact_skips_diffusion(self, monkeypatch):
+        """A land contact during advection cannot receive a later Brownian step."""
+        config = _boundary_action_config('0.2,0.2')
+        config['particle_type'] = 'passive'
+        config['characteristics'] = {'diffusion_coefficient': 0.5}
+        population = ParticleSeeder([config]).seed(_boundary_action_field_data())[0]
+        population._current_time = 0.0
+        population.update_status()
+        monkeypatch.setattr(np.random, 'standard_normal', lambda size: pytest.fail('land contact must skip diffusion'))
+
+        population.update_position({'u': -np.ones(3), 'v': np.zeros(3)}, 0.5)
+
+        np.testing.assert_allclose(population.particles['x'], [0.2])
+        np.testing.assert_allclose(population.particles['y'], [0.2])
+
+    @pytest.mark.parametrize('coefficient', [-1.0, np.inf, np.nan, True])
+    def test_invalid_diffusion_coefficient_is_rejected(self, coefficient):
+        """Diffusivity must be finite and non-negative before tracing starts."""
+        with pytest.raises(ValueError, match='diffusion_coefficient'):
+            self._diffusing_passive_population(diffusion_coefficient=coefficient)
+
+    @pytest.mark.parametrize(
+        ('particle_type', 'tracer_methods', 'characteristics'),
+        [
+            ('passive', {'passive_tracer': {}}, {}),
+            ('sand', {'vanwesten': {'flow_field_name': ['bed_load_velocity']}}, {'density': 2650.0, 'grain_size': 0.00025}),
+            ('mud', {'soulsby': {'flow_field_name': ['grain_velocity']}}, {'density': 2000.0, 'size': 0.00005}),
+        ],
+    )
+    def test_top_level_brownian_diffusion_applies_to_all_population_methods(
+        self, particle_type, tracer_methods, characteristics
+    ):
+        """Top-level diffusion is independent of particle and tracer method."""
+        population = _diffusion_population(
+            particle_type, tracer_methods, characteristics, {'method': 'brownian', 'coefficient': 0.1, 'seed': 7}
+        )
+
+        assert population.population_config.diffusion_method == 'brownian'
+        assert population._diffusion_calculator is not None
+
+    @pytest.mark.parametrize('diffusion', [{'method': 'none', 'coefficient': 0.1}, {'coefficient': 0.0}, None])
+    def test_top_level_diffusion_noop_modes_skip_calculator(self, diffusion):
+        """None, zero coefficient, and omitted diffusion retain the fast path."""
+        population = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+
+        assert population._diffusion_calculator is None
+
+    def test_population_diffusion_seed_is_reproducible_over_multiple_steps(self):
+        """Same per-population seeds give identical multi-step tracks."""
+        diffusion = {'method': 'brownian', 'coefficient': 0.1, 'seed': 42}
+        first = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+        second = _diffusion_population('passive', {'passive_tracer': {}}, {}, diffusion)
+        third = _diffusion_population('passive', {'passive_tracer': {}}, {}, {**diffusion, 'seed': 43})
+
+        for population in (first, second, third):
+            population.particles['status_mobile'] = np.ones(1, dtype=bool)
+            for _ in range(2):
+                population.update_position({'u': np.zeros(4), 'v': np.zeros(4)}, 0.01)
+
+        np.testing.assert_allclose(first.particles['x'], second.particles['x'])
+        np.testing.assert_allclose(first.particles['y'], second.particles['y'])
+        assert not np.allclose(first.particles['x'], third.particles['x'])
+
+    @staticmethod
     def _status_test_population(current_time=0.0):
         config = PopulationConfig(
             {
@@ -2384,6 +2561,30 @@ def _single_particle_population(release_start):
         field_y=np.array([0.0, 0.0, 1.0, 1.0]),
         population_config=config,
         reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
+
+
+def _diffusion_population(particle_type, tracer_methods, characteristics, diffusion):
+    """Build a one-particle population using the canonical diffusion config."""
+    config = {
+        'name': 'Configured Diffusion Population',
+        'particle_type': particle_type,
+        'characteristics': characteristics,
+        'tracer_methods': tracer_methods,
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': ['0.5,0.5']}},
+            'quantity': 1,
+            'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }
+    if diffusion is not None:
+        config['diffusion'] = diffusion
+    return ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=PopulationConfig(config),
     )
 
 

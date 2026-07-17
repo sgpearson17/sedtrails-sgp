@@ -295,6 +295,7 @@ The `particles` section contains an array of `populations`, where each populatio
 | `name`                  | string | **Required** | `particle`       | Unique name for this population (e.g., `sediment-fine`, `sand-01`).                                        |
 | `particle_type`         | string | **Required** | `passive`        | Type of particle. Options: `passive`, `sand`, `mud`.                                                       |
 | `characteristics`       | object | **Required** | -                | Type-specific particle properties. See [Particle Characteristics](#particle-characteristics).              |
+| `diffusion`             | object | Optional     | `brownian`, `0.0` | Method, coefficient, and optional seed for horizontal diffusion. See [Per-population diffusion](#per-population-diffusion). |
 | `tracer_methods`        | object | **Required** | -                | Transport calculation method(s). See [Tracer Methods](#tracer-methods).                                    |
 | `transport_probability` | string | Optional     | `no_probability` | How to apply transport probability. Options: `no_probability`, `stochastic_transport`, `reduced_velocity`. |
 | `seeding`               | object | **Required** | -                | Particle release configuration. See [Particle Seeding](#particle-seeding).                                 |
@@ -309,7 +310,18 @@ The `characteristics` object varies by `particle_type`:
 
 | Parameter               | Type   | Required     | Default | Description                        |
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
-| `diffusion_coefficient` | number | **Required** | `0.0`   | Random walk diffusion coefficient (horizontal diffusivity $K_h$). |
+| `diffusion_coefficient` | number | Optional (legacy) | `0.0` | Legacy fallback for the top-level `diffusion.coefficient`; prefer the top-level configuration. |
+
+#### Per-population diffusion
+
+The optional `diffusion` object applies to every particle type and tracer method. `method` is `brownian` (default) or `none`; `coefficient` is a non-negative horizontal diffusivity in `m^2/s` and defaults to `0.0`; `seed` is an optional integer that makes draws reproducible for that population. A zero coefficient and `method: none` both disable diffusion.
+
+```yaml
+diffusion:
+  method: brownian
+  coefficient: 0.05
+  seed: 1234
+```
 
 #### Sand Particles
 
