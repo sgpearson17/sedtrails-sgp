@@ -312,6 +312,46 @@ def test_selects_configured_fraction_name_from_lsed_dimension(tmp_path: Path) ->
     np.testing.assert_array_equal(selected.values, var.values[2])
 
 
+def test_converts_namcon_labels_into_metadata(tmp_path: Path) -> None:
+    """The converter should expose Delft3D-4 NAMCON labels as sediment fraction metadata."""
+    input_file = tmp_path / 'namcon.nc'
+
+    labels = ['sediment100_nat', 'sediment200_nat', 'sediment300_nat']
+    namcon = np.full((len(labels), 20), b' ', dtype='S1')
+    for row_index, label in enumerate(labels):
+        encoded = np.array(list(label.ljust(20)), dtype='S1')
+        namcon[row_index, :] = encoded
+
+    x_coords = np.array([[0.0, 1.0], [0.0, 1.0]])
+    y_coords = np.array([[0.0, 0.0], [1.0, 1.0]])
+
+    dataset = xr.Dataset(
+        data_vars={
+            'NAMCON': (('LSTSCI', 'strlen20'), namcon),
+            'XCOR': (('y', 'x'), x_coords),
+            'YCOR': (('y', 'x'), y_coords),
+            'DP0': (('y', 'x'), np.array([[1.0, 1.0], [1.0, 1.0]])),
+            'time': (('time',), np.array(['2010-01-01T00:00:00'], dtype='datetime64[ns]')),
+            'U1': (('time', 'y', 'x'), np.array([[[1.0, 1.0], [1.0, 1.0]]])),
+            'V1': (('time', 'y', 'x'), np.array([[[0.0, 0.0], [0.0, 0.0]]])),
+            'TAUKSI': (('time', 'y', 'x'), np.array([[[0.1, 0.1], [0.1, 0.1]]])),
+            'TAUETA': (('time', 'y', 'x'), np.array([[[0.2, 0.2], [0.2, 0.2]]])),
+            'TAUMAX': (('time', 'y', 'x'), np.array([[[0.3, 0.3], [0.3, 0.3]]])),
+            'SBUU': (('time', 'LSED', 'y', 'x'), np.ones((1, 3, 2, 2))),
+            'SBVV': (('time', 'LSED', 'y', 'x'), np.ones((1, 3, 2, 2))),
+            'SSUU': (('time', 'LSED', 'y', 'x'), np.ones((1, 3, 2, 2))),
+            'SSVV': (('time', 'LSED', 'y', 'x'), np.ones((1, 3, 2, 2))),
+            'R1': (('time', 'LSED', 'y', 'x'), np.ones((1, 3, 2, 2))),
+        }
+    )
+    dataset.to_netcdf(input_file)
+
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    data = plugin.convert(reference_date=np.datetime64('1970-01-01T00:00:00'))
+
+    assert data.metadata.get('sediment_fraction_labels') == labels
+
+
 def test_raises_for_out_of_bounds_fraction_index(tmp_path: Path) -> None:
     """An invalid fraction index should fail fast with a clear error."""
     input_file = tmp_path / 'dummy.nc'

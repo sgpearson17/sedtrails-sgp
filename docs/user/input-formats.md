@@ -40,6 +40,8 @@ ncFormat=4
 ```
 The resulting  `*.nc` file can then be directly read by SedTRAILS using the `d3d4_netcdf.py` format converter plugin.
 
+For multi-fraction Delft3D-4 inputs, SedTRAILS resolves `sediment_fraction_name` values against the `NAMCON` field in the NetCDF file. If the input only contains a single sediment fraction, NAMCON is not used for fraction selection. For example, a label such as `sediment100_nat` can be selected by name instead of by zero-based index when multiple fractions are present. This name-based lookup is not yet implemented for FM or XBeach inputs because their transport variable naming conventions differ and still need dedicated mapping.
+
 
 ## XBeach
 ```

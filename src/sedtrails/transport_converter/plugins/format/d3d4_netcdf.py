@@ -42,6 +42,7 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.sediment_fraction_index: Optional[int] = None
         self.sediment_fraction_name: Optional[str] = None
+        self.sediment_fraction_labels: list[str] | None = None
         self.input_data: Optional[xr.Dataset] = None
         self._input_variables: List[str] = []
 
@@ -231,6 +232,38 @@ class FormatPlugin(BaseFormatPlugin):
             return self.input_data[name]
         raise KeyError(f"Variable '{name}' not found in dataset")
 
+    @staticmethod
+    def _decode_fraction_labels(raw_values: Any) -> list[str] | None:
+        """Decode fixed-width character arrays into stripped fraction labels."""
+        values = np.asarray(raw_values)
+        if values.size == 0:
+            return None
+
+        if values.ndim == 1:
+            labels = []
+            for value in values.tolist():
+                if isinstance(value, (bytes, bytearray, np.bytes_)):
+                    label = value.decode('utf-8', errors='ignore')
+                else:
+                    label = str(value)
+                label = label.strip().replace('\x00', '')
+                if label:
+                    labels.append(label)
+            return labels or None
+
+        labels = []
+        for row in values:
+            chars = []
+            for value in np.asarray(row).ravel().tolist():
+                if isinstance(value, (bytes, bytearray, np.bytes_)):
+                    chars.append(value.decode('utf-8', errors='ignore'))
+                else:
+                    chars.append(str(value))
+            label = ''.join(chars).replace('\x00', '').strip()
+            if label:
+                labels.append(label)
+        return labels or None
+
     def _decompress_time(self, time_info: Dict) -> Dict:
         """Apply morfac decompression to time values."""
         if self.morfac == 1.0:
@@ -345,20 +378,24 @@ class FormatPlugin(BaseFormatPlugin):
             raise ValueError(f"Invalid fraction dimension '{dim}' with size {size}")
 
         if self.sediment_fraction_name:
-            candidate_labels = None
+            candidate_labels = self.sediment_fraction_labels
             if dim in var.coords:
                 candidate_labels = var.coords[dim].values
-            elif self.input_data is not None and dim in self.input_data.coords:
+            elif candidate_labels is None and self.input_data is not None and dim in self.input_data.coords:
                 candidate_labels = self.input_data[dim].values
 
             if candidate_labels is not None:
-                normalized_labels = [str(label).strip().lower() for label in np.asarray(candidate_labels).tolist()]
+                if isinstance(candidate_labels, list):
+                    available_labels = [str(label).strip() for label in candidate_labels]
+                else:
+                    available_labels = self._decode_fraction_labels(candidate_labels) or []
+                normalized_labels = [label.lower() for label in available_labels]
                 requested_name = str(self.sediment_fraction_name).strip().lower()
                 if requested_name in normalized_labels:
                     return int(normalized_labels.index(requested_name))
                 raise ValueError(
                     f"Configured sediment_fraction_name '{self.sediment_fraction_name}' was not found "
-                    f"in dimension '{dim}'. Available values: {candidate_labels.tolist()}"
+                    f"in dimension '{dim}'. Available values: {available_labels}"
                 )
 
         if self.sediment_fraction_index is None:
@@ -492,6 +529,10 @@ class FormatPlugin(BaseFormatPlugin):
             'sediment_concentration',
         }
         fraction_labels = None
+
+        if 'NAMCON' in self.input_data:
+            fraction_labels = self._decode_fraction_labels(self.input_data['NAMCON'].values)
+            self.sediment_fraction_labels = fraction_labels
 
         if 'XZ' in self.input_data and 'YZ' in self.input_data:
             data['x'] = self.input_data['XZ'].values

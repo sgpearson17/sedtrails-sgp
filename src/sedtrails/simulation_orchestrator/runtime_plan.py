@@ -357,7 +357,7 @@ def _select_population_fraction_data(
             if requested_name not in normalized_labels:
                 raise ConfigurationError(
                     f"Configured sediment_fraction_name '{selected_fraction_name}' was not found. "
-                    f'Available labels: {available_labels}'
+                    f'Available NAMCON labels: {available_labels}'
                 )
             selected_fraction_index = normalized_labels.index(requested_name)
 

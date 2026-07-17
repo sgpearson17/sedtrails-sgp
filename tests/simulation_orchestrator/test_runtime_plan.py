@@ -339,6 +339,35 @@ def test_build_plan_sedtrails_data_selects_population_fraction_by_name():
     np.testing.assert_array_equal(plan_data.bed_load_transport['x'], np.array([[10.0]]))
 
 
+def test_build_plan_sedtrails_data_reports_namcon_labels_for_invalid_name():
+    """Invalid fraction names should report the available NAMCON labels."""
+    source_data = _FakeSedtrailsData(
+        fractions=3,
+        bed_load_transport={
+            'x': np.array([[[1.0], [10.0], [100.0]]]),
+            'y': np.array([[[1.0], [10.0], [100.0]]]),
+            'magnitude': np.array([[[1.0], [10.0], [100.0]]]),
+        },
+        metadata=_FakeMetadata(['sediment100_nat', 'sediment200_nat', 'sediment300_nat']),
+    )
+    converter = _InspectingFractionPhysicsConverter(expected=np.array([[10.0]]))
+    tracer_plan = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('mixing_layer_thickness',),
+        converter=converter,
+    )
+
+    with pytest.raises(ConfigurationError, match=r"Available NAMCON labels: \['sediment100_nat', 'sediment200_nat', 'sediment300_nat'\]"):
+        build_plan_sedtrails_data(
+            source_data,
+            tracer_plan,
+            population_config={'sediment_fraction_name': 'not_a_fraction'},
+        )
+
+
 def test_build_plan_sedtrails_data_requires_index_when_labels_unavailable():
     """Require explicit index selection when labels are unavailable for name lookup."""
     source_data = _FakeSedtrailsData(
