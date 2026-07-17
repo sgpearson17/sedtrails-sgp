@@ -15,10 +15,7 @@
                     "default": 0.0,
                     "description": "random walk diffusion coefficient (horizontal diffusivity K_h) for passive particles"
                 }
-            },
-            "required": [
-                "diffusion_coefficient"
-            ]
+            }
         },
         "sand_characteristics": {
             "type": "object",
@@ -181,6 +178,29 @@
             "type": "object",
             "description": "characteristics specific to the particle type"
         },
+        "diffusion": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "enum": ["none", "brownian"],
+                    "default": "brownian",
+                    "description": "Optional horizontal diffusion method."
+                },
+                "coefficient": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "default": 0.0,
+                    "description": "Horizontal diffusivity kh in m^2/s."
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Optional per-population random seed."
+                }
+            },
+            "default": {"method": "brownian", "coefficient": 0.0}
+        },
         "tracer_methods": {
             "type": "object",
             "additionalProperties": false,
@@ -223,19 +243,14 @@
                 "burial_depth": {
                     "type": "object",
                     "additionalProperties": false,
-                    "description": "burial depth configuration for particles. If not used, then burial depth compuations are not considered.",
-                    "default": {
-                        "constant": 0
-                    },
+                    "description": "burial depth configuration for particles. If not used, then burial depth computations are not considered.",
                     "properties": {
                         "random": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "maximum depth from bed level (surface) for random burial depth in meters."
                         },
                         "constant": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "constant burial depth in meters."
                         }
                     },

@@ -42,19 +42,24 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
             'suspended_velocity_method': 'soulsby_2011',
         }
     }
+    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == {'constant': 0.0}
 
 
 def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
     """Accept passive tracer configs and apply the default flow field."""
     config = _base_config()
-    config['particles']['populations'][0]['particle_type'] = 'passive'
-    config['particles']['populations'][0]['characteristics'] = {'diffusion_coefficient': 0.0}
-    config['particles']['populations'][0]['tracer_methods'] = {'passive_tracer': {}}
+    population = config['particles']['populations'][0]
+    population['particle_type'] = 'passive'
+    population['characteristics'] = {'diffusion_coefficient': 0.0}
+    population['tracer_methods'] = {'passive_tracer': {}}
+    population['seeding'].pop('burial_depth')
 
     validated = _validate_config(tmp_path, config)
 
-    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
+    validated_population = validated['particles']['populations'][0]
+    tracer_methods = validated_population['tracer_methods']
     assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
+    assert 'burial_depth' not in validated_population['seeding']
 
 
 def test_population_schema_rejects_vanwesten_bl(tmp_path):
@@ -192,6 +197,39 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
     """Reject non-boolean permanent-burial optimization values."""
     config = _base_config()
     config['particles']['populations'][0]['seeding']['remove_permanently_buried'] = 'yes'
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+@pytest.mark.parametrize('method', ['none', 'brownian'])
+def test_population_schema_accepts_population_diffusion_methods(tmp_path, method):
+    """Accept both supported per-population diffusion methods."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = {
+        'method': method,
+        'coefficient': 0.05,
+        'seed': 1234,
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['diffusion']['method'] == method
+
+
+@pytest.mark.parametrize(
+    'diffusion',
+    [
+        {'method': 'random', 'coefficient': 0.1},
+        {'method': 'brownian', 'coefficient': -0.1},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': True},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': 1.5},
+    ],
+)
+def test_population_schema_rejects_invalid_diffusion_config(tmp_path, diffusion):
+    """Reject unsupported methods and invalid diffusion parameters."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = diffusion
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)

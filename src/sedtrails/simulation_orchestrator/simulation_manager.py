@@ -22,6 +22,7 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     build_plan_sedtrails_data,
     build_population_runtime_plans,
     unique_flow_field_names,
+    validate_population_runtime_configurations,
 )
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
@@ -1153,6 +1154,9 @@ class Simulation:
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
+        populations_config = self._controller.get('particles.populations', [])
+        validate_population_runtime_configurations(populations_config)
+
         # Time configuration
         simulation_time = self._create_simulation_time()
 
@@ -1171,7 +1175,6 @@ class Simulation:
         with self._profile_section('get_seeding_field_data'):
             seeding_field_data = self.format_converter.get_seeding_field_data()
 
-        populations_config = self._controller.get('particles.populations', [])
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
@@ -1365,8 +1368,11 @@ class Simulation:
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
-                        mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
+                    if tracer_plan.transport_probability_method == 'no_probability':
+                        mixing_depth = None
+                    else:
+                        with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
+                            mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
                     with self._profile_section('get_scalar_field_bounds.bed_level'):
                         bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
