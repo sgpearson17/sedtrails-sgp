@@ -7,30 +7,62 @@ inputs:
   data: ./sample-data/trim-inlet.nc
   read_interval: 10D
 time:
-  start: '2016-12-08 00:00:00'
+  start: '2016-10-16 00:00:00'
   timestep: 60S
   duration: 2D
   cfl_condition: 0.7
 particles:
   populations:
-  - name: population_1
+  # - name: population_1
+  #   particle_type: sand
+  #   characteristics:
+  #     grain_size: 0.00025
+  #     density: 2650.0
+  #   tracer_methods:
+  #     vanwesten:
+  #       flow_field_name:
+  #       - bed_load_velocity
+  #       - suspended_velocity
+  #   transport_probability: stochastic_transport
+  #   seeding:
+  #     burial_depth:
+  #       constant: 0.02
+  #     release_start: '2016-12-08 00:00:00'
+  #     quantity: 1
+  #     strategy:
+  #       file_points:
+  #         path: ./examples/sedtrails-example-d3d4-seeded.points.txt
+  #         has_header: false
+  #         x_col: 0
+  #         y_col: 1
+  #         deduplicate: false
+  #         dropna: false
+  #         stride: 1
+  - name: FineSand
     particle_type: sand
     characteristics:
-      grain_size: 0.00025
-      density: 2650.0
+      grain_size: 0.0001 
+      density: 2650.0  
     tracer_methods:
-      vanwesten:
+      soulsby:
         flow_field_name:
-        - bed_load_velocity
-    transport_probability: no_probability
+          - grain_velocity
+        tracer_grain_size: 0.0001
+        background_grain_size: 0.0001
+        soulsby_b_e: 1.7e-07
+        soulsby_theta_s: 0.1
+        soulsby_gamma_e: 0.1
+        soulsby_mu_d: 0.5
+        soulsby_freedom_factor: 1
+    transport_probability: no_probability   # Options: no_probability, stochastic_transport, reduced_velocity
     seeding:
       burial_depth:
         constant: 0
-      release_start: '2016-12-08 00:00:00'
+      release_start: '2016-10-16 00:00:00'
       quantity: 1
       strategy:
         file_points:
-          path: ./examples/sedtrails-example-d3d4-seeded.points.txt
+          path: U:\MangroveConnectivity\pyST\04_luminescence\sedtrails\v001_ame_lum_test\ameland-test-seeding.txt
           has_header: false
           x_col: 0
           y_col: 1
@@ -40,7 +72,7 @@ particles:
 outputs:
   directory: ./results
   store_tracks: true
-  save_interval: 1H
+  save_interval: 15M
 visualization:
   dashboard:
     enable: false

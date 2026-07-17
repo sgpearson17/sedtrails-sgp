@@ -367,6 +367,49 @@ def integrate_exposure(
     return cumulative_dose, equivalent_sunlight_hours, time_above_threshold
 
 
+def bleaching_probability(
+    cumulative_light_dose: ArrayLike,
+    *,
+    bleaching_coefficient: float = 1.0,
+    stored_lum_signal: float = 1e6,
+) -> np.ndarray:
+    """Placeholder bleaching probability from cumulative light dose.
+
+    Formula:
+    ``1 - (stored_lum_signal - cumulative_light_dose * bleaching_coefficient) / stored_lum_signal``
+
+    Placeholder clipping behavior (as requested):
+    - if ``stored_lum_signal - cumulative_light_dose * bleaching_coefficient < 0`` then probability = 0
+    - if ``stored_lum_signal - cumulative_light_dose * bleaching_coefficient > 1`` then probability = 1
+    """
+
+    if stored_lum_signal <= 0.0:
+        raise ValueError('stored_lum_signal must be positive')
+
+    cumulative = _as_float_array(cumulative_light_dose, 'cumulative_light_dose')
+    remaining_signal = float(stored_lum_signal) - cumulative * float(bleaching_coefficient)
+    probability = 1.0 - (remaining_signal / float(stored_lum_signal))
+    probability = np.where(remaining_signal < 0.0, 0.0, probability)
+    probability = np.where(remaining_signal > 1.0, 1.0, probability)
+    return np.asarray(probability, dtype=float)
+
+
+def osl_signal_reduction(
+    cumulative_light_dose: ArrayLike,
+    *,
+    bleaching_coefficient: float = 1.0,
+    stored_lum_signal: float = 1e6,
+) -> np.ndarray:
+    """Placeholder remaining OSL signal after cumulative light exposure."""
+
+    if stored_lum_signal <= 0.0:
+        raise ValueError('stored_lum_signal must be positive')
+
+    cumulative = _as_float_array(cumulative_light_dose, 'cumulative_light_dose')
+    remaining_signal = float(stored_lum_signal) - cumulative * float(bleaching_coefficient)
+    return np.clip(np.asarray(remaining_signal, dtype=float), 0.0, float(stored_lum_signal))
+
+
 def compute_light_exposure(
     time: ArrayLike,
     water_depth: ArrayLike,
@@ -384,6 +427,8 @@ def compute_light_exposure(
     is_beached: ArrayLike | None = None,
     light_threshold: float = 0.0,
     reference_surface_light: float = 1.0,
+    bleaching_coefficient: float = 1.0,
+    stored_lum_signal: float = 1e6,
 ) -> ExposureResult:
     """Compute per-sample and cumulative light exposure diagnostics."""
 
@@ -422,15 +467,23 @@ def compute_light_exposure(
         light_threshold=light_threshold,
         reference_surface_light=reference_surface_light,
     )
-
-    placeholder = np.full_like(intensity, np.nan, dtype=float)
+    bleaching = bleaching_probability(
+        cumulative,
+        bleaching_coefficient=bleaching_coefficient,
+        stored_lum_signal=stored_lum_signal,
+    )
+    osl_reduction = osl_signal_reduction(
+        cumulative,
+        bleaching_coefficient=bleaching_coefficient,
+        stored_lum_signal=stored_lum_signal,
+    )
     return ExposureResult(
         light_intensity=intensity,
         cumulative_light_dose=cumulative,
         equivalent_sunlight_hours=equivalent_hours,
         time_above_threshold=above_threshold,
-        bleaching_probability=placeholder.copy(),
-        osl_signal_reduction=placeholder.copy(),
+        bleaching_probability=bleaching,
+        osl_signal_reduction=osl_reduction,
         attenuation_coefficient=np.broadcast_to(kd, intensity.shape),
         particle_depth_below_surface=np.broadcast_to(particle_depth, intensity.shape),
     )

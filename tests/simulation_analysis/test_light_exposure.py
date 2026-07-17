@@ -3,10 +3,12 @@ import pytest
 
 from sedtrails.simulation_analysis.light_exposure import (
     attenuation_from_storlazzi,
+    bleaching_probability,
     combine_attenuation_components,
     compute_light_exposure,
     integrate_exposure,
     light_intensity_at_particle,
+    osl_signal_reduction,
     particle_depth_below_surface,
     rouse_centroid_depth,
     surface_light_series,
@@ -130,7 +132,7 @@ def test_integrate_exposure_converts_datetime_to_seconds():
     np.testing.assert_allclose(equivalent_hours[:, 0], [0.0, 1.0])
 
 
-def test_compute_light_exposure_returns_placeholders_for_future_osl_models():
+def test_compute_light_exposure_returns_placeholder_bleaching_and_osl_series():
     result = compute_light_exposure(
         time=np.array([0.0, 10.0]),
         water_depth=np.array([[2.0], [2.0]]),
@@ -142,5 +144,28 @@ def test_compute_light_exposure_returns_placeholders_for_future_osl_models():
 
     assert result.light_intensity.shape == (2, 1)
     assert result.cumulative_light_dose[-1, 0] == pytest.approx(10.0 * np.exp(-1.0) * 10.0)
-    assert np.isnan(result.bleaching_probability).all()
-    assert np.isnan(result.osl_signal_reduction).all()
+    assert np.all(np.isfinite(result.bleaching_probability))
+    assert np.all(np.isfinite(result.osl_signal_reduction))
+
+
+def test_bleaching_probability_placeholder_formula_and_thresholds():
+    cumulative = np.array([0.0, 4.0, 20.0])
+    probability = bleaching_probability(
+        cumulative,
+        bleaching_coefficient=0.5,
+        stored_lum_signal=10.0,
+    )
+
+    # remaining_signal = [10, 8, 0] -> clipped behavior requested in notebook task
+    np.testing.assert_allclose(probability, [1.0, 1.0, 1.0])
+
+
+def test_osl_signal_reduction_placeholder_is_non_negative():
+    cumulative = np.array([0.0, 4.0, 20.0])
+    remaining = osl_signal_reduction(
+        cumulative,
+        bleaching_coefficient=0.5,
+        stored_lum_signal=10.0,
+    )
+
+    np.testing.assert_allclose(remaining, [10.0, 8.0, 0.0])

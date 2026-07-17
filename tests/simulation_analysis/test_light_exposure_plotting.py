@@ -9,7 +9,7 @@ from sedtrails.simulation_analysis.light_exposure import compute_light_exposure
 from sedtrails.simulation_analysis.light_exposure_plotting import plot_particle_bleaching_potential
 
 
-def test_plot_particle_bleaching_potential_builds_five_panel_figure():
+def test_plot_particle_bleaching_potential_builds_seven_panel_figure():
     time = np.array(['2020-01-01T00:00', '2020-01-01T01:00', '2020-01-01T02:00'], dtype='datetime64[m]')
     water_depth = np.array([2.0, 2.5, 2.0])
     particle_z = np.array([0.1, 0.2, 0.1])
@@ -35,6 +35,6 @@ def test_plot_particle_bleaching_potential_builds_five_panel_figure():
         exposure,
     )
 
-    assert len(axes) == 5
-    assert len(fig.axes) == 7  # five panels, colorbar, and exposure twin axis
+    assert len(axes) == 7
+    assert len(fig.axes) == 9  # seven panels, colorbar, and exposure twin axis
     plt.close(fig)

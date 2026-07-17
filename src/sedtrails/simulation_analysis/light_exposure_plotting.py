@@ -85,7 +85,7 @@ def plot_particle_bleaching_potential(
     burial_mask: ArrayLike | None = None,
     max_x_ticks: int = 9,
 ):
-    """Create a MATLAB-style five-panel particle light-exposure diagnostic plot.
+    """Create a MATLAB-style seven-panel particle light-exposure diagnostic plot.
 
     Parameters
     ----------
@@ -123,6 +123,8 @@ def plot_particle_bleaching_potential(
 
     instantaneous = np.asarray(exposure.light_intensity, dtype=float).reshape(len(time_hours), -1)[:, 0]
     cumulative = np.asarray(exposure.cumulative_light_dose, dtype=float).reshape(len(time_hours), -1)[:, 0]
+    bleaching = np.asarray(exposure.bleaching_probability, dtype=float).reshape(len(time_hours), -1)[:, 0]
+    osl_reduction = np.asarray(exposure.osl_signal_reduction, dtype=float).reshape(len(time_hours), -1)[:, 0]
     buried = None if burial_mask is None else _as_1d_bool(burial_mask, 'burial_mask')
 
     z_max = max(float(np.nanmax(water_depth)), float(np.nanmax(particle_z)), 1.0)
@@ -134,11 +136,11 @@ def plot_particle_bleaching_potential(
     light_grid = _light_penetration_grid(water_depth, kd, surface_light, z_grid)
 
     fig, axes = plt.subplots(
-        5,
+        7,
         1,
-        figsize=(14, 8.5),
+        figsize=(14, 12.0),
         sharex=True,
-        gridspec_kw={'height_ratios': [1.0, 1.0, 1.0, 1.15, 1.0], 'hspace': 0.45},
+        gridspec_kw={'height_ratios': [1.0, 1.0, 1.0, 1.15, 1.0, 1.0, 1.0], 'hspace': 0.5},
     )
 
     panel_title_prefix = f'{title_prefix} ' if title_prefix else ''
@@ -203,6 +205,15 @@ def plot_particle_bleaching_potential(
     exposure_axis.tick_params(axis='y', colors='tab:blue')
     cumulative_axis.tick_params(axis='y', colors='orangered')
     exposure_axis.set_title('(e) Particle Exposure to Light', fontweight='bold')
+
+    axes[5].plot(time_hours, bleaching, color='tab:purple', lw=1.1)
+    axes[5].set_ylabel('P$_{bleach}$ [-]')
+    axes[5].set_ylim(-0.05, 1.05)
+    axes[5].set_title('(f) Bleaching Probability (placeholder)', fontweight='bold')
+
+    axes[6].plot(time_hours, osl_reduction, color='tab:brown', lw=1.1)
+    axes[6].set_ylabel('OSL signal [-]')
+    axes[6].set_title('(g) OSL Signal Reduction (placeholder)', fontweight='bold')
 
     x_min = float(np.nanmin(time_hours))
     x_max = float(np.nanmax(time_hours))

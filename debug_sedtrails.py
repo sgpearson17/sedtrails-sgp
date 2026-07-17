@@ -34,7 +34,7 @@ def main():
     #  config_file = r"C:\surf\650_SedTRAILS\pyTesting\02_soulsby-debugging\009_missingGrainSizeField\config.example_soulsby.yaml"
     #  config_file = r'.\examples\config.example_sfincs.yaml'
     # config_file = r'.\examples\config.example_soulsby.yaml'
-    config_file = r'.\examples\sedtrails-example-burial-pr401.yaml'
+    config_file = r'U:\MangroveConnectivity\pyST\04_luminescence\sedtrails\v001_ame_lum_test\ame-lum-passive.yaml'
     
     # Set up logging for verbose output (equivalent to CLI verbose mode)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
