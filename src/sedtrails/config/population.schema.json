@@ -15,10 +15,7 @@
                     "default": 0.0,
                     "description": "random walk diffusion coefficient (horizontal diffusivity K_h) for passive particles"
                 }
-            },
-            "required": [
-                "diffusion_coefficient"
-            ]
+            }
         },
         "sand_characteristics": {
             "type": "object",
@@ -180,6 +177,29 @@
         "characteristics": {
             "type": "object",
             "description": "characteristics specific to the particle type"
+        },
+        "diffusion": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "enum": ["none", "brownian"],
+                    "default": "brownian",
+                    "description": "Optional horizontal diffusion method."
+                },
+                "coefficient": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "default": 0.0,
+                    "description": "Horizontal diffusivity kh in m^2/s."
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Optional per-population random seed."
+                }
+            },
+            "default": {"method": "brownian", "coefficient": 0.0}
         },
         "tracer_methods": {
             "type": "object",
