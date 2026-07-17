@@ -10,6 +10,7 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     build_plan_sedtrails_data,
     build_population_runtime_plans,
     required_physics_fields,
+    validate_population_runtime_configurations,
     unique_flow_field_names,
 )
 
@@ -147,6 +148,40 @@ def test_passive_tracer_requires_passive_particle_type():
 
     with pytest.raises(ConfigurationError, match='Set particle_type to "passive"'):
         build_population_runtime_plans([population_config], [object()], {})
+
+
+def test_passive_tracer_rejects_explicit_burial_depth():
+    """Passive tracer validation should reject an explicit seeding burial depth."""
+    population_config = _population_config(
+        {'passive_tracer': {}},
+        particle_type='passive',
+        characteristics={'diffusion_coefficient': 0.0},
+        seeding={
+            'quantity': 1,
+            'strategy': {'point': {'locations': ['0,0']}},
+            'burial_depth': {'constant': 0.0},
+        },
+    )
+
+    with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+        build_population_runtime_plans([population_config], [object()], {})
+
+
+def test_passive_tracer_preflight_rejects_explicit_burial_depth():
+    """Config-only validation should reject passive burial depth before seeding."""
+    population_config = _population_config(
+        {'passive_tracer': {}},
+        particle_type='passive',
+        characteristics={'diffusion_coefficient': 0.0},
+        seeding={
+            'quantity': 1,
+            'strategy': {'point': {'locations': ['0,0']}},
+            'burial_depth': {'constant': 0.0},
+        },
+    )
+
+    with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+        validate_population_runtime_configurations([population_config])
 
 
 def test_same_method_populations_keep_separate_method_configs():

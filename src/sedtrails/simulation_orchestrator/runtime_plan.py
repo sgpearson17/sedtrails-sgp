@@ -74,6 +74,38 @@ def build_population_runtime_plans(
     )
 
 
+def validate_population_runtime_configurations(
+    population_configs: Sequence[Mapping[str, Any]],
+) -> None:
+    """Validate config-only runtime constraints before particle seeding.
+
+    Parameters
+    ----------
+    population_configs : Sequence[Mapping[str, Any]]
+        Population configuration mappings to validate.
+
+    Returns
+    -------
+    None
+        The function raises ConfigurationError when validation fails.
+    """
+    for population_index, population_config in enumerate(population_configs):
+        tracer_methods = population_config.get('tracer_methods')
+        if not isinstance(tracer_methods, Mapping) or len(tracer_methods) != 1:
+            continue
+        if 'passive_tracer' not in tracer_methods:
+            continue
+
+        transport_probability_method = population_config.get(
+            'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
+        )
+        _validate_passive_tracer_configuration(
+            population_index,
+            population_config,
+            transport_probability_method,
+        )
+
+
 def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> list[str]:
     """
     Return configured flow field names across plans, preserving first-seen order.
@@ -290,6 +322,14 @@ def _validate_passive_tracer_configuration(
         raise ConfigurationError(
             f'Population {population_index} uses tracer method "passive_tracer" but particle_type is '
             f'{particle_type!r}. Set particle_type to "passive".'
+        )
+
+    seeding = population_config.get('seeding', {})
+    if isinstance(seeding, Mapping) and 'burial_depth' in seeding:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "passive_tracer" but defines '
+            'seeding.burial_depth. Passive tracer does not support burial depth; remove '
+            'seeding.burial_depth from this population.'
         )
 
     if transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
