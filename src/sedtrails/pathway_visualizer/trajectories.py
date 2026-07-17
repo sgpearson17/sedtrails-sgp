@@ -2,12 +2,13 @@
 Module for visualizing particle trajectories from SedTRAILS NetCDF output files.
 """
 
-from pathlib import Path
 import re
-import numpy as np
-from matplotlib.collections import LineCollection
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 import xarray as xr
+from matplotlib.collections import LineCollection
 
 
 def _decode_netcdf_name(raw_value) -> str:
@@ -22,6 +23,13 @@ def _decode_netcdf_name(raw_value) -> str:
         return raw_value.decode('utf-8', errors='ignore').strip('\x00').strip()
 
     arr = np.asarray(raw_value)
+
+    # Scalar numpy bytes/str (0-dim array or item)
+    if arr.ndim == 0:
+        item = arr.item()
+        if isinstance(item, (bytes, np.bytes_)):
+            return item.decode('utf-8', errors='ignore').strip('\x00').strip()
+        return str(item).strip()
 
     # Char-array representation (e.g., dtype='|S1' with trailing nulls)
     if arr.ndim > 0 and arr.size > 0 and arr.dtype.kind in ('S', 'U'):
@@ -200,7 +208,9 @@ def _select_sample_indices(
     if selected_indices.size < target:
         remaining_pool = np.setdiff1d(np.arange(n_particles, dtype=int), selected_indices, assume_unique=True)
         if remaining_pool.size:
-            extra = rng.choice(remaining_pool, size=min(target - selected_indices.size, remaining_pool.size), replace=False)
+            extra = rng.choice(
+                remaining_pool, size=min(target - selected_indices.size, remaining_pool.size), replace=False
+            )
             selected_indices = np.concatenate((selected_indices, extra))
     elif selected_indices.size > target:
         selected_indices = rng.choice(selected_indices, size=target, replace=False)
@@ -258,8 +268,8 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
         y_data = np.asarray(y_var.values, dtype=float).T
     else:
         raise ValueError(
-            "Expected SedTRAILS time-major trajectory arrays shaped as "
-            "(n_timesteps, n_particles), or 1D checkpoint arrays."
+            'Expected SedTRAILS time-major trajectory arrays shaped as '
+            '(n_timesteps, n_particles), or 1D checkpoint arrays.'
         )
 
     n_particles, n_timesteps = x_data.shape
@@ -397,16 +407,18 @@ def _add_endpoint_markers(ax, starts, ends, *, colors, markers: str, marker_size
         )
 
 
-def _resolve_output_file(ds: xr.Dataset, save_plot: bool, output_dir, output_file) -> Path | None:
-    if output_file is not None:
-        return Path(output_file)
-    if not save_plot:
-        return None
-    output_dir_path = Path(output_dir) if output_dir is not None else Path('.')
-    if output_dir is None or output_dir_path == Path('.'):
-        source_file = ds.encoding.get('source', '.')
-        output_dir_path = Path(source_file).parent
-    return output_dir_path / 'particle_trajectories.png'
+def _resolve_output_file(ds: xr.Dataset, output) -> Path:
+    default_name = 'particle_trajectories.png'
+
+    if output is not None:
+        output_path = Path(output)
+        if output_path.is_dir():
+            return output_path / default_name
+        return output_path
+
+    source_file = ds.encoding.get('source', '.')
+    source_dir = Path(source_file).parent
+    return source_dir / default_name
 
 
 def _normalize_panels(panels: str | list[str] | tuple[str, ...]) -> list[str]:
@@ -425,8 +437,7 @@ def _normalize_panels(panels: str | list[str] | tuple[str, ...]) -> list[str]:
     invalid = sorted(set(requested) - set(valid_panels))
     if invalid:
         raise ValueError(
-            "'panels' contains invalid values: "
-            f"{', '.join(invalid)}. Valid values are: all, {', '.join(valid_panels)}."
+            f"'panels' contains invalid values: {', '.join(invalid)}. Valid values are: all, {', '.join(valid_panels)}."
         )
 
     ordered = [panel for panel in valid_panels if panel in requested]
@@ -452,9 +463,7 @@ def _create_panel_axes(panels: list[str]):
 
 def plot_trajectories(
     ds,
-    save_plot=False,
-    output_dir=None,
-    output_file=None,
+    output=None,
     max_particles: int | None = None,
     sample_fraction: float | None = None,
     sample_seed: int = 0,
@@ -470,14 +479,12 @@ def plot_trajectories(
     ds : xarray.Dataset
         Dataset containing particle trajectory variables, including ``x``,
         ``y``, and ``time``.
-    save_plot : bool, optional
-        If true, save the generated figure as ``particle_trajectories.png``.
-    output_dir : str or pathlib.Path, optional
-        Directory where the figure is saved. If omitted, the source dataset
-        directory is used when available.
-    output_file : str or pathlib.Path, optional
-        Exact file path for the saved figure. When supplied, the figure is
-        written directly to this path and is not shown unless ``show=True``.
+    output : str or pathlib.Path, optional
+        Output target for the figure. If this is an existing directory, the
+        plot is saved as ``particle_trajectories.png`` inside that directory.
+        Otherwise, it is treated as an exact output filename. When omitted,
+        the default output is ``particle_trajectories.png`` in the source
+        dataset directory when available.
     max_particles : int, optional
         Maximum number of particles to plot. Sampling is deterministic and
         stratified by population when population IDs are available.
@@ -495,8 +502,7 @@ def plot_trajectories(
         previous four-panel figure, or a comma-separated subset of ``spatial``,
         ``distance``, ``population``, and ``population-distance``.
     show : bool or None, optional
-        Whether to display the figure. By default, figures are shown only when
-        they are not saved.
+        Whether to display the figure. By default, figures are not shown.
 
     Notes
     -----
@@ -509,9 +515,9 @@ def plot_trajectories(
         raise ValueError("'marker_size' must be greater than 0.")
     selected_panels = _normalize_panels(panels)
 
-    output_path = _resolve_output_file(ds, save_plot, output_dir, output_file)
+    output_path = _resolve_output_file(ds, output)
     if show is None:
-        show = output_path is None
+        show = False
 
     sampled_ds, n_total_particles, n_sampled_particles = _sample_dataset(
         ds,
@@ -607,9 +613,9 @@ def plot_trajectories(
     if ax2 is not None:
         ax2.grid(True, alpha=0.3)
 
-    if 'population' in selected_panels or 'population-distance' in selected_panels:
-        population_names = _decode_population_names(sampled_ds, n_populations)
-        pop_colors = _population_colors(n_populations)
+    # if 'population' in selected_panels or 'population-distance' in selected_panels:
+    population_names = _decode_population_names(sampled_ds, n_populations)
+    pop_colors = _population_colors(n_populations)
 
     # Plot 3: Trajectories colored by population
     ax3 = axes_by_panel.get('population')
@@ -635,9 +641,7 @@ def plot_trajectories(
                     pop_ends.append(points[-1])
 
             if pop_segments:
-                ax3.add_collection(
-                    LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1)
-                )
+                ax3.add_collection(LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1))
                 ax3.plot([], [], color=pop_colors[pop_idx], alpha=0.7, linewidth=1, label=population_names[pop_idx])
             if pop_starts:
                 marker_colors = [pop_colors[pop_idx]] * len(pop_starts)

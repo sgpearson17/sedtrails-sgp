@@ -446,22 +446,16 @@ def plot_trajectories_cmd(
         '-f',
         help='Path to the SedTRAILS netCDF file to visualize. By default, it expects an "sedtrails_results.nc" file in the current directory.',
     ),
-    save_fig: bool = typer.Option(
-        True,
-        '--save/--no-save',
-        '-s',
-        help='Save plot as a PNG file by default. Use --no-save to display the figure instead.',
-    ),
-    output_file: str | None = typer.Option(
+    output: str | None = typer.Option(
         None,
         '--output',
-        help='Write the plot directly to this file path instead of using the default output location.',
-    ),
-    output_dir: str = typer.Option(
-        '.',
-        '--output-dir',
         '-o',
-        help='Directory to save the plot when --output is not provided. Defaults to the NetCDF file directory.',
+        help=(
+            'Output target. If this is an existing directory, the plot is written as '
+            '"particle_trajectories.png" inside it. Otherwise, this is treated as a '
+            'filename. If omitted, defaults to "particle_trajectories.png" in the '
+            'NetCDF file directory.'
+        ),
     ),
     max_particles: int | None = typer.Option(
         10000,
@@ -506,12 +500,8 @@ def plot_trajectories_cmd(
     ----------
     results_file : str
         Path to the SedTRAILS NetCDF results file.
-    save_fig : bool
-        The save fig value.
-    output_file : str | None
-        Exact plot file to write.
-    output_dir : str
-        Directory where output files are written.
+    output : str | None
+        Output path or directory.
     max_particles : int | None
         Maximum number of particles to plot.
     sample_fraction : float | None
@@ -532,9 +522,7 @@ def plot_trajectories_cmd(
     try:
         plot_trajectories(
             results_file,
-            save=save_fig,
-            output_dir=output_dir,
-            output_file=output_file,
+            output=output,
             max_particles=max_particles,
             sample_fraction=sample_fraction,
             sample_seed=sample_seed,
@@ -543,7 +531,7 @@ def plot_trajectories_cmd(
             panels=panels,
             show=show,
         )
-        if not output_file and not save_fig:
+        if show is True:
             typer.echo('Plot displayed successfully')
     except Exception as e:
         typer.echo(f'Error plotting trajectories: {e}')
