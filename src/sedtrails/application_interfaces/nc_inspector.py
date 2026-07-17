@@ -9,7 +9,20 @@ import xarray as xr
 
 
 class NetCDFInspector:
-    """A class to inspect and print metadata from SedTRAILS NetCDF files."""
+    """Inspect and print metadata from a SedTRAILS NetCDF file.
+
+    Parameters
+    ----------
+    nc_file : str or pathlib.Path
+        Path to the NetCDF file to inspect.
+
+    Attributes
+    ----------
+    nc_file : pathlib.Path
+        Path to the NetCDF file with SedTRAILS results.
+    data : xarray.Dataset or None
+        Dataset loaded from `nc_file` when the file can be opened.
+    """
 
     @staticmethod
     def _decode_text_value(value) -> str:
@@ -36,12 +49,24 @@ class NetCDFInspector:
     def __init__(self, nc_file: str) -> None:
         """Initialize the Inspector with the path to a NetCDF file.
 
+        Parameters
+        ----------
+        nc_file : str or pathlib.Path
+            Path to the NetCDF file with SedTRAILS results.
+
         Attributes
         ----------
-        nc_file : Path
-            Path to the NetCDF file with sedTRAILS results.
-        data : xr.Dataset or None
+        nc_file : pathlib.Path
+            Path to the NetCDF file with SedTRAILS results.
+        data : xarray.Dataset or None
             The xarray Dataset loaded from the NetCDF file.
+
+        Raises
+        ------
+        FileExistsError
+            If `nc_file` does not exist.
+        RuntimeError
+            If the NetCDF file cannot be opened.
         """
         self.nc_file = Path(nc_file)
         self.data = None

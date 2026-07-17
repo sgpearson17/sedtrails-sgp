@@ -509,6 +509,13 @@ def plot_trajectories(
     show : bool or None, optional
         Whether to display the figure. By default, figures are not shown.
 
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure containing the selected panels.
+    axes_by_panel : dict[str, matplotlib.axes.Axes]
+        Axes keyed by panel name.
+
     Notes
     -----
     This function creates a four-panel matplotlib figure. It returns the figure

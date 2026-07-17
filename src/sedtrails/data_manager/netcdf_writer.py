@@ -61,6 +61,14 @@ class NetCDFWriter:
     """
 
     def __init__(self, output_dir):
+        """Initialize a streaming NetCDF output writer.
+
+        Parameters
+        ----------
+        output_dir : str or pathlib.Path
+            Directory in which the writer creates NetCDF output files. The
+            directory is created when it does not already exist.
+        """
         output_dir = Path(output_dir)
         # If the output directory already exists, we add a timestamp to avoid overwriting
         # if output_dir.exists():

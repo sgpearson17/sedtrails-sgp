@@ -857,7 +857,26 @@ def launch_seeding_gui(
 
 
 class SeedingGuiApp:
-    """Interactive Matplotlib application for selecting SedTRAILS seed points."""
+    """Interactive Matplotlib application for selecting SedTRAILS seed points.
+
+    Parameters
+    ----------
+    config_path : pathlib.Path
+        Path to the SedTRAILS configuration file to edit.
+    output_path : pathlib.Path or None
+        Destination for the seeded configuration. When None, a default sibling
+        configuration path is used.
+    points_output_path : pathlib.Path or None
+        Destination for generated point coordinates. When None, a path derived
+        from `output_path` is used.
+    population_name : str or None
+        Population selected for editing. When None, the first population is
+        selected.
+    format_override : str or None
+        Optional input-model format override used to load bathymetry.
+    variable : str or None
+        Optional bathymetry variable name.
+    """
 
     def __init__(
         self,
@@ -869,6 +888,31 @@ class SeedingGuiApp:
         format_override: str | None,
         variable: str | None,
     ) -> None:
+        """Initialize the interactive seeding application.
+
+        Parameters
+        ----------
+        config_path : pathlib.Path
+            Path to the SedTRAILS configuration file to edit.
+        output_path : pathlib.Path or None
+            Destination for the seeded configuration. When None, a default
+            sibling configuration path is used.
+        points_output_path : pathlib.Path or None
+            Destination for generated point coordinates. When None, a path
+            derived from `output_path` is used.
+        population_name : str or None
+            Population selected for editing. When None, the first population
+            is selected.
+        format_override : str or None
+            Optional input-model format override used to load bathymetry.
+        variable : str or None
+            Optional bathymetry variable name.
+
+        Raises
+        ------
+        SeedingGuiError
+            If `population_name` does not identify a configured population.
+        """
         self.config_path = config_path
         self.output_path = output_path or default_seeded_config_path(config_path)
         self.points_output_path = points_output_path or self.output_path.with_suffix('.points.txt')
@@ -1063,7 +1107,12 @@ class SeedingGuiApp:
         self.status_text = self.fig.text(0.07, 0.125, self._status_message(), fontsize=8)
 
     def show(self) -> None:
-        """Run show."""
+        """Display the seeding GUI.
+
+        Notes
+        -----
+        This method blocks until the Matplotlib window is closed.
+        """
         import matplotlib.pyplot as plt
 
         plt.show()

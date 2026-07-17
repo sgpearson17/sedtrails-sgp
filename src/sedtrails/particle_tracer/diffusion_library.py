@@ -27,19 +27,27 @@ class DiffusionStrategy(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply diffusion to the given positions and velocities.
 
-           Parameters
-           ----------
-            dt: Time step for diffusion calculation
-            x: Array of x-coordinates.
-            y: Array of y-coordinates.
-            u: Array of x-velocity components.
-            v: Array of y-velocity components.
-            kh: Diffusion coefficient.
-            rng: Optional random-number generator for reproducible diffusion.
+        Parameters
+        ----------
+        dt : float
+            Time step for diffusion calculation.
+        x : np.ndarray
+            Array of x-coordinates.
+        y : np.ndarray
+            Array of y-coordinates.
+        u : np.ndarray
+            Array of x-velocity components.
+        v : np.ndarray
+            Array of y-velocity components.
+        kh : float
+            Diffusion coefficient.
+        rng : np.random.Generator, optional
+            Random-number generator for reproducible diffusion.
 
         Returns
         -------
-            Tuple of updated x and y positions after diffusion (xdif, ydif).
+        tuple[np.ndarray, np.ndarray]
+            Updated x and y positions after diffusion.
         """
         pass
 
@@ -100,8 +108,10 @@ class DiffusionCalculator:
 
         Parameters
         ----------
-            strategy: DiffusionStrategy object to use.
-            rng: Optional population-specific random-number generator.
+        strategy : DiffusionStrategy
+            Diffusion strategy object to use.
+        rng : np.random.Generator, optional
+            Population-specific random-number generator.
         """
         self._strategy = strategy
         self._rng = rng
@@ -124,7 +134,8 @@ class DiffusionCalculator:
 
         Parameters
         ----------
-            strategy: New DiffusionStrategy object to use
+        strategy : DiffusionStrategy
+            New diffusion strategy object to use.
         """
         self._strategy = strategy
 
@@ -142,15 +153,22 @@ class DiffusionCalculator:
 
         Parameters
         ----------
-            x: Current x-coordinate array.
-            y: Current y-coordinate array.
-            u: X-velocity array matching ``x`` and ``y``.
-            v: Y-velocity array matching ``x`` and ``y``.
-            kh: Horizontal diffusivity coefficient.
-            dt: Current time step in seconds.
+        x : np.ndarray
+            Current x-coordinate array.
+        y : np.ndarray
+            Current y-coordinate array.
+        u : np.ndarray
+            X-velocity array matching ``x`` and ``y``.
+        v : np.ndarray
+            Y-velocity array matching ``x`` and ``y``.
+        kh : float
+            Horizontal diffusivity coefficient.
+        dt : float
+            Current time step in seconds.
 
         Returns
         -------
-            Tuple of updated ``(x, y)`` coordinate arrays.
+        tuple[np.ndarray, np.ndarray]
+            Updated ``(x, y)`` coordinate arrays.
         """
         return self._strategy.calculate(dt, x, y, u, v, kh, rng=self._rng)

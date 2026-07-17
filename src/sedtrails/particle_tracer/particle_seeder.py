@@ -282,6 +282,16 @@ def _log_seeding_box_volume(config, positions: list) -> None:
 
 
 class HasFieldCoordinates(Protocol):
+    """Protocol for seeding input that exposes field coordinates.
+
+    Attributes
+    ----------
+    x : ndarray
+        Field x-coordinate array.
+    y : ndarray
+        Field y-coordinate array.
+    """
+
     x: ndarray
     y: ndarray
 
