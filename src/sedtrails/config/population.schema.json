@@ -247,12 +247,10 @@
                     "properties": {
                         "random": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "maximum depth from bed level (surface) for random burial depth in meters."
                         },
                         "constant": {
                             "type": "number",
-                            "default": 1.0,
                             "description": "constant burial depth in meters."
                         }
                     },

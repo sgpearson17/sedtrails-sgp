@@ -1,8 +1,11 @@
 """Tests for population tracer runtime planning."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.simulation_orchestrator.runtime_plan import (
     DEFAULT_TRANSPORT_PROBABILITY_METHOD,
@@ -123,6 +126,17 @@ def test_passive_tracer_population_defaults_to_depth_averaged_velocity():
     assert runtime_plan.tracer.method_name == 'passive_tracer'
     assert runtime_plan.tracer.flow_field_names == ('depth_avg_flow_velocity',)
     assert runtime_plan.tracer.required_physics_fields == ('depth_avg_flow_velocity',)
+
+
+def test_passive_example_preflight_does_not_invent_burial_depth():
+    """Validate the passive example without materializing burial depth."""
+    repository_root = Path(__file__).resolve().parents[2]
+    config_path = repository_root / 'examples' / 'sedtrails-example-passive.yaml'
+    config = YAMLConfigValidator().validate_yaml(str(config_path))
+    population_configs = config['particles']['populations']
+
+    assert 'burial_depth' not in population_configs[0]['seeding']
+    validate_population_runtime_configurations(population_configs)
 
 
 def test_passive_tracer_rejects_non_default_transport_probability_methods():
