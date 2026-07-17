@@ -42,19 +42,24 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
             'suspended_velocity_method': 'soulsby_2011',
         }
     }
+    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == {'constant': 0.0}
 
 
 def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
     """Accept passive tracer configs and apply the default flow field."""
     config = _base_config()
-    config['particles']['populations'][0]['particle_type'] = 'passive'
-    config['particles']['populations'][0]['characteristics'] = {'diffusion_coefficient': 0.0}
-    config['particles']['populations'][0]['tracer_methods'] = {'passive_tracer': {}}
+    population = config['particles']['populations'][0]
+    population['particle_type'] = 'passive'
+    population['characteristics'] = {'diffusion_coefficient': 0.0}
+    population['tracer_methods'] = {'passive_tracer': {}}
+    population['seeding'].pop('burial_depth')
 
     validated = _validate_config(tmp_path, config)
 
-    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
+    validated_population = validated['particles']['populations'][0]
+    tracer_methods = validated_population['tracer_methods']
     assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
+    assert 'burial_depth' not in validated_population['seeding']
 
 
 def test_population_schema_rejects_vanwesten_bl(tmp_path):

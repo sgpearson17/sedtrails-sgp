@@ -454,7 +454,7 @@ def plot_trajectories_cmd(
             'Output target. If this is an existing directory, the plot is written as '
             '"particle_trajectories.png" inside it. Otherwise, this is treated as a '
             'filename. If omitted, defaults to "particle_trajectories.png" in the '
-            'NetCDF file directory.'
+            'NetCDF file directory. Pass "." to write in the current working directory.'
         ),
     ),
     max_particles: int | None = typer.Option(

@@ -131,6 +131,29 @@ class _CheckpointWriter:
         self.calls.append((args, kwargs))
 
 
+class TestSimulationManagerPreflight:
+    """Tests for configuration validation before seeding work starts."""
+
+    def test_run_impl_rejects_passive_burial_depth_before_seeding(self):
+        """Invalid passive burial depth should fail before time or seeding dependencies are accessed."""
+        manager = object.__new__(Simulation)
+        manager._config_is_read = True
+        manager._controller = _Controller(
+            {
+                'particles.populations': [
+                    {
+                        'particle_type': 'passive',
+                        'tracer_methods': {'passive_tracer': {}},
+                        'seeding': {'burial_depth': {'constant': 0.0}},
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+            manager._run_impl()
+
+
 class TestSimulationManagerTimeConfig:
     """Tests for simulation-time construction from configuration."""
 

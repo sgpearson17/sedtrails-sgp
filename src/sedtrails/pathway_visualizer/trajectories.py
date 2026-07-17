@@ -407,7 +407,12 @@ def _add_endpoint_markers(ax, starts, ends, *, colors, markers: str, marker_size
         )
 
 
-def _resolve_output_file(ds: xr.Dataset, output) -> Path:
+def _resolve_output_file(ds: xr.Dataset, output: str | Path | None) -> Path:
+    """Resolve a trajectory-plot output path.
+
+    ``None`` selects the NetCDF source directory. Any supplied path is used
+    literally, so ``'.'`` selects the current working directory.
+    """
     default_name = 'particle_trajectories.png'
 
     if output is not None:
@@ -503,6 +508,13 @@ def plot_trajectories(
         ``distance``, ``population``, and ``population-distance``.
     show : bool or None, optional
         Whether to display the figure. By default, figures are not shown.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure containing the selected panels.
+    axes_by_panel : dict[str, matplotlib.axes.Axes]
+        Axes keyed by panel name.
 
     Notes
     -----
