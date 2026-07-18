@@ -18,9 +18,12 @@ def _decode_netcdf_name(raw_value) -> str:
         return raw_value.strip()
 
     if isinstance(raw_value, (bytes, np.bytes_)):
-        return raw_value.decode('utf-8', errors='ignore').strip('\x00').strip()
+        return raw_value.decode('utf-8', errors='ignore').replace('\x00', '').strip()
 
     arr = np.asarray(raw_value)
+    if arr.ndim == 0:
+        return _decode_netcdf_name(arr.item())
+
 
     # Char-array representation (e.g., dtype='|S1' with trailing nulls)
     if arr.ndim > 0 and arr.size > 0 and arr.dtype.kind in ('S', 'U'):

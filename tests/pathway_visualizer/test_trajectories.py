@@ -2,6 +2,7 @@ import matplotlib
 
 matplotlib.use('Agg')
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 import xarray as xr
@@ -32,6 +33,40 @@ def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
 
     # This previously raised: "too many indices"
     plot_trajectories(ds)
+
+
+def test_plot_trajectories_decodes_object_wrapped_byte_names(monkeypatch):
+    """Legend labels decode object-wrapped NumPy byte scalars."""
+    n_particles = 2
+    n_timesteps = 3
+    population_names = np.empty(2, dtype=object)
+    population_names[0] = np.array(np.bytes_(b'population_0\x00   '), dtype=object)
+    population_names[1] = np.array(np.bytes_(b'population_1\x00   '), dtype=object)
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [1.0, 1.5], [2.0, 3.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [0.5, 0.25], [1.0, 0.5]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0, 120.0])),
+            'population_id': (('n_particles',), np.array([0, 1], dtype=int)),
+            'population_name': (('n_populations',), population_names),
+        },
+        coords={
+            'n_particles': np.arange(n_particles),
+            'n_timesteps': np.arange(n_timesteps),
+            'n_populations': np.arange(2),
+        },
+    )
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    plot_trajectories(ds)
+
+    labels = [text.get_text() for text in plt.gcf().axes[3].get_legend().get_texts()]
+    assert labels == [
+        'population_0 (mean)',
+        'population_0 (+/-1 std)',
+        'population_1 (mean)',
+        'population_1 (+/-1 std)',
+    ]
 
 
 def test_plot_trajectories_accepts_time_major_layout(monkeypatch):

@@ -219,7 +219,6 @@
         "sediment_fraction_index": {
             "type": "integer",
             "minimum": 0,
-            "default": 0,
             "description": "Zero-based sediment fraction index used for this population when input transport contains multiple fractions (e.g. Delft3D4 LSED/LSEDTOT)."
         },
         "sediment_fraction_name": {

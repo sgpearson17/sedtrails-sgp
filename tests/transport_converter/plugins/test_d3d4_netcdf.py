@@ -277,6 +277,142 @@ def test_delft3d4_netcdf_conversion() -> None:
         _plot_if_requested(data, Path(plot_dir), time_idx, mask)
 
 
+def test_centers_and_rotates_all_delft3d_local_vector_pairs(tmp_path: Path) -> None:
+    """Delft3D U/V pairs use dynamic wet masks and ALFAS before SedTRAILS mapping."""
+    input_file = tmp_path / 'local_vectors.nc'
+    input_file.write_text('')
+
+    u_values = np.array(
+        [
+            [[2.0, 4.0, 6.0], [10.0, 12.0, 14.0]],
+            [[102.0, 104.0, 106.0], [110.0, 112.0, 114.0]],
+        ]
+    )
+    v_values = np.array(
+        [
+            [[3.0, 9.0, 15.0], [21.0, 27.0, 33.0]],
+            [[103.0, 109.0, 115.0], [121.0, 127.0, 133.0]],
+        ]
+    )
+    u_masks = np.array(
+        [
+            [[1, 1, 1], [1, 0, 1]],
+            [[1, 1, 1], [1, 1, 1]],
+        ]
+    )
+    v_masks = np.array(
+        [
+            [[1, 0, 1], [1, 1, 0]],
+            [[1, 1, 1], [1, 1, 1]],
+        ]
+    )
+    expected_u = np.array(
+        [
+            [[2.0, 4.0, 6.0], [6.0, 4.0, 10.0]],
+            [[102.0, 104.0, 106.0], [106.0, 108.0, 110.0]],
+        ]
+    )
+    expected_v = np.array(
+        [
+            [[3.0, 3.0, 15.0], [21.0, 24.0, 27.0]],
+            [[103.0, 106.0, 112.0], [121.0, 124.0, 130.0]],
+        ]
+    )
+
+    sediment_u = np.stack([u_values, 3.0 * u_values], axis=1)
+    sediment_v = np.stack([v_values, 3.0 * v_values], axis=1)
+    dataset = xr.Dataset(
+        data_vars={
+            'ALFAS': (('M', 'N'), np.full((2, 3), 90.0)),
+            'KFU': (('time', 'MC', 'N'), u_masks),
+            'KFV': (('time', 'M', 'NC'), v_masks),
+            'U1': (('time', 'MC', 'N'), u_values),
+            'V1': (('time', 'M', 'NC'), v_values),
+            'TAUKSI': (('time', 'MC', 'N'), 2.0 * u_values),
+            'TAUETA': (('time', 'M', 'NC'), 2.0 * v_values),
+            'SBUU': (('time', 'LSED', 'MC', 'N'), sediment_u),
+            'SBVV': (('time', 'LSED', 'M', 'NC'), sediment_v),
+            'SSUU': (('time', 'LSED', 'MC', 'N'), 4.0 * sediment_u),
+            'SSVV': (('time', 'LSED', 'M', 'NC'), 4.0 * sediment_v),
+        },
+        coords={'LSED': ['fine', 'coarse']},
+    )
+
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+
+    flow_x, flow_y = plugin._map_vector_pair(
+        u_variable='U1',
+        v_variable='V1',
+        grid_shape=(2, 3),
+        time_slice=slice(None),
+        num_times=2,
+        select_fraction_dims=True,
+    )
+    stress_x, stress_y = plugin._map_vector_pair(
+        u_variable='TAUKSI',
+        v_variable='TAUETA',
+        grid_shape=(2, 3),
+        time_slice=slice(None),
+        num_times=2,
+        select_fraction_dims=True,
+    )
+    bed_x, bed_y = plugin._map_vector_pair(
+        u_variable='SBUU',
+        v_variable='SBVV',
+        grid_shape=(2, 3),
+        time_slice=slice(None),
+        num_times=2,
+        select_fraction_dims=False,
+    )
+    suspended_x, suspended_y = plugin._map_vector_pair(
+        u_variable='SSUU',
+        v_variable='SSVV',
+        grid_shape=(2, 3),
+        time_slice=slice(None),
+        num_times=2,
+        select_fraction_dims=False,
+    )
+
+    np.testing.assert_allclose(flow_x, -expected_v)
+    np.testing.assert_allclose(flow_y, expected_u)
+    np.testing.assert_allclose(stress_x, -2.0 * expected_v)
+    np.testing.assert_allclose(stress_y, 2.0 * expected_u)
+    np.testing.assert_allclose(bed_x, -np.stack([expected_v, 3.0 * expected_v], axis=1))
+    np.testing.assert_allclose(bed_y, np.stack([expected_u, 3.0 * expected_u], axis=1))
+    np.testing.assert_allclose(suspended_x, -4.0 * np.stack([expected_v, 3.0 * expected_v], axis=1))
+    np.testing.assert_allclose(suspended_y, 4.0 * np.stack([expected_u, 3.0 * expected_u], axis=1))
+
+
+def test_rotates_local_vector_pairs_with_positive_alfas(tmp_path: Path) -> None:
+    """A positive ALFAS angle rotates xi/eta components counter-clockwise into x/y."""
+    input_file = tmp_path / 'single_cell.nc'
+    input_file.write_text('')
+    dataset = xr.Dataset(
+        data_vars={
+            'ALFAS': (('M', 'N'), np.array([[45.0]])),
+            'KFU': (('time', 'MC', 'N'), np.ones((1, 1, 1))),
+            'KFV': (('time', 'M', 'NC'), np.ones((1, 1, 1))),
+            'U1': (('time', 'MC', 'N'), np.array([[[2.0]]])),
+            'V1': (('time', 'M', 'NC'), np.array([[[1.0]]])),
+        }
+    )
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+
+    x_component, y_component = plugin._map_vector_pair(
+        u_variable='U1',
+        v_variable='V1',
+        grid_shape=(1, 1),
+        time_slice=slice(None),
+        num_times=1,
+        select_fraction_dims=True,
+    )
+
+    np.testing.assert_allclose(x_component, np.array([[[1.0 / np.sqrt(2.0)]]]))
+    np.testing.assert_allclose(y_component, np.array([[[3.0 / np.sqrt(2.0)]]]))
+
+
 def test_selects_configured_fraction_index_from_lsed_dimension(tmp_path: Path) -> None:
     """The plugin should select the configured sediment fraction index for LSED data."""
     input_file = tmp_path / 'dummy.nc'
@@ -363,6 +499,244 @@ def test_raises_for_out_of_bounds_fraction_index(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match='out of bounds'):
         plugin._select_first_dims(var)
+
+
+def test_uses_static_kcu_kcv_masks_when_dynamic_masks_are_absent(tmp_path: Path) -> None:
+    """Static KCU/KCV masks must prevent dry-face values entering vector centers."""
+    input_file = tmp_path / 'static_masks.nc'
+    input_file.write_text('')
+    u_values = np.array([[[2.0, 4.0], [6.0, 8.0]]])
+    v_values = np.array([[[10.0, 20.0], [30.0, 40.0]]])
+    dataset = xr.Dataset(
+        data_vars={
+            'ALFAS': (('M', 'N'), np.zeros((2, 2))),
+            'KCU': (('M', 'N'), np.array([[1, 0], [0, 1]])),
+            'KCV': (('M', 'N'), np.array([[1, 0], [0, 1]])),
+            'U1': (('time', 'MC', 'N'), u_values),
+            'V1': (('time', 'M', 'NC'), v_values),
+        }
+    )
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+
+    x_component, y_component = plugin._map_vector_pair(
+        u_variable='U1',
+        v_variable='V1',
+        grid_shape=(2, 2),
+        time_slice=slice(None),
+        num_times=1,
+        select_fraction_dims=True,
+    )
+
+    np.testing.assert_allclose(x_component, np.array([[[2.0, 0.0], [2.0, 8.0]]]))
+    np.testing.assert_allclose(y_component, np.array([[[10.0, 10.0], [0.0, 40.0]]]))
+
+
+def test_rejects_an_incomplete_local_vector_pair(tmp_path: Path) -> None:
+    """A local component without its matching pair must fail before conversion."""
+    input_file = tmp_path / 'incomplete_vector.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'U1': (('time', 'MC', 'N'), np.ones((1, 1, 1))),
+        }
+    )
+
+    with pytest.raises(KeyError, match='incomplete'):
+        plugin._map_vector_pair(
+            u_variable='U1',
+            v_variable='V1',
+            grid_shape=(1, 1),
+            time_slice=slice(None),
+            num_times=1,
+            select_fraction_dims=True,
+        )
+
+
+def test_reuses_vector_masks_and_static_grid_rotation_per_conversion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each conversion reads wet masks and static ALFAS geometry only once."""
+    input_file = tmp_path / 'cached_geometry.nc'
+    input_file.write_text('')
+    pair_values = np.ones((2, 1, 1))
+    dataset = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[10.0]])),
+            'YZ': (('M', 'N'), np.array([[20.0]])),
+            'DP0': (('M', 'N'), np.ones((1, 1))),
+            'ALFAS': (('M', 'N'), np.zeros((1, 1))),
+            'KFU': (('time', 'MC', 'N'), np.ones((2, 1, 1))),
+            'KFV': (('time', 'M', 'NC'), np.ones((2, 1, 1))),
+            'U1': (('time', 'MC', 'N'), pair_values),
+            'V1': (('time', 'M', 'NC'), pair_values),
+            'TAUKSI': (('time', 'MC', 'N'), pair_values),
+            'TAUETA': (('time', 'M', 'NC'), pair_values),
+            'SBUU': (('time', 'MC', 'N'), pair_values),
+            'SBVV': (('time', 'M', 'NC'), pair_values),
+            'SSUU': (('time', 'MC', 'N'), pair_values),
+            'SSVV': (('time', 'M', 'NC'), pair_values),
+        }
+    )
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+    read_calls: list[str] = []
+    angle_calls = 0
+    original_read = plugin._read_values
+    original_angle = plugin._local_grid_angle
+
+    def track_read(variable_name: str, **kwargs) -> np.ndarray:
+        read_calls.append(variable_name)
+        return original_read(variable_name, **kwargs)
+
+    def track_angle(grid_shape: tuple[int, int]) -> np.ndarray:
+        nonlocal angle_calls
+        angle_calls += 1
+        return original_angle(grid_shape)
+
+    monkeypatch.setattr(plugin, '_read_values', track_read)
+    monkeypatch.setattr(plugin, '_local_grid_angle', track_angle)
+
+    data = plugin._map_delft3d4_variables({'num_times': 2})
+
+    assert read_calls.count('KFU') == 1
+    assert read_calls.count('KFV') == 1
+    assert angle_calls == 1
+    assert data['flow_velocity_x'].shape == (2, 1)
+
+
+def test_filters_kcs_inactive_faces_from_conversion_and_seeding(tmp_path: Path) -> None:
+    """Inactive KCS=0 faces must not become duplicate SedTRAILS nodes."""
+    input_file = tmp_path / 'inactive_faces.nc'
+    dataset = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 0.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 0.0]])),
+            'KCS': (('M', 'N'), np.array([[1, 1], [1, 0]])),
+            'DP0': (('M', 'N'), np.ones((2, 2))),
+            'ALFAS': (('M', 'N'), np.zeros((2, 2))),
+            'KFU': (('time', 'MC', 'N'), np.ones((1, 2, 2))),
+            'KFV': (('time', 'M', 'NC'), np.ones((1, 2, 2))),
+            'U1': (('time', 'MC', 'N'), np.ones((1, 2, 2))),
+            'V1': (('time', 'M', 'NC'), np.ones((1, 2, 2))),
+            'TAUKSI': (('time', 'MC', 'N'), np.ones((1, 2, 2))),
+            'TAUETA': (('time', 'M', 'NC'), np.ones((1, 2, 2))),
+            'TAUMAX': (('time', 'M', 'N'), np.ones((1, 2, 2))),
+        },
+        coords={'time': np.array(['2010-01-01T00:00:00'], dtype='datetime64[ns]')},
+    )
+    dataset.to_netcdf(input_file)
+
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    data = plugin.convert(reference_date=np.datetime64('2010-01-01T00:00:00'))
+    seed_x, seed_y = plugin.get_seeding_coordinates()
+
+    assert data.x.size == 3
+    assert data.bed_level.shape == (3,)
+    assert data.depth_avg_flow_velocity['x'].shape == (1, 3)
+    assert np.count_nonzero((data.x == 0.0) & (data.y == 0.0)) == 1
+    np.testing.assert_array_equal(seed_x, data.x)
+    np.testing.assert_array_equal(seed_y, data.y)
+
+
+def test_converts_positive_down_bottom_depth_to_bed_elevation(tmp_path: Path) -> None:
+    """DPS0 becomes elevation while the S1 fallback remains physical water depth."""
+    input_file = tmp_path / 'positive_down_depth.nc'
+    input_file.write_text('')
+    dps0 = np.array([[4.0, 6.0]])
+    dataset = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[10.0, 20.0]])),
+            'YZ': (('M', 'N'), np.array([[30.0, 30.0]])),
+            'DPS0': (('M', 'N'), dps0),
+            'DP0': (('MC', 'NC'), np.array([[99.0, 99.0]])),
+            'S1': (('time', 'M', 'N'), np.array([[[1.0, -2.0]]])),
+        }
+    )
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+
+    mapped = plugin._map_delft3d4_variables({'num_times': 1})
+
+    np.testing.assert_array_equal(mapped['bed_level'], np.array([-4.0, -6.0]))
+    np.testing.assert_array_equal(mapped['water_depth'], np.array([[5.0, 4.0]]))
+
+
+def test_uses_face_aligned_dp0_as_bottom_depth_fallback(tmp_path: Path) -> None:
+    """A face-aligned DP0 fallback must retain the depth-to-elevation conversion."""
+    input_file = tmp_path / 'face_aligned_dp0.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[10.0, 20.0]])),
+            'YZ': (('M', 'N'), np.array([[30.0, 30.0]])),
+            'DP0': (('M', 'N'), np.array([[3.0, 5.0]])),
+            'S1': (('time', 'M', 'N'), np.array([[[2.0, -1.0]]])),
+        }
+    )
+
+    mapped = plugin._map_delft3d4_variables({'num_times': 1})
+
+    np.testing.assert_array_equal(mapped['bed_level'], np.array([-3.0, -5.0]))
+    np.testing.assert_array_equal(mapped['water_depth'], np.array([[5.0, 4.0]]))
+
+
+def test_rejects_node_located_dp0_without_dps0(tmp_path: Path) -> None:
+    """A node DP0 field cannot be silently registered to face coordinates."""
+    input_file = tmp_path / 'node_dp0.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[10.0, 20.0], [10.0, 20.0]])),
+            'YZ': (('M', 'N'), np.array([[30.0, 30.0], [40.0, 40.0]])),
+            'DP0': (('MC', 'NC'), np.array([[1.0, 2.0], [3.0, 4.0]])),
+        }
+    )
+
+    with pytest.raises(ValueError, match='DP0 must be face-located'):
+        plugin._map_delft3d4_variables({'num_times': 1})
+
+
+def test_rejects_node_dp0_with_only_node_coordinates(tmp_path: Path) -> None:
+    """Node coordinates do not make a node DP0 field face-aligned."""
+    input_file = tmp_path / 'node_coordinates_node_dp0.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XCOR': (('MC', 'NC'), np.array([[10.0, 20.0], [10.0, 20.0]])),
+            'YCOR': (('MC', 'NC'), np.array([[30.0, 30.0], [40.0, 40.0]])),
+            'DP0': (('MC', 'NC'), np.array([[1.0, 2.0], [3.0, 4.0]])),
+        }
+    )
+
+    with pytest.raises(ValueError, match='DP0 must be face-located'):
+        plugin._map_delft3d4_variables({'num_times': 1})
+
+
+def test_rejects_non_face_dp0_metadata(tmp_path: Path) -> None:
+    """A DP0 field explicitly marked as an edge cannot represent face depth."""
+    input_file = tmp_path / 'edge_dp0.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[10.0, 20.0]])),
+            'YZ': (('M', 'N'), np.array([[30.0, 30.0]])),
+            'DP0': (
+                ('M', 'N'),
+                np.array([[1.0, 2.0]]),
+                {'location': 'edge1'},
+            ),
+        }
+    )
+
+    with pytest.raises(ValueError, match='DP0 must be face-located'):
+        plugin._map_delft3d4_variables({'num_times': 1})
 
 
 def test_preserves_fraction_dimension_when_requested(tmp_path: Path) -> None:

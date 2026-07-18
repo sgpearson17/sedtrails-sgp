@@ -5,7 +5,7 @@ At present it is not possible to directly read these files in with Python, so it
 better to instead write the map output as `*.nc` files. To enable `*.nc` output in
 Delft3D-4, add the following lines to the `*.mdf` file:
 ```
-FlNcdf= #maphis#
+FlNcdf= #map#
 ncFormat=4
 ```
 """
@@ -28,8 +28,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Initialize the plugin with the input file.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         input_file : str
             Path to the Delft3D4 NetCDF file.
         morfac : float, optional
@@ -51,8 +51,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Get the variables in the input dataset.
 
-        Returns:
-        --------
+        Returns
+        -------
         List
             List of variable names in the input dataset.
         """
@@ -76,8 +76,8 @@ class FormatPlugin(BaseFormatPlugin):
         """
         Delft3D4 NetCDF to SedtrailsData.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         current_time : float, optional
             Current simulation time in seconds
         reading_interval : float, optional
@@ -85,8 +85,8 @@ class FormatPlugin(BaseFormatPlugin):
         reference_date : np.datetime64, optional
             Reference date for converting time values
 
-        Returns:
-        --------
+        Returns
+        -------
         SedtrailsData
             The converted SedtrailsData object.
         """
@@ -121,9 +121,7 @@ class FormatPlugin(BaseFormatPlugin):
             mapped_data['suspended_transport_x'] ** 2 + mapped_data['suspended_transport_y'] ** 2
         )
 
-        mean_bed_shear_stress = np.sqrt(
-            mapped_data['bed_shear_stress_x'] ** 2 + mapped_data['bed_shear_stress_y'] ** 2
-        )
+        mean_bed_shear_stress = np.sqrt(mapped_data['bed_shear_stress_x'] ** 2 + mapped_data['bed_shear_stress_y'] ** 2)
 
         depth_avg_flow_velocity = {
             'x': mapped_data['flow_velocity_x'],
@@ -187,22 +185,48 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
     def get_seeding_coordinates(self):
-        """Return spatial coordinates required for particle seeding."""
+        """Return active Delft3D4 face centers for particle seeding.
+
+        Returns
+        -------
+        tuple of numpy.ndarray
+            One-dimensional x and y coordinates of active finite map faces.
+
+        Raises
+        ------
+        KeyError
+            If the input does not provide XZ/YZ or XCOR/YCOR coordinates.
+        """
         self.load()
 
         if 'XZ' in self.input_data and 'YZ' in self.input_data:
             x_vals = self.input_data['XZ'].values
             y_vals = self.input_data['YZ'].values
-            return self._flatten_xy(x_vals, y_vals)
+            x_values, y_values = self._flatten_xy(x_vals, y_vals)
+            valid = self._valid_face_mask(x_vals, y_vals).reshape(-1)
+            return x_values[valid], y_values[valid]
         if 'XCOR' in self.input_data and 'YCOR' in self.input_data:
             x_vals = self.input_data['XCOR'].values
             y_vals = self.input_data['YCOR'].values
-            return self._flatten_xy(x_vals, y_vals)
+            x_values, y_values = self._flatten_xy(x_vals, y_vals)
+            valid = self._valid_face_mask(x_vals, y_vals).reshape(-1)
+            return x_values[valid], y_values[valid]
 
         raise KeyError("Required variables 'XZ'/'YZ' or 'XCOR'/'YCOR' not found in dataset")
 
     def load(self) -> Any:
-        """Reads and loads a Delft3D4 NetCDF file using xarray."""
+        """Load the Delft3D4 NetCDF input dataset with xarray.
+
+        Returns
+        -------
+        None
+            The loaded dataset is retained in ``input_data``.
+
+        Raises
+        ------
+        OSError
+            If xarray cannot open the configured input file.
+        """
 
         if self.input_data is None:
             try:
@@ -460,6 +484,28 @@ class FormatPlugin(BaseFormatPlugin):
             return values.reshape(new_shape)
         return values
 
+    def _valid_face_mask(self, x_values: np.ndarray, y_values: np.ndarray) -> np.ndarray:
+        """Return a face mask that excludes inactive or non-finite map coordinates."""
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+
+        valid = np.isfinite(x_values) & np.isfinite(y_values)
+        if valid.ndim != 2:
+            return valid
+
+        if 'KCS' in self.input_data:
+            cell_status = self._select_first_dims(self.input_data['KCS'])
+            cell_status = self._ensure_grid_shape(
+                np.asarray(cell_status.values),
+                x_values.shape,
+            )
+            valid &= cell_status > 0
+
+        if not np.any(valid):
+            raise ValueError('Input data contains no active finite cell centers')
+
+        return valid
+
     def get_time_bounds(self, reference_date: Optional[np.datetime64] = None) -> tuple[float, float]:
         """
         Return input time bounds in seconds since the configured reference date.
@@ -494,17 +540,184 @@ class FormatPlugin(BaseFormatPlugin):
             raise ValueError('Input data contains no time values')
         return float(times[0]), float(times[-1])
 
-    def _interpolate_to_centers(self, values: np.ndarray, axis: int) -> np.ndarray:
-        """Interpolate staggered-grid values to cell centers along a given axis."""
-        if values.ndim < 2:
-            return values
+    def _read_values(
+        self,
+        variable_name: str,
+        *,
+        time_slice: slice,
+        num_times: int,
+        select_fraction_dims: bool = True,
+    ) -> np.ndarray:
+        """Read one Delft3D variable over the requested time window."""
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
 
-        rolled = np.roll(values, -1, axis=axis)
-        centered = 0.5 * (values + rolled)
-        indexer = [slice(None)] * centered.ndim
-        indexer[axis] = -1
-        centered[tuple(indexer)] = np.nan
-        return centered
+        variable = self._select_first_dims(
+            self.input_data[variable_name],
+            select_fraction_dims=select_fraction_dims,
+        )
+        if 'time' in variable.dims:
+            return np.asarray(variable.isel(time=time_slice).values)
+        return np.broadcast_to(variable.values, (num_times, *variable.shape))
+
+    @staticmethod
+    def _broadcast_mask(mask: np.ndarray, values: np.ndarray) -> np.ndarray:
+        """Broadcast a time-varying U/V wet mask over optional fraction axes."""
+        if mask.shape[-2:] != values.shape[-2:]:
+            mask = mask[..., : values.shape[-2], : values.shape[-1]]
+
+        missing_leading_dims = values.ndim - mask.ndim
+        if missing_leading_dims < 0:
+            raise ValueError('Delft3D wet-mask dimensions are incompatible with vector data')
+        if missing_leading_dims:
+            mask = mask.reshape(mask.shape[:-2] + (1,) * missing_leading_dims + mask.shape[-2:])
+        return np.broadcast_to(mask, values.shape)
+
+    @staticmethod
+    def _center_staggered_component(
+        values: np.ndarray,
+        wet_mask: np.ndarray,
+        axis: int,
+    ) -> np.ndarray:
+        """Wet-weight a staggered U or V component onto face centers.
+
+        Delft3D stores the U component on xi-oriented faces and the V component
+        on eta-oriented faces. A face center uses the local component and the
+        immediately preceding component along the staggered axis. The first row
+        or column is replicated, matching Delft3D's max(index - 1, 1)
+        boundary treatment.
+        """
+        previous_values = np.roll(values, 1, axis=axis)
+        previous_mask = np.roll(wet_mask, 1, axis=axis)
+        first_index = [slice(None)] * values.ndim
+        first_index[axis] = 0
+        first_index = tuple(first_index)
+        previous_values[first_index] = values[first_index]
+        previous_mask[first_index] = wet_mask[first_index]
+
+        current_contribution = np.where(wet_mask != 0, values, 0.0) * wet_mask
+        previous_contribution = np.where(previous_mask != 0, previous_values, 0.0) * previous_mask
+        denominator = np.maximum(1.0, wet_mask + previous_mask)
+        return (current_contribution + previous_contribution) / denominator
+
+    def _local_grid_angle(self, grid_shape: tuple[int, int]) -> np.ndarray:
+        """Return the face-centered ALFAS angle in radians, or zero for rectilinear input."""
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+
+        if 'ALFAS' not in self.input_data:
+            print("Warning: Variable 'ALFAS' not found, assuming zero grid rotation")
+            return np.zeros(grid_shape, dtype=float)
+
+        angle = self._select_first_dims(self.input_data['ALFAS'])
+        if 'time' in angle.dims:
+            angle = angle.isel(time=0)
+        angle_values = self._ensure_grid_shape(np.asarray(angle.values), grid_shape)
+        return np.deg2rad(angle_values)
+
+    def _map_vector_pair(
+        self,
+        *,
+        u_variable: str,
+        v_variable: str,
+        grid_shape: tuple[int, int],
+        time_slice: slice,
+        num_times: int,
+        select_fraction_dims: bool,
+        u_wet_mask: np.ndarray | None = None,
+        v_wet_mask: np.ndarray | None = None,
+        cos_angle: np.ndarray | None = None,
+        sin_angle: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Center and rotate one Delft3D U/V vector pair into global x/y components."""
+        if self.input_data is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+
+        u_values = (
+            self._read_values(
+                u_variable,
+                time_slice=time_slice,
+                num_times=num_times,
+                select_fraction_dims=select_fraction_dims,
+            )
+            if u_variable in self.input_data
+            else None
+        )
+        v_values = (
+            self._read_values(
+                v_variable,
+                time_slice=time_slice,
+                num_times=num_times,
+                select_fraction_dims=select_fraction_dims,
+            )
+            if v_variable in self.input_data
+            else None
+        )
+
+        if u_values is None and v_values is None:
+            print(f"Warning: Variables '{u_variable}' and '{v_variable}' not found, using zeros")
+            zeros = np.zeros((num_times, *grid_shape))
+            return zeros, zeros
+
+        if u_values is None or v_values is None:
+            missing_name = u_variable if u_values is None else v_variable
+            raise KeyError(f"Vector pair '{u_variable}'/'{v_variable}' is incomplete: '{missing_name}' is missing")
+
+        if u_values is not None:
+            if u_wet_mask is not None:
+                u_mask = u_wet_mask
+            elif 'KFU' in self.input_data:
+                u_mask = self._read_values('KFU', time_slice=time_slice, num_times=num_times)
+            elif 'KCU' in self.input_data:
+                u_mask = self._read_values('KCU', time_slice=time_slice, num_times=num_times)
+            else:
+                print("Warning: Variables 'KFU' and 'KCU' not found, assuming all U faces are wet")
+                u_mask = np.ones(u_values.shape[:1] + u_values.shape[-2:])
+            u_centered = self._center_staggered_component(
+                u_values,
+                self._broadcast_mask(u_mask, u_values),
+                axis=-2,
+            )
+            u_centered = self._ensure_grid_shape(u_centered, grid_shape)
+        else:
+            u_centered = None
+
+        if v_values is not None:
+            if v_wet_mask is not None:
+                v_mask = v_wet_mask
+            elif 'KFV' in self.input_data:
+                v_mask = self._read_values('KFV', time_slice=time_slice, num_times=num_times)
+            elif 'KCV' in self.input_data:
+                v_mask = self._read_values('KCV', time_slice=time_slice, num_times=num_times)
+            else:
+                print("Warning: Variables 'KFV' and 'KCV' not found, assuming all V faces are wet")
+                v_mask = np.ones(v_values.shape[:1] + v_values.shape[-2:])
+            v_centered = self._center_staggered_component(
+                v_values,
+                self._broadcast_mask(v_mask, v_values),
+                axis=-1,
+            )
+            v_centered = self._ensure_grid_shape(v_centered, grid_shape)
+        else:
+            v_centered = None
+
+        if u_centered is None:
+            u_centered = np.zeros_like(v_centered)
+        if v_centered is None:
+            v_centered = np.zeros_like(u_centered)
+
+        if cos_angle is None or sin_angle is None:
+            angle = self._local_grid_angle(grid_shape)
+            cos_angle = np.cos(angle)
+            sin_angle = np.sin(angle)
+
+        broadcast_shape = (1,) * (u_centered.ndim - 2) + grid_shape
+        cos_angle = cos_angle.reshape(broadcast_shape)
+        sin_angle = sin_angle.reshape(broadcast_shape)
+        return (
+            u_centered * cos_angle - v_centered * sin_angle,
+            u_centered * sin_angle + v_centered * cos_angle,
+        )
 
     def _map_delft3d4_variables(
         self, time_info: Dict, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
@@ -521,13 +734,7 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
         data: Dict[str, np.ndarray] = {}
-        sediment_keys = {
-            'bed_load_transport_x',
-            'bed_load_transport_y',
-            'suspended_transport_x',
-            'suspended_transport_y',
-            'sediment_concentration',
-        }
+        sediment_keys = {'sediment_concentration'}
         fraction_labels = None
 
         if 'NAMCON' in self.input_data:
@@ -537,38 +744,45 @@ class FormatPlugin(BaseFormatPlugin):
         if 'XZ' in self.input_data and 'YZ' in self.input_data:
             data['x'] = self.input_data['XZ'].values
             data['y'] = self.input_data['YZ'].values
+            grid_coordinate_dims = self.input_data['XZ'].dims
         elif 'XCOR' in self.input_data and 'YCOR' in self.input_data:
             data['x'] = self.input_data['XCOR'].values
             data['y'] = self.input_data['YCOR'].values
+            grid_coordinate_dims = self.input_data['XCOR'].dims
         else:
             raise KeyError("Required variables 'XZ'/'YZ' or 'XCOR'/'YCOR' not found in dataset")
 
         grid_shape = data['x'].shape
+        valid_face_mask = self._valid_face_mask(data['x'], data['y'])
 
-        bed_level_var = None
-        for candidate in ['DPS0', 'DP0']:
-            if candidate in self.input_data:
-                bed_level_var = self.input_data[candidate]
-                break
+        if 'DPS0' in self.input_data:
+            bottom_depth_var = self.input_data['DPS0']
+        elif 'DP0' in self.input_data:
+            bottom_depth_var = self.input_data['DP0']
+            bottom_depth_dims = tuple(bottom_depth_var.dims[-2:])
+            bottom_depth_location = str(bottom_depth_var.attrs.get('location', '')).lower()
+            is_node_centered = bottom_depth_location == 'node' or tuple(dim.upper() for dim in bottom_depth_dims) == (
+                'MC',
+                'NC',
+            )
+            has_non_face_location = bottom_depth_location not in {'', 'face'}
+            if is_node_centered or has_non_face_location or bottom_depth_dims != tuple(grid_coordinate_dims):
+                raise ValueError(
+                    'DP0 must be face-located and align with selected map coordinates. Use face-centered DPS0.'
+                )
+        else:
+            bottom_depth_var = None
 
-        if bed_level_var is not None:
-            bed_level_vals = self._select_first_dims(bed_level_var).values
-            data['bed_level'] = self._ensure_grid_shape(bed_level_vals, grid_shape)
+        if bottom_depth_var is not None:
+            bed_level_vals = self._select_first_dims(bottom_depth_var).values
+            data['bed_level'] = -self._ensure_grid_shape(bed_level_vals, grid_shape)
         else:
             data['bed_level'] = np.zeros(grid_shape)
             print("Warning: Variables 'DPS0' and 'DP0' not found, using zeros for bed level")
 
         variable_map = {
             'water_depth': 'DPS',
-            'flow_velocity_x': 'U1',
-            'flow_velocity_y': 'V1',
-            'bed_shear_stress_x': 'TAUKSI',
-            'bed_shear_stress_y': 'TAUETA',
             'max_bed_shear_stress': 'TAUMAX',
-            'bed_load_transport_x': 'SBUU',
-            'bed_load_transport_y': 'SBVV',
-            'suspended_transport_x': 'SSUU',
-            'suspended_transport_y': 'SSVV',
             'sediment_concentration': 'R1',
         }
 
@@ -583,7 +797,9 @@ class FormatPlugin(BaseFormatPlugin):
                             if fraction_dim in self.input_data[var_name].coords:
                                 fraction_labels = [
                                     str(label).strip()
-                                    for label in np.asarray(self.input_data[var_name].coords[fraction_dim].values).tolist()
+                                    for label in np.asarray(
+                                        self.input_data[var_name].coords[fraction_dim].values
+                                    ).tolist()
                                 ]
                             break
 
@@ -592,25 +808,87 @@ class FormatPlugin(BaseFormatPlugin):
                 else:
                     values = np.broadcast_to(var.values, (num_times, *var.shape))
 
-                if key in {
-                    'flow_velocity_x',
-                    'bed_shear_stress_x',
-                    'bed_load_transport_x',
-                    'suspended_transport_x',
-                }:
-                    values = self._interpolate_to_centers(values, axis=-2)
-                elif key in {
-                    'flow_velocity_y',
-                    'bed_shear_stress_y',
-                    'bed_load_transport_y',
-                    'suspended_transport_y',
-                }:
-                    values = self._interpolate_to_centers(values, axis=-1)
-
                 data[key] = self._ensure_grid_shape(values, grid_shape)
             else:
                 data[key] = np.zeros((num_times, *grid_shape))
                 print(f"Warning: Variable '{var_name}' not found, using zeros")
+
+        vector_pairs = {
+            'flow_velocity': ('U1', 'V1', False),
+            'bed_shear_stress': ('TAUKSI', 'TAUETA', False),
+            'bed_load_transport': ('SBUU', 'SBVV', True),
+            'suspended_transport': ('SSUU', 'SSVV', True),
+        }
+        has_u_components = any(pair[0] in self.input_data for pair in vector_pairs.values())
+        has_v_components = any(pair[1] in self.input_data for pair in vector_pairs.values())
+        if has_u_components or has_v_components:
+            u_mask_variable = next(
+                (candidate for candidate in ('KFU', 'KCU') if candidate in self.input_data),
+                None,
+            )
+            v_mask_variable = next(
+                (candidate for candidate in ('KFV', 'KCV') if candidate in self.input_data),
+                None,
+            )
+            if has_u_components and u_mask_variable is None:
+                print("Warning: Variables 'KFU' and 'KCU' not found, assuming all U faces are wet")
+                u_wet_mask = np.ones((num_times, *grid_shape))
+            elif u_mask_variable is not None:
+                u_wet_mask = self._read_values(
+                    u_mask_variable,
+                    time_slice=time_slice,
+                    num_times=num_times,
+                )
+            else:
+                u_wet_mask = None
+            if has_v_components and v_mask_variable is None:
+                print("Warning: Variables 'KFV' and 'KCV' not found, assuming all V faces are wet")
+                v_wet_mask = np.ones((num_times, *grid_shape))
+            elif v_mask_variable is not None:
+                v_wet_mask = self._read_values(
+                    v_mask_variable,
+                    time_slice=time_slice,
+                    num_times=num_times,
+                )
+            else:
+                v_wet_mask = None
+            local_grid_angle = self._local_grid_angle(grid_shape)
+            cos_angle = np.cos(local_grid_angle)
+            sin_angle = np.sin(local_grid_angle)
+        else:
+            u_wet_mask = None
+            v_wet_mask = None
+            cos_angle = None
+            sin_angle = None
+
+        for key, (u_variable, v_variable, preserve_fraction_dims) in vector_pairs.items():
+            data[f'{key}_x'], data[f'{key}_y'] = self._map_vector_pair(
+                u_variable=u_variable,
+                v_variable=v_variable,
+                grid_shape=grid_shape,
+                time_slice=time_slice,
+                num_times=num_times,
+                select_fraction_dims=not preserve_fraction_dims,
+                u_wet_mask=u_wet_mask,
+                v_wet_mask=v_wet_mask,
+                cos_angle=cos_angle,
+                sin_angle=sin_angle,
+            )
+
+            if preserve_fraction_dims and fraction_labels is None:
+                for variable_name in (u_variable, v_variable):
+                    if variable_name not in self.input_data:
+                        continue
+                    variable = self.input_data[variable_name]
+                    for fraction_dim in ('LSED', 'LSEDTOT', 'LSTSCI'):
+                        if fraction_dim in variable.dims and fraction_dim in variable.coords:
+                            fraction_labels = [
+                                str(label).strip()
+                                for label in np.asarray(variable.coords[fraction_dim].values).tolist()
+                            ]
+                            break
+                    if fraction_labels is not None:
+                        break
 
         if 'water_depth' in data and np.all(data['water_depth'] == 0) and 'S1' in self.input_data:
             s1 = self._select_first_dims(self.input_data['S1'])
@@ -618,13 +896,20 @@ class FormatPlugin(BaseFormatPlugin):
                 s1_vals = s1.isel(time=time_slice).values
             else:
                 s1_vals = np.broadcast_to(s1.values, (num_times, *s1.shape))
-            data['water_depth'] = self._ensure_grid_shape(s1_vals + data['bed_level'], grid_shape)
+            data['water_depth'] = self._ensure_grid_shape(s1_vals - data['bed_level'], grid_shape)
 
+        spatial_mask = valid_face_mask.reshape(-1)
         data['x'], data['y'] = self._flatten_xy(data['x'], data['y'])
+        data['x'] = data['x'][spatial_mask]
+        data['y'] = data['y'][spatial_mask]
         for key, values in list(data.items()):
             if key in {'x', 'y'}:
                 continue
-            data[key] = self._flatten_spatial(values, grid_shape)
+            flattened_values = self._flatten_spatial(values, grid_shape)
+            if isinstance(flattened_values, np.ndarray) and flattened_values.shape[-1] == spatial_mask.size:
+                data[key] = flattened_values[..., spatial_mask]
+            else:
+                data[key] = flattened_values
 
         if fraction_labels is not None:
             data['sediment_fraction_labels'] = fraction_labels

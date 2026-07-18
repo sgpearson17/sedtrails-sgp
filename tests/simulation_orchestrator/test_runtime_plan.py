@@ -8,6 +8,8 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     DEFAULT_TRANSPORT_PROBABILITY_METHOD,
     TracerRuntimePlan,
     build_plan_sedtrails_data,
+    _resolve_fraction_selection,
+    _select_fraction_value,
     build_population_runtime_plans,
     required_physics_fields,
     unique_flow_field_names,
@@ -306,6 +308,49 @@ def test_build_plan_sedtrails_data_rejects_out_of_bounds_population_fraction():
             tracer_plan,
             population_config={'sediment_fraction_index': 3},
         )
+
+
+def test_population_fraction_selection_uses_global_default_and_population_override():
+    """Resolve one population choice before applying a global default."""
+    global_selection = _resolve_fraction_selection(
+        {},
+        default_fraction_index=2,
+        default_fraction_name=None,
+    )
+    assert global_selection == (2, None)
+
+    index_selection = _resolve_fraction_selection(
+        {'sediment_fraction_index': 2},
+        default_fraction_index=0,
+        default_fraction_name='sediment100_nat',
+    )
+    assert index_selection == (2, None)
+
+    name_selection = _resolve_fraction_selection(
+        {'sediment_fraction_name': 'sediment300_nat', 'sediment_fraction_index': 0},
+        default_fraction_index=2,
+        default_fraction_name='sediment100_nat',
+    )
+    assert name_selection == (0, 'sediment300_nat')
+
+
+def test_fraction_selection_preserves_component_shapes_when_one_component_is_missing():
+    """Select only vector components that carry a fraction axis."""
+    fractional_values = np.arange(6.0).reshape(1, 3, 2)
+    selected = _select_fraction_value(
+        {
+            'x': fractional_values,
+            'y': np.zeros((1, 2)),
+            'magnitude': fractional_values + 10.0,
+        },
+        fractions=3,
+        fraction_index=2,
+    )
+
+    assert selected['x'].shape == (1, 2)
+    assert selected['y'].shape == (1, 2)
+    assert selected['magnitude'].shape == (1, 2)
+    np.testing.assert_array_equal(selected['y'], np.zeros((1, 2)))
 
 
 def test_build_plan_sedtrails_data_selects_population_fraction_by_name():

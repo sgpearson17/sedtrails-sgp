@@ -216,6 +216,15 @@ def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
         _validate_config(tmp_path, config)
 
 
+def test_population_schema_leaves_fraction_index_unset_without_an_explicit_override(tmp_path):
+    """Leave absent population selection available for a global default."""
+    config = _base_config()
+
+    validated = _validate_config(tmp_path, config)
+
+    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]
+
+
 def test_population_schema_accepts_sediment_fraction_name(tmp_path):
     """Accept per-population sediment fraction selection by label."""
     config = _base_config()

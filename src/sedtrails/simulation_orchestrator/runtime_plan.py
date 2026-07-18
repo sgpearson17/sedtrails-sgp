@@ -332,12 +332,11 @@ def _select_population_fraction_data(
     if fractions <= 1:
         return sedtrails_data
 
-    selected_fraction_index = default_fraction_index
-    selected_fraction_name = default_fraction_name
-    if isinstance(population_config, Mapping) and 'sediment_fraction_index' in population_config:
-        selected_fraction_index = population_config.get('sediment_fraction_index')
-    if isinstance(population_config, Mapping) and 'sediment_fraction_name' in population_config:
-        selected_fraction_name = population_config.get('sediment_fraction_name')
+    selected_fraction_index, selected_fraction_name = _resolve_fraction_selection(
+        population_config,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+    )
 
     if selected_fraction_name:
         available_labels = _available_fraction_labels(sedtrails_data)
@@ -387,17 +386,37 @@ def _select_population_fraction_data(
     return selected_data
 
 
+def _resolve_fraction_selection(
+    population_config: Mapping[str, Any] | None,
+    *,
+    default_fraction_index: int,
+    default_fraction_name: str | None,
+) -> tuple[Any, str | None]:
+    """Return one population selection, falling back to the global selection."""
+    if not isinstance(population_config, Mapping):
+        return default_fraction_index, default_fraction_name
+
+    population_fraction_name = population_config.get('sediment_fraction_name')
+    if population_fraction_name:
+        return population_config.get('sediment_fraction_index', 0), str(population_fraction_name)
+
+    if 'sediment_fraction_index' in population_config:
+        return population_config.get('sediment_fraction_index'), None
+
+    return default_fraction_index, default_fraction_name
+
+
 def _select_fraction_value(value: Any, fractions: int, fraction_index: int) -> Any:
     """Select a single fraction from arrays or vector-field dictionaries when present."""
     if isinstance(value, dict) and {'x', 'y', 'magnitude'}.issubset(value.keys()):
-        x_array = np.asarray(value['x'])
-        if x_array.ndim >= 3 and x_array.shape[1] == fractions:
-            return {
-                'x': np.asarray(value['x'])[:, fraction_index, ...],
-                'y': np.asarray(value['y'])[:, fraction_index, ...],
-                'magnitude': np.asarray(value['magnitude'])[:, fraction_index, ...],
-            }
-        return value
+        selected_value = dict(value)
+        selection_applied = False
+        for component_name in ('x', 'y', 'magnitude'):
+            component = np.asarray(value[component_name])
+            if component.ndim >= 3 and component.shape[1] == fractions:
+                selected_value[component_name] = component[:, fraction_index, ...]
+                selection_applied = True
+        return selected_value if selection_applied else value
 
     if isinstance(value, np.ndarray) and value.ndim >= 3 and value.shape[1] == fractions:
         return value[:, fraction_index, ...]
