@@ -357,6 +357,7 @@ Exactly one tracer method must be specified per population. Supported method key
 | `flow_field_name` | array | Optional | `["depth_avg_flow_velocity"]` | List of flow field names to use for passive tracers. |
 
 Sediment fraction selection is handled separately via `sediment_fraction_index` or `sediment_fraction_name`. For multi-fraction Delft3D-4 NetCDF inputs, named selection is resolved against the `NAMCON` labels in the file. If the input only contains a single sediment fraction, NAMCON is not used for fraction selection. Name-based fraction selection is not yet available for FM or XBeach inputs, because their transport variable names differ and need separate support.
+A selection in `general.input_model` is the default for populations that do not set either field. A population-level selection replaces that default entirely, and `sediment_fraction_name` takes precedence when both fields are set in the same scope.
 
 (particle-seeding)=
 ### Particle Seeding

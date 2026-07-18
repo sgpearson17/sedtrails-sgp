@@ -167,9 +167,19 @@ If you need help, please reach out the [SedTRAILS Team in GitHub](https://github
 
 ## Delft3D4 NetCDF Notes
 
-The Delft3D4 NetCDF format stores vector components on staggered grids (U/V points)
-while scalars live on cell centers. The Delft3D4 converter interpolates these
-vector components to cell centers during conversion so that all quantities share
-the same coordinate grid for downstream SedTRAILS computations. Structured
-grids are flattened to 1D spatial vectors to match the SedTRAILS data model and
-avoid misinterpreting M/N dimensions as sediment fractions.
+The Delft3D4 NetCDF format stores U/xi and V/eta vector components on staggered
+grids while scalars live on cell centers. The converter centers each vector pair
+with the time-varying `KFU`/`KFV` masks, falling back to static `KCU`/`KCV`
+masks, and rotates it with static face-centered `ALFAS` geometry into SedTRAILS
+global x/y. The trigonometric ALFAS factors and wet masks are read once per
+conversion time window and reused for flow velocity, bottom shear stress,
+bed-load transport, and suspended-load transport. Incomplete pairs fail fast.
+
+`DPS0` stores face bottom depth positive down. `DP0` is used only when it is
+face-aligned, has no non-face location metadata, and aligns with selected map
+coordinates; node-located or edge-located `DP0` without `DPS0` is rejected.
+The converter negates accepted depth to SedTRAILS bed elevation and derives missing water depth as
+`S1 - bed_level`.
+
+Faces with `KCS=0` are filtered from coordinates, fields, and seeding points
+before structured grids are flattened to the 1D SedTRAILS spatial representation.
