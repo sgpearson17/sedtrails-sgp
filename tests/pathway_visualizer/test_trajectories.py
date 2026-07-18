@@ -16,7 +16,7 @@ from sedtrails.pathway_visualizer.trajectories import (
 )
 
 
-def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
+def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch, tmp_path):
     n_particles = 2
     n_timesteps = 3
 
@@ -39,7 +39,7 @@ def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
     # This previously raised: "too many indices"
-    plot_trajectories(ds)
+    plot_trajectories(ds, output=tmp_path / 'fixed_width_population_names.png')
 
 
 def test_plot_trajectories_decodes_object_wrapped_byte_names(monkeypatch, tmp_path):
@@ -84,7 +84,7 @@ def test_plot_trajectories_decodes_object_wrapped_byte_names(monkeypatch, tmp_pa
     ]
 
 
-def test_plot_trajectories_accepts_time_major_layout(monkeypatch):
+def test_plot_trajectories_accepts_time_major_layout(monkeypatch, tmp_path):
     n_particles = 2
     n_timesteps = 3
 
@@ -106,7 +106,7 @@ def test_plot_trajectories_accepts_time_major_layout(monkeypatch):
 
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
-    plot_trajectories(ds)
+    plot_trajectories(ds, output=tmp_path / 'time_major_layout.png')
 
 
 def test_read_netcdf_keeps_cf_time_values_as_seconds(tmp_path):
