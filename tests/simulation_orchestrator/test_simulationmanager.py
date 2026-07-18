@@ -2,6 +2,7 @@
 Unit tests for the Simulation class.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,9 +10,11 @@ import pytest
 import yaml
 
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
+from sedtrails.application_interfaces.validator import YAMLConfigValidator
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
 from sedtrails.simulation_orchestrator import simulation_manager
+from sedtrails.simulation_orchestrator.runtime_plan import validate_population_runtime_configurations
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -153,6 +156,14 @@ class TestSimulationManagerPreflight:
 
         with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
             manager._run_impl()
+
+    @pytest.mark.parametrize('example_name', ['config.example_sfincs.yaml', 'sedtrails-example-passive.yaml'])
+    def test_passive_examples_pass_runtime_preflight(self, example_name):
+        """Committed passive examples must satisfy their runtime-only constraints."""
+        example_file = Path(__file__).parents[2] / 'examples' / example_name
+        config = YAMLConfigValidator().validate_yaml(str(example_file))
+
+        validate_population_runtime_configurations(config['particles']['populations'])
 
     def test_plan_retrievers_pass_population_and_global_fraction_selection(self, monkeypatch):
         """Each plan build should receive its population config and shared input-model defaults."""

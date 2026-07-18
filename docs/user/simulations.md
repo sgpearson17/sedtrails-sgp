@@ -183,7 +183,7 @@ Repository examples by mode:
 
 - Van Westen: `examples/sedtrails-example.yaml`
 - Soulsby: `examples/config.example_soulsby.yaml`
-- Passive tracer: `examples/config.example_sfincs.yaml`
+- Passive tracer: `examples/sedtrails-example-passive.yaml` (FM) and `examples/config.example_sfincs.yaml` (SFINCS)
 
 Run any mode the same way by selecting the config file:
 
