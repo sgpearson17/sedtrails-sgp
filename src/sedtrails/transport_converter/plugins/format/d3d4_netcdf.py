@@ -5,7 +5,7 @@ At present it is not possible to directly read these files in with Python, so it
 better to instead write the map output as `*.nc` files. To enable `*.nc` output in
 Delft3D-4, add the following lines to the `*.mdf` file:
 ```
-FlNcdf= #map#
+FlNcdf= #map#  # (or #maphis# if you also want history output)
 ncFormat=4
 ```
 """
