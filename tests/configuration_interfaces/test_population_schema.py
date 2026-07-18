@@ -235,6 +235,39 @@ def test_population_schema_accepts_sediment_fraction_name(tmp_path):
     assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
 
 
+@pytest.mark.parametrize('method', ['none', 'brownian'])
+def test_population_schema_accepts_population_diffusion_methods(tmp_path, method):
+    """Accept both supported per-population diffusion methods."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = {
+        'method': method,
+        'coefficient': 0.05,
+        'seed': 1234,
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['diffusion']['method'] == method
+
+
+@pytest.mark.parametrize(
+    'diffusion',
+    [
+        {'method': 'random', 'coefficient': 0.1},
+        {'method': 'brownian', 'coefficient': -0.1},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': True},
+        {'method': 'brownian', 'coefficient': 0.1, 'seed': 1.5},
+    ],
+)
+def test_population_schema_rejects_invalid_diffusion_config(tmp_path, diffusion):
+    """Reject unsupported methods and invalid diffusion parameters."""
+    config = _base_config()
+    config['particles']['populations'][0]['diffusion'] = diffusion
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
 def _validate_config(tmp_path, config):
     """Write a temporary config file and validate it with the schema validator."""
     config_file = tmp_path / 'sedtrails.yml'

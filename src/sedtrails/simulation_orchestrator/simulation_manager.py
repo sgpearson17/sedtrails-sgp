@@ -22,6 +22,7 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     build_plan_sedtrails_data,
     build_population_runtime_plans,
     unique_flow_field_names,
+    validate_population_runtime_configurations,
 )
 from sedtrails.transport_converter.format_converter import FormatConverter, SedtrailsData
 from sedtrails.transport_converter.physics_converter import PhysicsConverter
@@ -816,6 +817,23 @@ class Simulation:
         return sample_time + tolerance >= next_output_time or sample_time + tolerance >= end_time
 
     @staticmethod
+    def _should_update_bed_level_after_movement(tracer_plan) -> bool:
+        """Return whether post-move bed-level resampling should run.
+
+        Rules for current 2D workflows:
+        - Always run for ``vanwesten`` to preserve burial-depth bookkeeping.
+        - Also run for any tracer configured with ``no_probability`` so
+          particle ``z`` follows bed level after movement (passive/soulsby included).
+
+        Future quasi-3D tracers can introduce exceptions here when vertical
+        position is solved independently from bed level.
+        """
+        return (
+            tracer_plan.method_name == 'vanwesten'
+            or tracer_plan.transport_probability_method == 'no_probability'
+        )
+
+    @staticmethod
     def _initialize_population_output_status(populations, current_time: int | float) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
@@ -857,8 +875,6 @@ class Simulation:
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
-            'sediment_fraction_index': self._controller.get('general.input_model.sediment_fraction_index', 0),
-            'sediment_fraction_name': self._controller.get('general.input_model.sediment_fraction_name'),
             'domain_config': self._get_domain_config(),
         }
 
@@ -1138,13 +1154,14 @@ class Simulation:
             self._controller.load_config(self._config_file)
             self._config_is_read = True
 
+        populations_config = self._controller.get('particles.populations', [])
+        validate_population_runtime_configurations(populations_config)
+
         # Time configuration
         simulation_time = self._create_simulation_time()
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
         repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
-        default_fraction_index = self._controller.get('general.input_model.sediment_fraction_index', 0)
-        default_fraction_name = self._controller.get('general.input_model.sediment_fraction_name')
         input_time_bounds = self.format_converter.get_time_bounds()
         self._validate_simulation_start_matches_input(simulation_time, input_time_bounds)
         if repeat_eulerian_fields and input_time_bounds is not None:
@@ -1158,7 +1175,6 @@ class Simulation:
         with self._profile_section('get_seeding_field_data'):
             seeding_field_data = self.format_converter.get_seeding_field_data()
 
-        populations_config = self._controller.get('particles.populations', [])
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
@@ -1291,13 +1307,7 @@ class Simulation:
                         )
                     plan_retrievers = {
                         runtime_plan.population_index: FieldDataRetriever(
-                            build_plan_sedtrails_data(
-                                sedtrails_data,
-                                runtime_plan.tracer,
-                                population_config=runtime_plan.population_config,
-                                default_fraction_index=default_fraction_index,
-                                default_fraction_name=default_fraction_name,
-                            )
+                            build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
                         )
                         for runtime_plan in runtime_plans
                     }
@@ -1358,17 +1368,13 @@ class Simulation:
                     tracer_plan = runtime_plan.tracer
                     retriever = plan_retrievers[runtime_plan.population_index]
 
-                    # Passive runs do not require sediment-layer diagnostics.
-                    if tracer_plan.method_name == 'passive_tracer':
+                    if tracer_plan.transport_probability_method == 'no_probability':
                         mixing_depth = None
-                        bed_level = None
                     else:
                         with self._profile_section('get_scalar_field_bounds.mixing_layer_thickness'):
-                            mixing_depth = retriever.get_scalar_field_bounds(
-                                field_time_seconds, 'mixing_layer_thickness'
-                            )
-                        with self._profile_section('get_scalar_field_bounds.bed_level'):
-                            bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                            mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
+                    with self._profile_section('get_scalar_field_bounds.bed_level'):
+                        bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':
@@ -1388,8 +1394,11 @@ class Simulation:
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
-                            with self._profile_section('update_burial_depth'):
-                                population.update_burial_depth()
+                            transport_probability_method = tracer_plan.transport_probability_method
+                            if transport_probability_method != 'no_probability':
+                                with self._profile_section('update_burial_depth'):
+                                    population.update_burial_depth()
+
 
                         with self._profile_section('update_status'):
                             population.update_status()
@@ -1423,9 +1432,14 @@ class Simulation:
                             timer.current_timestep,
                         )
 
-                    if tracer_plan.method_name == 'vanwesten':
-                        with self._profile_section('update_bed_level_after_movement'):
-                            population.update_bed_level_change_after_movement(bed_level)
+                        # Re-sample bed level at the new positions after movement.
+                        # Keep this INSIDE the flow-field loop so vanwesten
+                        # burial bookkeeping compares temporal bed change only,
+                        # and so no_probability tracers keep z aligned to bed
+                        # level after advection.
+                        if self._should_update_bed_level_after_movement(tracer_plan):
+                            with self._profile_section('update_bed_level_after_movement'):
+                                population.update_bed_level_change_after_movement(bed_level)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:

@@ -131,6 +131,29 @@ class _CheckpointWriter:
         self.calls.append((args, kwargs))
 
 
+class TestSimulationManagerPreflight:
+    """Tests for configuration validation before seeding work starts."""
+
+    def test_run_impl_rejects_passive_burial_depth_before_seeding(self):
+        """Invalid passive burial depth should fail before time or seeding dependencies are accessed."""
+        manager = object.__new__(Simulation)
+        manager._config_is_read = True
+        manager._controller = _Controller(
+            {
+                'particles.populations': [
+                    {
+                        'particle_type': 'passive',
+                        'tracer_methods': {'passive_tracer': {}},
+                        'seeding': {'burial_depth': {'constant': 0.0}},
+                    }
+                ]
+            }
+        )
+
+        with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
+            manager._run_impl()
+
+
 class TestSimulationManagerTimeConfig:
     """Tests for simulation-time construction from configuration."""
 
@@ -442,6 +465,32 @@ class TestSimulationManagerTimeConfig:
     def test_output_sample_due_on_interval_or_final_time(self, sample_time, next_output_time, end_time, expected):
         """Samples should be saved only on configured boundaries or at final time."""
         assert Simulation._is_output_sample_due(sample_time, next_output_time, end_time) is expected
+
+    @pytest.mark.parametrize(
+        'method_name,transport_probability_method,expected',
+        [
+            ('vanwesten', 'stochastic_transport', True),
+            ('vanwesten', 'reduced_velocity', True),
+            ('vanwesten', 'no_probability', True),
+            ('soulsby', 'no_probability', True),
+            ('passive_tracer', 'no_probability', True),
+            ('soulsby', 'reduced_velocity', False),
+            ('passive_tracer', 'stochastic_transport', False),
+        ],
+    )
+    def test_should_update_bed_level_after_movement_policy(
+        self,
+        method_name,
+        transport_probability_method,
+        expected,
+    ):
+        """Post-move bed-level updates should follow tracer and transport policy rules."""
+        tracer_plan = SimpleNamespace(
+            method_name=method_name,
+            transport_probability_method=transport_probability_method,
+        )
+
+        assert Simulation._should_update_bed_level_after_movement(tracer_plan) is expected
 
     def test_initialize_population_output_status_supplies_required_fields(self):
         """The seeded initial sample should have status fields before the first physics update."""

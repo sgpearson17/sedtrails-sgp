@@ -51,12 +51,13 @@ class FormatConverter:
         """
         Initialize the FormatConverter.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         config : dict
-            Configuration dictionary containing settings for the converter.
-            Must include 'input_file', 'input_format', optionally 'reference_date' (default
-            "1970-01-01" (Unix epoch)) and 'morfac' (default 1.0)
+            Configuration dictionary containing converter settings. It must
+            include ``input_file`` and ``input_format``. Optional
+            ``reference_date`` defaults to ``"1970-01-01"`` and ``morfac``
+            defaults to 1.0.
         """
         self.config = config
         self._reference_date: Union[str, None] = None
