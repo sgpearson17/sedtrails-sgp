@@ -19,6 +19,7 @@ import xarray as xr
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
+from sedtrails.transport_converter.time_utils import decompress_time_info
 
 
 class FormatPlugin(BaseFormatPlugin):
@@ -292,19 +293,7 @@ class FormatPlugin(BaseFormatPlugin):
         """Apply morfac decompression to time values."""
         if self.morfac == 1.0:
             return time_info
-
-        decompressed_info = time_info.copy()
-        time_start = time_info['time_start']
-        decompressed_time_values = time_start + (time_info['time_values'] - time_start) * self.morfac
-
-        decompressed_info['time_values'] = decompressed_time_values
-        decompressed_info['time_start'] = decompressed_time_values[0]
-        decompressed_info['time_end'] = decompressed_time_values[-1]
-        decompressed_info['seconds_since_reference'] = np.array(
-            [float((t - time_info['reference_date']) / np.timedelta64(1, 's')) for t in decompressed_time_values]
-        )
-
-        return decompressed_info
+        return decompress_time_info(time_info, self.morfac)
 
     def _get_time_info(self, input_data: xr.Dataset, reference_date: np.datetime64) -> Dict:
         """

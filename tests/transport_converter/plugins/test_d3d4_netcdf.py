@@ -641,6 +641,28 @@ def test_filters_kcs_inactive_faces_from_conversion_and_seeding(tmp_path: Path) 
     np.testing.assert_array_equal(seed_y, data.y)
 
 
+def test_decompresses_numeric_cf_time_using_shared_seconds_utility(tmp_path: Path) -> None:
+    """Morfac decompression must not mix numeric source time with decoded datetimes."""
+    input_file = tmp_path / 'numeric_cf_time.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file), morfac=2.0)
+    plugin.input_data = xr.Dataset(
+        data_vars={'time': (('time',), np.array([100.0, 160.0]))},
+    )
+    plugin.input_data['time'].attrs['units'] = 'seconds since 2000-01-01 00:00:00'
+    reference_date = np.datetime64('1970-01-01T00:00:00')
+
+    time_info = plugin._get_time_info(plugin.input_data, reference_date)
+    decompressed = plugin._decompress_time(time_info)
+
+    np.testing.assert_array_equal(decompressed['seconds_since_reference'], np.array([946684900.0, 946685020.0]))
+    np.testing.assert_array_equal(
+        decompressed['time_values'].astype('datetime64[s]'),
+        np.array(['2000-01-01T00:01:40', '2000-01-01T00:03:40'], dtype='datetime64[s]'),
+    )
+    assert plugin.get_time_bounds(reference_date=reference_date) == (946684900.0, 946685020.0)
+
+
 def test_converts_positive_down_bottom_depth_to_bed_elevation(tmp_path: Path) -> None:
     """DPS0 becomes elevation while the S1 fallback remains physical water depth."""
     input_file = tmp_path / 'positive_down_depth.nc'
