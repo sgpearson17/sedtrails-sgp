@@ -311,8 +311,8 @@ class FormatPlugin(BaseFormatPlugin):
         time_start = time_values[0]
         time_end = time_values[-1]
 
-        orig_units = getattr(time_var, 'units', None)
-        orig_calendar = getattr(time_var, 'calendar', 'standard')
+        orig_units = time_var.attrs.get('units') or time_var.encoding.get('units')
+        orig_calendar = time_var.attrs.get('calendar') or time_var.encoding.get('calendar', 'standard')
 
         if not np.issubdtype(np.asarray(time_values).dtype, np.datetime64):
             decoded = None
