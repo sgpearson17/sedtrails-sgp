@@ -100,9 +100,10 @@ python -m pytest tests/transport_converter/test_physics_lib.py -v
 
 ## Integration Tests and Diagnostic Plots
 
-Some converter tests are marked as integration tests and rely on sample datasets
-stored in the repository (for example, Delft3D4 NetCDF conversion uses
-``sample-data/trim-inlet.nc``). Run these tests with:
+ Some converter tests are marked as integration tests and rely on sample datasets.
+ Some of these datasets are not committed to the repository by default; see
+ ``sample-data/readme.md`` for download instructions before running (for example,
+ Delft3D4 NetCDF conversion expects a Delft3D-4 map NetCDF file).
 
 ```bash
 python -m pytest -m integration tests/transport_converter/plugins/test_d3d4_netcdf.py
