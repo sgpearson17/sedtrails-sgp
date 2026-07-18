@@ -340,6 +340,9 @@ def _open_netcdf_dataset(input_file: Path) -> Any:
     raise SeedingGuiError(f'Could not load input data with an explicit NetCDF engine: {details}')
 
 
+_MAX_GLOBAL_DEDUPLICATION_POINTS = 100_000
+
+
 def _filter_finite_map_points(
     x: np.ndarray,
     y: np.ndarray,
@@ -358,8 +361,22 @@ def _filter_finite_map_points(
     y_finite = y_array[finite]
     values_finite = value_array[finite]
 
-    # Some source files contain repeated/fill coordinates (often at origin),
-    # which can distort triangulation. Collapse duplicates to one averaged value.
+    # Some source files contain repeated/fill coordinates (often at origin), which
+    # can distort triangulation. Global duplicate detection is expensive for large
+    # maps, so only use it when the point count is bounded.
+    if x_finite.size > _MAX_GLOBAL_DEDUPLICATION_POINTS:
+        origin = (x_finite == 0.0) & (y_finite == 0.0)
+        origin_count = np.count_nonzero(origin)
+        if origin_count <= 1:
+            return x_finite, y_finite, values_finite
+
+        first_origin = int(np.argmax(origin))
+        keep = ~origin
+        keep[first_origin] = True
+        values_collapsed = values_finite[keep]
+        values_collapsed[first_origin] = np.mean(values_finite[origin])
+        return x_finite[keep], y_finite[keep], values_collapsed
+
     xy = np.column_stack((x_finite, y_finite))
     unique_xy, inverse = np.unique(xy, axis=0, return_inverse=True)
     if unique_xy.shape[0] == xy.shape[0]:

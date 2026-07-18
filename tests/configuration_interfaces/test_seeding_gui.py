@@ -7,6 +7,7 @@ import pytest
 import xarray as xr
 import yaml
 
+from sedtrails.application_interfaces import seeding_gui
 from sedtrails.application_interfaces.seeding_gui import (
     BathymetryViewData,
     MAP_ZOOM_IN_FACTOR,
@@ -620,6 +621,26 @@ def test_load_bathymetry_view_data_deduplicates_repeated_coordinates(tmp_path, m
     assert value_by_xy[(0.0, 0.0)] == pytest.approx(15.0)
     assert value_by_xy[(1.0, 1.0)] == pytest.approx(30.0)
     assert value_by_xy[(2.0, 2.0)] == pytest.approx(40.0)
+
+
+def test_filter_finite_map_points_large_grid_collapses_only_origin_duplicates(monkeypatch):
+    """Large grids avoid global duplicate detection but collapse repeated origins."""
+    monkeypatch.setattr(seeding_gui, '_MAX_GLOBAL_DEDUPLICATION_POINTS', 4)
+
+    def _unexpected_unique(*args, **kwargs):
+        raise AssertionError('large-grid filtering must not call np.unique')
+
+    monkeypatch.setattr(seeding_gui.np, 'unique', _unexpected_unique)
+    x, y, values = seeding_gui._filter_finite_map_points(
+        np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
+        np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
+        np.array([1.0, 2.0, 3.0, 10.0, 20.0, 30.0]),
+        'bedlevel',
+    )
+
+    np.testing.assert_array_equal(x, np.array([0.0, 1.0, 1.0, 1.0]))
+    np.testing.assert_array_equal(y, np.array([0.0, 1.0, 1.0, 1.0]))
+    np.testing.assert_array_equal(values, np.array([2.0, 10.0, 20.0, 30.0]))
 
 
 def test_load_bathymetry_view_data_filters_xbeach_cutout_points(tmp_path, monkeypatch):
