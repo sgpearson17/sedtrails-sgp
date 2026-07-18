@@ -11,6 +11,7 @@ import yaml
 from sedtrails.application_interfaces.configuration_controller import ConfigurationController
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.timer import Duration, Time
+from sedtrails.simulation_orchestrator import simulation_manager
 from sedtrails.simulation_orchestrator.simulation_manager import Simulation
 
 
@@ -152,6 +153,65 @@ class TestSimulationManagerPreflight:
 
         with pytest.raises(ConfigurationError, match='seeding.burial_depth'):
             manager._run_impl()
+
+    def test_plan_retrievers_pass_population_and_global_fraction_selection(self, monkeypatch):
+        """Each plan build should receive its population config and shared input-model defaults."""
+        calls = []
+
+        def fake_build_plan_sedtrails_data(
+            sedtrails_data,
+            tracer_plan,
+            population_config=None,
+            default_fraction_index=0,
+            default_fraction_name=None,
+        ):
+            calls.append(
+                {
+                    'sedtrails_data': sedtrails_data,
+                    'tracer_plan': tracer_plan,
+                    'population_config': population_config,
+                    'default_fraction_index': default_fraction_index,
+                    'default_fraction_name': default_fraction_name,
+                }
+            )
+            return object()
+
+        monkeypatch.setattr(simulation_manager, 'build_plan_sedtrails_data', fake_build_plan_sedtrails_data)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'general.input_model': {
+                    'sediment_fraction_index': 2,
+                    'sediment_fraction_name': 'global_silt',
+                }
+            }
+        )
+        sedtrails_data = object()
+        runtime_plans = (
+            SimpleNamespace(
+                population_index=3,
+                population_config={'sediment_fraction_index': 1},
+                tracer=object(),
+            ),
+            SimpleNamespace(
+                population_index=7,
+                population_config={'sediment_fraction_name': 'local_sand'},
+                tracer=object(),
+            ),
+            SimpleNamespace(population_index=9, population_config={}, tracer=object()),
+        )
+
+        retrievers = manager._build_plan_retrievers(sedtrails_data, runtime_plans)
+
+        assert set(retrievers) == {3, 7, 9}
+        assert [call['population_config'] for call in calls] == [
+            {'sediment_fraction_index': 1},
+            {'sediment_fraction_name': 'local_sand'},
+            {},
+        ]
+        assert all(call['sedtrails_data'] is sedtrails_data for call in calls)
+        assert [call['default_fraction_index'] for call in calls] == [2, 2, 2]
+        assert [call['default_fraction_name'] for call in calls] == ['global_silt'] * 3
 
 
 class TestSimulationManagerTimeConfig:

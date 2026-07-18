@@ -144,6 +144,14 @@ def build_plan_sedtrails_data(
         SedTRAILS data object to process.
     tracer_plan : TracerRuntimePlan
         Runtime plan for the tracer population.
+    population_config : Mapping[str, Any], optional
+        Configuration for the population. Its sediment fraction selection takes
+        precedence over the input-model defaults.
+    default_fraction_index : int, default 0
+        Input-model fallback sediment fraction index.
+    default_fraction_name : str, optional
+        Input-model fallback sediment fraction name. When provided, it takes
+        precedence over the fallback index.
 
     Returns
     -------
