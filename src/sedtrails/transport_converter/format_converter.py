@@ -53,12 +53,13 @@ class FormatConverter:
         """
         Initialize the FormatConverter.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         config : dict
-            Configuration dictionary containing settings for the converter.
-            Must include 'input_file', 'input_format', optionally 'reference_date' (default
-            "1970-01-01" (Unix epoch)) and 'morfac' (default 1.0)
+            Configuration dictionary containing converter settings. It must
+            include ``input_file`` and ``input_format``. Optional
+            ``reference_date`` defaults to ``"1970-01-01"`` and ``morfac``
+            defaults to 1.0.
         """
         self.config = config
         self._reference_date: Union[str, None] = None
@@ -169,26 +170,24 @@ class FormatConverter:
 
     def _configure_format_plugin(self, plugin):
         """Apply converter-level options supported by format plugins."""
-        if 'domain_config' in self.config:
+        if 'domain_config' not in self.config:
+            domain_config = None
+        else:
+            domain_config = self.config.get('domain_config') or {}
+
+        if domain_config is not None:
             try:
-                plugin.domain_config = self.config.get('domain_config') or {}
+                plugin.domain_config = domain_config
             except AttributeError:
                 pass
-        if 'coordinate_system' in self.config and self.config.get('coordinate_system') is not None:
+
+        for option_name in ('sediment_fraction_index', 'sediment_fraction_name'):
+            if option_name not in self.config:
+                continue
             try:
-                plugin.coordinate_system = self.config.get('coordinate_system')
+                setattr(plugin, option_name, self.config.get(option_name))
             except AttributeError:
-                pass
-        if 'source_crs' in self.config and self.config.get('source_crs') is not None:
-            try:
-                plugin.source_crs = self.config.get('source_crs')
-            except AttributeError:
-                pass
-        if 'metric_crs' in self.config and self.config.get('metric_crs') is not None:
-            try:
-                plugin.metric_crs = self.config.get('metric_crs')
-            except AttributeError:
-                pass
+                continue
 
     def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """

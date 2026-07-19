@@ -17,7 +17,7 @@ def tmp_output_dir(tmp_path):
 class MockPopulation:
     """Mock population class for testing."""
 
-    def __init__(self, name, particle_type=0):
+    def __init__(self, name, particle_type='sand'):
         self.name = name
         self.particle_type = particle_type
         self.particles = {
@@ -76,6 +76,7 @@ class TestNetCDFWriterStreaming:
         assert ds.dimensions['n_timesteps'].size == self.N_SLOTS
         assert ds.dimensions['n_populations'].size == self.N_POPULATIONS
         assert ds.dimensions['n_flowfields'].size == self.N_FLOWFIELDS
+        assert 'name_strlen' not in ds.dimensions
         assert ds.trajectory_layout == 'time_particle'
 
     def test_open_creates_all_trajectory_variables(self, open_handle):
@@ -95,11 +96,52 @@ class TestNetCDFWriterStreaming:
     def test_open_writes_population_metadata(self, open_handle):
         assert open_handle['population_count'][0] == self.N_PARTICLES
         assert open_handle['population_start_idx'][0] == 0
+        assert open_handle['population_name'].dimensions == ('n_populations',)
+        assert open_handle['population_name'][0] == 'test_pop'
+        assert open_handle['population_particle_type'][0] == 'sand'
+
+    def test_open_writes_particle_type_from_population_config(self, writer):
+        class MockPopulationFromConfig:
+            def __init__(self, name, particle_type='passive'):
+                self.name = name
+                self.population_config = type('Config', (), {'particle_type': particle_type})()
+                self.particles = {
+                    'x': np.array([1.0, 2.0, 3.0]),
+                    'y': np.array([1.5, 2.5, 3.5]),
+                    'burial_depth': np.array([0.1, 0.2, 0.0]),
+                }
+
+        population = MockPopulationFromConfig('config_pop', particle_type='passive')
+        handle = writer.open_output(
+            'stream_config_type.nc',
+            self.N_SLOTS,
+            self.N_PARTICLES,
+            self.N_POPULATIONS,
+            self.N_FLOWFIELDS,
+            [population],
+            ['water_velocity'],
+        )
+
+        assert handle['population_particle_type'][0] == 'passive'
+        handle.close()
 
     def test_open_writes_flowfield_metadata(self, open_handle):
-        name_chars = open_handle['flowfield_name'][0, :].data
-        name = b''.join(name_chars).decode('ascii').strip()
-        assert name == 'water_velocity'
+        assert open_handle['flowfield_name'].dimensions == ('n_flowfields',)
+        assert open_handle['flowfield_name'][0] == 'water_velocity'
+
+    def test_open_writes_untruncated_vlen_string_metadata(self, writer):
+        long_name = 'population_name_longer_than_the_old_24_character_limit'
+        long_type = 'particle_type_longer_than_the_old_24_character_limit'
+        population = MockPopulation(long_name, particle_type=long_type)
+        handle = writer.open_output(
+            'long_names.nc', self.N_SLOTS, self.N_PARTICLES,
+            self.N_POPULATIONS, self.N_FLOWFIELDS, [population], ['long_flowfield_name'],
+        )
+
+        assert handle['population_name'][0] == long_name
+        assert handle['population_particle_type'][0] == long_type
+        assert handle['flowfield_name'][0] == 'long_flowfield_name'
+        handle.close()
 
     def test_open_writes_geographic_coordinate_metadata(self, writer, population):
         """Trajectory files should identify native lon/lat particle coordinates."""
@@ -262,6 +304,9 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_array_almost_equal(
             ds['x'].values[0, :], population.particles['x']  # all particles at slot 0
         )
+        np.testing.assert_array_equal(ds['population_name'].values, ['test_pop'])
+        np.testing.assert_array_equal(ds['population_particle_type'].values, ['sand'])
+        np.testing.assert_array_equal(ds['flowfield_name'].values, ['water_velocity'])
         ds.close()
 
     def test_two_populations_particle_offsets(self, writer, tmp_path):
@@ -303,6 +348,7 @@ class TestNetCDFWriterStreaming:
 
         ds = xr.open_dataset(path, engine='netcdf4')
         assert ds.attrs['sedtrails_file_kind'] == 'checkpoint'
+        assert ds.attrs['sedtrails_output_schema'] == 'checkpoint_v2'
         assert ds.attrs['reference_date'] == '2020-01-01 00:00:00'
         assert ds.attrs['coordinate_system'] == 'geographic'
         assert ds.attrs['runtime_coordinate_system'] == 'metric_projected'
@@ -317,6 +363,10 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_allclose(ds['x'].values, source_x, rtol=0.0, atol=1.0e-10)
         np.testing.assert_allclose(ds['y'].values, source_y, rtol=0.0, atol=1.0e-10)
         np.testing.assert_array_equal(ds['population_id'].values, np.zeros(self.N_PARTICLES, dtype=int))
+        assert ds['population_name'].dims == ('n_populations',)
+        np.testing.assert_array_equal(ds['population_name'].values, ['test_pop'])
+        np.testing.assert_array_equal(ds['population_particle_type'].values, ['sand'])
+        np.testing.assert_array_equal(ds['flowfield_name'].values, [''])
         ds.close()
 
     def test_write_end_positions_stores_compact_result_state(self, writer, population):
@@ -331,13 +381,17 @@ class TestNetCDFWriterStreaming:
 
         ds = xr.open_dataset(path, engine='netcdf4')
         assert ds.attrs['sedtrails_file_kind'] == 'end_positions'
-        assert ds.attrs['sedtrails_output_schema'] == 'end_positions_v1'
+        assert ds.attrs['sedtrails_output_schema'] == 'end_positions_v2'
         assert ds.attrs['trajectory_layout'] == 'end_positions'
         assert ds.sizes['n_particles'] == self.N_PARTICLES
         assert 'n_timesteps' not in ds.sizes
         assert ds['x'].dims == ('n_particles',)
         assert float(ds['time'].values) == pytest.approx(456.0)
         np.testing.assert_array_almost_equal(ds['x'].values, population.particles['x'])
+        assert ds['population_name'].dims == ('n_populations',)
+        np.testing.assert_array_equal(ds['population_name'].values, ['test_pop'])
+        np.testing.assert_array_equal(ds['population_particle_type'].values, ['sand'])
+        np.testing.assert_array_equal(ds['flowfield_name'].values, [''])
         ds.close()
 
     def test_write_end_positions_inverse_projects_geographic_runtime_coordinates(self, writer, population):
