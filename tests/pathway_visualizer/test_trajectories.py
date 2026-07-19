@@ -2,6 +2,7 @@ import matplotlib
 
 matplotlib.use('Agg')
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 import xarray as xr
@@ -15,7 +16,7 @@ from sedtrails.pathway_visualizer.trajectories import (
 )
 
 
-def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
+def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch, tmp_path):
     n_particles = 2
     n_timesteps = 3
 
@@ -38,10 +39,52 @@ def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch):
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
     # This previously raised: "too many indices"
-    plot_trajectories(ds)
+    plot_trajectories(ds, output=tmp_path / 'fixed_width_population_names.png')
 
 
-def test_plot_trajectories_accepts_time_major_layout(monkeypatch):
+def test_plot_trajectories_decodes_object_wrapped_byte_names(monkeypatch, tmp_path):
+    """Legend labels decode object-wrapped NumPy byte scalars."""
+    n_particles = 2
+    n_timesteps = 3
+    population_names = np.empty(2, dtype=object)
+    population_names[0] = np.array(np.bytes_(b'population_0\x00   '), dtype=object)
+    population_names[1] = np.array(np.bytes_(b'population_1\x00   '), dtype=object)
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [1.0, 1.5], [2.0, 3.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0, 0.0], [0.5, 0.25], [1.0, 0.5]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0, 120.0])),
+            'population_id': (('n_particles',), np.array([0, 1], dtype=int)),
+            'population_name': (('n_populations',), population_names),
+        },
+        coords={
+            'n_particles': np.arange(n_particles),
+            'n_timesteps': np.arange(n_timesteps),
+            'n_populations': np.arange(2),
+        },
+    )
+    monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
+
+    fig, axes_by_panel = plot_trajectories(
+        ds,
+        output=tmp_path / 'population_legend.png',
+        panels='population-distance',
+        show=False,
+    )
+
+    legend = axes_by_panel['population-distance'].get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
+    plt.close(fig)
+    assert labels == [
+        'population_0 (mean)',
+        'population_0 (+/-1 std)',
+        'population_1 (mean)',
+        'population_1 (+/-1 std)',
+    ]
+
+
+def test_plot_trajectories_accepts_time_major_layout(monkeypatch, tmp_path):
     n_particles = 2
     n_timesteps = 3
 
@@ -63,7 +106,7 @@ def test_plot_trajectories_accepts_time_major_layout(monkeypatch):
 
     monkeypatch.setattr('matplotlib.pyplot.show', lambda: None)
 
-    plot_trajectories(ds)
+    plot_trajectories(ds, output=tmp_path / 'time_major_layout.png')
 
 
 def test_read_netcdf_keeps_cf_time_values_as_seconds(tmp_path):

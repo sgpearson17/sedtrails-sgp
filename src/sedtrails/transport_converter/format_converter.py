@@ -169,12 +169,23 @@ class FormatConverter:
     def _configure_format_plugin(self, plugin):
         """Apply converter-level options supported by format plugins."""
         if 'domain_config' not in self.config:
-            return
+            domain_config = None
+        else:
+            domain_config = self.config.get('domain_config') or {}
 
-        try:
-            plugin.domain_config = self.config.get('domain_config') or {}
-        except AttributeError:
-            pass
+        if domain_config is not None:
+            try:
+                plugin.domain_config = domain_config
+            except AttributeError:
+                pass
+
+        for option_name in ('sediment_fraction_index', 'sediment_fraction_name'):
+            if option_name not in self.config:
+                continue
+            try:
+                setattr(plugin, option_name, self.config.get(option_name))
+            except AttributeError:
+                continue
 
     def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
         """

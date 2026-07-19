@@ -1144,6 +1144,38 @@ class Simulation:
             self._log_profile_summary(status='interrupted')
             raise
 
+    def _build_plan_retrievers(self, sedtrails_data, runtime_plans):
+        """Build population-scoped field retrievers for one loaded data chunk.
+
+        Parameters
+        ----------
+        sedtrails_data : SedtrailsData
+            Converted Eulerian fields for the current input chunk.
+        runtime_plans : tuple
+            Population-specific tracer runtime plans.
+
+        Returns
+        -------
+        dict[int, FieldDataRetriever]
+            Field retrievers indexed by population index.
+        """
+        input_model_config = self._controller.get('general.input_model', {})
+        default_fraction_index = input_model_config.get('sediment_fraction_index', 0)
+        default_fraction_name = input_model_config.get('sediment_fraction_name')
+
+        return {
+            runtime_plan.population_index: FieldDataRetriever(
+                build_plan_sedtrails_data(
+                    sedtrails_data,
+                    runtime_plan.tracer,
+                    population_config=runtime_plan.population_config,
+                    default_fraction_index=default_fraction_index,
+                    default_fraction_name=default_fraction_name,
+                )
+            )
+            for runtime_plan in runtime_plans
+        }
+
     def _run_impl(self):
         """
         Executes the particle simulation workflow.
@@ -1305,12 +1337,7 @@ class Simulation:
                         sedtrails_data = self.format_converter.convert_to_sedtrails(
                             current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
                         )
-                    plan_retrievers = {
-                        runtime_plan.population_index: FieldDataRetriever(
-                            build_plan_sedtrails_data(sedtrails_data, runtime_plan.tracer)
-                        )
-                        for runtime_plan in runtime_plans
-                    }
+                    plan_retrievers = self._build_plan_retrievers(sedtrails_data, runtime_plans)
 
                     if self._is_after_loaded_sedtrails_data(sedtrails_data, field_time_seconds):
                         input_data_exhausted = True
@@ -1398,7 +1425,7 @@ class Simulation:
                             if transport_probability_method != 'no_probability':
                                 with self._profile_section('update_burial_depth'):
                                     population.update_burial_depth()
-                        
+
 
                         with self._profile_section('update_status'):
                             population.update_status()

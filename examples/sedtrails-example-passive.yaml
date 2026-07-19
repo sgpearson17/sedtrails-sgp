@@ -1,5 +1,5 @@
 general:
-  input_model: 
+  input_model:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
@@ -36,7 +36,7 @@ particles:
       seeding:
         release_start: 2016-09-21 19:30:00
         quantity: 1
-        strategy: 
+        strategy:
           random:
             bbox: "39400,16800 40600,17800"
             seed: 42

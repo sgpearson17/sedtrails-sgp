@@ -1,5 +1,5 @@
 general:
-  input_model: 
+  input_model:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
@@ -28,20 +28,20 @@ particles:
     - name: stochastic
       particle_type: sand
       characteristics:
-        grain_size: 0.00025 
-        density: 2650.0  
+        grain_size: 0.00025
+        density: 2650.0
       tracer_methods:
         vanwesten:
-          flow_field_name: 
+          flow_field_name:
             - bed_load_velocity
             - suspended_velocity
       transport_probability: stochastic_transport  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
-        burial_depth: 
+        burial_depth:
           constant: 0
         release_start: 2016-09-21 19:30:00
         quantity: 1
-        strategy: 
+        strategy:
           random:
             bbox: "39400,16800 40600,17800"
             seed: 42
@@ -49,20 +49,20 @@ particles:
     - name: no_probability
       particle_type: sand
       characteristics:
-        grain_size: 0.00025 
-        density: 2650.0  
+        grain_size: 0.00025
+        density: 2650.0
       tracer_methods:
         vanwesten:
-          flow_field_name: 
+          flow_field_name:
             - bed_load_velocity
             - suspended_velocity
       transport_probability: no_probability  # Options: no_probability, stochastic_transport, reduced_velocity
       seeding:
-        burial_depth: 
+        burial_depth:
           constant: 0
         release_start: 2016-09-21 19:30:00
         quantity: 1
-        strategy: 
+        strategy:
           random:
             bbox: "39400,16800 40600,17800"
             seed: 42

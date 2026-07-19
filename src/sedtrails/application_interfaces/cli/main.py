@@ -229,12 +229,15 @@ def seeding_gui_cmd(
     input_format: str | None = typer.Option(
         None,
         '--format',
-        help="Override general.input_model.format. Supported GUI formats: 'fm_netcdf' and 'xbeach'.",
+        help=(
+            "Override general.input_model.format. Supported GUI formats: "
+            "'fm_netcdf', 'd3d4_netcdf', 'xbeach', and 'sfincs'."
+        ),
     ),
     variable: str | None = typer.Option(
         None,
         '--variable',
-        help="Bathymetry variable to display. Defaults to 'bedlevel' or 'bed_level'.",
+        help='Bathymetry variable to display. Defaults depend on --format.',
     ),
 ):
     """

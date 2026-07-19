@@ -20,9 +20,12 @@ def _decode_netcdf_name(raw_value) -> str:
         return raw_value.strip()
 
     if isinstance(raw_value, (bytes, np.bytes_)):
-        return raw_value.decode('utf-8', errors='ignore').strip('\x00').strip()
+        return raw_value.decode('utf-8', errors='ignore').replace('\x00', '').strip()
 
     arr = np.asarray(raw_value)
+    if arr.ndim == 0:
+        return _decode_netcdf_name(arr.item())
+
 
     # Scalar numpy bytes/str (0-dim array or item)
     if arr.ndim == 0:

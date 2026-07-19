@@ -42,24 +42,19 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
             'suspended_velocity_method': 'soulsby_2011',
         }
     }
-    assert validated['particles']['populations'][0]['seeding']['burial_depth'] == {'constant': 0.0}
 
 
 def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
     """Accept passive tracer configs and apply the default flow field."""
     config = _base_config()
-    population = config['particles']['populations'][0]
-    population['particle_type'] = 'passive'
-    population['characteristics'] = {'diffusion_coefficient': 0.0}
-    population['tracer_methods'] = {'passive_tracer': {}}
-    population['seeding'].pop('burial_depth')
+    config['particles']['populations'][0]['particle_type'] = 'passive'
+    config['particles']['populations'][0]['characteristics'] = {'diffusion_coefficient': 0.0}
+    config['particles']['populations'][0]['tracer_methods'] = {'passive_tracer': {}}
 
     validated = _validate_config(tmp_path, config)
 
-    validated_population = validated['particles']['populations'][0]
-    tracer_methods = validated_population['tracer_methods']
+    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
     assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
-    assert 'burial_depth' not in validated_population['seeding']
 
 
 def test_population_schema_rejects_vanwesten_bl(tmp_path):
@@ -200,6 +195,44 @@ def test_population_schema_rejects_non_boolean_remove_permanently_buried(tmp_pat
 
     with pytest.raises(YamlValidationError, match='YAML config validation error'):
         _validate_config(tmp_path, config)
+
+
+def test_population_schema_accepts_sediment_fraction_index(tmp_path):
+    """Accept per-population sediment fraction selection by index."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = 2
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_index'] == 2
+
+
+def test_population_schema_rejects_negative_sediment_fraction_index(tmp_path):
+    """Reject invalid negative per-population sediment fraction index values."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_index'] = -1
+
+    with pytest.raises(YamlValidationError, match='YAML config validation error'):
+        _validate_config(tmp_path, config)
+
+
+def test_population_schema_leaves_fraction_index_unset_without_an_explicit_override(tmp_path):
+    """Leave absent population selection available for a global default."""
+    config = _base_config()
+
+    validated = _validate_config(tmp_path, config)
+
+    assert 'sediment_fraction_index' not in validated['particles']['populations'][0]
+
+
+def test_population_schema_accepts_sediment_fraction_name(tmp_path):
+    """Accept per-population sediment fraction selection by label."""
+    config = _base_config()
+    config['particles']['populations'][0]['sediment_fraction_name'] = 'sediment300_nat'
+
+    validated = _validate_config(tmp_path, config)
+
+    assert validated['particles']['populations'][0]['sediment_fraction_name'] == 'sediment300_nat'
 
 
 @pytest.mark.parametrize('method', ['none', 'brownian'])
