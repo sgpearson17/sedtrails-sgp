@@ -181,6 +181,15 @@ class FormatConverter:
             except AttributeError:
                 pass
 
+        for option_name in ('coordinate_system', 'source_crs', 'metric_crs'):
+            option_value = self.config.get(option_name)
+            if option_value is None:
+                continue
+            try:
+                setattr(plugin, option_name, option_value)
+            except AttributeError:
+                continue
+
         for option_name in ('sediment_fraction_index', 'sediment_fraction_name'):
             if option_name not in self.config:
                 continue
