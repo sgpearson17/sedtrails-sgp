@@ -82,6 +82,7 @@ class NetCDFWriter:
         self._write_count = 0
         self._sync_interval = DEFAULT_SYNC_INTERVAL
         self._reopen_interval = None
+        self._particle_chunk = DEFAULT_PARTICLE_CHUNK
         self._coordinate_metadata = {}
         self._output_coordinate_transform = None
 
@@ -190,8 +191,16 @@ class NetCDFWriter:
 
         ds.coordinate_system = coordinate_system
         metadata_keys = [
+            'coordinate_metadata_version',
+            'source_coordinate_system',
+            'runtime_geometry',
             'runtime_coordinate_system',
             'metric_coordinate_system',
+            'surface_model',
+            'earth_radius_m',
+            'longitude_wrap',
+            'velocity_basis',
+            'horizontal_distance_units',
             'min_resolution_m',
         ]
         if coordinate_system == 'geographic':
@@ -233,14 +242,71 @@ class NetCDFWriter:
         return coordinate_transform_from_metadata(coordinate_metadata)
 
     @staticmethod
-    def _output_xy_arrays(particles: dict, output_coordinate_transform=None) -> tuple[np.ndarray, np.ndarray]:
+    def _output_xy_arrays(
+        particles: dict,
+        output_coordinate_transform=None,
+        particle_slice: slice | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Return particle coordinates in the configured output coordinate system."""
         x_values = np.asarray(particles['x'])
         y_values = np.asarray(particles['y'])
+        if particle_slice is not None:
+            x_values = x_values[particle_slice]
+            y_values = y_values[particle_slice]
         if output_coordinate_transform is None:
             return x_values, y_values
         source_x, source_y = output_coordinate_transform.metric_to_source(x_values, y_values)
         return source_x, source_y
+
+    @staticmethod
+    def _particle_field_slice(particles: dict, name: str, default, particle_slice: slice):
+        """Return one particle-field slice without expanding scalar defaults."""
+        value = NetCDFWriter._particle_field(particles, name, default)
+        value_array = np.asarray(value)
+        if value_array.ndim == 0:
+            return value
+        return value_array[particle_slice]
+
+    @staticmethod
+    def _particle_slices(n_particles: int, particle_chunk: int):
+        """Yield bounded slices over one particle population."""
+        chunk_size = max(1, int(particle_chunk))
+        for start in range(0, int(n_particles), chunk_size):
+            yield slice(start, min(start + chunk_size, int(n_particles)))
+
+    def _write_particle_chunk(
+        self,
+        h,
+        particles: dict,
+        source_slice: slice,
+        destination_slice: slice,
+        output_coordinate_transform=None,
+        slot_idx: int | None = None,
+    ) -> None:
+        """Transform and write one bounded particle chunk."""
+        output_x, output_y = self._output_xy_arrays(
+            particles,
+            output_coordinate_transform,
+            source_slice,
+        )
+        destination = destination_slice if slot_idx is None else (slot_idx, destination_slice)
+        h['x'][destination] = output_x
+        h['y'][destination] = output_y
+        h['z'][destination] = self._particle_field_slice(particles, 'z', 0.0, source_slice)
+        h['burial_depth'][destination] = np.asarray(particles['burial_depth'])[source_slice]
+        h['mixing_depth'][destination] = self._particle_field_slice(
+            particles,
+            'mixing_depth',
+            np.nan,
+            source_slice,
+        )
+        for status_name, default in _STATUS_DEFAULTS.items():
+            h[status_name][destination] = self._particle_field_slice(
+                particles,
+                status_name,
+                default,
+                source_slice,
+            )
 
     @classmethod
     def _create_static_metadata(
@@ -441,6 +507,7 @@ class NetCDFWriter:
         self._write_count = 0
         self._sync_interval = 0 if sync_interval is None else int(sync_interval)
         self._reopen_interval = None if reopen_interval is None else int(reopen_interval)
+        self._particle_chunk = time_particle_chunks[1]
 
         ds.sync()
         return ds
@@ -452,16 +519,19 @@ class NetCDFWriter:
         for population in populations:
             particles = population.particles
             num_particles = len(population.particles['x'])
-            sl = slice(particle_offset, particle_offset + num_particles)
-            output_x, output_y = self._output_xy_arrays(particles, self._output_coordinate_transform)
-
-            h['x'][slot_idx, sl] = output_x
-            h['y'][slot_idx, sl] = output_y
-            h['z'][slot_idx, sl] = self._particle_field(particles, 'z', 0.0)
-            h['burial_depth'][slot_idx, sl] = np.asarray(particles['burial_depth'])
-            h['mixing_depth'][slot_idx, sl] = self._particle_field(particles, 'mixing_depth', np.nan)
-            for status_name, default in _STATUS_DEFAULTS.items():
-                h[status_name][slot_idx, sl] = self._particle_field(particles, status_name, default)
+            for source_slice in self._particle_slices(num_particles, self._particle_chunk):
+                destination_slice = slice(
+                    particle_offset + source_slice.start,
+                    particle_offset + source_slice.stop,
+                )
+                self._write_particle_chunk(
+                    h,
+                    particles,
+                    source_slice,
+                    destination_slice,
+                    self._output_coordinate_transform,
+                    slot_idx=slot_idx,
+                )
 
             particle_offset += num_particles
 
@@ -628,15 +698,18 @@ class NetCDFWriter:
             for population in populations:
                 particles = population.particles
                 n_part = len(particles['x'])
-                sl = slice(particle_offset, particle_offset + n_part)
-                output_x, output_y = self._output_xy_arrays(particles, output_coordinate_transform)
-                ds['x'][sl] = output_x
-                ds['y'][sl] = output_y
-                ds['z'][sl] = self._particle_field(particles, 'z', 0.0)
-                ds['burial_depth'][sl] = np.asarray(particles['burial_depth'])
-                ds['mixing_depth'][sl] = self._particle_field(particles, 'mixing_depth', np.nan)
-                for status_name, default in _STATUS_DEFAULTS.items():
-                    ds[status_name][sl] = self._particle_field(particles, status_name, default)
+                for source_slice in self._particle_slices(n_part, particle_chunk):
+                    destination_slice = slice(
+                        particle_offset + source_slice.start,
+                        particle_offset + source_slice.stop,
+                    )
+                    self._write_particle_chunk(
+                        ds,
+                        particles,
+                        source_slice,
+                        destination_slice,
+                        output_coordinate_transform,
+                    )
                 particle_offset += n_part
 
             ds.sync()

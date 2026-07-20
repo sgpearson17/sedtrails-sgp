@@ -34,6 +34,20 @@ class MockPopulation:
         }
 
 
+class RecordingCoordinateTransform:
+    """Record inverse-transform input sizes while returning copied coordinates."""
+
+    def __init__(self):
+        self.call_sizes = []
+
+    def metric_to_source(self, x_values, y_values):
+        """Return coordinate copies and record the number transformed."""
+        x_array = np.asarray(x_values)
+        y_array = np.asarray(y_values)
+        self.call_sizes.append(x_array.size)
+        return x_array.copy(), y_array.copy()
+
+
 # ---------------------------------------------------------------------------
 # Streaming output tests
 # ---------------------------------------------------------------------------
@@ -251,6 +265,36 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_allclose(population.particles['y'], metric_y, rtol=0.0, atol=0.0)
         handle.close()
 
+    def test_record_inverse_projection_is_bounded_by_particle_chunk(self, writer, population):
+        """Streaming inverse projection should never receive a whole large population."""
+        transform = build_coordinate_transform(
+            np.array([4.0, 4.001]),
+            np.array([52.0, 52.001]),
+            coordinate_system='geographic',
+        )
+        handle = writer.open_output(
+            'stream_geo_chunked.nc',
+            self.N_SLOTS,
+            self.N_PARTICLES,
+            self.N_POPULATIONS,
+            self.N_FLOWFIELDS,
+            [population],
+            ['vel'],
+            particle_chunk=2,
+            coordinate_dtype='float64',
+            coordinate_metadata=transform.metadata(),
+        )
+        recording_transform = RecordingCoordinateTransform()
+        writer._output_coordinate_transform = recording_transform
+
+        writer.record_output(handle, [population], slot_idx=0, current_time=100.0)
+
+        assert recording_transform.call_sizes == [2, 1]
+        assert max(recording_transform.call_sizes) <= 2
+        np.testing.assert_allclose(handle['x'][0, :], population.particles['x'])
+        np.testing.assert_allclose(handle['y'][0, :], population.particles['y'])
+        handle.close()
+
     def test_record_writes_status_fields(self, writer, population):
         handle = writer.open_output(
             'stream.nc', self.N_SLOTS, self.N_PARTICLES,
@@ -423,3 +467,44 @@ class TestNetCDFWriterStreaming:
         np.testing.assert_allclose(population.particles['x'], metric_x, rtol=0.0, atol=0.0)
         np.testing.assert_allclose(population.particles['y'], metric_y, rtol=0.0, atol=0.0)
         ds.close()
+
+    @pytest.mark.parametrize(
+        ('method_name', 'filename'),
+        (
+            ('write_checkpoint', 'chunked_checkpoint.nc'),
+            ('write_end_positions', 'chunked_end_positions.nc'),
+        ),
+    )
+    def test_snapshot_inverse_projection_is_bounded_by_particle_chunk(
+        self,
+        writer,
+        population,
+        monkeypatch,
+        method_name,
+        filename,
+    ):
+        """Snapshot inverse projection should use the configured particle chunk."""
+        recording_transform = RecordingCoordinateTransform()
+        monkeypatch.setattr(
+            writer,
+            '_build_output_coordinate_transform',
+            lambda coordinate_metadata: recording_transform,
+        )
+
+        path = getattr(writer, method_name)(
+            filename,
+            [population],
+            current_time=456.0,
+            particle_chunk=2,
+            coordinate_dtype='float64',
+            coordinate_metadata={
+                'coordinate_system': 'geographic',
+                'runtime_coordinate_system': 'metric_projected',
+                'source_crs': 'EPSG:4326',
+                'metric_crs': 'EPSG:32631',
+            },
+        )
+
+        assert path.exists()
+        assert recording_transform.call_sizes == [2, 1]
+        assert max(recording_transform.call_sizes) <= 2

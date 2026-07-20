@@ -6,11 +6,13 @@ import numpy as np
 from scipy.spatial import ConvexHull, cKDTree
 
 from sedtrails.particle_tracer.coordinate_transform import (
+    DEFAULT_EARTH_RADIUS_M,
     build_coordinate_transform,
     coordinate_system_from_metadata,
     metric_crs_from_metadata,
     source_crs_from_metadata,
 )
+from sedtrails.particle_tracer.geodetic_geometry import lonlat_to_ecef, normalize_longitude
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
@@ -208,14 +210,32 @@ class SedtrailsData:
             coordinate_system,
             source_crs=source_crs_from_metadata(self.metadata),
             metric_crs=metric_crs_from_metadata(self.metadata),
+            runtime_geometry=self.metadata.get('runtime_geometry', 'planar'),
+            surface_model=self.metadata.get('surface_model', 'sphere'),
+            earth_radius_m=self.metadata.get('earth_radius_m', DEFAULT_EARTH_RADIUS_M),
+            longitude_wrap=self.metadata.get('longitude_wrap', 'auto'),
+            velocity_basis=self.metadata.get('velocity_basis', 'auto'),
         )
-        metric_x, metric_y = transform.source_to_metric(unique_coords[:, 0], unique_coords[:, 1])
-        unique_metric_coords = np.column_stack((metric_x, metric_y))
-
-        # Compute minimum resolution using nearest-neighbor search on metric points.
-        tree = cKDTree(unique_metric_coords)
-        distances, _ = tree.query(unique_metric_coords, k=2)
-        nearest_distances = distances[:, 1]
+        if transform.is_geodetic:
+            unit_ecef = lonlat_to_ecef(
+                unique_coords[:, 0],
+                unique_coords[:, 1],
+                radius=1.0,
+            )
+            tree = cKDTree(unit_ecef)
+            chord_distances, _ = tree.query(unit_ecef, k=2)
+            chord = np.clip(chord_distances[:, 1], 0.0, 2.0)
+            nearest_distances = (
+                2.0
+                * transform.earth_radius_m
+                * np.arcsin(0.5 * chord)
+            )
+        else:
+            metric_x, metric_y = transform.source_to_metric(unique_coords[:, 0], unique_coords[:, 1])
+            unique_metric_coords = np.column_stack((metric_x, metric_y))
+            tree = cKDTree(unique_metric_coords)
+            distances, _ = tree.query(unique_metric_coords, k=2)
+            nearest_distances = distances[:, 1]
         positive_distances = nearest_distances[nearest_distances > 0.0]
 
         if positive_distances.size == 0:
@@ -223,19 +243,31 @@ class SedtrailsData:
         else:
             min_resolution_m = float(np.min(positive_distances))
 
-        min_x = float(np.min(unique_coords[:, 0]))
-        max_x = float(np.max(unique_coords[:, 0]))
+        envelope_coords = unique_coords
+        if transform.is_geodetic:
+            longitude = unique_coords[:, 0]
+            radians = np.deg2rad(longitude)
+            centre = np.rad2deg(
+                np.arctan2(np.mean(np.sin(radians)), np.mean(np.cos(radians)))
+            )
+            envelope_coords = unique_coords.copy()
+            envelope_coords[:, 0] = centre + normalize_longitude(longitude - centre)
+
+        min_x = float(np.min(envelope_coords[:, 0]))
+        max_x = float(np.max(envelope_coords[:, 0]))
         min_y = float(np.min(unique_coords[:, 1]))
         max_y = float(np.max(unique_coords[:, 1]))
 
         # Compute outer envelope using convex hull; degenerate grids have no 2D
         # hull, so use the bounding box directly instead of warning on expected input.
-        if unique_coords.shape[0] < 3 or np.linalg.matrix_rank(unique_coords - unique_coords.mean(axis=0)) < 2:
+        if envelope_coords.shape[0] < 3 or np.linalg.matrix_rank(
+            envelope_coords - envelope_coords.mean(axis=0)
+        ) < 2:
             outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]
         else:
             try:
-                hull = ConvexHull(unique_coords)
-                outer_envelope = unique_coords[hull.vertices].tolist()
+                hull = ConvexHull(envelope_coords)
+                outer_envelope = envelope_coords[hull.vertices].tolist()
             except Exception as e:
                 warnings.warn(f'Convex hull failed ({e}); using bounding box instead.', stacklevel=1)
                 outer_envelope = [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]]

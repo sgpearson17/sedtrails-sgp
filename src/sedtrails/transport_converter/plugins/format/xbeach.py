@@ -660,6 +660,7 @@ class FormatPlugin(BaseFormatPlugin):
                 coordinate_system=coordinate_system,
                 source_crs=self.source_crs,
                 metric_crs=self.metric_crs,
+                runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
             )
         self._particle_connectivity_cache = {
             'x': np.asarray(x),
@@ -754,6 +755,7 @@ class FormatPlugin(BaseFormatPlugin):
             coordinate_system=coordinate_system,
             source_crs=self.source_crs,
             metric_crs=self.metric_crs,
+            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
         )
         metadata = None if classification is None else classification.to_metadata()
         self._boundary_edge_classification_cache = {
@@ -785,6 +787,7 @@ class FormatPlugin(BaseFormatPlugin):
 
     def _add_crs_metadata(self, metadata: SedtrailsMetadata) -> None:
         """Add configured CRS labels to SedTRAILS metadata."""
+        self._add_runtime_coordinate_metadata(metadata)
         if self._coordinate_system() != 'geographic':
             return
         if self.source_crs is not None:

@@ -244,6 +244,40 @@ def _build_kcs_mask() -> np.ndarray | None:
     return kcs == 0
 
 
+def test_geographic_seeding_field_exposes_crs_and_structured_topology(tmp_path: Path) -> None:
+    """Delft3D4 geographic grids should reach the geodetic seeding backend."""
+    input_file = tmp_path / 'geographic.nc'
+    input_file.write_text('')
+    dataset = xr.Dataset(
+        {
+            'XZ': (
+                ('M', 'N'),
+                np.array([[179.0, 179.5], [179.0, 179.5]]),
+                {'units': 'degrees_east', 'standard_name': 'longitude'},
+            ),
+            'YZ': (
+                ('M', 'N'),
+                np.array([[10.0, 10.0], [10.5, 10.5]]),
+                {'units': 'degrees_north', 'standard_name': 'latitude'},
+            ),
+        }
+    )
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = dataset
+    plugin.runtime_geometry = 'geodetic'
+    plugin.surface_model = 'sphere'
+
+    field_data = plugin.get_seeding_field_data()
+
+    assert field_data.coordinate_system == 'geographic'
+    assert field_data.runtime_geometry == 'geodetic'
+    assert field_data.velocity_basis == 'east_north'
+    np.testing.assert_array_equal(
+        field_data.face_node_connectivity,
+        [[0, 2, 3], [0, 3, 1]],
+    )
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(not SAMPLE_FILE.exists(), reason='Sample Delft3D4 NetCDF file not available')
 def test_delft3d4_netcdf_conversion() -> None:

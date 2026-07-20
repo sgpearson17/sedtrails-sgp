@@ -51,6 +51,11 @@ class GridGeometry:
     velocity_north_x: np.ndarray | None = None
     velocity_north_y: np.ndarray | None = None
 
+    @property
+    def is_geodetic(self) -> bool:
+        """Return ``False`` for the planar metric backend."""
+        return False
+
     @classmethod
     def from_points(
         cls,
@@ -61,6 +66,11 @@ class GridGeometry:
         coordinate_system=None,
         source_crs=None,
         metric_crs=None,
+        runtime_geometry='planar',
+        surface_model='sphere',
+        earth_radius_m=6_371_008.8,
+        longitude_wrap='auto',
+        velocity_basis='auto',
     ):
         """
         Build cached grid geometry from point coordinates.
@@ -91,7 +101,14 @@ class GridGeometry:
             coordinate_system,
             source_crs=source_crs,
             metric_crs=metric_crs,
+            runtime_geometry=runtime_geometry,
+            surface_model=surface_model,
+            earth_radius_m=earth_radius_m,
+            longitude_wrap=longitude_wrap,
+            velocity_basis=velocity_basis,
         )
+        if coordinate_transform.is_geodetic:
+            raise ValueError('Use create_grid_geometry() to construct geodetic runtime geometry.')
         metric_x, metric_y = coordinate_transform.source_to_metric(x, y)
 
         points = np.column_stack((metric_x, metric_y))
@@ -1619,6 +1636,11 @@ def create_grid_geometry(
     coordinate_system=None,
     source_crs=None,
     metric_crs=None,
+    runtime_geometry='planar',
+    surface_model='sphere',
+    earth_radius_m=6_371_008.8,
+    longitude_wrap='auto',
+    velocity_basis='auto',
 ) -> GridGeometry:
     """
     Create cached grid geometry for repeated particle interpolation.
@@ -1645,6 +1667,33 @@ def create_grid_geometry(
     GridGeometry
         Cached grid geometry instance.
     """
+    coordinate_transform = build_coordinate_transform(
+        grid_x,
+        grid_y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+        surface_model=surface_model,
+        earth_radius_m=earth_radius_m,
+        longitude_wrap=longitude_wrap,
+        velocity_basis=velocity_basis,
+    )
+    if coordinate_transform.is_geodetic:
+        from sedtrails.particle_tracer.geodetic_grid import GeodeticGridGeometry
+
+        return GeodeticGridGeometry.from_points(
+            grid_x,
+            grid_y,
+            triangles=triangles,
+            boundary_edge_classification=boundary_edge_classification,
+            source_crs=coordinate_transform.source_crs,
+            surface_model=coordinate_transform.surface_model,
+            earth_radius_m=coordinate_transform.earth_radius_m,
+            longitude_wrap=coordinate_transform.longitude_wrap,
+            velocity_basis=coordinate_transform.velocity_basis,
+        )
+
     return GridGeometry.from_points(
         grid_x,
         grid_y,
@@ -1653,6 +1702,11 @@ def create_grid_geometry(
         coordinate_system=coordinate_system,
         source_crs=source_crs,
         metric_crs=metric_crs,
+        runtime_geometry=coordinate_transform.runtime_geometry,
+        surface_model=surface_model,
+        earth_radius_m=earth_radius_m,
+        longitude_wrap=longitude_wrap,
+        velocity_basis=velocity_basis,
     )
 
 
@@ -1665,6 +1719,11 @@ def create_numba_particle_calculator(
     coordinate_system=None,
     source_crs=None,
     metric_crs=None,
+    runtime_geometry='planar',
+    surface_model='sphere',
+    earth_radius_m=6_371_008.8,
+    longitude_wrap='auto',
+    velocity_basis='auto',
 ):
     """
     Create particle interpolation/update callables.
@@ -1687,6 +1746,16 @@ def create_numba_particle_calculator(
         CRS for geographic source coordinates.
     metric_crs : str, optional
         Projected metric CRS. Use ``"auto_utm"`` to infer from the grid.
+    runtime_geometry : str, default='planar'
+        Runtime geometry backend.
+    surface_model : str, default='sphere'
+        Geographic surface model.
+    earth_radius_m : float, default=6371008.8
+        Sphere radius in metres.
+    longitude_wrap : str, default='auto'
+        Public longitude convention.
+    velocity_basis : str, default='auto'
+        Horizontal velocity component basis.
     Returns
     -------
     dict[str, object]
@@ -1703,6 +1772,11 @@ def create_numba_particle_calculator(
             coordinate_system=coordinate_system,
             source_crs=source_crs,
             metric_crs=metric_crs,
+            runtime_geometry=runtime_geometry,
+            surface_model=surface_model,
+            earth_radius_m=earth_radius_m,
+            longitude_wrap=longitude_wrap,
+            velocity_basis=velocity_basis,
         )
     )
 

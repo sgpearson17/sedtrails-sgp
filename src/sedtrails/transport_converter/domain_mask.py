@@ -8,9 +8,10 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 from matplotlib.path import Path as MplPath
-from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull, Delaunay
 
 from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
+from sedtrails.particle_tracer.geodetic_geometry import ecef_to_lonlat, lonlat_to_ecef
 from sedtrails.transport_converter.tekal import read_tekal_polygons
 
 
@@ -180,6 +181,7 @@ def delaunay_connectivity(
     coordinate_system: str | None = None,
     source_crs: str | None = None,
     metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> np.ndarray:
     """Build triangular candidate connectivity from node coordinates.
 
@@ -193,6 +195,9 @@ def delaunay_connectivity(
     source_crs, metric_crs : str, optional
         CRS labels for geographic source coordinates and projected runtime
         metric coordinates.
+    runtime_geometry : str, default='planar'
+        Runtime geometry selection. Geodetic geometry uses the outward facets
+        of the ECEF convex hull instead of a planar projection.
 
     Returns
     -------
@@ -222,7 +227,19 @@ def delaunay_connectivity(
         coordinate_system,
         source_crs=source_crs,
         metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
     )
+    if transform.is_geodetic:
+        unit_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        hull = ConvexHull(unit_ecef, qhull_options='QJ')
+        simplices = np.asarray(hull.simplices, dtype=np.int64)
+        outward = hull.equations[:, :3]
+        face_centres = np.mean(unit_ecef[simplices], axis=1)
+        exterior_surface = np.sum(outward * face_centres, axis=1) > 0.0
+        simplices = simplices[exterior_surface]
+        if simplices.size == 0:
+            raise ValueError('Spherical triangulation did not produce any outward mesh faces.')
+        return simplices
     metric_x, metric_y = transform.source_to_metric(x, y)
     return np.asarray(Delaunay(np.column_stack((metric_x, metric_y))).simplices, dtype=np.int64)
 
@@ -235,6 +252,7 @@ def filter_connectivity_by_inner_polygons(
     coordinate_system: str | None = None,
     source_crs: str | None = None,
     metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> ConnectivityMaskResult:
     """Remove faces or triangles whose centroid falls inside any polygon.
 
@@ -275,17 +293,22 @@ def filter_connectivity_by_inner_polygons(
             removed_count=0,
         )
 
-    centroids = face_centroids(node_x, node_y, faces)
     transform = build_coordinate_transform(
         node_x,
         node_y,
         coordinate_system,
         source_crs=source_crs,
         metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
     )
-    centroid_x, centroid_y = transform.source_to_metric(centroids[:, 0], centroids[:, 1])
-    metric_centroids = np.column_stack((centroid_x, centroid_y))
-    inside = points_inside_any_polygon(metric_centroids, transform.polygons_to_metric(polygon_list))
+    if transform.is_geodetic:
+        centroids = spherical_face_centroids(node_x, node_y, faces)
+        inside = points_inside_geographic_polygons(centroids, polygon_list)
+    else:
+        centroids = face_centroids(node_x, node_y, faces)
+        centroid_x, centroid_y = transform.source_to_metric(centroids[:, 0], centroids[:, 1])
+        metric_centroids = np.column_stack((centroid_x, centroid_y))
+        inside = points_inside_any_polygon(metric_centroids, transform.polygons_to_metric(polygon_list))
     active_mask = ~inside
     return ConnectivityMaskResult(
         connectivity=faces[active_mask],
@@ -402,6 +425,7 @@ def classify_boundary_edges_from_config(
     coordinate_system: str | None = None,
     source_crs: str | None = None,
     metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> BoundaryEdgeClassification | None:
     """Classify active boundary edges using configured polygon overrides.
 
@@ -448,6 +472,7 @@ def classify_boundary_edges_from_config(
         coordinate_system=coordinate_system,
         source_crs=source_crs,
         metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
     )
 
 
@@ -460,6 +485,7 @@ def classify_boundary_edges(
     coordinate_system: str | None = None,
     source_crs: str | None = None,
     metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> BoundaryEdgeClassification:
     """Classify active boundary edges by polygon-contained edge midpoints.
 
@@ -513,15 +539,23 @@ def classify_boundary_edges(
         coordinate_system,
         source_crs=source_crs,
         metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
     )
-    midpoint_x, midpoint_y = transform.source_to_metric(midpoints[:, 0], midpoints[:, 1])
-    metric_midpoints = np.column_stack((midpoint_x, midpoint_y))
-
-    matches_by_class = {
-        class_name: points_inside_any_polygon(metric_midpoints, transform.polygons_to_metric(polygons))
-        for class_name, polygons in class_polygons.items()
-        if class_name in BOUNDARY_CLASS_NAMES
-    }
+    if transform.is_geodetic:
+        midpoints = spherical_edge_midpoints(x, y, edges)
+        matches_by_class = {
+            class_name: points_inside_geographic_polygons(midpoints, polygons)
+            for class_name, polygons in class_polygons.items()
+            if class_name in BOUNDARY_CLASS_NAMES
+        }
+    else:
+        midpoint_x, midpoint_y = transform.source_to_metric(midpoints[:, 0], midpoints[:, 1])
+        metric_midpoints = np.column_stack((midpoint_x, midpoint_y))
+        matches_by_class = {
+            class_name: points_inside_any_polygon(metric_midpoints, transform.polygons_to_metric(polygons))
+            for class_name, polygons in class_polygons.items()
+            if class_name in BOUNDARY_CLASS_NAMES
+        }
 
     open_matches = matches_by_class.get('open', np.zeros(edges.shape[0], dtype=bool))
     land_matches = matches_by_class.get('land', np.zeros(edges.shape[0], dtype=bool))
@@ -646,3 +680,54 @@ def points_inside_any_polygon(points: np.ndarray, polygons: Iterable[np.ndarray]
 
     inside[finite] = finite_inside
     return inside
+
+
+def points_inside_geographic_polygons(points: np.ndarray, polygons: Iterable[np.ndarray]) -> np.ndarray:
+    """Return containment after placing each lon/lat polygon on one branch."""
+    points_array = np.asarray(points, dtype=float)
+    inside = np.zeros(points_array.shape[0], dtype=bool)
+    finite = np.isfinite(points_array[:, :2]).all(axis=1)
+    for polygon in polygons:
+        polygon_array = np.asarray(polygon, dtype=float)
+        if polygon_array.shape[0] < 3:
+            continue
+        polygon_xy = polygon_array[:, :2].copy()
+        polygon_xy[:, 0] = np.rad2deg(np.unwrap(np.deg2rad(polygon_xy[:, 0])))
+        reference = float(np.mean(polygon_xy[:, 0]))
+        test_points = points_array[finite, :2].copy()
+        test_points[:, 0] = reference + (test_points[:, 0] - reference + 180.0) % 360.0 - 180.0
+        inside[finite] |= MplPath(polygon_xy).contains_points(test_points)
+    return inside
+
+
+def spherical_face_centroids(node_x, node_y, connectivity) -> np.ndarray:
+    """Return normalized ECEF face centroids as longitude/latitude."""
+    x = np.asarray(node_x, dtype=float).ravel()
+    y = np.asarray(node_y, dtype=float).ravel()
+    faces = np.asarray(connectivity, dtype=np.int64)
+    valid = (faces >= 0) & (faces < x.size)
+    clipped = np.clip(faces, 0, max(x.size - 1, 0))
+    node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+    vectors = np.where(valid[:, :, np.newaxis], node_ecef[clipped], 0.0).sum(axis=1)
+    norms = np.linalg.norm(vectors, axis=1)
+    result = np.full((faces.shape[0], 2), np.nan, dtype=float)
+    usable = norms > 0.0
+    if np.any(usable):
+        longitude, latitude = ecef_to_lonlat(vectors[usable])
+        result[usable] = np.column_stack((longitude, latitude))
+    return result
+
+
+def spherical_edge_midpoints(node_x, node_y, edges) -> np.ndarray:
+    """Return minor-arc edge midpoints as longitude/latitude."""
+    x = np.asarray(node_x, dtype=float).ravel()
+    y = np.asarray(node_y, dtype=float).ravel()
+    edge_array = np.asarray(edges, dtype=np.int64)
+    result = np.full((edge_array.shape[0], 2), np.nan, dtype=float)
+    valid = ((edge_array >= 0) & (edge_array < x.size)).all(axis=1)
+    if np.any(valid):
+        node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        vectors = node_ecef[edge_array[valid]].sum(axis=1)
+        longitude, latitude = ecef_to_lonlat(vectors)
+        result[valid] = np.column_stack((longitude, latitude))
+    return result

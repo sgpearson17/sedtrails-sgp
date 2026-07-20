@@ -361,6 +361,59 @@ def test_restart_state_rejects_particle_major_legacy_output():
         restart_module._extract_restart_state(ds)
 
 
+def test_restart_rejects_incompatible_coordinate_context():
+    """A checkpoint must not be combined with a different runtime geometry."""
+    ds = xr.Dataset(
+        attrs={
+            'coordinate_system': 'geographic',
+            'runtime_geometry': 'geodetic',
+            'source_crs': 'EPSG:4326',
+            'surface_model': 'sphere',
+            'earth_radius_m': 6_371_008.8,
+        }
+    )
+    config = {
+        'general': {
+            'input_model': {
+                'coordinate_system': 'geographic',
+                'runtime_geometry': 'planar',
+                'source_crs': 'EPSG:4326',
+                'surface_model': 'sphere',
+                'earth_radius_m': 6_371_008.8,
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match='runtime_geometry'):
+        restart_module._validate_restart_coordinate_compatibility(ds, config)
+
+
+def test_restart_accepts_equivalent_geographic_alias_and_crs():
+    """Equivalent geographic aliases and CRS labels should remain restartable."""
+    ds = xr.Dataset(
+        attrs={
+            'coordinate_system': 'geographic',
+            'runtime_geometry': 'geodetic',
+            'source_crs': 'EPSG:4326',
+            'surface_model': 'sphere',
+            'earth_radius_m': 6_371_008.8,
+        }
+    )
+    config = {
+        'general': {
+            'input_model': {
+                'coordinate_system': 'spherical',
+                'runtime_geometry': 'geodetic',
+                'source_crs': 'WGS84',
+                'surface_model': 'sphere',
+                'earth_radius_m': 6_371_008.8,
+            }
+        }
+    }
+
+    restart_module._validate_restart_coordinate_compatibility(ds, config)
+
+
 def test_create_restart_uses_reference_date_for_netcdf_time(tmp_path):
     base_config = {
         'general': {'input_model': {'reference_date': '1970-01-01'}},

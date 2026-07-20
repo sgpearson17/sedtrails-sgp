@@ -5,7 +5,7 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 
 
-def _build_sedtrails_data(x, y, coordinate_system=None):
+def _build_sedtrails_data(x, y, coordinate_system=None, **coordinate_metadata):
     """Builds a minimal SedtrailsData instance for metadata resolution tests."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -29,6 +29,8 @@ def _build_sedtrails_data(x, y, coordinate_system=None):
     )
     if coordinate_system is not None:
         metadata.add('coordinate_system', coordinate_system)
+    for key, value in coordinate_metadata.items():
+        metadata.add(key, value)
 
     # Keep all dynamic fields simple/zeroed so tests isolate spatial metadata behavior.
     return SedtrailsData(
@@ -86,3 +88,19 @@ def test_geographic_min_resolution_is_stored_in_meters():
     assert data.metadata.metric_crs == 'EPSG:32631'
     assert data.metadata.min_resolution_m == pytest.approx(68.45, rel=0.02)
     assert data.metadata.min_resolution == pytest.approx(data.metadata.min_resolution_m)
+
+
+def test_geodetic_resolution_and_envelope_cross_antimeridian():
+    """Ocean-scale metadata should use surface metres and a compact seam-free envelope."""
+    data = _build_sedtrails_data(
+        x=[179.9, -179.9, 180.0],
+        y=[0.0, 0.0, 0.2],
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+    )
+
+    assert data.metadata.runtime_coordinate_system == 'geodetic_surface'
+    assert data.metadata.min_resolution_m == pytest.approx(22_239.0, rel=0.02)
+    envelope = np.asarray(data.metadata.outer_envelope)
+    assert np.ptp(envelope[:, 0]) < 1.0

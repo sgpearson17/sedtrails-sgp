@@ -18,6 +18,10 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap
 from matplotlib.path import Path as MplPath
 from scipy.spatial import ConvexHull, QhullError, cKDTree
+from sedtrails.particle_tracer.geodetic_geometry import (
+    EARTH_MEAN_RADIUS_M,
+    spherical_distance,
+)
 
 
 @dataclass
@@ -61,7 +65,11 @@ class SimulationDashboard:
     RASTER_K_NEIGHBORS = 4
     STRANDED_PARTICLE_COLOR = '#ffb3b3'
 
-    def __init__(self, reference_date: str = '1970-01-01'):
+    def __init__(
+        self,
+        reference_date: str = '1970-01-01',
+        coordinate_metadata: dict[str, Any] | None = None,
+    ):
         """Initialize the dashboard.
 
         Parameters
@@ -85,6 +93,19 @@ class SimulationDashboard:
         self._particle_sample_indices = None
         self._particle_sample_count = None
         self._previous_particle_positions = None
+        self.coordinate_metadata = dict(coordinate_metadata or {})
+        self._is_geographic = str(
+            self.coordinate_metadata.get('coordinate_system', 'projected')
+        ).lower() in {
+            'geographic',
+            'spherical',
+            'lonlat',
+            'longlat',
+            'latitude_longitude',
+        }
+        self._earth_radius_m = float(
+            self.coordinate_metadata.get('earth_radius_m', EARTH_MEAN_RADIUS_M)
+        )
 
         # Store reference date for time conversions
         self.reference_date = datetime.datetime.fromisoformat(reference_date)
@@ -395,6 +416,28 @@ class SimulationDashboard:
         self.trajectories = {'x': [], 'y': [], 'time': []}
         self._previous_particle_positions = None
 
+    def set_coordinate_metadata(self, coordinate_metadata: dict[str, Any] | None) -> None:
+        """Update resolved coordinate metadata used by dashboard calculations.
+
+        Parameters
+        ----------
+        coordinate_metadata : dict[str, Any] or None
+            Resolved model coordinate metadata.
+        """
+        self.coordinate_metadata = dict(coordinate_metadata or {})
+        coordinate_system = str(
+            self.coordinate_metadata.get('coordinate_system', 'projected')
+        ).strip().lower()
+        self._is_geographic = coordinate_system in {
+            'geographic',
+            'spherical',
+            'lonlat',
+            'latlon',
+        }
+        self._earth_radius_m = float(
+            self.coordinate_metadata.get('earth_radius_m', EARTH_MEAN_RADIUS_M)
+        )
+
     def _particle_plot_indices(self, n_particles: int) -> slice | np.ndarray:
         """Return stable deterministic particle indices for dashboard plotting."""
         cached_count = getattr(self, '_particle_sample_count', None)
@@ -445,7 +488,16 @@ class SimulationDashboard:
         previous_positions = getattr(self, '_previous_particle_positions', None)
         if previous_positions is not None:
             prev_x, prev_y = previous_positions
-            distances = np.sqrt((particles['x'] - prev_x) ** 2 + (particles['y'] - prev_y) ** 2)
+            if getattr(self, '_is_geographic', False):
+                distances = spherical_distance(
+                    prev_x,
+                    prev_y,
+                    particles['x'],
+                    particles['y'],
+                    radius=getattr(self, '_earth_radius_m', 6371008.8),
+                )
+            else:
+                distances = np.sqrt((particles['x'] - prev_x) ** 2 + (particles['y'] - prev_y) ** 2)
             avg_distance = np.mean(distances)
         else:
             avg_distance = 0.0
@@ -826,9 +878,11 @@ class SimulationDashboard:
         )
         self._spatial_quivers = {'flowfield': quiver}
 
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.set_aspect('equal')
+        is_geographic = getattr(self, '_is_geographic', False)
+        ax.set_xlabel('Longitude (degrees east)' if is_geographic else 'X (m)')
+        ax.set_ylabel('Latitude (degrees north)' if is_geographic else 'Y (m)')
+        if not is_geographic:
+            ax.set_aspect('equal')
         ax.set_title('(a) Flow Field (Latest)', fontsize=12, fontweight='bold')
 
     def _update_bathymetry_plot(
@@ -970,9 +1024,11 @@ class SimulationDashboard:
                 ax.legend(loc='upper right')
         self._particle_artists = particle_artists
 
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.set_aspect('equal')
+        is_geographic = getattr(self, '_is_geographic', False)
+        ax.set_xlabel('Longitude (degrees east)' if is_geographic else 'X (m)')
+        ax.set_ylabel('Latitude (degrees north)' if is_geographic else 'Y (m)')
+        if not is_geographic:
+            ax.set_aspect('equal')
         ax.set_title('(b) Bathymetry + Particles', fontsize=12, fontweight='bold')
 
     @staticmethod

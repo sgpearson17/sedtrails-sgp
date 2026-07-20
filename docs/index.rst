@@ -77,6 +77,7 @@ Features
    developer/benchmarks
    developer/adding-unit-tests
    developer/architecture
+   developer/spherical-coordinate-configuration
 
 .. toctree::
    :maxdepth: 1

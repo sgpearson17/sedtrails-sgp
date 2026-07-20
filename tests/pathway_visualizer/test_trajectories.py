@@ -8,12 +8,40 @@ import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.trajectories import (
+    _distance_line_segments,
+    _line_segments,
     _sample_dataset,
     _select_sample_indices,
     _trajectory_arrays,
     plot_trajectories,
     read_netcdf,
 )
+
+
+def test_geographic_trajectory_segments_split_at_antimeridian():
+    """A map line must not draw the long way across the longitude seam."""
+    segments, indices, _, _, _ = _line_segments(
+        np.array([[179.0, 179.8, -179.8, -179.0]]),
+        np.array([[0.0, 0.0, 0.0, 0.0]]),
+        geographic=True,
+    )
+
+    assert len(segments) == 2
+    np.testing.assert_array_equal(indices, [0, 0])
+
+
+def test_geographic_trajectory_distance_is_reported_in_metres():
+    """Geographic distance panels use great-circle metres."""
+    _, _, particle_distances = _distance_line_segments(
+        np.array([[179.9, -179.9]]),
+        np.array([[0.0, 0.0]]),
+        np.array([[0.0, 60.0]]),
+        0.0,
+        geographic=True,
+    )
+
+    _, distance = particle_distances[0]
+    assert distance[-1] == pytest.approx(22_239.0, rel=2.0e-4)
 
 
 def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch, tmp_path):

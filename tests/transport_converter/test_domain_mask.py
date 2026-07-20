@@ -2,6 +2,7 @@ import numpy as np
 
 from sedtrails.transport_converter.domain_mask import (
     classify_boundary_edges,
+    delaunay_connectivity,
     extract_boundary_edges,
     filter_connectivity_by_inner_polygons,
     triangulate_face_connectivity,
@@ -63,6 +64,61 @@ def test_filter_connectivity_by_inner_polygons_masks_faces_by_centroid():
     assert result.removed_count == 1
     np.testing.assert_array_equal(result.active_mask, np.array([True, False]))
     np.testing.assert_array_equal(result.connectivity, np.array([[0, 1, 2]], dtype=np.int64))
+
+
+def test_geodetic_delaunay_connectivity_crosses_antimeridian_without_projection():
+    """Spherical fallback triangulation has no antimeridian projection seam."""
+    longitude = np.array([179.0, -179.0, 179.0, -179.0])
+    latitude = np.array([-1.0, -1.0, 1.0, 1.0])
+
+    connectivity = delaunay_connectivity(
+        longitude,
+        latitude,
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+    )
+
+    assert connectivity.shape == (2, 3)
+    assert set(np.unique(connectivity)) == {0, 1, 2, 3}
+
+
+def test_geodetic_inner_polygon_masks_faces_across_antimeridian():
+    """Spherical centroids and polygon unwrapping select the seam-side face."""
+    node_x = np.array([179.0, -179.0, 180.0, 0.0, 1.0, 0.0])
+    node_y = np.array([-1.0, -1.0, 1.0, 0.0, 0.0, 1.0])
+    connectivity = np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int64)
+    polygon = np.array([[178.0, -2.0], [-178.0, -2.0], [-178.0, 2.0], [178.0, 2.0]])
+
+    result = filter_connectivity_by_inner_polygons(
+        node_x,
+        node_y,
+        connectivity,
+        [polygon],
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+    )
+
+    np.testing.assert_array_equal(result.active_mask, [False, True])
+
+
+def test_geodetic_boundary_midpoint_classification_crosses_antimeridian():
+    """A seam-crossing minor-arc edge is classified near longitude 180."""
+    node_x = np.array([179.0, -179.0, 180.0])
+    node_y = np.array([0.0, 0.0, 2.0])
+    connectivity = np.array([[0, 1, 2]], dtype=np.int64)
+    open_polygon = np.array([[178.0, -1.0], [-178.0, -1.0], [-178.0, 1.0], [178.0, 1.0]])
+
+    result = classify_boundary_edges(
+        node_x,
+        node_y,
+        connectivity,
+        {'open': [open_polygon], 'land': []},
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+    )
+
+    seam_edge = np.all(np.sort(result.edges, axis=1) == np.array([0, 1]), axis=1)
+    assert result.classes[seam_edge].tolist() == ['open']
 
 
 def test_triangulate_face_connectivity_splits_quads_without_reindexing_nodes():

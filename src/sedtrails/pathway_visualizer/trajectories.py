@@ -8,6 +8,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+from sedtrails.particle_tracer.geodetic_geometry import (
+    EARTH_MEAN_RADIUS_M,
+    spherical_distance,
+)
 from matplotlib.collections import LineCollection
 
 
@@ -337,6 +341,8 @@ def _particle_colors(n_particles: int):
 def _line_segments(
     x_data: np.ndarray,
     y_data: np.ndarray,
+    *,
+    geographic: bool = False,
 ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     segments = []
     plotted_indices = []
@@ -351,8 +357,15 @@ def _line_segments(
             y_traj = y_data[i, mask]
             points = np.column_stack((x_traj, y_traj))
             if len(points) >= 2:
-                segments.append(points)
-                plotted_indices.append(i)
+                if geographic:
+                    split_indices = np.flatnonzero(np.abs(np.diff(x_traj)) > 180.0) + 1
+                    for segment in np.split(points, split_indices):
+                        if len(segment) >= 2:
+                            segments.append(segment)
+                            plotted_indices.append(i)
+                else:
+                    segments.append(points)
+                    plotted_indices.append(i)
             endpoint_indices.append(i)
             starts.append(points[0])
             ends.append(points[-1])
@@ -371,6 +384,9 @@ def _distance_line_segments(
     y_data: np.ndarray,
     time_data: np.ndarray,
     min_time: float,
+    *,
+    geographic: bool = False,
+    earth_radius_m: float = EARTH_MEAN_RADIUS_M,
 ) -> tuple[list[np.ndarray], np.ndarray, dict[int, tuple[np.ndarray, np.ndarray]]]:
     distance_segments = []
     distance_indices = []
@@ -383,7 +399,16 @@ def _distance_line_segments(
             y_traj = y_data[i, mask]
             time_traj = time_data[i, mask]
             time_hours = (time_traj - min_time) / 3600.0
-            distances = np.sqrt((x_traj - x_traj[0]) ** 2 + (y_traj - y_traj[0]) ** 2)
+            if geographic:
+                distances = spherical_distance(
+                    x_traj[0],
+                    y_traj[0],
+                    x_traj,
+                    y_traj,
+                    radius=earth_radius_m,
+                )
+            else:
+                distances = np.sqrt((x_traj - x_traj[0]) ** 2 + (y_traj - y_traj[0]) ** 2)
             particle_distances[i] = (time_hours, distances)
             if len(time_hours) >= 2:
                 distance_segments.append(np.column_stack((time_hours, distances)))
@@ -542,6 +567,14 @@ def plot_trajectories(
     )
 
     x_data, y_data, time_data = _trajectory_arrays(sampled_ds)
+    geographic = str(sampled_ds.attrs.get('coordinate_system', 'projected')).lower() in {
+        'geographic',
+        'spherical',
+        'lonlat',
+        'longlat',
+        'latitude_longitude',
+    }
+    earth_radius_m = float(sampled_ds.attrs.get('earth_radius_m', EARTH_MEAN_RADIUS_M))
 
     n_particles, n_timesteps = x_data.shape
 
@@ -566,12 +599,16 @@ def plot_trajectories(
     # Plot 1: All trajectories on spatial map (individual particle colors)
     ax1 = axes_by_panel['spatial']
     ax1.set_title(f'(a) Particle Trajectories - Individual Colors (n={n_particles})')
-    ax1.set_xlabel('X [m]')
-    ax1.set_ylabel('Y [m]')
+    ax1.set_xlabel('Longitude [degrees east]' if geographic else 'X [m]')
+    ax1.set_ylabel('Latitude [degrees north]' if geographic else 'Y [m]')
 
     # Plot each particle trajectory
     colors = np.asarray(_particle_colors(n_particles))
-    spatial_segments, spatial_indices, endpoint_indices, starts, ends = _line_segments(x_data, y_data)
+    spatial_segments, spatial_indices, endpoint_indices, starts, ends = _line_segments(
+        x_data,
+        y_data,
+        geographic=geographic,
+    )
     if spatial_segments:
         ax1.add_collection(LineCollection(spatial_segments, colors=colors[spatial_indices], alpha=0.7, linewidths=1))
         ax1.autoscale()
@@ -585,7 +622,8 @@ def plot_trajectories(
         ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
     ax1.grid(True, alpha=0.3)
-    ax1.set_aspect('equal', adjustable='box')
+    if not geographic:
+        ax1.set_aspect('equal', adjustable='box')
 
     if selected_panels == ['spatial']:
         plt.tight_layout()
@@ -617,7 +655,12 @@ def plot_trajectories(
     particle_distances = {}
     if ax2 is not None or ax4 is not None:
         distance_segments, distance_indices, particle_distances = _distance_line_segments(
-            x_data, y_data, time_data, min_time
+            x_data,
+            y_data,
+            time_data,
+            min_time,
+            geographic=geographic,
+            earth_radius_m=earth_radius_m,
         )
         if ax2 is not None and distance_segments:
             ax2.add_collection(
@@ -636,8 +679,8 @@ def plot_trajectories(
     ax3 = axes_by_panel.get('population')
     if ax3 is not None:
         ax3.set_title('(c) Particle Trajectories - Colored by Population')
-        ax3.set_xlabel('X [m]')
-        ax3.set_ylabel('Y [m]')
+        ax3.set_xlabel('Longitude [degrees east]' if geographic else 'X [m]')
+        ax3.set_ylabel('Latitude [degrees north]' if geographic else 'Y [m]')
 
     # Plot trajectories grouped by population
     if ax3 is not None:
@@ -672,7 +715,8 @@ def plot_trajectories(
         ax3.legend()
         ax3.autoscale()
         ax3.grid(True, alpha=0.3)
-        ax3.set_aspect('equal', adjustable='box')
+        if not geographic:
+            ax3.set_aspect('equal', adjustable='box')
 
     # Plot 4: Distance from initial position by population with statistics
     if ax4 is not None:

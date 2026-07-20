@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 import yaml
+from pyproj import CRS
 
 from sedtrails.application_interfaces.validator import SedtrailsYamlLoader
 from sedtrails.particle_tracer.timer import convert_duration_string_to_seconds
@@ -129,7 +130,7 @@ def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[st
     if not input_path.is_absolute():
         input_path = config_path.parent / input_path
 
-    return {
+    format_config = {
         'input_file': str(input_path),
         'input_format': input_format,
         'reference_date': input_model.get('reference_date', '1970-01-01'),
@@ -137,6 +138,94 @@ def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[st
         'sediment_fraction_index': input_model.get('sediment_fraction_index', 0),
         'sediment_fraction_name': input_model.get('sediment_fraction_name'),
     }
+    for name in (
+        'coordinate_system',
+        'source_crs',
+        'metric_crs',
+        'runtime_geometry',
+        'surface_model',
+        'earth_radius_m',
+        'longitude_wrap',
+        'velocity_basis',
+    ):
+        if name in input_model:
+            format_config[name] = input_model[name]
+    return format_config
+
+
+def _validate_restart_coordinate_compatibility(ds: xr.Dataset, config: dict[str, Any]) -> None:
+    """Reject checkpoint and base configurations with incompatible geometry."""
+    dataset_system = ds.attrs.get('coordinate_system')
+    if dataset_system is None:
+        return
+
+    input_model = config.get('general', {}).get('input_model', {})
+    config_system = input_model.get('coordinate_system')
+    if config_system not in (None, 'auto'):
+        dataset_normalized = _normalized_coordinate_label(dataset_system)
+        config_normalized = _normalized_coordinate_label(config_system)
+        if dataset_normalized != config_normalized:
+            raise ValueError(
+                'Restart coordinate_system does not match the base configuration: '
+                f'{dataset_system!r} versus {config_system!r}.'
+            )
+
+    for name in ('runtime_geometry', 'surface_model', 'velocity_basis'):
+        dataset_value = ds.attrs.get(name)
+        config_value = input_model.get(name)
+        if dataset_value is None or config_value in (None, 'auto'):
+            continue
+        if str(dataset_value).strip().lower() != str(config_value).strip().lower():
+            raise ValueError(
+                f'Restart {name} does not match the base configuration: '
+                f'{dataset_value!r} versus {config_value!r}.'
+            )
+
+    for name in ('source_crs', 'metric_crs'):
+        dataset_value = ds.attrs.get(name)
+        config_value = input_model.get(name)
+        if dataset_value in (None, '') or config_value in (None, '', 'auto', 'auto_utm'):
+            continue
+        try:
+            compatible = CRS.from_user_input(dataset_value) == CRS.from_user_input(config_value)
+        except Exception:
+            compatible = str(dataset_value).strip() == str(config_value).strip()
+        if not compatible:
+            raise ValueError(
+                f'Restart {name} does not match the base configuration: '
+                f'{dataset_value!r} versus {config_value!r}.'
+            )
+
+    dataset_radius = ds.attrs.get('earth_radius_m')
+    config_radius = input_model.get('earth_radius_m')
+    if dataset_radius is not None and config_radius is not None and not np.isclose(
+        float(dataset_radius),
+        float(config_radius),
+        rtol=0.0,
+        atol=1.0e-6,
+    ):
+        raise ValueError(
+            'Restart earth_radius_m does not match the base configuration: '
+            f'{dataset_radius!r} versus {config_radius!r}.'
+        )
+
+
+def _normalized_coordinate_label(value: Any) -> str:
+    """Normalize public projected/geographic coordinate labels."""
+    normalized = str(value).strip().lower().replace('_', '-')
+    if normalized in {
+        'geo',
+        'geographic',
+        'spherical',
+        'lon-lat',
+        'lonlat',
+        'longlat',
+        'latitude-longitude',
+    }:
+        return 'geographic'
+    if normalized in {'projected', 'cartesian'}:
+        return 'projected'
+    return normalized
 
 
 def _validate_restart_time_matches_input(
@@ -409,6 +498,7 @@ def create_restart_from_netcdf(
     ds = _open_restart_dataset(netcdf_path)
     try:
         _validate_restart_dataset_schema(ds, netcdf_path)
+        _validate_restart_coordinate_compatibility(ds, config)
 
         restart_state = _extract_restart_state(ds)
         n_particles = restart_state.x.shape[0]

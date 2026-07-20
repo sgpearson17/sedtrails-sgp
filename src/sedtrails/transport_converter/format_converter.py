@@ -15,6 +15,17 @@ import numpy as np
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 
+COORDINATE_OPTION_NAMES = (
+    'coordinate_system',
+    'source_crs',
+    'metric_crs',
+    'runtime_geometry',
+    'surface_model',
+    'earth_radius_m',
+    'longitude_wrap',
+    'velocity_basis',
+)
+
 
 @dataclass
 class SeederFieldData:
@@ -181,7 +192,7 @@ class FormatConverter:
             except AttributeError:
                 pass
 
-        for option_name in ('coordinate_system', 'source_crs', 'metric_crs'):
+        for option_name in COORDINATE_OPTION_NAMES:
             option_value = self.config.get(option_name)
             if option_value is None:
                 continue
@@ -221,6 +232,7 @@ class FormatConverter:
             plugin = self._format_plugin
 
         sedtrails_data = plugin.convert(current_time, reading_interval, self.reference_date)
+        self._apply_configured_coordinate_metadata(sedtrails_data.metadata)
 
         return sedtrails_data
 
@@ -311,12 +323,17 @@ class FormatConverter:
             )
         if coordinate_system is not None:
             seeding_metadata.add('coordinate_system', coordinate_system)
-        for attr_name in ('source_crs', 'metric_crs'):
+        for attr_name in COORDINATE_OPTION_NAMES:
+            if attr_name == 'coordinate_system':
+                continue
             attr_value = getattr(field_data, attr_name, None)
             if attr_value is None and metadata is not None:
                 attr_value = getattr(metadata, attr_name, None)
+            if attr_value is None:
+                attr_value = self.config.get(attr_name)
             if attr_value is not None:
                 seeding_metadata.add(attr_name, attr_value)
+        self._apply_configured_coordinate_metadata(seeding_metadata)
 
         return SeederFieldData(
             x=np.asarray(field_data.x),
@@ -339,6 +356,15 @@ class FormatConverter:
         if connectivity is None:
             return None
         return np.asarray(connectivity, dtype=np.int64)
+
+    def _apply_configured_coordinate_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Overlay explicit coordinate configuration on converted metadata."""
+        for option_name in COORDINATE_OPTION_NAMES:
+            option_value = self.config.get(option_name)
+            if option_value is not None and not (
+                option_name == 'coordinate_system' and str(option_value).strip().lower() == 'auto'
+            ):
+                metadata.add(option_name, option_value)
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')

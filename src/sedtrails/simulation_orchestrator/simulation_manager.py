@@ -357,7 +357,26 @@ class Simulation:
         if dashboard_enabled:
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
             figsize = (12, 8)
-            dashboard = SimulationDashboard(reference_date=reference_date)
+            coordinate_metadata = {
+                name: self._controller.get(f'general.input_model.{name}', None)
+                for name in (
+                    'coordinate_system',
+                    'runtime_geometry',
+                    'surface_model',
+                    'earth_radius_m',
+                    'longitude_wrap',
+                    'velocity_basis',
+                )
+            }
+            coordinate_metadata = {
+                name: value
+                for name, value in coordinate_metadata.items()
+                if value is not None
+            }
+            dashboard = SimulationDashboard(
+                reference_date=reference_date,
+                coordinate_metadata=coordinate_metadata,
+            )
             dashboard.initialize_dashboard(figsize)
             # Force initial display and bring window to front
             dashboard.fig.show()
@@ -782,11 +801,19 @@ class Simulation:
             return {}
 
         keys = (
+            'coordinate_metadata_version',
             'coordinate_system',
+            'source_coordinate_system',
+            'runtime_geometry',
             'runtime_coordinate_system',
             'metric_coordinate_system',
             'source_crs',
             'metric_crs',
+            'surface_model',
+            'earth_radius_m',
+            'longitude_wrap',
+            'velocity_basis',
+            'horizontal_distance_units',
             'utm_zone',
             'utm_hemisphere',
             'min_resolution_m',
@@ -919,6 +946,11 @@ class Simulation:
             'coordinate_system': self._controller.get('general.input_model.coordinate_system', None),
             'source_crs': self._controller.get('general.input_model.source_crs', None),
             'metric_crs': self._controller.get('general.input_model.metric_crs', None),
+            'runtime_geometry': self._controller.get('general.input_model.runtime_geometry', None),
+            'surface_model': self._controller.get('general.input_model.surface_model', None),
+            'earth_radius_m': self._controller.get('general.input_model.earth_radius_m', None),
+            'longitude_wrap': self._controller.get('general.input_model.longitude_wrap', None),
+            'velocity_basis': self._controller.get('general.input_model.velocity_basis', None),
             'domain_config': self._get_domain_config(),
         }
 
@@ -1250,6 +1282,26 @@ class Simulation:
         # Load only x/y field coordinates needed for the population seeder.
         with self._profile_section('get_seeding_field_data'):
             seeding_field_data = self.format_converter.get_seeding_field_data()
+        if self.dashboard is not None:
+            metadata = getattr(seeding_field_data, 'metadata', None)
+            resolved_coordinates = {
+                name: (
+                    metadata.get(name)
+                    if hasattr(metadata, 'get')
+                    else getattr(metadata, name, None)
+                )
+                for name in (
+                    'coordinate_system',
+                    'runtime_geometry',
+                    'surface_model',
+                    'earth_radius_m',
+                    'longitude_wrap',
+                    'velocity_basis',
+                )
+            }
+            self.dashboard.set_coordinate_metadata(
+                {name: value for name, value in resolved_coordinates.items() if value is not None}
+            )
 
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations

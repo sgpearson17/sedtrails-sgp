@@ -11,11 +11,13 @@ ncFormat=4
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import xarray as xr
 
+from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
@@ -46,6 +48,14 @@ class FormatPlugin(BaseFormatPlugin):
         self.sediment_fraction_labels: list[str] | None = None
         self.input_data: Optional[xr.Dataset] = None
         self._input_variables: List[str] = []
+        self.coordinate_system: str | None = None
+        self.source_crs: str | None = None
+        self.metric_crs: str | None = None
+        self.runtime_geometry: str | None = None
+        self.surface_model: str | None = None
+        self.earth_radius_m: float | None = None
+        self.longitude_wrap: str | None = None
+        self.velocity_basis: str | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -156,6 +166,7 @@ class FormatPlugin(BaseFormatPlugin):
                 'y_max': np.max(mapped_data['y']),
             }
         )
+        self._add_coordinate_metadata(metadata)
 
         fractions = 1
         for candidate_name in ('bed_load_transport_x', 'suspended_transport_x', 'sediment_concentration'):
@@ -167,6 +178,7 @@ class FormatPlugin(BaseFormatPlugin):
         if mapped_data.get('sediment_fraction_labels'):
             metadata.add('sediment_fraction_labels', mapped_data['sediment_fraction_labels'])
 
+        triangles = self._active_structured_triangles_from_dataset()
         return SedtrailsData(
             times=seconds_since_ref,
             reference_date=self.reference_date,
@@ -182,7 +194,32 @@ class FormatPlugin(BaseFormatPlugin):
             max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
             sediment_concentration=mapped_data['sediment_concentration'],
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            node_x=mapped_data['x'],
+            node_y=mapped_data['y'],
+            face_node_connectivity=triangles,
+            particle_face_connectivity=triangles,
             metadata=metadata,
+        )
+
+    def get_seeding_field_data(self):
+        """Return active Delft3D4 coordinates, topology, and CRS metadata."""
+        self.load()
+        x_values, y_values = self.get_seeding_coordinates()
+        triangles = self._active_structured_triangles_from_dataset()
+        return SimpleNamespace(
+            x=x_values,
+            y=y_values,
+            face_node_connectivity=triangles,
+            particle_face_connectivity=triangles,
+            face_node_fill_value=-1,
+            coordinate_system=self._coordinate_system(),
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
+            runtime_geometry=self.runtime_geometry,
+            surface_model=self.surface_model,
+            earth_radius_m=self.earth_radius_m,
+            longitude_wrap=self.longitude_wrap,
+            velocity_basis=self._velocity_basis(),
         )
 
     def get_seeding_coordinates(self):
@@ -214,6 +251,72 @@ class FormatPlugin(BaseFormatPlugin):
             return x_values[valid], y_values[valid]
 
         raise KeyError("Required variables 'XZ'/'YZ' or 'XCOR'/'YCOR' not found in dataset")
+
+    def _coordinate_variables(self):
+        """Return the selected Delft3D4 horizontal coordinate variables."""
+        if self.input_data is None:
+            return None, None
+        if 'XZ' in self.input_data and 'YZ' in self.input_data:
+            return self.input_data['XZ'], self.input_data['YZ']
+        if 'XCOR' in self.input_data and 'YCOR' in self.input_data:
+            return self.input_data['XCOR'], self.input_data['YCOR']
+        return None, None
+
+    def _coordinate_system(self) -> str:
+        """Return the configured or inferred horizontal coordinate system."""
+        if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
+            return str(self.coordinate_system)
+        x_variable, y_variable = self._coordinate_variables()
+        return infer_coordinate_system_from_attrs(x_variable, y_variable)
+
+    def _velocity_basis(self) -> str:
+        """Return the vector basis after Delft3D4 ALFAS rotation."""
+        if self.velocity_basis is not None and str(self.velocity_basis).lower() != 'auto':
+            return str(self.velocity_basis)
+        return 'east_north' if self._coordinate_system() == 'geographic' else 'source_xy'
+
+    def _add_coordinate_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Add normalized coordinate configuration to converted metadata."""
+        metadata.add('coordinate_system', self._coordinate_system())
+        values = {
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
+            'runtime_geometry': self.runtime_geometry,
+            'surface_model': self.surface_model,
+            'earth_radius_m': self.earth_radius_m,
+            'longitude_wrap': self.longitude_wrap,
+            'velocity_basis': self._velocity_basis(),
+        }
+        for key, value in values.items():
+            if value is not None:
+                metadata.add(key, value)
+
+    def _active_structured_triangles_from_dataset(self) -> np.ndarray:
+        """Return active triangles remapped to flattened valid coordinates."""
+        x_variable, y_variable = self._coordinate_variables()
+        if x_variable is None or y_variable is None:
+            return np.empty((0, 3), dtype=np.int64)
+        x_values = np.asarray(x_variable.values)
+        y_values = np.asarray(y_variable.values)
+        if x_values.ndim != 2 or y_values.shape != x_values.shape:
+            return np.empty((0, 3), dtype=np.int64)
+
+        valid = self._valid_face_mask(x_values, y_values)
+        mapping = np.full(valid.size, -1, dtype=np.int64)
+        mapping[np.flatnonzero(valid.ravel())] = np.arange(np.count_nonzero(valid), dtype=np.int64)
+        rows, columns = valid.shape
+        if rows < 2 or columns < 2:
+            return np.empty((0, 3), dtype=np.int64)
+        mapped = mapping.reshape(rows, columns)
+        lower_left = mapped[:-1, :-1].ravel()
+        lower_right = mapped[:-1, 1:].ravel()
+        upper_left = mapped[1:, :-1].ravel()
+        upper_right = mapped[1:, 1:].ravel()
+        cell_count = lower_left.size
+        triangles = np.empty((2 * cell_count, 3), dtype=np.int64)
+        triangles[0::2] = np.column_stack((lower_left, upper_left, upper_right))
+        triangles[1::2] = np.column_stack((lower_left, upper_right, lower_right))
+        return triangles[np.all(triangles >= 0, axis=1)]
 
     def load(self) -> Any:
         """Load the Delft3D4 NetCDF input dataset with xarray.

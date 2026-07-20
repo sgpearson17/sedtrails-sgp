@@ -4,7 +4,7 @@ general:
     reference_date: '1970-01-01'
     morfac: 1
 inputs:
-  data: ./sample-data/trim-inlet.nc
+  data: ../sample-data/trim-inlet.nc
   read_interval: 10D
 time:
   start: '2016-12-08 00:00:00'
@@ -30,7 +30,7 @@ particles:
       quantity: 1
       strategy:
         file_points:
-          path: ./examples/sedtrails-example-d3d4-seeded.points.txt
+          path: sedtrails-example-d3d4-seeded.points.txt
           has_header: false
           x_col: 0
           y_col: 1

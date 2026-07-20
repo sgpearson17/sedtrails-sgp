@@ -145,6 +145,26 @@ def test_get_seeding_field_data_prefers_field_data_reader():
     assert not plugin.convert_called
 
 
+def test_auto_coordinate_override_preserves_resolved_plugin_metadata():
+    """The schema default auto value must not replace inferred geographic data."""
+    converter = FormatConverter(
+        {
+            'input_file': 'dummy.nc',
+            'input_format': 'dummy',
+            'reference_date': '1999-12-31',
+            'coordinate_system': 'auto',
+            'runtime_geometry': 'geodetic',
+            'surface_model': 'sphere',
+        }
+    )
+    converter._format_plugin = _PluginWithSeedingFieldData()
+
+    field_data = converter.get_seeding_field_data()
+
+    assert field_data.metadata.coordinate_system == 'geographic'
+    assert field_data.metadata.runtime_geometry == 'geodetic'
+
+
 def test_get_seeding_field_data_prefers_coordinate_reader():
     """Ensures coordinate-reader plugins are used without calling convert."""
     converter = FormatConverter({'input_file': 'dummy.nc', 'input_format': 'dummy', 'reference_date': '2000-01-01'})

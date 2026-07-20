@@ -43,12 +43,17 @@ is omitted and populated with the nested defaults below.
 
 | Parameter           | Type   | Required | Default      | Description                                                                                                          |
 | ------------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`            | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
+| `format`            | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4_netcdf` (Delft3D 4), `xbeach` (XBeach), and `sfincs` (SFINCS). |
 | `reference_date`    | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
 | `morfac`            | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
-| `coordinate_system` | string | Optional | `auto`       | Coordinate-system handling for model x/y coordinates. Use `auto` to infer from NetCDF coordinate attributes, `projected` for metre-like Cartesian grids, or `geographic`/`spherical` for longitude/latitude degrees. Geographic/spherical grids are projected through `pyproj` to `metric_crs` for runtime geometry. |
-| `source_crs`        | string | Optional | `EPSG:4326` | CRS for geographic input coordinates. |
-| `metric_crs`        | string | Optional | `auto_utm`   | Projected metric CRS for geographic runtime geometry. Use `auto_utm` to infer a local UTM EPSG zone, or provide an explicit CRS such as `EPSG:32631`. |
+| `coordinate_system` | string | Optional | `auto`       | Source x/y representation: `auto`, `projected`, `geographic`, or the `spherical` alias for geographic longitude/latitude. |
+| `source_crs`        | string | Optional | `EPSG:4326`  | CRS for geographic source coordinates. Empty CRS labels are rejected. |
+| `runtime_geometry`  | string | Optional | `auto`       | Runtime backend: `auto`, `planar`, or `geodetic`. Auto selects local projected geometry for safe regional lon/lat grids and geodetic geometry for wide, polar, or seam-crossing grids. |
+| `metric_crs`        | string or null | Optional | `auto_utm` | Projected metre CRS for planar geographic geometry, such as `EPSG:32631`. Set to `null` for explicit geodetic geometry. |
+| `surface_model`     | string | Optional | `sphere`     | Surface model: `from_crs`, `sphere`, or `ellipsoid`. Geodetic runtime currently requires `sphere`; unsupported models fail explicitly. |
+| `earth_radius_m`    | number | Optional | `6371008.8`  | Positive sphere radius in metres, used when `surface_model: sphere`. |
+| `longitude_wrap`    | string | Optional | `auto`       | Geographic longitude convention: `auto`, `-180_180`, or `0_360`. |
+| `velocity_basis`    | string | Optional | `auto`       | Horizontal velocity basis: `auto`, `east_north`, `source_xy`, or `grid_aligned`. Geodetic runtime requires resolved east/north vectors. |
 
 **Example:**
 
@@ -63,7 +68,12 @@ general:
     morfac: 1.0
     coordinate_system: auto
     source_crs: EPSG:4326
+    runtime_geometry: auto
     metric_crs: auto_utm
+    surface_model: sphere
+    earth_radius_m: 6371008.8
+    longitude_wrap: auto
+    velocity_basis: auto
 ```
 
 ---
@@ -318,6 +328,7 @@ The `characteristics` object varies by `particle_type`:
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
 | `diffusion_coefficient` | number | Optional (legacy) | `0.0` | Legacy fallback for the top-level `diffusion.coefficient`; prefer the top-level configuration. |
 
+(per-population-diffusion)=
 #### Per-population diffusion
 
 The optional `diffusion` object applies to every particle type and tracer method. `method` is `brownian` (default) or `none`; `coefficient` is a non-negative horizontal diffusivity in `m^2/s` and defaults to `0.0`; `seed` is an optional integer that makes draws reproducible for that population. A zero coefficient and `method: none` both disable diffusion.

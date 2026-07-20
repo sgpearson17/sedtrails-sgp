@@ -139,6 +139,96 @@ def test_random_bbox_seeding_samples_metric_space_on_geographic_grids():
     assert result == pytest.approx([(3, expected_x, expected_y)])
 
 
+def test_geodetic_random_bbox_samples_across_antimeridian_with_requested_wrap():
+    """Geodetic random seeding uses spherical area and keeps 0-360 longitude."""
+    transform = build_coordinate_transform(
+        np.array([179.0, -179.0]),
+        np.array([-1.0, 1.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        longitude_wrap='0_360',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'global-random',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'random': {
+                        'bbox': '179,-1 -179,1',
+                        'nlocations': 20,
+                        'seed': 7,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 1,
+            },
+        }
+    )
+
+    result = RandomStrategy().seed(config)
+    longitudes = np.asarray([x for _, x, _ in result])
+
+    assert len(result) == 20
+    assert np.all((longitudes >= 179.0) & (longitudes <= 181.0))
+
+
+def test_geodetic_transect_uses_short_great_circle_across_antimeridian():
+    """A geodetic transect crosses the seam rather than interpolating via zero."""
+    transform = build_coordinate_transform(
+        np.array([179.0, -179.0]),
+        np.array([0.0, 0.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'global-transect',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'transect': {
+                        'segments': ['179,0 -179,0'],
+                        'k': 3,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 1,
+            },
+        }
+    )
+
+    result = TransectStrategy().seed(config)
+
+    assert abs(abs(result[1][1]) - 180.0) < 1.0e-10
+
+
+def test_geodetic_bbox_area_is_reported_in_square_metres():
+    """A one-degree spherical box has the analytic spherical surface area."""
+    radius = 6_371_008.8
+    transform = build_coordinate_transform(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        earth_radius_m=radius,
+    )
+
+    area = _compute_seeding_area(
+        'random',
+        {
+            'bbox': '0,0 1,1',
+            '_coordinate_transform': transform,
+        },
+    )
+
+    expected = radius**2 * np.deg2rad(1.0) * np.sin(np.deg2rad(1.0))
+    assert area == pytest.approx(expected)
+
+
 # Config fixtures
 @pytest.fixture
 def point_config_basic():
@@ -1281,6 +1371,34 @@ class TestParticlePopulation:
         sigma = np.sqrt(2.0 * 0.5 * 0.02)
         np.testing.assert_allclose(population.particles['x'], np.array([0.5, 0.6]) + sigma * np.array([1.0, -1.0]))
         np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]) + sigma * np.array([0.5, -0.5]))
+
+    def test_position_updates_are_bounded_to_particle_chunks(self):
+        """The hot path never sends more than 65536 particles to one kernel call."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.0)
+        count = 65_537
+        population.particles['x'] = np.full(count, 0.5)
+        population.particles['y'] = np.full(count, 0.5)
+        population.particles['status_mobile'] = np.ones(count, dtype=bool)
+        population.particles['status_domain'] = np.ones(count, dtype=bool)
+        population.particles['status_alive'] = np.ones(count, dtype=bool)
+        population.particles['status_left_domain'] = np.zeros(count, dtype=bool)
+        population.particles['status_beached'] = np.zeros(count, dtype=bool)
+        population._particle_simplices = np.zeros(count, dtype=np.int64)
+        observed_sizes = []
+
+        def advance(x, y, _u, _v, _dt, simplex_ids=None):
+            observed_sizes.append(len(x))
+            return x + 0.01, y, np.asarray(simplex_ids), np.zeros(len(x), dtype=np.int8)
+
+        population._position_calculator_with_boundary_class = advance
+
+        population.update_position(
+            flow_field={'u': np.zeros(4), 'v': np.zeros(4)},
+            current_timestep=1.0,
+        )
+
+        assert observed_sizes == [65_536, 1]
+        np.testing.assert_allclose(population.particles['x'], 0.51)
 
     def test_diffusion_receives_velocity_arrays_matching_particle_coordinates(self, monkeypatch):
         """Diffusion strategies always receive coordinate-shaped velocity inputs."""
