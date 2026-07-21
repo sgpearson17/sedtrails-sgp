@@ -11,6 +11,12 @@ import numpy as np
 import yaml
 
 from sedtrails.application_interfaces.validator import SedtrailsYamlLoader, YAMLConfigValidator
+from sedtrails.particle_tracer.coordinate_transform import (
+    DEFAULT_METRIC_CRS,
+    DEFAULT_SOURCE_CRS,
+    build_coordinate_transform,
+    infer_coordinate_system_from_attrs,
+)
 
 SEEDING_MODES = ('points', 'transect', 'random', 'grid')
 RANDOM_CANDIDATE_BATCH_SIZE = 16_384
@@ -76,6 +82,35 @@ class BathymetryViewData:
     values: np.ndarray
     variable: str
     input_file: Path
+    coordinate_system: str = 'projected'
+    source_crs: str | None = None
+    metric_crs: str | None = None
+
+
+@dataclass(frozen=True)
+class _GuiCoordinateDisplay:
+    """Convert between stored source coordinates and GUI display coordinates."""
+
+    coordinate_system: str
+    metric_crs: str | None = None
+    transform: Any | None = None
+
+    @property
+    def uses_metres(self) -> bool:
+        """Return whether GUI map coordinates are projected metres."""
+        return self.transform is not None
+
+    def source_to_display(self, x, y) -> tuple[np.ndarray, np.ndarray]:
+        """Convert stored source coordinates to GUI display coordinates."""
+        if self.transform is None:
+            return np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+        return self.transform.source_to_metric(x, y)
+
+    def display_to_source(self, x, y) -> tuple[np.ndarray, np.ndarray]:
+        """Convert GUI display coordinates to stored source coordinates."""
+        if self.transform is None:
+            return np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+        return self.transform.metric_to_source(x, y)
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
@@ -295,6 +330,13 @@ def load_bathymetry_view_data(
         variable,
         default_candidates=format_spec['bathymetry_variables'],
     )
+    coordinate_system = _resolve_gui_coordinate_system(
+        input_model,
+        dataset,
+        format_spec['coordinate_candidates'],
+    )
+    source_crs = input_model.get('source_crs', DEFAULT_SOURCE_CRS)
+    metric_crs = input_model.get('metric_crs', DEFAULT_METRIC_CRS)
     try:
         values = _first_timestep_values(dataset[variable_name])
         value_multiplier = float(format_spec.get('variable_multipliers', {}).get(variable_name, 1.0))
@@ -320,7 +362,16 @@ def load_bathymetry_view_data(
         )
     x, y, values = _filter_finite_map_points(x, y, values, variable_name)
 
-    return BathymetryViewData(x=x, y=y, values=values, variable=variable_name, input_file=input_file)
+    return BathymetryViewData(
+        x=x,
+        y=y,
+        values=values,
+        variable=variable_name,
+        input_file=input_file,
+        coordinate_system=coordinate_system,
+        source_crs=str(source_crs) if source_crs else DEFAULT_SOURCE_CRS,
+        metric_crs=str(metric_crs) if metric_crs else None,
+    )
 
 
 def _open_netcdf_dataset(input_file: Path) -> Any:
@@ -340,8 +391,113 @@ def _open_netcdf_dataset(input_file: Path) -> Any:
     raise SeedingGuiError(f'Could not load input data with an explicit NetCDF engine: {details}')
 
 
-_MAX_GLOBAL_DEDUPLICATION_POINTS = 100_000
+def _resolve_gui_coordinate_system(
+    input_model: dict[str, Any],
+    dataset: Any,
+    coordinate_candidates: tuple[tuple[str, str], ...],
+) -> str:
+    """Return the source coordinate system used for GUI display conversion."""
+    configured = str(input_model.get('coordinate_system', 'auto')).strip().lower()
+    if configured in {'geographic', 'spherical', 'lonlat', 'latlon'}:
+        return 'geographic'
+    if configured in {'projected', 'cartesian'}:
+        return 'projected'
+    if configured not in {'', 'auto'}:
+        raise SeedingGuiError(f'Unsupported general.input_model.coordinate_system: {configured!r}.')
 
+    for x_name, y_name in coordinate_candidates:
+        if x_name in dataset and y_name in dataset:
+            return infer_coordinate_system_from_attrs(dataset[x_name], dataset[y_name])
+    return 'projected'
+
+
+def _build_gui_coordinate_display(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    coordinate_system: str,
+    source_crs: str | None,
+    metric_crs: str | None,
+) -> _GuiCoordinateDisplay:
+    """Build the projected metre display transform for a geographic GUI map."""
+    if coordinate_system != 'geographic':
+        return _GuiCoordinateDisplay(coordinate_system='projected')
+
+    requested_crs = metric_crs or DEFAULT_METRIC_CRS
+    try:
+        transform = build_coordinate_transform(
+            x,
+            y,
+            'geographic',
+            source_crs=source_crs or DEFAULT_SOURCE_CRS,
+            metric_crs=requested_crs,
+            runtime_geometry='planar',
+        )
+    except Exception as exc:
+        raise SeedingGuiError(
+            f'Could not create a metre display CRS from {requested_crs!r}: {exc}'
+        ) from exc
+    _validate_gui_metric_crs_overlap(
+        x,
+        y,
+        source_crs=source_crs or DEFAULT_SOURCE_CRS,
+        metric_crs=str(transform.metric_crs),
+    )
+    return _GuiCoordinateDisplay(
+        coordinate_system='geographic',
+        metric_crs=str(transform.metric_crs),
+        transform=transform,
+    )
+
+
+_MAX_GLOBAL_DEDUPLICATION_POINTS = 100_000
+def _validate_gui_metric_crs_overlap(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    source_crs: str,
+    metric_crs: str,
+) -> None:
+    """Reject a projected display CRS that does not cover the geographic map."""
+    from pyproj import CRS, Transformer
+
+    source = CRS.from_user_input(source_crs)
+    metric = CRS.from_user_input(metric_crs)
+    area = metric.area_of_use
+    if area is None:
+        return
+
+    source_x = np.asarray(x, dtype=float).reshape(-1)
+    source_y = np.asarray(y, dtype=float).reshape(-1)
+    stride = max(1, int(np.ceil(source_x.size / 10_000)))
+    sample_x = source_x[::stride]
+    sample_y = source_y[::stride]
+    finite = np.isfinite(sample_x) & np.isfinite(sample_y)
+    if not np.any(finite):
+        return
+
+    longitude, latitude = Transformer.from_crs(source, 'EPSG:4326', always_xy=True).transform(
+        sample_x[finite], sample_y[finite]
+    )
+    west = float(area.west)
+    south = float(area.south)
+    east = float(area.east)
+    north = float(area.north)
+    if west <= east:
+        inside_longitude = (longitude >= west) & (longitude <= east)
+    else:
+        inside_longitude = (longitude >= west) | (longitude <= east)
+    inside = inside_longitude & (latitude >= south) & (latitude <= north)
+    if np.all(inside):
+        return
+
+    source_bounds = (float(np.min(longitude)), float(np.max(longitude)), float(np.min(latitude)), float(np.max(latitude)))
+    raise SeedingGuiError(
+        f'Projected CRS {metric_crs} does not cover the input longitude/latitude extent '
+
+        f'lon=[{source_bounds[0]:.4f}, {source_bounds[1]:.4f}], lat=[{source_bounds[2]:.4f}, {source_bounds[3]:.4f}]. '
+        f'Choose a CRS whose area of use overlaps this map.'
+    )
 
 def _filter_finite_map_points(
     x: np.ndarray,
@@ -668,6 +824,8 @@ def _clip_points_with_elevation_index(
     threshold: float,
     delete: str,
 ) -> list[tuple[float, float]]:
+    if not points:
+        return []
     _, indices = tree.query(np.asarray(points, dtype=float))
     point_values = values[indices]
     if delete == 'above':
@@ -1012,6 +1170,12 @@ class SeedingGuiApp:
             format_override=self.format_override,
             variable=self.variable,
         )
+        self._coordinate_display = _GuiCoordinateDisplay(self.view_data.coordinate_system)
+        self._metric_crs_text = self.view_data.metric_crs or DEFAULT_METRIC_CRS
+        self._display_x, self._display_y = self._coordinate_display.source_to_display(
+            self.view_data.x,
+            self.view_data.y,
+        )
 
         self._build_ui()
 
@@ -1024,7 +1188,7 @@ class SeedingGuiApp:
         self.fig, self.ax = plt.subplots(figsize=(12.4, 7.0))
         self.fig.subplots_adjust(left=0.07, right=0.66, bottom=0.30, top=0.90)
 
-        self.triangulation = _create_masked_triangulation(self.view_data.x, self.view_data.y, mtri_module=mtri)
+        self.triangulation = _create_masked_triangulation(self._display_x, self._display_y, mtri_module=mtri)
         self.bathymetry_cmap, self.bathymetry_norm = bathymetry_colormap(
             self.colormap_name,
             vmin=self._bathymetry_vmin,
@@ -1052,8 +1216,7 @@ class SeedingGuiApp:
         )
 
         self.ax.set_title(f'{self.view_data.variable} at first timestep')
-        self.ax.set_xlabel('x')
-        self.ax.set_ylabel('y')
+        self._update_coordinate_labels()
         self.ax.set_aspect('equal', adjustable='datalim')
         self.ax.legend(loc='upper right')
 
@@ -1101,6 +1264,23 @@ class SeedingGuiApp:
         right_x = 0.915
         right_w = 0.045
         field_h = 0.040
+
+        coordinate_options = ('native', 'metres') if self.view_data.coordinate_system == 'geographic' else ('native',)
+        self._coordinate_dropdown = _Dropdown(
+            self.fig,
+            (0.400, 0.155, 0.140, field_h),
+            label='coordinates',
+            options=coordinate_options,
+            selected='native',
+            on_select=self._set_coordinate_display,
+        )
+        self._metric_crs_box = TextBox(
+            self.fig.add_axes((0.610, 0.155, 0.150, field_h)),
+            '',
+            initial=self._metric_crs_text,
+        )
+        self._metric_crs_label = self.fig.text(0.600, 0.175, 'CRS:', ha='right', va='center', fontsize=9)
+        self._metric_crs_box.on_submit(self._set_metric_crs)
 
         self._mode_dropdown = _Dropdown(
             self.fig,
@@ -1170,6 +1350,7 @@ class SeedingGuiApp:
         self._set_n_input_state()
         self._set_random_seed_state()
         self._set_grid_input_state()
+        self._set_metric_crs_state()
         self.status_text = self.fig.text(0.07, 0.125, self._status_message(), fontsize=8)
 
     def show(self) -> None:
@@ -1270,7 +1451,8 @@ class SeedingGuiApp:
 
     def _on_points_click(self, event: Any) -> None:
         if event.button == 1:
-            self.points.append((float(event.xdata), float(event.ydata)))
+            source_x, source_y = self._coordinate_display.display_to_source(event.xdata, event.ydata)
+            self.points.append((float(source_x), float(source_y)))
             self._refresh_points()
             return
 
@@ -1304,7 +1486,7 @@ class SeedingGuiApp:
         if not self.points:
             return
 
-        point_pixels = self.ax.transData.transform(np.asarray(self.points))
+        point_pixels = self.ax.transData.transform(self._points_to_display(self.points))
         click_pixel = np.asarray([event.x, event.y])
         distances = np.linalg.norm(point_pixels - click_pixel, axis=1)
         nearest = int(np.argmin(distances))
@@ -1314,7 +1496,7 @@ class SeedingGuiApp:
 
     def _refresh_points(self) -> None:
         if self._should_display_points() and self.points:
-            self.point_artist.set_offsets(np.asarray(self.points))
+            self.point_artist.set_offsets(self._points_to_display(self.points))
         else:
             self.point_artist.set_offsets(np.empty((0, 2)))
         self.status_text.set_text(self._status_message())
@@ -1388,6 +1570,84 @@ class SeedingGuiApp:
         active = self.strategy_mode == 'grid'
         self._set_textbox_state(self._dx_box, self._dx_label, active=active)
         self._set_textbox_state(self._dy_box, self._dy_label, active=active)
+
+    def _set_metric_crs_state(self) -> None:
+        self._metric_crs_box.set_active(self.view_data.coordinate_system == 'geographic')
+
+    def _set_metric_crs(self, value: str) -> None:
+        self._metric_crs_text = value.strip() or DEFAULT_METRIC_CRS
+        if self._coordinate_display.uses_metres:
+            self._set_coordinate_display('metres')
+
+    def _set_coordinate_display(self, label: str) -> None:
+        if label == 'native':
+            display = _GuiCoordinateDisplay(self.view_data.coordinate_system)
+        elif label == 'metres':
+            try:
+                display = _build_gui_coordinate_display(
+                    self.view_data.x,
+                    self.view_data.y,
+                    coordinate_system=self.view_data.coordinate_system,
+                    source_crs=self.view_data.source_crs,
+                    metric_crs=self._metric_crs_text,
+                )
+            except Exception as exc:
+                active_crs = self._coordinate_display.metric_crs
+                if active_crs is not None:
+                    self._metric_crs_text = active_crs
+                    self._metric_crs_box.set_val(active_crs)
+                self._coordinate_dropdown.set_selected('metres' if self._coordinate_display.uses_metres else 'native')
+                self._show_error(str(exc))
+                return
+        else:
+            raise SeedingGuiError(f'Unknown coordinate display: {label}')
+
+        if self.draft_vertices:
+            draft_display = np.asarray(self.draft_vertices, dtype=float)
+            source_x, source_y = self._coordinate_display.display_to_source(draft_display[:, 0], draft_display[:, 1])
+            display_x, display_y = display.source_to_display(source_x, source_y)
+            self.draft_vertices = list(zip(display_x.tolist(), display_y.tolist(), strict=True))
+
+        self._coordinate_display = display
+        self._display_x, self._display_y = display.source_to_display(self.view_data.x, self.view_data.y)
+        import matplotlib.tri as mtri
+
+        self.triangulation = _create_masked_triangulation(self._display_x, self._display_y, mtri_module=mtri)
+        self._redraw_bathymetry()
+        finite = np.isfinite(self._display_x) & np.isfinite(self._display_y)
+        if not np.any(finite):
+            raise SeedingGuiError('No finite map coordinates are available for the selected display CRS.')
+        self.ax.set_xlim(float(np.min(self._display_x[finite])), float(np.max(self._display_x[finite])))
+        self.ax.set_ylim(float(np.min(self._display_y[finite])), float(np.max(self._display_y[finite])))
+        self._update_coordinate_labels()
+        self._set_metric_crs_state()
+        self._refresh_points()
+        self._refresh_draft()
+
+    def _update_coordinate_labels(self) -> None:
+        if self._coordinate_display.uses_metres:
+            crs_label = self._coordinate_display.metric_crs or 'configured CRS'
+            self.ax.set_xlabel(f'x [m, {crs_label}]')
+            self.ax.set_ylabel(f'y [m, {crs_label}]')
+            self._dx_label.set_text('dx [m]:') if hasattr(self, '_dx_label') else None
+            self._dy_label.set_text('dy [m]:') if hasattr(self, '_dy_label') else None
+        elif self.view_data.coordinate_system == 'geographic':
+            self.ax.set_xlabel('longitude [degrees]')
+            self.ax.set_ylabel('latitude [degrees]')
+            self._dx_label.set_text('dx [degrees]:') if hasattr(self, '_dx_label') else None
+            self._dy_label.set_text('dy [degrees]:') if hasattr(self, '_dy_label') else None
+        else:
+            self.ax.set_xlabel('x [native]')
+            self.ax.set_ylabel('y [native]')
+            self._dx_label.set_text('dx:') if hasattr(self, '_dx_label') else None
+            self._dy_label.set_text('dy:') if hasattr(self, '_dy_label') else None
+
+    def _points_to_display(self, points: list[tuple[float, float]]) -> np.ndarray:
+        if not points:
+            return np.empty((0, 2), dtype=float)
+        source_points = np.asarray(points, dtype=float)
+        display_x, display_y = self._coordinate_display.source_to_display(source_points[:, 0], source_points[:, 1])
+        return np.column_stack((display_x, display_y))
 
     def _set_population(self, label: str) -> None:
         if label not in self.population_points:
@@ -1496,7 +1756,9 @@ class SeedingGuiApp:
             self._show_error(str(exc))
             return
 
-        self._set_points(generated)
+        generated_array = np.asarray(generated, dtype=float)
+        source_x, source_y = self._coordinate_display.display_to_source(generated_array[:, 0], generated_array[:, 1])
+        self._set_points(list(zip(source_x.tolist(), source_y.tolist(), strict=True)))
 
     def _clip_selected_points(self, _event: Any = None) -> None:
         try:

@@ -160,8 +160,26 @@ def test_gui_map_navigation_buttons_do_not_overlap_x_axis_labels(seeding_gui_app
         assert not button.ax.get_window_extent(renderer).overlaps(x_axis_bbox)
 
 
+def test_gui_coordinate_controls_form_a_clear_bottom_control_group(seeding_gui_app):
+    """Coordinate widgets must not overlap navigation controls or each other."""
+
+    app = seeding_gui_app
+    app.fig.canvas.draw()
+    renderer = app.fig.canvas.get_renderer()
+    coordinate_bbox = app._coordinate_dropdown.ax.get_window_extent(renderer)
+    metric_bbox = app._metric_crs_box.ax.get_window_extent(renderer)
+    metric_label_bbox = app._metric_crs_label.get_window_extent(renderer)
+    for button in app._map_buttons:
+        button_bbox = button.ax.get_window_extent(renderer)
+        assert not button_bbox.overlaps(coordinate_bbox)
+        assert not button_bbox.overlaps(metric_bbox)
+        assert not button_bbox.overlaps(metric_label_bbox)
+    assert not coordinate_bbox.overlaps(metric_bbox)
+    assert not coordinate_bbox.overlaps(metric_label_bbox)
+
 def test_gui_pan_button_toggles_drag_panning_without_creating_seed_points(seeding_gui_app):
     """Pan mode drags the map view and leaves seed selection disabled until toggled off."""
+
 
     app = seeding_gui_app
     initial_xlim = app.ax.get_xlim()
@@ -702,6 +720,46 @@ def test_generate_random_points_in_polygon_is_seeded_and_inside():
     assert len(first) == 5
     assert all(0.0 <= x <= 2.0 and 0.0 <= y <= 2.0 for x, y in first)
 
+def test_gui_metres_display_round_trips_clicks_and_keeps_projected_map_visible(seeding_gui_app, tmp_path):
+    """Metre display coordinates must return to geographic storage coordinates."""
+
+    app = seeding_gui_app
+    app.view_data = BathymetryViewData(
+        x=np.array([4.0, 4.01, 4.0, 4.01]),
+        y=np.array([52.0, 52.0, 52.01, 52.01]),
+        values=np.array([-1.0, -0.5, 0.0, 0.5]),
+        variable='bedlevel',
+        input_file=tmp_path / 'input.nc',
+        coordinate_system='geographic',
+        source_crs='EPSG:4326',
+        metric_crs='EPSG:32631',
+    )
+    app._metric_crs_text = 'EPSG:32631'
+    app._set_coordinate_display('metres')
+
+    display_x, display_y = app._coordinate_display.source_to_display(4.005, 52.005)
+    app._on_points_click(_map_mouse_event(app, xdata=float(display_x), ydata=float(display_y)))
+
+    assert app._coordinate_display.uses_metres
+    assert app.ax.get_xlabel() == 'x [m, EPSG:32631]'
+    x_limits = app.ax.get_xlim()
+    y_limits = app.ax.get_ylim()
+    assert x_limits[0] <= np.min(app._display_x) <= np.max(app._display_x) <= x_limits[1]
+    assert y_limits[0] <= np.min(app._display_y) <= np.max(app._display_y) <= y_limits[1]
+    np.testing.assert_allclose(app.points, [(4.005, 52.005)], atol=1.0e-8)
+
+
+def test_gui_rejects_projected_crs_outside_the_input_area_of_use():
+    """A UTM zone outside the geographic map extent must fail before plotting."""
+
+    with pytest.raises(SeedingGuiError, match='does not cover the input longitude/latitude extent'):
+        seeding_gui._build_gui_coordinate_display(
+            np.array([-35.0, 43.0]),
+            np.array([0.0, 57.0]),
+            coordinate_system='geographic',
+            source_crs='EPSG:4326',
+            metric_crs='EPSG:32653',
+        )
 
 def test_generate_random_points_in_skinny_polygon_uses_vectorized_batches():
     """Random polygon generation handles low acceptance-rate polygons."""
@@ -759,6 +817,9 @@ def test_clip_points_by_elevation_deletes_above_or_below():
         delete='below',
     ) == [(1.1, 0.0), (2.1, 0.0)]
 
+    from scipy.spatial import cKDTree
+    tree = cKDTree(np.column_stack((field_x, field_y)))
+    assert seeding_gui._clip_points_with_elevation_index([], tree=tree, values=field_values, threshold=0.0, delete='above') == []
 
 def test_write_points_file_round_trips_through_file_points_strategy():
     """Point files written by the GUI remain readable by the existing file_points seeder."""
