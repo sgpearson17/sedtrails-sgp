@@ -328,7 +328,12 @@ class NetCDFWriter:
         ds.createVariable('population_id', 'i4', ('n_particles',))
         ds.createVariable('flowfield_name', str, ('n_flowfields',))
 
-        ds['trajectory_id'][:] = np.arange(n_particles, dtype=np.int64)
+        for particle_slice in cls._particle_slices(n_particles, DEFAULT_PARTICLE_CHUNK):
+            ds['trajectory_id'][particle_slice] = np.arange(
+                particle_slice.start,
+                particle_slice.stop,
+                dtype=np.int64,
+            )
 
         particle_offset = 0
         for pop_idx, population in enumerate(populations):

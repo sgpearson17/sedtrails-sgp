@@ -508,3 +508,34 @@ class TestNetCDFWriterStreaming:
         assert path.exists()
         assert recording_transform.call_sizes == [2, 1]
         assert max(recording_transform.call_sizes) <= 2
+def test_static_trajectory_ids_are_written_in_bounded_chunks(tmp_path, monkeypatch):
+    """Static trajectory IDs never require one array covering every particle."""
+    import sedtrails.data_manager.netcdf_writer as netcdf_writer_module
+
+    writer = NetCDFWriter(tmp_path / 'output')
+    population = MockPopulation('chunked_ids')
+    monkeypatch.setattr(netcdf_writer_module, 'DEFAULT_PARTICLE_CHUNK', 2)
+    original_arange = netcdf_writer_module.np.arange
+    requested_sizes = []
+
+    def recording_arange(*args, **kwargs):
+        if len(args) >= 2 and kwargs.get('dtype') == np.int64:
+            requested_sizes.append(int(args[1]) - int(args[0]))
+        return original_arange(*args, **kwargs)
+
+    monkeypatch.setattr(netcdf_writer_module.np, 'arange', recording_arange)
+    handle = writer.open_output(
+        'chunked_ids.nc',
+        1,
+        3,
+        1,
+        0,
+        [population],
+        [],
+    )
+    try:
+        np.testing.assert_array_equal(handle['trajectory_id'][:], np.arange(3))
+    finally:
+        handle.close()
+
+    assert requested_sizes == [2, 1]

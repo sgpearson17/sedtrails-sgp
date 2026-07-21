@@ -471,3 +471,204 @@ def test_geodetic_grid_applies_zero_to_360_longitude_wrap():
 
     assert 180.0 < moved_x[0] < 181.0
     assert moved_y[0] == pytest.approx(0.2, abs=1.0e-3)
+
+
+def _structured_triangles(nx, ny):
+    """Build two consistently wound triangles for each structured grid cell."""
+    cell = np.arange((nx - 1) * (ny - 1), dtype=np.int64)
+    lower_left = (cell // (nx - 1)) * nx + np.remainder(cell, nx - 1)
+    triangles = np.empty((2 * cell.size, 3), dtype=np.int64)
+    triangles[0::2] = np.column_stack(
+        (lower_left, lower_left + 1, lower_left + nx)
+    )
+    triangles[1::2] = np.column_stack(
+        (lower_left + 1, lower_left + nx + 1, lower_left + nx)
+    )
+    return triangles
+
+
+def _reference_triangle_neighbors(triangles):
+    """Build a small-mesh neighbor reference independently of production code."""
+    neighbors = np.full(triangles.shape, -1, dtype=triangles.dtype)
+    edge_owners = {}
+    for face, triangle in enumerate(triangles):
+        for edge, (left, right) in enumerate(((1, 2), (0, 2), (0, 1))):
+            node_a = int(triangle[left])
+            node_b = int(triangle[right])
+            key = tuple(sorted((node_a, node_b)))
+            if key in edge_owners:
+                other_face, other_edge = edge_owners[key]
+                neighbors[face, edge] = other_face
+                neighbors[other_face, other_edge] = face
+            else:
+                edge_owners[key] = (face, edge)
+    return neighbors
+
+
+def test_geodetic_neighbor_construction_avoids_global_edge_sort(monkeypatch):
+    """Compact incidence construction must not restore the 3F edge sort."""
+    triangles = _structured_triangles(257, 129)
+    expected = _reference_triangle_neighbors(triangles)
+
+    def unexpected_lexsort(*args, **kwargs):
+        raise AssertionError('global edge sort used')
+
+    monkeypatch.setattr(geodetic_grid_module.np, 'lexsort', unexpected_lexsort)
+    actual = geodetic_grid_module._compute_triangle_neighbors(triangles)
+
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_geodetic_grid_accepts_validated_native_triangle_neighbors():
+    """Native topology is used directly after reciprocal edge validation."""
+    triangles = _structured_triangles(3, 2)
+    neighbors = geodetic_grid_module._compute_triangle_neighbors(triangles)
+    longitude, latitude = np.meshgrid(
+        np.linspace(0.0, 0.02, 3),
+        np.linspace(30.0, 30.01, 2),
+    )
+    geometry = create_grid_geometry(
+        longitude.ravel(),
+        latitude.ravel(),
+        triangles=triangles,
+        triangle_neighbors=neighbors,
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        velocity_basis='east_north',
+    )
+
+    np.testing.assert_array_equal(geometry.triangle_neighbors, neighbors)
+    invalid = neighbors.copy()
+    invalid[0, 0] = -1
+    with pytest.raises(ValueError, match='reciprocal'):
+        geodetic_grid_module._resolve_triangle_neighbors(
+            triangles,
+            longitude.size,
+            invalid,
+        )
+
+
+    incomplete = neighbors.copy()
+    face, edge = np.argwhere(incomplete >= 0)[0]
+    other_face = int(incomplete[face, edge])
+    other_edge = int(np.flatnonzero(incomplete[other_face] == face)[0])
+    incomplete[face, edge] = -1
+    incomplete[other_face, other_edge] = -1
+    with pytest.raises(ValueError, match='interior edge'):
+        geodetic_grid_module._resolve_triangle_neighbors(
+            triangles,
+            longitude.size,
+            incomplete,
+        )
+
+def test_geodetic_grid_rejects_non_manifold_incidence_topology():
+
+    """Three triangles owning one edge must still be rejected."""
+    triangles = np.array(
+        [[0, 1, 2], [0, 1, 3], [0, 1, 4]],
+        dtype=np.int64,
+    )
+
+    with pytest.raises(ValueError, match='non-manifold'):
+        geodetic_grid_module._compute_triangle_neighbors(triangles)
+
+
+def test_geodetic_grid_static_arrays_fit_compact_ocean_scale_budget():
+    """Owned static arrays must remain below the compact 250 bytes/node budget."""
+    geometry = _structured_geometry(nx=257, ny=129)
+    arrays = (
+        geometry.grid_x,
+        geometry.grid_y,
+        geometry.triangles,
+        geometry.triangle_neighbors,
+        geometry.node_unit_ecef,
+        geometry.face_centres,
+        geometry.face_weight_coefficients,
+        geometry.triangle_edge_class_codes,
+        geometry.outer_envelope,
+        geometry.boundary_edges,
+        geometry.boundary_edge_class_codes,
+    )
+    static_bytes = sum(array.nbytes for array in arrays if array is not None)
+
+    assert static_bytes <= 250 * geometry.grid_x.size
+    assert geometry.face_weight_coefficients.shape == (geometry.triangles.shape[0], 2, 3)
+    for name in (
+        'face_east',
+        'face_north',
+        'face_vertex_x',
+        'face_vertex_y',
+        'inv00',
+        'inv01',
+        'inv10',
+        'inv11',
+        'p0_x',
+        'p0_y',
+    ):
+        assert not hasattr(geometry, name)
+
+
+def test_geodetic_grid_compact_coefficients_preserve_vertex_weights():
+    """Compact coefficients reproduce exact nodal weights and partition unity."""
+    geometry = _structured_geometry(nx=4, ny=3)
+    vertices = geometry.node_unit_ecef[geometry.triangles[0]]
+    centre = np.sum(vertices, axis=0)
+    centre /= np.linalg.norm(centre)
+    points = np.vstack((vertices, centre))
+    faces = np.zeros(points.shape[0], dtype=np.int64)
+
+    weights = geometry._weights_for_ecef(points, faces)
+
+    np.testing.assert_allclose(weights[:3], np.eye(3), atol=1.0e-12)
+    np.testing.assert_allclose(np.sum(weights, axis=1), 1.0, atol=1.0e-12)
+
+
+def test_geodetic_cold_lookup_and_interpolation_use_bounded_batches(monkeypatch):
+    """Cold lookup and public interpolation must bound KD-tree batch size."""
+    geometry = _structured_geometry(nx=4, ny=3)
+    original_tree = geometry._face_tree
+    query_sizes = []
+
+    class RecordingTree:
+        def query(self, points, k):
+            query_sizes.append(np.asarray(points).shape[0])
+            return original_tree.query(points, k=k)
+
+    def small_chunks(size):
+        for start in range(0, size, 3):
+            yield slice(start, min(start + 3, size))
+
+    geometry._face_tree = RecordingTree()
+    monkeypatch.setattr(geodetic_grid_module, 'particle_chunk_slices', small_chunks)
+    longitude = geometry.grid_x[:7]
+    latitude = geometry.grid_y[:7]
+
+    faces = geometry.locate_points(longitude, latitude)
+
+    assert np.all(faces >= 0)
+    assert query_sizes == [3, 3, 1]
+
+    query_sizes.clear()
+    field = 2.0 * geometry.grid_x + 3.0 * geometry.grid_y
+    (values,), interpolated_faces = geometry.interpolate_fields_with_simplex(
+        (field,),
+        longitude,
+        latitude,
+    )
+
+    np.testing.assert_allclose(values, field[:7])
+    np.testing.assert_array_equal(interpolated_faces, faces)
+    assert query_sizes == [3, 3, 1]
+
+    query_sizes.clear()
+    eastward, northward = geometry.interpolate_vector(
+        np.ones_like(field),
+        np.zeros_like(field),
+        longitude,
+        latitude,
+    )
+
+    assert eastward.shape == longitude.shape
+    assert northward.shape == latitude.shape
+    assert query_sizes == [3, 3, 1]

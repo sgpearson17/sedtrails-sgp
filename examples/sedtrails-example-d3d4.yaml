@@ -4,10 +4,10 @@ general:
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
 inputs:
-  data: ../sample-data/trim-inlet.nc
+  data: ../sample-data/trim-zun.nc
   read_interval: 10D  # Time chunk size for reading input data
 time:
-  start:  2016-12-08 00:00:00
+  start:  2013-12-04 00:00:00
   timestep: 60S
   duration: 2D
   cfl_condition: 0.7  # CFL condition for adaptive timestep (0 = disabled)
@@ -26,7 +26,7 @@ particles:
       seeding:
         burial_depth:
           constant: 0
-        release_start: 2016-12-08 00:00:00
+        release_start: 2013-12-04 00:00:00
         quantity: 1
         strategy:
           random:
@@ -39,5 +39,5 @@ outputs:
   save_interval: 1H
 visualization:
   dashboard:
-    enable: true
+    enable: false
     update_interval: 1H

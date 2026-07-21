@@ -11,6 +11,8 @@ import pytest
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError, DateFormatError
 from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
+import sedtrails.particle_tracer.geodetic_grid as geodetic_grid_module
+import sedtrails.particle_tracer.particle_seeder as particle_seeder_module
 from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     GridStrategy,
@@ -49,6 +51,50 @@ def test_geometry_triangles_downcast_safe_direct_int64_topology():
 
 
 # Strategy fixtures
+def test_particle_seeder_uses_supplied_native_geodetic_neighbors(monkeypatch):
+    """Seeding must use authoritative topology without rebuilding neighbors."""
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    native_neighbors = np.array([[1, -1, -1], [-1, 0, -1]], dtype=np.int32)
+    field_data = SimpleNamespace(
+        x=np.array([0.0, 1.0, 0.0, 1.0]),
+        y=np.array([0.0, 0.0, 1.0, 1.0]),
+        particle_face_connectivity=triangles,
+        particle_triangle_neighbors=native_neighbors,
+        metadata=SimpleNamespace(
+            coordinate_system="geographic",
+            runtime_geometry="geodetic",
+            surface_model="sphere",
+            velocity_basis="east_north",
+        ),
+        reference_date=np.datetime64("1970-01-01T00:00:00"),
+    )
+    config = {
+        "name": "native-neighbors",
+        "particle_type": "sand",
+        "seeding": {
+            "strategy": {"point": {"locations": ["0.25,0.25"]}},
+            "quantity": 1,
+            "burial_depth": {"constant": 0.0},
+        },
+    }
+
+    def unexpected_fallback(*args, **kwargs):
+        raise AssertionError("The fallback neighbor construction must not run.")
+
+    monkeypatch.setattr(
+        geodetic_grid_module,
+        "_compute_triangle_neighbors",
+        unexpected_fallback,
+    )
+
+    population = ParticleSeeder([config]).seed(field_data)[0]
+
+    np.testing.assert_array_equal(
+        population.grid_geometry.triangle_neighbors,
+        native_neighbors,
+    )
+
+
 @pytest.fixture
 def point_strategy():
     return PointStrategy()
@@ -2913,4 +2959,77 @@ def _boundary_action_field_data():
             'edge_nodes': [[0, 1], [2, 0], [1, 2]],
             'edge_classes': ['open', 'land', 'unclassified'],
         },
+    )
+
+
+def test_particle_location_refresh_and_interpolation_use_bounded_batches(monkeypatch):
+    """Particle lifecycle operations must preserve order across bounded chunks."""
+    population = _single_particle_population(release_start='0')
+    count = 8
+    population.particles['x'] = np.linspace(0.1, 0.8, count)
+    population.particles['y'] = np.linspace(0.2, 0.9, count)
+    population._particle_simplices = np.arange(count, dtype=np.int64)
+    population._mark_particle_simplices_current()
+
+    def small_chunks(size):
+        for start in range(0, size, 3):
+            yield slice(start, min(start + 3, size))
+
+    monkeypatch.setattr(particle_seeder_module, 'particle_chunk_slices', small_chunks)
+    location_calls = []
+
+    def locate_points(x_points, y_points, start_simplices=None):
+        location_calls.append((
+            np.asarray(x_points).copy(),
+            np.asarray(y_points).copy(),
+            None if start_simplices is None else np.asarray(start_simplices).copy(),
+        ))
+        if start_simplices is None:
+            return np.arange(len(x_points), dtype=np.int64)
+        return np.asarray(start_simplices, dtype=np.int64) + 100
+
+    monkeypatch.setattr(population.grid_geometry, 'locate_points', locate_points)
+    direct_simplices = population._locate_particle_points(
+        population.particles['x'],
+        population.particles['y'],
+    )
+
+    assert [call[0].size for call in location_calls] == [3, 3, 2]
+    np.testing.assert_array_equal(direct_simplices, np.array([0, 1, 2, 0, 1, 2, 0, 1]))
+
+    location_calls.clear()
+    population._refresh_particle_simplices()
+
+    assert [call[0].size for call in location_calls] == [3, 3, 2]
+    np.testing.assert_array_equal(
+        population._particle_simplices,
+        np.arange(count, dtype=np.int64) + 100,
+    )
+
+    interpolation_calls = []
+
+    def interpolate_fields(fields, x_points, y_points, simplex_ids=None):
+        interpolation_calls.append((
+            len(fields),
+            np.asarray(x_points).copy(),
+            None if simplex_ids is None else np.asarray(simplex_ids).copy(),
+        ))
+        values = tuple(
+            np.asarray(x_points, dtype=float) + float(index)
+            for index, _ in enumerate(fields)
+        )
+        return values, np.asarray(simplex_ids, dtype=np.int64) + 10
+
+    monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', interpolate_fields)
+    values_a, values_b = population._interpolate_particle_fields(
+        (np.zeros(4), np.ones(4)),
+    )
+
+    assert [call[1].size for call in interpolation_calls] == [3, 3, 2]
+    assert [call[0] for call in interpolation_calls] == [2, 2, 2]
+    np.testing.assert_allclose(values_a, population.particles['x'])
+    np.testing.assert_allclose(values_b, population.particles['x'] + 1.0)
+    np.testing.assert_array_equal(
+        population._particle_simplices,
+        np.arange(count, dtype=np.int64) + 110,
     )

@@ -764,3 +764,61 @@ def test_create_restart_raises_if_no_remaining_duration(tmp_path):
             base_config_file=str(config_file),
             output_config_file=str(tmp_path / 'restart.yaml'),
         )
+def test_create_restart_streams_final_state_chunks_without_materializing_restart_state(tmp_path, monkeypatch):
+    """Public restart generation reads final particle fields in bounded chunks."""
+    base_config = {
+        'time': {'start': '2020-01-01 00:00:00', 'timestep': '60S', 'duration': '1D'},
+        'particles': {
+            'populations': [
+                {'name': 'population_1', 'seeding': {'quantity': 1}},
+                {'name': 'population_2', 'seeding': {'quantity': 1}},
+            ]
+        },
+    }
+    config_file = tmp_path / 'base.yaml'
+    with open(config_file, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(base_config, handle, sort_keys=False)
+
+    ds = _trajectory_dataset(
+        x=np.array([[0.0, 1.0, 2.0, 3.0, 4.0], [10.0, 11.0, np.nan, 13.0, 14.0]]),
+        y=np.array([[0.0, 1.0, 2.0, 3.0, 4.0], [20.0, 21.0, 22.0, 23.0, 24.0]]),
+        time=np.array([0.0, 60.0]),
+        population_id=np.array([0, 0, 0, 1, 1], dtype=int),
+    )
+    netcdf_file = tmp_path / 'results.nc'
+    ds.to_netcdf(netcdf_file)
+
+    monkeypatch.setattr(restart_module, 'RESTART_SEED_WRITE_CHUNK_SIZE', 2)
+    monkeypatch.setattr(
+        restart_module,
+        '_extract_restart_state',
+        lambda _: (_ for _ in ()).throw(AssertionError('public restart must stream final-state chunks')),
+    )
+    chunk_sizes = []
+    original_stream = restart_module._stream_restart_chunks
+
+    def recording_stream(dataset, context):
+        for x_values, y_values, pop_ids, keep_mask in original_stream(dataset, context):
+            chunk_sizes.append(x_values.size)
+            yield x_values, y_values, pop_ids, keep_mask
+
+    monkeypatch.setattr(restart_module, '_stream_restart_chunks', recording_stream)
+    summary = create_restart_from_netcdf(
+        netcdf_file=str(netcdf_file),
+        base_config_file=str(config_file),
+        output_config_file=str(tmp_path / 'restart.yaml'),
+    )
+
+    assert max(chunk_sizes) <= 2
+    assert chunk_sizes == [2, 2, 1]
+    assert summary.retained_particles == 4
+    assert (tmp_path / 'restart_seeds' / 'population_1.restart_points.csv').read_text(encoding='utf-8').splitlines() == [
+        'x,y',
+        '10.00000000,20.00000000',
+        '11.00000000,21.00000000',
+    ]
+    assert (tmp_path / 'restart_seeds' / 'population_2.restart_points.csv').read_text(encoding='utf-8').splitlines() == [
+        'x,y',
+        '13.00000000,23.00000000',
+        '14.00000000,24.00000000',
+    ]

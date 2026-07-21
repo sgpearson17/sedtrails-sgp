@@ -122,6 +122,7 @@ class SedtrailsData:
     node_y: np.ndarray | None = None
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
+    particle_triangle_neighbors: np.ndarray | None = None
     face_node_fill_value: int = -1
     forcing_generation: int = field(
         init=False,
@@ -160,6 +161,10 @@ class SedtrailsData:
         if self.particle_face_connectivity is not None:
             self.particle_face_connectivity = self._normalize_connectivity_dtype(
                 self.particle_face_connectivity
+            )
+        if self.particle_triangle_neighbors is not None:
+            self.particle_triangle_neighbors = self._normalize_connectivity_dtype(
+                self.particle_triangle_neighbors
             )
 
     @staticmethod

@@ -30,6 +30,7 @@ from pyproj import Geod
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.particle_tracer._chunking import particle_chunk_slices
 from sedtrails.particle_tracer.coordinate_transform import (
     CoordinateTransform,
     coordinate_system_from_metadata,
@@ -1291,7 +1292,7 @@ class ParticlePopulation:
             'status_left_domain': np.zeros(len(_particles), dtype=bool),
             'status_beached': np.zeros(len(_particles), dtype=bool),
         }
-        self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+        self._particle_simplices = self._locate_particle_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
         self._validate_seed_locations_inside_domain()
 
@@ -1342,11 +1343,9 @@ class ParticlePopulation:
         pop_name = self.population_config.population_config.get('name', 'unknown')
 
         # Interpolate max-exposure field to each particle's current position.
-        max_exposure = self._field_interpolator(
-            max_exposure_depth, self.particles['x'], self.particles['y']
-        )
+        max_exposure = self._interpolate_particle_fields((max_exposure_depth,))[0]
         # NaN means outside the grid — keep those particles (conservative).
-        max_exposure = np.where(np.isnan(max_exposure), np.inf, max_exposure)
+        max_exposure[np.isnan(max_exposure)] = np.inf
 
         keep = self.particles['burial_depth'] <= max_exposure
         n_removed = int(np.sum(~keep))
@@ -1416,12 +1415,51 @@ class ParticlePopulation:
             return False
         return not self._particle_simplices_stale
 
+    def _locate_particle_points(self, x_points, y_points, start_simplices=None) -> np.ndarray:
+        """Locate particle positions in bounded batches.
+
+        Parameters
+        ----------
+        x_points, y_points : array-like
+            Particle coordinates in the grid coordinate system.
+        start_simplices : array-like, optional
+            Cached containing-face ids aligned with the particle coordinates.
+
+        Returns
+        -------
+        ndarray
+            One containing-face id per particle, or ``-1`` outside the grid.
+        """
+        x_values = np.asarray(x_points)
+        y_values = np.asarray(y_points)
+        if x_values.shape != y_values.shape:
+            raise ValueError('x_points and y_points must have the same shape.')
+        if x_values.size == 0:
+            return np.empty(0, dtype=np.int64)
+
+        starts = None
+        if start_simplices is not None:
+            candidate_starts = np.asarray(start_simplices, dtype=np.int64).ravel()
+            if candidate_starts.shape == (x_values.size,):
+                starts = candidate_starts
+
+        simplices = np.empty(x_values.size, dtype=np.int64)
+        x_flat = x_values.ravel()
+        y_flat = y_values.ravel()
+        for chunk in particle_chunk_slices(x_values.size):
+            simplices[chunk] = self.grid_geometry.locate_points(
+                x_flat[chunk],
+                y_flat[chunk],
+                None if starts is None else starts[chunk],
+            )
+        return simplices
+
     def _refresh_particle_simplices(self) -> None:
         """Refresh cached simplex ids from the current particle coordinates."""
         simplex_ids = self._particle_simplices
         if simplex_ids.shape[0] != len(self.particles['x']):
             simplex_ids = None
-        self._particle_simplices = self.grid_geometry.locate_points(
+        self._particle_simplices = self._locate_particle_points(
             self.particles['x'],
             self.particles['y'],
             simplex_ids,
@@ -1486,20 +1524,57 @@ class ParticlePopulation:
         return field_array.size > 0
 
     def _interpolate_particle_fields(self, fields):
-        """Interpolate fields at particle positions and refresh cached simplex ids."""
+        """Interpolate fields and refresh simplex ids in bounded particle batches."""
+        fields = tuple(fields)
+        x_values = np.asarray(self.particles['x'])
+        y_values = np.asarray(self.particles['y'])
+        n_particles = x_values.size
         simplex_ids = self._particle_simplices
-        if self._particle_simplices_stale or simplex_ids.shape[0] != len(self.particles['x']):
+        if self._particle_simplices_stale or simplex_ids.shape[0] != n_particles:
             simplex_ids = None
-        particle_values, simplices = self._field_interpolator_multi_with_simplex(
-            tuple(fields),
-            self.particles['x'],
-            self.particles['y'],
-            simplex_ids=simplex_ids,
-        )
-        if simplices.shape[0] == len(self.particles['x']):
-            self._particle_simplices = simplices
+        if n_particles == 0:
+            particle_values, simplices = self._field_interpolator_multi_with_simplex(
+                fields,
+                x_values,
+                y_values,
+                simplex_ids=simplex_ids,
+            )
+            if np.asarray(simplices).shape == (0,):
+                self._particle_simplices = np.asarray(simplices, dtype=np.int64)
+                self._mark_particle_simplices_current()
+            return particle_values
+
+        outputs = None
+        refreshed_simplices = np.empty(n_particles, dtype=np.int64)
+        complete_simplices = True
+        for chunk in particle_chunk_slices(n_particles):
+            chunk_values, chunk_simplices = self._field_interpolator_multi_with_simplex(
+                fields,
+                x_values[chunk],
+                y_values[chunk],
+                simplex_ids=None if simplex_ids is None else simplex_ids[chunk],
+            )
+            if outputs is None:
+                outputs = [None] * len(chunk_values)
+            if len(chunk_values) != len(outputs):
+                raise ValueError('Multi-field interpolation returned an unexpected field count.')
+            for index, values in enumerate(chunk_values):
+                values_array = np.asarray(values).ravel()
+                if values_array.size != x_values[chunk].size:
+                    raise ValueError('Field interpolation returned an unexpected particle count.')
+                if outputs[index] is None:
+                    outputs[index] = np.empty(n_particles, dtype=values_array.dtype)
+                outputs[index][chunk] = values_array
+            chunk_simplices = np.asarray(chunk_simplices)
+            if chunk_simplices.shape == (x_values[chunk].size,):
+                refreshed_simplices[chunk] = chunk_simplices
+            else:
+                complete_simplices = False
+
+        if complete_simplices:
+            self._particle_simplices = refreshed_simplices
             self._mark_particle_simplices_current()
-        return particle_values
+        return tuple(outputs or ())
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -1898,10 +1973,13 @@ class ParticleSeeder:
 
         populations = []
         metadata = getattr(sedtrails_data, 'metadata', None)
+        triangles = _geometry_triangles_from_field_data(sedtrails_data)
+        triangle_neighbors = _geometry_triangle_neighbors_from_field_data(sedtrails_data, triangles)
         grid_geometry = create_grid_geometry(
             sedtrails_data.x,
             sedtrails_data.y,
-            triangles=_geometry_triangles_from_field_data(sedtrails_data),
+            triangles=triangles,
+            triangle_neighbors=triangle_neighbors,
             boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
             coordinate_system=coordinate_system_from_metadata(metadata),
             source_crs=source_crs_from_metadata(metadata),
@@ -1957,6 +2035,29 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
     if np.any(np.sum(valid, axis=1) != 3):
         return None
     return triangles
+
+
+def _geometry_triangle_neighbors_from_field_data(
+    sedtrails_data: HasFieldCoordinates,
+    triangles: np.ndarray | None,
+) -> np.ndarray | None:
+    """Return authoritative neighbor topology matching particle triangles."""
+    if triangles is None:
+        return None
+    neighbors = getattr(sedtrails_data, 'particle_triangle_neighbors', None)
+    if neighbors is None:
+        neighbors = getattr(sedtrails_data, 'face_face_connectivity', None)
+    if neighbors is None:
+        return None
+    array = np.asarray(neighbors)
+    if not np.issubdtype(array.dtype, np.integer):
+        raise ValueError('particle_triangle_neighbors must contain integer face ids.')
+    if array.shape != triangles.shape:
+        raise ValueError(
+            'particle_triangle_neighbors must have the same shape as particle face connectivity.'
+        )
+    return np.ascontiguousarray(array, dtype=triangles.dtype)
+
 
 
 def _metadata_option(metadata, key: str, default):

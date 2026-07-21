@@ -70,11 +70,17 @@ actually reaches.
 ## Scale behavior
 
 - Static node and face geometry is built once and shared by populations.
-- Connectivity and adjacency use 32-bit indices when the mesh permits it.
-- Neighbor construction is array based and rejects non-manifold edges.
+- Each face stores two compact ECEF interpolation coefficient vectors rather
+  than a tangent basis, three local vertices, and four inverse chart terms.
+- Native triangle-neighbor connectivity is accepted after reciprocal-edge and
+  boundary-completeness validation when an input format provides it.
+- The fallback builds node-to-face incidence arrays without a global 3F edge
+  table or sort, releases them after construction, and rejects non-manifold edges.
 - Cached-face point location and RK4 stage interpolation use compiled,
   array-oriented ECEF kernels. Tree candidates are bounded and used only for
   unresolved points.
+- Particle location, simplex refresh, and scalar/vector interpolation process
+  at most 65,536 points per batch, including cold KD-tree lookups.
 - Forcing slices carry an explicit generation token. Writable source arrays
   are converted to ECEF once per time slice and shared across particle chunks
   and populations without relying on array writeability.

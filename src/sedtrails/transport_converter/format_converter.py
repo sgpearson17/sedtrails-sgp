@@ -47,6 +47,8 @@ class SeederFieldData:
     reference_date: np.datetime64
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
+    face_face_connectivity: np.ndarray | None = None
+    particle_triangle_neighbors: np.ndarray | None = None
     boundary_edge_classification: dict | None = None
     face_node_fill_value: int = -1
     metadata: SedtrailsMetadata | None = None
@@ -416,6 +418,12 @@ class FormatConverter:
             ),
             particle_face_connectivity=self._optional_connectivity_array(
                 getattr(field_data, 'particle_face_connectivity', None)
+            ),
+            face_face_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'face_face_connectivity', None)
+            ),
+            particle_triangle_neighbors=self._optional_connectivity_array(
+                getattr(field_data, 'particle_triangle_neighbors', None)
             ),
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),

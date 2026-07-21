@@ -11,6 +11,7 @@ from numba import njit, prange
 from scipy.spatial import cKDTree
 
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
+from sedtrails.particle_tracer._chunking import particle_chunk_slices
 from sedtrails.particle_tracer.geodetic_geometry import (
     EARTH_MEAN_RADIUS_M,
     east_north_basis,
@@ -55,14 +56,7 @@ class GeodeticGridGeometry:
     triangle_neighbors: np.ndarray
     node_unit_ecef: np.ndarray
     face_centres: np.ndarray
-    face_east: np.ndarray
-    face_north: np.ndarray
-    face_vertex_x: np.ndarray
-    face_vertex_y: np.ndarray
-    inv00: np.ndarray
-    inv01: np.ndarray
-    inv10: np.ndarray
-    inv11: np.ndarray
+    face_weight_coefficients: np.ndarray
     triangle_edge_class_codes: np.ndarray
     outer_envelope: np.ndarray
     triangle_finder: Any = None
@@ -71,8 +65,6 @@ class GeodeticGridGeometry:
     boundary_edge_class_codes: np.ndarray | None = None
     metric_grid_x: np.ndarray = field(init=False)
     metric_grid_y: np.ndarray = field(init=False)
-    p0_x: np.ndarray = field(init=False)
-    p0_y: np.ndarray = field(init=False)
     _face_tree: cKDTree = field(init=False, repr=False)
     _velocity_cache: OrderedDict[tuple, np.ndarray] = field(
         init=False,
@@ -94,8 +86,6 @@ class GeodeticGridGeometry:
     def __post_init__(self) -> None:
         self.metric_grid_x = self.grid_x
         self.metric_grid_y = self.grid_y
-        self.p0_x = self.face_vertex_x[:, 0]
-        self.p0_y = self.face_vertex_y[:, 0]
         self._face_tree = cKDTree(self.face_centres)
 
     @classmethod
@@ -106,6 +96,7 @@ class GeodeticGridGeometry:
         *,
         triangles,
         boundary_edge_classification=None,
+        triangle_neighbors=None,
         source_crs='EPSG:4326',
         surface_model='sphere',
         earth_radius_m=EARTH_MEAN_RADIUS_M,
@@ -122,6 +113,10 @@ class GeodeticGridGeometry:
             Authoritative triangular connectivity with shape ``(n, 3)``.
         boundary_edge_classification : mapping, optional
             Boundary edge nodes and ``open``/``land`` labels.
+        triangle_neighbors : array-like, optional
+            Authoritative neighboring face ids with shape ``(n, 3)``.
+            Entries follow the edge opposite each local triangle vertex and
+            use ``-1`` for a boundary edge.
         source_crs : str, default='EPSG:4326'
             Geographic source CRS.
         surface_model : str, default='sphere'
@@ -178,18 +173,10 @@ class GeodeticGridGeometry:
             )
 
         node_unit = lonlat_to_ecef(longitude, latitude, radius=1.0)
-        (
-            face_centres,
-            face_east,
-            face_north,
-            face_vertex_x,
-            face_vertex_y,
-            inv00,
-            inv01,
-            inv10,
-            inv11,
-        ) = _build_face_charts(node_unit, triangle_array, transform.earth_radius_m)
-        neighbors = _compute_triangle_neighbors(triangle_array)
+        neighbors = _resolve_triangle_neighbors(triangle_array, longitude.size, triangle_neighbors)
+        face_centres, face_weight_coefficients = _build_face_weight_coefficients(
+            node_unit, triangle_array, transform.earth_radius_m
+        )
         boundary_edges, boundary_codes = _parse_boundary_edge_classification(
             boundary_edge_classification,
             longitude.size,
@@ -219,14 +206,7 @@ class GeodeticGridGeometry:
             triangle_neighbors=neighbors,
             node_unit_ecef=node_unit,
             face_centres=face_centres,
-            face_east=face_east,
-            face_north=face_north,
-            face_vertex_x=face_vertex_x,
-            face_vertex_y=face_vertex_y,
-            inv00=inv00,
-            inv01=inv01,
-            inv10=inv10,
-            inv11=inv11,
+            face_weight_coefficients=face_weight_coefficients,
             triangle_edge_class_codes=triangle_edge_codes,
             outer_envelope=envelope,
             boundary_edges=boundary_edges,
@@ -243,21 +223,58 @@ class GeodeticGridGeometry:
         return int(self.locate_points(np.asarray([x]), np.asarray([y]))[0])
 
     def locate_points(self, x_points, y_points, start_simplices=None) -> np.ndarray:
-        """Locate longitude/latitude points using cached faces then an ECEF tree."""
+        """Locate longitude/latitude points in bounded ECEF batches.
+
+        The result always has one entry per input point. ECEF conversion and
+        KD-tree candidate matrices are limited to the particle chunk size.
+        """
         longitude = np.asarray(x_points, dtype=np.float64).ravel()
         latitude = np.asarray(y_points, dtype=np.float64).ravel()
         if longitude.shape != latitude.shape:
             raise ValueError('x_points and y_points must have the same shape.')
         if longitude.size == 0:
             return np.empty(0, dtype=np.int64)
-        points = lonlat_to_ecef(longitude, latitude, radius=1.0)
-        return self._locate_unit_ecef_points(points, start_simplices)
+
+        starts = None
+        if start_simplices is not None:
+            candidate_starts = np.asarray(start_simplices, dtype=np.int64).ravel()
+            if candidate_starts.shape == longitude.shape:
+                starts = candidate_starts
+
+        result = np.empty(longitude.size, dtype=np.int64)
+        for chunk in particle_chunk_slices(longitude.size):
+            points = lonlat_to_ecef(longitude[chunk], latitude[chunk], radius=1.0)
+            result[chunk] = self._locate_unit_ecef_points(
+                points,
+                None if starts is None else starts[chunk],
+            )
+        return result
 
     def _locate_unit_ecef_points(self, points, start_simplices=None) -> np.ndarray:
-        """Locate unit ECEF points using compiled face walks and tree fallback."""
-        unit_points = np.ascontiguousarray(points, dtype=np.float64)
-        if unit_points.ndim != 2 or unit_points.shape[1] != 3:
+        """Locate unit ECEF points with bounded face-walk and KD-tree batches."""
+        raw_points = np.asarray(points, dtype=np.float64)
+        if raw_points.ndim != 2 or raw_points.shape[1] != 3:
             raise ValueError('ECEF point array must have shape (n, 3).')
+        if raw_points.shape[0] == 0:
+            return np.empty(0, dtype=np.int64)
+
+        starts = None
+        if start_simplices is not None:
+            candidate_starts = np.asarray(start_simplices, dtype=np.int64).ravel()
+            if candidate_starts.shape == (raw_points.shape[0],):
+                starts = candidate_starts
+
+        result = np.empty(raw_points.shape[0], dtype=np.int64)
+        for chunk in particle_chunk_slices(raw_points.shape[0]):
+            result[chunk] = self._locate_unit_ecef_points_chunk(
+                raw_points[chunk],
+                None if starts is None else starts[chunk],
+            )
+        return result
+
+    def _locate_unit_ecef_points_chunk(self, points, start_simplices=None) -> np.ndarray:
+        """Locate one bounded batch of unit ECEF points."""
+        unit_points = np.ascontiguousarray(points, dtype=np.float64)
         result = np.full(unit_points.shape[0], -1, dtype=np.int64)
 
         if start_simplices is not None:
@@ -313,43 +330,88 @@ class GeodeticGridGeometry:
         y_points,
         simplex_ids=None,
     ):
-        """Interpolate fields and return containing face IDs."""
+        """Interpolate fields and return containing face IDs in bounded batches."""
         longitude = np.asarray(x_points, dtype=np.float64)
         latitude = np.asarray(y_points, dtype=np.float64)
         shape = longitude.shape
-        faces = self.locate_points(longitude, latitude, simplex_ids)
-        weights = self._weights_for_lonlat(longitude.ravel(), latitude.ravel(), faces)
-        valid = faces >= 0
-        outputs = []
-        for field_values in fields:
-            field_array = np.asarray(field_values).ravel()
+        longitude_flat = longitude.ravel()
+        latitude_flat = latitude.ravel()
+        if longitude_flat.shape != latitude_flat.shape:
+            raise ValueError('x_points and y_points must have the same shape.')
+
+        field_arrays = tuple(np.asarray(field_values).ravel() for field_values in fields)
+        for field_array in field_arrays:
             if field_array.size != self.grid_x.size:
                 raise ValueError(
                     f'Field size {field_array.size} does not match geodetic node count {self.grid_x.size}.'
                 )
+
+        starts = None
+        if simplex_ids is not None:
+            candidate_starts = np.asarray(simplex_ids, dtype=np.int64).ravel()
+            if candidate_starts.shape == longitude_flat.shape:
+                starts = candidate_starts
+
+        faces = np.empty(longitude_flat.size, dtype=np.int64)
+        outputs = [
+            np.full(longitude_flat.shape, np.nan, dtype=np.result_type(field_array.dtype, np.float64))
+            for field_array in field_arrays
+        ]
+        for chunk in particle_chunk_slices(longitude_flat.size):
+            chunk_outputs, chunk_faces = self._interpolate_fields_with_simplex_chunk(
+                field_arrays,
+                longitude_flat[chunk],
+                latitude_flat[chunk],
+                None if starts is None else starts[chunk],
+            )
+            faces[chunk] = chunk_faces
+            for output, chunk_output in zip(outputs, chunk_outputs, strict=True):
+                output[chunk] = chunk_output
+        return tuple(output.reshape(shape) for output in outputs), faces
+
+    def _interpolate_fields_with_simplex_chunk(
+        self,
+        field_arrays,
+        longitude,
+        latitude,
+        simplex_ids=None,
+    ):
+        """Interpolate one bounded coordinate batch and return flat outputs."""
+        faces = self.locate_points(longitude, latitude, simplex_ids)
+        weights = self._weights_for_lonlat(longitude, latitude, faces)
+        valid = faces >= 0
+        nodes = self.triangles[faces[valid]] if np.any(valid) else None
+        outputs = []
+        for field_array in field_arrays:
             output = np.full(faces.shape, np.nan, dtype=np.result_type(field_array.dtype, np.float64))
-            if np.any(valid):
-                nodes = self.triangles[faces[valid]]
+            if nodes is not None:
                 output[valid] = np.sum(field_array[nodes] * weights[valid], axis=1)
-            outputs.append(output.reshape(shape))
+            outputs.append(output)
         return tuple(outputs), faces
 
     def interpolate_vector(self, grid_u, grid_v, x_points, y_points):
-        """Interpolate east/north vectors through their ECEF representation."""
+        """Interpolate east/north vectors through bounded ECEF batches."""
         longitude = np.asarray(x_points, dtype=np.float64)
         latitude = np.asarray(y_points, dtype=np.float64)
-        faces = self.locate_points(longitude, latitude)
-        unit_points = lonlat_to_ecef(longitude.ravel(), latitude.ravel(), radius=1.0)
-        vectors = self._interpolate_ecef_velocity(
-            self.prepare_vector_field(grid_u, grid_v),
-            unit_points,
-            faces,
-        )
-        east, north = east_north_basis(longitude.ravel(), latitude.ravel())
-        return (
-            np.sum(vectors * east, axis=1).reshape(longitude.shape),
-            np.sum(vectors * north, axis=1).reshape(longitude.shape),
-        )
+        shape = longitude.shape
+        longitude_flat = longitude.ravel()
+        latitude_flat = latitude.ravel()
+        if longitude_flat.shape != latitude_flat.shape:
+            raise ValueError('x_points and y_points must have the same shape.')
+
+        prepared = self.prepare_vector_field(grid_u, grid_v)
+        eastward = np.empty(longitude_flat.size, dtype=np.float64)
+        northward = np.empty(longitude_flat.size, dtype=np.float64)
+        for chunk in particle_chunk_slices(longitude_flat.size):
+            chunk_longitude = longitude_flat[chunk]
+            chunk_latitude = latitude_flat[chunk]
+            faces = self.locate_points(chunk_longitude, chunk_latitude)
+            unit_points = lonlat_to_ecef(chunk_longitude, chunk_latitude, radius=1.0)
+            vectors = self._interpolate_ecef_velocity(prepared, unit_points, faces)
+            east, north = east_north_basis(chunk_longitude, chunk_latitude)
+            eastward[chunk] = np.sum(vectors * east, axis=1)
+            northward[chunk] = np.sum(vectors * north, axis=1)
+        return eastward.reshape(shape), northward.reshape(shape)
 
     def interpolate_temporal_vector(
         self,
@@ -709,30 +771,12 @@ class GeodeticGridGeometry:
 
     def _weights_for_ecef(self, points, faces):
         """Return face-local interpolation weights for unit ECEF points."""
-        weights = np.full((len(faces), 3), np.nan, dtype=np.float64)
-        valid = faces >= 0
-        if not np.any(valid):
-            return weights
-        face_ids = faces[valid]
-        denominator = np.sum(points[valid] * self.face_centres[face_ids], axis=1)
-        local_x = (
-            self.coordinate_transform.earth_radius_m
-            * np.sum(points[valid] * self.face_east[face_ids], axis=1)
-            / denominator
+        return _weights_for_ecef_numba(
+            np.ascontiguousarray(points, dtype=np.float64),
+            np.ascontiguousarray(faces),
+            self.face_centres,
+            self.face_weight_coefficients,
         )
-        local_y = (
-            self.coordinate_transform.earth_radius_m
-            * np.sum(points[valid] * self.face_north[face_ids], axis=1)
-            / denominator
-        )
-        dx = local_x - self.face_vertex_x[face_ids, 0]
-        dy = local_y - self.face_vertex_y[face_ids, 0]
-        w1 = self.inv00[face_ids] * dx + self.inv01[face_ids] * dy
-        w2 = self.inv10[face_ids] * dx + self.inv11[face_ids] * dy
-        weights[valid, 0] = 1.0 - w1 - w2
-        weights[valid, 1] = w1
-        weights[valid, 2] = w2
-        return weights
 
     def _boundary_codes_for_exits(self, destinations, starts, new_faces):
         return _boundary_codes_for_exits_numba(
@@ -756,17 +800,10 @@ class GeodeticGridGeometry:
         return normalize_longitude(longitude)
 
 
-def _build_face_charts(node_unit, triangles, radius):
+def _build_face_weight_coefficients(node_unit, triangles, radius):
     face_count = triangles.shape[0]
     face_centres = np.empty((face_count, 3), dtype=np.float64)
-    face_east = np.empty((face_count, 3), dtype=np.float64)
-    face_north = np.empty((face_count, 3), dtype=np.float64)
-    x = np.empty((face_count, 3), dtype=np.float64)
-    y = np.empty((face_count, 3), dtype=np.float64)
-    inv00 = np.empty(face_count, dtype=np.float64)
-    inv01 = np.empty(face_count, dtype=np.float64)
-    inv10 = np.empty(face_count, dtype=np.float64)
-    inv11 = np.empty(face_count, dtype=np.float64)
+    coefficients = np.empty((face_count, 2, 3), dtype=np.float64)
     chunk_size = 262_144
     for start in range(0, face_count, chunk_size):
         stop = min(start + chunk_size, face_count)
@@ -790,57 +827,172 @@ def _build_face_charts(node_unit, triangles, radius):
         determinant = m00 * m11 - m01 * m10
         if np.any(np.abs(determinant) <= 1.0e-12):
             raise ValueError('Geodetic triangle has a degenerate face-local chart.')
+        inv00 = m11 / determinant
+        inv01 = -m01 / determinant
+        inv10 = -m10 / determinant
+        inv11 = m00 / determinant
+        coefficients[start:stop, 0] = (
+            radius * inv00[:, np.newaxis] * east
+            + radius * inv01[:, np.newaxis] * north
+            - (inv00 * local_x[:, 0] + inv01 * local_y[:, 0])[:, np.newaxis] * centres
+        )
+        coefficients[start:stop, 1] = (
+            radius * inv10[:, np.newaxis] * east
+            + radius * inv11[:, np.newaxis] * north
+            - (inv10 * local_x[:, 0] + inv11 * local_y[:, 0])[:, np.newaxis] * centres
+        )
         face_centres[start:stop] = centres
-        face_east[start:stop] = east
-        face_north[start:stop] = north
-        x[start:stop] = local_x
-        y[start:stop] = local_y
-        inv00[start:stop] = m11 / determinant
-        inv01[start:stop] = -m01 / determinant
-        inv10[start:stop] = -m10 / determinant
-        inv11[start:stop] = m00 / determinant
-    return (
-        face_centres,
-        face_east,
-        face_north,
-        x,
-        y,
-        inv00,
-        inv01,
-        inv10,
-        inv11,
-    )
+    return face_centres, coefficients
 
 
-def _compute_triangle_neighbors(triangles):
+def _resolve_triangle_neighbors(triangles, node_count, triangle_neighbors):
+    if triangle_neighbors is None:
+        return _compute_triangle_neighbors(triangles, node_count)
+    return _validate_triangle_neighbors(triangles, triangle_neighbors)
+
+
+def _compute_triangle_neighbors(triangles, node_count=None):
     index_dtype = triangles.dtype if np.issubdtype(triangles.dtype, np.integer) else np.int64
-    neighbors = np.full((triangles.shape[0], 3), -1, dtype=index_dtype)
-    if triangles.shape[0] == 0:
-        return neighbors
-    edges = np.stack(
-        (
-            triangles[:, [1, 2]],
-            triangles[:, [0, 2]],
-            triangles[:, [0, 1]],
-        ),
-        axis=1,
-    ).reshape(-1, 2)
-    edges.sort(axis=1)
-    order = np.lexsort((edges[:, 1], edges[:, 0]))
-    sorted_edges = edges[order]
-    group_start = np.r_[0, 1 + np.flatnonzero(np.any(sorted_edges[1:] != sorted_edges[:-1], axis=1))]
-    group_end = np.r_[group_start[1:], sorted_edges.shape[0]]
-    counts = group_end - group_start
-    if np.any(counts > 2):
+    face_count = triangles.shape[0]
+    if face_count == 0:
+        return np.full((face_count, 3), -1, dtype=index_dtype)
+    if node_count is None:
+        node_count = int(np.max(triangles)) + 1
+    offsets, face_ids = _node_face_incidence(triangles, node_count, index_dtype)
+    neighbors, non_manifold = _neighbors_from_incidence_numba(triangles, offsets, face_ids)
+    if non_manifold:
         raise ValueError('Geodetic triangle connectivity contains a non-manifold edge.')
-    paired = group_start[counts == 2]
-    first = order[paired]
-    second = order[paired + 1]
-    neighbor_flat = neighbors.ravel()
-    neighbor_flat[first] = second // 3
-    neighbor_flat[second] = first // 3
     return neighbors
 
+
+def _node_face_incidence(triangles, node_count, index_dtype):
+    """Build compact node-to-incident-face CSR arrays for mesh topology."""
+    counts = np.bincount(triangles.ravel(), minlength=node_count)
+    offsets = np.empty(node_count + 1, dtype=np.intp)
+    offsets[0] = 0
+    np.cumsum(counts, dtype=np.intp, out=offsets[1:])
+    face_ids = np.empty(int(offsets[-1]), dtype=index_dtype)
+    cursors = counts
+    cursors[:] = offsets[:-1]
+    _fill_node_face_incidence_numba(triangles, cursors, face_ids)
+    del cursors
+    return offsets, face_ids
+
+
+
+def _validate_triangle_neighbors(triangles, triangle_neighbors):
+    candidate = np.asarray(triangle_neighbors)
+    if candidate.shape != triangles.shape:
+        raise ValueError('Geodetic triangle_neighbors must match the triangle connectivity shape.')
+    if not np.issubdtype(candidate.dtype, np.integer):
+        raise ValueError('Geodetic triangle_neighbors must contain integer face ids.')
+    if np.any(candidate < -1) or np.any(candidate >= triangles.shape[0]):
+        raise ValueError('Geodetic triangle_neighbors contains an out-of-range face id.')
+    index_dtype = triangles.dtype if np.issubdtype(triangles.dtype, np.integer) else np.int64
+    candidate = np.ascontiguousarray(candidate, dtype=index_dtype)
+    error_code = _validate_triangle_neighbors_numba(triangles, candidate)
+    if error_code == 1:
+        raise ValueError('Geodetic triangle_neighbors contains an out-of-range face id.')
+    if error_code == 2:
+        raise ValueError('Geodetic triangle_neighbors must be reciprocal across the matching edge.')
+    if triangles.shape[0] > 0:
+        offsets, face_ids = _node_face_incidence(triangles, int(np.max(triangles)) + 1, index_dtype)
+        if _has_incomplete_native_boundary_numba(triangles, candidate, offsets, face_ids):
+            raise ValueError('Geodetic triangle_neighbors marks an interior edge as a boundary.')
+    return candidate
+
+
+@njit(cache=True)
+def _validate_triangle_neighbors_numba(triangles, neighbors):
+    face_count = triangles.shape[0]
+    for face in range(face_count):
+        for edge in range(3):
+            neighbor = neighbors[face, edge]
+            if neighbor < -1 or neighbor >= face_count:
+                return 1
+            if neighbor == -1:
+                continue
+            node_a = triangles[face, (edge + 1) % 3]
+            node_b = triangles[face, (edge + 2) % 3]
+            reciprocal_count = 0
+            for neighbor_edge in range(3):
+                if neighbors[neighbor, neighbor_edge] != face:
+                    continue
+                candidate_a = triangles[neighbor, (neighbor_edge + 1) % 3]
+                candidate_b = triangles[neighbor, (neighbor_edge + 2) % 3]
+                if (candidate_a == node_a and candidate_b == node_b) or (
+                    candidate_a == node_b and candidate_b == node_a
+                ):
+                    reciprocal_count += 1
+            if reciprocal_count != 1:
+                return 2
+    return 0
+
+
+@njit(cache=True)
+def _has_incomplete_native_boundary_numba(triangles, neighbors, offsets, face_ids):
+    for face in range(triangles.shape[0]):
+        for edge in range(3):
+            if neighbors[face, edge] != -1:
+                continue
+            node_a = triangles[face, (edge + 1) % 3]
+            node_b = triangles[face, (edge + 2) % 3]
+            if offsets[node_a + 1] - offsets[node_a] > offsets[node_b + 1] - offsets[node_b]:
+                temporary = node_a
+                node_a = node_b
+                node_b = temporary
+            for position in range(offsets[node_a], offsets[node_a + 1]):
+                candidate = face_ids[position]
+                if candidate == face:
+                    continue
+                candidate_0 = triangles[candidate, 0]
+                candidate_1 = triangles[candidate, 1]
+                candidate_2 = triangles[candidate, 2]
+                if candidate_0 == node_b or candidate_1 == node_b or candidate_2 == node_b:
+                    return True
+    return False
+
+
+
+@njit(cache=True)
+def _fill_node_face_incidence_numba(triangles, cursors, face_ids):
+    for face in range(triangles.shape[0]):
+        for corner in range(3):
+            node = triangles[face, corner]
+            slot = cursors[node]
+            face_ids[slot] = face
+            cursors[node] = slot + 1
+
+
+@njit(cache=True)
+def _neighbors_from_incidence_numba(triangles, offsets, face_ids):
+    face_count = triangles.shape[0]
+    neighbors = np.empty_like(triangles)
+    neighbors[:, :] = -1
+    non_manifold = False
+    for face in range(face_count):
+        for edge in range(3):
+            node_a = triangles[face, (edge + 1) % 3]
+            node_b = triangles[face, (edge + 2) % 3]
+            if offsets[node_a + 1] - offsets[node_a] > offsets[node_b + 1] - offsets[node_b]:
+                temporary = node_a
+                node_a = node_b
+                node_b = temporary
+            neighbor_face = -1
+            for position in range(offsets[node_a], offsets[node_a + 1]):
+                candidate = face_ids[position]
+                if candidate == face:
+                    continue
+                candidate_0 = triangles[candidate, 0]
+                candidate_1 = triangles[candidate, 1]
+                candidate_2 = triangles[candidate, 2]
+                if candidate_0 == node_b or candidate_1 == node_b or candidate_2 == node_b:
+                    if neighbor_face >= 0:
+                        non_manifold = True
+                    else:
+                        neighbor_face = candidate
+            neighbors[face, edge] = neighbor_face
+    return neighbors, non_manifold
 
 def _parse_boundary_edge_classification(classification, node_count):
     if not classification:
@@ -896,6 +1048,37 @@ def _circular_mean_longitude(longitude):
     return float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)), np.mean(np.cos(radians)))))
 
 
+@njit(cache=True, parallel=True)
+def _weights_for_ecef_numba(points, faces, face_centres, coefficients):
+    """Evaluate compact gnomonic interpolation coefficients per face."""
+    weights = np.empty((points.shape[0], 3), dtype=np.float64)
+    for index in prange(points.shape[0]):
+        face = faces[index]
+        weights[index, 0] = np.nan
+        weights[index, 1] = np.nan
+        weights[index, 2] = np.nan
+        if face < 0 or face >= face_centres.shape[0]:
+            continue
+        px = points[index, 0]
+        py = points[index, 1]
+        pz = points[index, 2]
+        denominator = px * face_centres[face, 0] + py * face_centres[face, 1] + pz * face_centres[face, 2]
+        w1_numerator = (
+            px * coefficients[face, 0, 0]
+            + py * coefficients[face, 0, 1]
+            + pz * coefficients[face, 0, 2]
+        )
+        w2_numerator = (
+            px * coefficients[face, 1, 0]
+            + py * coefficients[face, 1, 1]
+            + pz * coefficients[face, 1, 2]
+        )
+        w1 = w1_numerator / denominator
+        w2 = w2_numerator / denominator
+        weights[index, 0] = 1.0 - w1 - w2
+        weights[index, 1] = w1
+        weights[index, 2] = w2
+    return weights
 @njit(cache=True, parallel=True)
 def _east_north_to_ecef_numba(u, v, longitude, latitude):
     """Convert east/north nodal vectors to ECEF without basis temporaries."""

@@ -1697,6 +1697,8 @@ def create_grid_geometry(
     earth_radius_m=6_371_008.8,
     longitude_wrap='auto',
     velocity_basis='auto',
+    *,
+    triangle_neighbors=None,
 ) -> GridGeometry:
     """
     Create cached grid geometry for repeated particle interpolation.
@@ -1709,6 +1711,8 @@ def create_grid_geometry(
         Grid node y coordinates.
     triangles : object
         Triangle connectivity array.
+    triangle_neighbors : object, optional
+        Authoritative triangle-neighbor connectivity for geodetic grids.
     boundary_edge_classification : object
         Boundary-edge classification metadata.
     coordinate_system : str, optional
@@ -1742,6 +1746,7 @@ def create_grid_geometry(
             grid_x,
             grid_y,
             triangles=triangles,
+            triangle_neighbors=triangle_neighbors,
             boundary_edge_classification=boundary_edge_classification,
             source_crs=coordinate_transform.source_crs,
             surface_model=coordinate_transform.surface_model,
@@ -1780,6 +1785,8 @@ def create_numba_particle_calculator(
     earth_radius_m=6_371_008.8,
     longitude_wrap='auto',
     velocity_basis='auto',
+    *,
+    triangle_neighbors=None,
 ):
     """
     Create particle interpolation/update callables.
@@ -1812,6 +1819,8 @@ def create_numba_particle_calculator(
         Public longitude convention.
     velocity_basis : str, default='auto'
         Horizontal velocity component basis.
+    triangle_neighbors : object, optional
+        Authoritative triangle-neighbor connectivity for geodetic grids.
     Returns
     -------
     dict[str, object]
@@ -1824,6 +1833,7 @@ def create_numba_particle_calculator(
             grid_x,
             grid_y,
             triangles=triangles,
+            triangle_neighbors=triangle_neighbors,
             boundary_edge_classification=boundary_edge_classification,
             coordinate_system=coordinate_system,
             source_crs=source_crs,

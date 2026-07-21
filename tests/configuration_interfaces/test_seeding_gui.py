@@ -749,8 +749,8 @@ def test_gui_metres_display_round_trips_clicks_and_keeps_projected_map_visible(s
     np.testing.assert_allclose(app.points, [(4.005, 52.005)], atol=1.0e-8)
 
 
-def test_gui_rejects_projected_crs_outside_the_input_area_of_use():
-    """A UTM zone outside the geographic map extent must fail before plotting."""
+def test_gui_rejects_projected_crs_outside_the_input_area_of_use(seeding_gui_app, tmp_path):
+    """An unsuitable projected CRS must fail without changing the GUI display."""
 
     with pytest.raises(SeedingGuiError, match='does not cover the input longitude/latitude extent'):
         seeding_gui._build_gui_coordinate_display(
@@ -760,6 +760,33 @@ def test_gui_rejects_projected_crs_outside_the_input_area_of_use():
             source_crs='EPSG:4326',
             metric_crs='EPSG:32653',
         )
+
+    app = seeding_gui_app
+    app.view_data = BathymetryViewData(
+        x=np.array([-35.0, 43.0, -35.0, 43.0]),
+        y=np.array([0.0, 0.0, 57.0, 57.0]),
+        values=np.array([-1.0, -0.5, 0.0, 0.5]),
+        variable='bedlevel',
+        input_file=tmp_path / 'input.nc',
+        coordinate_system='geographic',
+        source_crs='EPSG:4326',
+        metric_crs='EPSG:32653',
+    )
+    before_x = app._display_x.copy()
+    before_y = app._display_y.copy()
+    before_xlabel = app.ax.get_xlabel()
+    errors: list[str] = []
+    app._show_error = errors.append
+    app._metric_crs_text = 'EPSG:32653'
+
+    app._set_coordinate_display('metres')
+
+    assert not app._coordinate_display.uses_metres
+    assert app._coordinate_dropdown.selected == 'native'
+    np.testing.assert_array_equal(app._display_x, before_x)
+    np.testing.assert_array_equal(app._display_y, before_y)
+    assert app.ax.get_xlabel() == before_xlabel
+    assert errors and 'does not cover the input longitude/latitude extent' in errors[0]
 
 def test_generate_random_points_in_skinny_polygon_uses_vectorized_batches():
     """Random polygon generation handles low acceptance-rate polygons."""

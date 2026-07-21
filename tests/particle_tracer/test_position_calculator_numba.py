@@ -16,6 +16,49 @@ def square_grid():
     return grid_x, grid_y
 
 
+def test_create_grid_geometry_preserves_preexisting_positional_arguments():
+    """Native neighbors must remain an opt-in keyword-only argument."""
+    grid_x, grid_y = square_grid()
+
+    geometry = create_grid_geometry(grid_x, grid_y, None, None, 'projected')
+
+    assert geometry.triangles.shape[1] == 3
+
+
+def test_numba_calculator_uses_supplied_native_geodetic_neighbors(monkeypatch):
+    """The calculator factory must forward authoritative geodetic topology."""
+    import sedtrails.particle_tracer.geodetic_grid as geodetic_grid_module
+
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    native_neighbors = np.array([[1, -1, -1], [-1, 0, -1]], dtype=np.int32)
+    grid_x = np.array([0.0, 1.0, 0.0, 1.0])
+    grid_y = np.array([0.0, 0.0, 1.0, 1.0])
+
+    def unexpected_fallback(*args, **kwargs):
+        raise AssertionError("The fallback neighbor construction must not run.")
+
+    monkeypatch.setattr(
+        geodetic_grid_module,
+        "_compute_triangle_neighbors",
+        unexpected_fallback,
+    )
+    calculator = create_numba_particle_calculator(
+        grid_x,
+        grid_y,
+        triangles=triangles,
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        velocity_basis='east_north',
+        triangle_neighbors=native_neighbors,
+    )
+
+    np.testing.assert_array_equal(
+        calculator['geometry'].triangle_neighbors,
+        native_neighbors,
+    )
+
+
 def test_cached_geometry_reused_by_calculator():
     """Ensures the calculator reuses a provided GridGeometry instance."""
     grid_x, grid_y = square_grid()

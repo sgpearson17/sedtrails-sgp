@@ -93,6 +93,7 @@ class _PluginWithSeedingFieldData:
             y=[4.0, 5.0, 6.0],
             face_node_connectivity=[[0, 1, 2]],
             particle_face_connectivity=[[0, 2, 1]],
+            face_face_connectivity=[[-1, -1, -1]],
             boundary_edge_classification={'edge_nodes': [[0, 1]], 'edge_classes': ['open']},
             face_node_fill_value=-99,
             coordinate_system='geographic',
@@ -325,6 +326,7 @@ def test_get_seeding_field_data_prefers_field_data_reader():
     np.testing.assert_array_equal(field_data.y, np.array([4.0, 5.0, 6.0]))
     np.testing.assert_array_equal(field_data.face_node_connectivity, np.array([[0, 1, 2]]))
     np.testing.assert_array_equal(field_data.particle_face_connectivity, np.array([[0, 2, 1]]))
+    np.testing.assert_array_equal(field_data.face_face_connectivity, np.array([[-1, -1, -1]]))
     assert field_data.boundary_edge_classification == {'edge_nodes': [[0, 1]], 'edge_classes': ['open']}
     assert field_data.face_node_fill_value == -99
     assert field_data.metadata.coordinate_system == 'geographic'

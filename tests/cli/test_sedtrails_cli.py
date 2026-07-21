@@ -156,6 +156,7 @@ class TestSedtrailsCLI:
             max_particles=10000,
             sample_fraction=None,
             sample_seed=0,
+            max_plot_points=2_000_000,
             markers='end',
             marker_size=3.0,
             panels='spatial',
