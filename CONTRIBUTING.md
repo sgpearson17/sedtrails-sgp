@@ -7,7 +7,7 @@ A contribution can be made in the following cases:
 - You have a question.
 - You think you may have found a bug, including unexpected behavior.
 - You want to make changes to the code base to fix a bug, make improvements, or add a new functionality.
-- You want to update or documentation to SedTRAILS.
+- You want to update or add documentation to SedTRAILS.
 
 The figure below summarizes the workflow our team follows for developing SedTRAILS. We encourage contributors to adopt it whenever possible. The sections below outline the steps to make a contribution for each of the aforementioned cases.
 
