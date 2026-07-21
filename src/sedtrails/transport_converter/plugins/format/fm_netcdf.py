@@ -9,6 +9,7 @@ import xarray as xr
 import xugrid as xu
 
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
+from sedtrails.transport_converter.plugins.format._xugrid_compat import create_ugrid2d
 from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.domain_mask import (
     ConnectivityMaskResult,
@@ -1065,12 +1066,11 @@ class FormatPlugin(BaseFormatPlugin):
                     break
                 if source_faces is None or source_faces.shape[0] != point_count:
                     return None
-                grid = xu.Ugrid2d(
+                grid = create_ugrid2d(
                     np.asarray(node_x_variable),
                     np.asarray(node_y_variable),
-                    -1,
                     source_faces,
-                    projected=self._coordinate_system() != 'geographic',
+                    is_projected=self._coordinate_system() != 'geographic',
                 )
             triangulation, face_index = grid.centroid_triangulation
         except (AttributeError, IndexError, TypeError, ValueError):

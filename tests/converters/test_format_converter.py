@@ -8,12 +8,37 @@ import xarray as xr
 
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
 from sedtrails.transport_converter.format_converter import FormatConverter
-from sedtrails.transport_converter.plugins.format import fm_netcdf, sfincs
+from sedtrails.transport_converter.plugins.format import _xugrid_compat, fm_netcdf, sfincs
 
 
 def _existing_input_path():
     """Returns a guaranteed-existing file path for plugin constructor inputs."""
     return __file__
+
+
+def test_create_ugrid2d_supports_projection_keyword_rename(monkeypatch):
+    """Uses the projection keyword accepted by the installed xugrid release."""
+    node_x = np.array([0.0, 1.0, 0.0])
+    node_y = np.array([0.0, 0.0, 1.0])
+    faces = np.array([[0, 1, 2]], dtype=np.int64)
+
+    class LegacyUgrid2d:
+        """Mimics the xugrid 0.14 projection argument."""
+
+        def __init__(self, *_args, projected):
+            self.value = projected
+
+    monkeypatch.setattr(_xugrid_compat.xu, 'Ugrid2d', LegacyUgrid2d)
+    assert _xugrid_compat.create_ugrid2d(node_x, node_y, faces, is_projected=False).value is False
+
+    class ModernUgrid2d:
+        """Mimics the xugrid 0.15 projection argument."""
+
+        def __init__(self, *_args, is_projected):
+            self.value = is_projected
+
+    monkeypatch.setattr(_xugrid_compat.xu, 'Ugrid2d', ModernUgrid2d)
+    assert _xugrid_compat.create_ugrid2d(node_x, node_y, faces, is_projected=True).value is True
 
 
 def _write_square_pol(path, xmin, ymin, xmax, ymax):

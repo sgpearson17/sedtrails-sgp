@@ -6,6 +6,7 @@ import numpy as np
 import xarray as xr
 import xugrid as xu
 
+from sedtrails.transport_converter.plugins.format._xugrid_compat import create_ugrid2d
 from sedtrails.particle_tracer.coordinate_transform import (
     build_coordinate_transform,
     infer_coordinate_system_from_attrs,
@@ -853,12 +854,11 @@ class FormatPlugin(BaseFormatPlugin):
                     return None
             elif source_grid is not None:
                 source_node_x, source_node_y, source_faces = source_grid
-                grid = xu.Ugrid2d(
+                grid = create_ugrid2d(
                     source_node_x,
                     source_node_y,
-                    -1,
                     source_faces,
-                    projected=self._coordinate_system() != 'geographic',
+                    is_projected=self._coordinate_system() != 'geographic',
                 )
             else:
                 node_x_var, node_y_var, face_nodes_var, start_index, fill_value = (
@@ -869,12 +869,11 @@ class FormatPlugin(BaseFormatPlugin):
                     start_index=start_index,
                     fill_value=fill_value,
                 )
-                grid = xu.Ugrid2d(
+                grid = create_ugrid2d(
                     np.asarray(node_x_var),
                     np.asarray(node_y_var),
-                    -1,
                     source_faces,
-                    projected=self._coordinate_system() != 'geographic',
+                    is_projected=self._coordinate_system() != 'geographic',
                 )
             triangulation, face_index = grid.centroid_triangulation
         except (AttributeError, IndexError, TypeError, ValueError):
