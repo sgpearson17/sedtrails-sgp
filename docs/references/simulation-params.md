@@ -86,7 +86,8 @@ Specifies paths to input data and reading parameters.
 | Parameter                 | Type    | Required     | Default       | Description                                                                                                                                   |
 | ------------------------- | ------- | ------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data`                    | string  | **Required** | -             | Path to the flow field data file (e.g., D-Flow FM NetCDF output).                                                                             |
-| `read_interval`           | string  | Optional     | `30D12H25M0S` | Time chunk size for reading input data. Format: `DDdHHhMMmSSs` (e.g., `30D` for 30 days, `12H` for 12 hours).                                 |
+| `read_interval`           | string  | Optional     | `30D12H25M0S` | Requested time span for each input window. Readers may shorten it to satisfy the memory budget.                                                |
+| `max_eulerian_memory_mb`  | integer | Optional     | `2048`        | Maximum total MiB for selected source forcing, derived tracer fields, geodetic ECEF vectors, and conversion workspaces. The reader window is scaled to keep these arrays within the limit. Must be at least 64 MiB. |
 | `repeat_eulerian_fields`  | boolean | Optional     | `false`       | Repeat Eulerian flow fields only after a valid simulation start inside the forcing window. If `false`, reuse the final fields after the forcing period is exhausted. |
 | `comp_dir`                | string  | Optional     | -             | Path to directory containing complementary validation data.                                                                                   |
 
@@ -96,6 +97,7 @@ Specifies paths to input data and reading parameters.
 inputs:
   data: /path/to/flow_model_output.nc
   read_interval: "15D"
+  max_eulerian_memory_mb: 2048
   repeat_eulerian_fields: true
   comp_dir: /path/to/validation_data/
 ```

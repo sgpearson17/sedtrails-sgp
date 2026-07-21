@@ -1669,23 +1669,67 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
-        particle_indices = np.flatnonzero(np.asarray(self.particles['status_mobile'], dtype=bool))
-        if particle_indices.size == 0:
+        status_mobile = np.asarray(self.particles['status_mobile'], dtype=bool)
+        if not np.any(status_mobile):
             return
+        prepared_flow_field = self._prepare_geodetic_flow_field(flow_field)
         chunk_size = 65_536
-        for start in range(0, particle_indices.size, chunk_size):
+        for start in range(0, status_mobile.size, chunk_size):
+            particle_indices = np.flatnonzero(
+                status_mobile[start : start + chunk_size]
+            )
+            if particle_indices.size == 0:
+                continue
+            particle_indices += start
             self._update_position_chunk(
                 flow_field,
                 current_timestep,
-                particle_indices[start : start + chunk_size],
+                particle_indices,
+                prepared_flow_field=prepared_flow_field,
             )
         self._mark_particle_simplices_current()
+
+    def _prepare_geodetic_flow_field(self, flow_field: Dict):
+        """Prepare each geodetic forcing slice once for all particle chunks."""
+        if not getattr(self.grid_geometry, 'is_geodetic', False):
+            return None
+        generations = flow_field.get('cache_generation', {})
+        if _is_temporal_flow_field(flow_field):
+            lower_generation = generations.get('lower') if isinstance(generations, dict) else None
+            upper_generation = generations.get('upper') if isinstance(generations, dict) else None
+            lower = self.grid_geometry.prepare_vector_field(
+                flow_field['lower']['u'],
+                flow_field['lower']['v'],
+                cache_key=lower_generation,
+            )
+            if flow_field['weight'] <= 0.0 or (
+                flow_field['lower']['u'] is flow_field['upper']['u']
+                and flow_field['lower']['v'] is flow_field['upper']['v']
+            ):
+                upper = lower
+            else:
+                upper = self.grid_geometry.prepare_vector_field(
+                    flow_field['upper']['u'],
+                    flow_field['upper']['v'],
+                    cache_key=upper_generation,
+                )
+            return {'lower': lower, 'upper': upper}
+
+        generation = generations.get('value') if isinstance(generations, dict) else generations
+        prepared = self.grid_geometry.prepare_vector_field(
+            flow_field['u'],
+            flow_field['v'],
+            cache_key=generation,
+        )
+        return {'lower': prepared, 'upper': prepared}
 
     def _update_position_chunk(
         self,
         flow_field: Dict,
         current_timestep: float,
         particle_indices: np.ndarray,
+        *,
+        prepared_flow_field=None,
     ) -> None:
         """Advance one bounded chunk of mobile particles."""
         ix = particle_indices
@@ -1693,7 +1737,19 @@ class ParticlePopulation:
         old_y = self.particles['y'][ix].copy()
         old_simplices = self._particle_simplices[particle_indices].copy()
 
-        if _is_temporal_flow_field(flow_field):
+        if prepared_flow_field is not None:
+            new_x, new_y, new_simplices, boundary_class_codes = (
+                self.grid_geometry.update_particles_prepared_temporal_with_boundary_class(
+                    self.particles['x'][ix],
+                    self.particles['y'][ix],
+                    prepared_flow_field['lower'],
+                    prepared_flow_field['upper'],
+                    flow_field['weight'] if _is_temporal_flow_field(flow_field) else 0.0,
+                    current_timestep,
+                    simplex_ids=self._particle_simplices[particle_indices],
+                )
+            )
+        elif _is_temporal_flow_field(flow_field):
             new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_temporal_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
@@ -1878,7 +1934,17 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
     if connectivity is None:
         return None
 
-    triangles = np.asarray(connectivity, dtype=np.int64)
+    triangles = np.asarray(connectivity)
+    if np.issubdtype(triangles.dtype, np.integer) and (
+        triangles.size == 0
+        or (
+            int(np.min(triangles)) >= np.iinfo(np.int32).min
+            and int(np.max(triangles)) <= np.iinfo(np.int32).max
+        )
+    ):
+        triangles = np.asarray(triangles, dtype=np.int32)
+    elif not np.issubdtype(triangles.dtype, np.signedinteger):
+        triangles = np.asarray(triangles, dtype=np.int64)
     if triangles.ndim != 2 or triangles.shape[1] != 3:
         return None
     if triangles.shape[0] == 0:

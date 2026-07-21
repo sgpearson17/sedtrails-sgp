@@ -169,6 +169,14 @@ class TestSimulationManagerPreflight:
     def test_plan_retrievers_pass_population_and_global_fraction_selection(self, monkeypatch):
         """Each plan build should receive its population config and shared input-model defaults."""
         calls = []
+        tracer = SimpleNamespace(
+            method_name='passive_tracer',
+            method_config={},
+            flow_field_names=('depth_avg_flow_velocity',),
+            transport_probability_method='no_probability',
+            required_physics_fields=('depth_avg_flow_velocity',),
+            converter=SimpleNamespace(config=None),
+        )
 
         def fake_build_plan_sedtrails_data(
             sedtrails_data,
@@ -203,14 +211,14 @@ class TestSimulationManagerPreflight:
             SimpleNamespace(
                 population_index=3,
                 population_config={'sediment_fraction_index': 1},
-                tracer=object(),
+                tracer=tracer,
             ),
             SimpleNamespace(
                 population_index=7,
                 population_config={'sediment_fraction_name': 'local_sand'},
-                tracer=object(),
+                tracer=tracer,
             ),
-            SimpleNamespace(population_index=9, population_config={}, tracer=object()),
+            SimpleNamespace(population_index=9, population_config={}, tracer=tracer),
         )
 
         retrievers = manager._build_plan_retrievers(sedtrails_data, runtime_plans)
@@ -224,6 +232,170 @@ class TestSimulationManagerPreflight:
         assert all(call['sedtrails_data'] is sedtrails_data for call in calls)
         assert [call['default_fraction_index'] for call in calls] == [2, 2, 2]
         assert [call['default_fraction_name'] for call in calls] == ['global_silt'] * 3
+
+    def test_plan_retrievers_group_equivalent_plans(self, monkeypatch):
+        """Equivalent population plans should run physics conversion only once."""
+        calls = []
+
+        def fake_build(*args, **kwargs):
+            plan_data = SimpleNamespace(
+                forcing_generation=17,
+                forcing_identity=('equivalent',),
+            )
+            calls.append(plan_data)
+            return plan_data
+
+        monkeypatch.setattr(simulation_manager, 'build_plan_sedtrails_data', fake_build)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller({'general.input_model': {}})
+
+        def equivalent_tracer():
+            return SimpleNamespace(
+                method_name='passive_tracer',
+                method_config={},
+                flow_field_names=('depth_avg_flow_velocity',),
+                transport_probability_method='no_probability',
+                required_physics_fields=('depth_avg_flow_velocity',),
+                converter=SimpleNamespace(config=None),
+            )
+
+        runtime_plans = (
+            SimpleNamespace(
+                population_index=0,
+                population_config={},
+                tracer=equivalent_tracer(),
+            ),
+            SimpleNamespace(
+                population_index=1,
+                population_config={},
+                tracer=equivalent_tracer(),
+            ),
+        )
+
+        retrievers = manager._build_plan_retrievers(object(), runtime_plans)
+
+        assert len(calls) == 1
+        assert retrievers[0].sedtrails_data is retrievers[1].sedtrails_data
+
+    def test_plan_retrievers_keep_distinct_configs_isolated(self, monkeypatch):
+        """Different tracer configurations must retain separate physics data."""
+        calls = []
+
+        def fake_build(*args, **kwargs):
+            plan_data = SimpleNamespace(
+                forcing_generation=21,
+                forcing_identity=('plan', len(calls)),
+            )
+            calls.append(plan_data)
+            return plan_data
+
+        monkeypatch.setattr(simulation_manager, 'build_plan_sedtrails_data', fake_build)
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller({'general.input_model': {}})
+
+        def tracer_with_scale(scale):
+            return SimpleNamespace(
+                method_name='soulsby',
+                method_config={'scale': scale},
+                flow_field_names=('grain_velocity',),
+                transport_probability_method='no_probability',
+                required_physics_fields=('grain_velocity',),
+                converter=SimpleNamespace(config={'scale': scale}),
+            )
+
+        runtime_plans = (
+            SimpleNamespace(
+                population_index=0,
+                population_config={},
+                tracer=tracer_with_scale(1.0),
+            ),
+            SimpleNamespace(
+                population_index=1,
+                population_config={},
+                tracer=tracer_with_scale(2.0),
+            ),
+        )
+
+        retrievers = manager._build_plan_retrievers(object(), runtime_plans)
+
+        assert len(calls) == 2
+        assert retrievers[0].sedtrails_data is not retrievers[1].sedtrails_data
+
+    def test_clear_geodetic_velocity_caches_deduplicates_shared_geometry(self):
+        """Reload cleanup should clear each shared grid geometry exactly once."""
+        clear_calls = []
+        geometry = SimpleNamespace(
+            clear_velocity_cache=lambda: clear_calls.append('clear')
+        )
+        populations = (
+            SimpleNamespace(grid_geometry=geometry),
+            SimpleNamespace(grid_geometry=geometry),
+            SimpleNamespace(grid_geometry=SimpleNamespace()),
+        )
+        manager = object.__new__(Simulation)
+
+        manager.clear_geodetic_velocity_caches(populations)
+
+        assert clear_calls == ['clear']
+
+    def test_memory_allocation_uses_exact_source_bytes_and_geodetic_flag(
+        self,
+        monkeypatch,
+    ):
+        """Manager plumbing should include plugin bytes and geodetic ECEF arrays."""
+        captured = {}
+
+        def fake_split(total_bytes, runtime_plans, spatial_size, **kwargs):
+            captured.update(
+                total_bytes=total_bytes,
+                runtime_plans=runtime_plans,
+                spatial_size=spatial_size,
+                **kwargs,
+            )
+            return 123, 456
+
+        monkeypatch.setattr(
+            simulation_manager,
+            'split_eulerian_memory_budget',
+            fake_split,
+        )
+        manager = object.__new__(Simulation)
+        manager._controller = _Controller(
+            {
+                'inputs.max_eulerian_memory_mb': 64,
+                'general.input_model': {
+                    'sediment_fraction_index': 2,
+                    'sediment_fraction_name': 'silt',
+                },
+            }
+        )
+        estimated_fields = []
+        manager.format_converter = SimpleNamespace(
+            estimate_source_bytes_per_time_plane=lambda fields: (
+                estimated_fields.append(tuple(fields)) or 12_345
+            )
+        )
+        runtime_plans = (
+            SimpleNamespace(
+                population=SimpleNamespace(
+                    grid_geometry=SimpleNamespace(is_geodetic=True)
+                )
+            ),
+        )
+
+        allocation = manager._allocate_eulerian_memory_budget(
+            runtime_plans,
+            1_000_000,
+            ('bed_level', 'water_depth'),
+        )
+
+        assert allocation == (123, 456)
+        assert estimated_fields == [('bed_level', 'water_depth')]
+        assert captured['total_bytes'] == 64 * 1024**2
+        assert captured['source_bytes_per_plane'] == 12_345
+        assert captured['geodetic_runtime'] is True
+        assert captured['default_fraction_index'] == 2
+        assert captured['default_fraction_name'] == 'silt'
 
 
 class TestSimulationManagerTimeConfig:

@@ -22,10 +22,30 @@ from sedtrails.particle_tracer.particle_seeder import (
     RandomStrategy,
     TransectStrategy,
     _compute_seeding_area,
+    _geometry_triangles_from_field_data,
     _log_seeding_box_volume,
     _parse_polygon,
     _read_polygon_file,
 )
+
+
+def test_geometry_triangles_downcast_safe_direct_int64_topology():
+    """Direct seeding field data keeps ocean-scale topology compact."""
+    field_data = SimpleNamespace(
+        x=np.arange(4, dtype=float),
+        particle_face_connectivity=np.array(
+            [[0, 1, 2], [0, 2, 3]],
+            dtype=np.int64,
+        ),
+    )
+
+    triangles = _geometry_triangles_from_field_data(field_data)
+
+    assert triangles.dtype == np.int32
+    np.testing.assert_array_equal(
+        triangles,
+        np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32),
+    )
 
 
 # Strategy fixtures

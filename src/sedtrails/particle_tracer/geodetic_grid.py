@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+from numba import njit, prange
 from scipy.spatial import cKDTree
 
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
@@ -19,9 +21,22 @@ from sedtrails.particle_tracer.geodetic_geometry import (
 )
 
 TRIANGLE_TOLERANCE = 1.0e-10
+MAX_FACE_WALK_STEPS = 128
+DEFAULT_VELOCITY_CACHE_BYTES = 512 * 1024**2
 BOUNDARY_CLASS_UNCLASSIFIED = np.int8(0)
 BOUNDARY_CLASS_OPEN = np.int8(1)
 BOUNDARY_CLASS_LAND = np.int8(2)
+
+
+def _forcing_cache_generation(cache_key) -> int | None:
+    """Extract the monotonic forcing generation from a slice cache key."""
+    if (
+        isinstance(cache_key, tuple)
+        and cache_key
+        and isinstance(cache_key[0], (int, np.integer))
+    ):
+        return int(cache_key[0])
+    return None
 
 
 @dataclass
@@ -59,7 +74,22 @@ class GeodeticGridGeometry:
     p0_x: np.ndarray = field(init=False)
     p0_y: np.ndarray = field(init=False)
     _face_tree: cKDTree = field(init=False, repr=False)
-    _velocity_cache: dict[tuple, np.ndarray] = field(init=False, default_factory=dict, repr=False)
+    _velocity_cache: OrderedDict[tuple, np.ndarray] = field(
+        init=False,
+        default_factory=OrderedDict,
+        repr=False,
+    )
+    _velocity_cache_bytes: int = field(init=False, default=0, repr=False)
+    _velocity_cache_max_bytes: int = field(
+        init=False,
+        default=DEFAULT_VELOCITY_CACHE_BYTES,
+        repr=False,
+    )
+    _velocity_cache_generation: int | None = field(
+        init=False,
+        default=None,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.metric_grid_x = self.grid_x
@@ -221,30 +251,45 @@ class GeodeticGridGeometry:
         if longitude.size == 0:
             return np.empty(0, dtype=np.int64)
         points = lonlat_to_ecef(longitude, latitude, radius=1.0)
-        result = np.full(longitude.size, -1, dtype=np.int64)
+        return self._locate_unit_ecef_points(points, start_simplices)
+
+    def _locate_unit_ecef_points(self, points, start_simplices=None) -> np.ndarray:
+        """Locate unit ECEF points using compiled face walks and tree fallback."""
+        unit_points = np.ascontiguousarray(points, dtype=np.float64)
+        if unit_points.ndim != 2 or unit_points.shape[1] != 3:
+            raise ValueError('ECEF point array must have shape (n, 3).')
+        result = np.full(unit_points.shape[0], -1, dtype=np.int64)
 
         if start_simplices is not None:
             starts = np.asarray(start_simplices, dtype=np.int64).ravel()
             if starts.shape == result.shape:
-                valid = (starts >= 0) & (starts < self.triangles.shape[0])
-                for index in np.flatnonzero(valid):
-                    face = self._walk_to_containing_face(points[index], int(starts[index]))
-                    if face >= 0:
-                        result[index] = face
+                result = _walk_points_ecef_numba(
+                    unit_points,
+                    starts,
+                    self.triangles,
+                    self.triangle_neighbors,
+                    self.node_unit_ecef,
+                    self.face_centres,
+                    MAX_FACE_WALK_STEPS,
+                    TRIANGLE_TOLERANCE,
+                )
 
         missing = np.flatnonzero(result < 0)
         if missing.size == 0:
             return result
         candidate_count = min(32, self.triangles.shape[0])
-        _, candidates = self._face_tree.query(points[missing], k=candidate_count)
+        _, candidates = self._face_tree.query(unit_points[missing], k=candidate_count)
         candidates = np.asarray(candidates, dtype=np.int64)
         if candidates.ndim == 1:
             candidates = candidates[:, np.newaxis]
-        for row, point_index in enumerate(missing):
-            for face in candidates[row]:
-                if self._point_in_face(points[point_index], int(face)):
-                    result[point_index] = int(face)
-                    break
+        result[missing] = _locate_candidates_ecef_numba(
+            unit_points[missing],
+            np.ascontiguousarray(candidates),
+            self.triangles,
+            self.node_unit_ecef,
+            self.face_centres,
+            TRIANGLE_TOLERANCE,
+        )
         return result
 
     def interpolate_field(self, field_values, x_points, y_points):
@@ -294,10 +339,10 @@ class GeodeticGridGeometry:
         longitude = np.asarray(x_points, dtype=np.float64)
         latitude = np.asarray(y_points, dtype=np.float64)
         faces = self.locate_points(longitude, latitude)
+        unit_points = lonlat_to_ecef(longitude.ravel(), latitude.ravel(), radius=1.0)
         vectors = self._interpolate_ecef_velocity(
             self.prepare_vector_field(grid_u, grid_v),
-            longitude.ravel(),
-            latitude.ravel(),
+            unit_points,
             faces,
         )
         east, north = east_north_basis(longitude.ravel(), latitude.ravel())
@@ -326,29 +371,70 @@ class GeodeticGridGeometry:
             lower_y + float(weight) * (upper_y - lower_y),
         )
 
-    def prepare_vector_field(self, grid_u, grid_v) -> np.ndarray:
-        """Convert one east/north node field to cached ECEF tangent vectors."""
+    def prepare_vector_field(self, grid_u, grid_v, *, cache_key=None) -> np.ndarray:
+        """Convert one east/north node field to a bounded cached ECEF field.
+
+        Parameters
+        ----------
+        grid_u, grid_v : array-like
+            Eastward and northward nodal components.
+        cache_key : hashable, optional
+            Explicit forcing-slice generation key. Writable arrays are cached
+            only when this key is supplied; callers must use a new key after
+            mutating a reused input buffer.
+
+        Returns
+        -------
+        numpy.ndarray
+            Contiguous ECEF tangent vectors with shape ``(n_nodes, 3)``.
+        """
         u = np.asarray(grid_u).ravel()
         v = np.asarray(grid_v).ravel()
         if u.size != self.grid_x.size or v.size != self.grid_x.size:
             raise ValueError('Vector field size must match the geodetic node count.')
-        cache_allowed = not u.flags.writeable and not v.flags.writeable
-        key = (_array_identity(u), _array_identity(v))
+        cache_allowed = cache_key is not None
+        if cache_key is not None:
+            try:
+                hash(cache_key)
+            except TypeError as exc:
+                raise TypeError('cache_key must be hashable.') from exc
+        key = cache_key
         if cache_allowed:
+            generation = _forcing_cache_generation(cache_key)
+            if (
+                generation is not None
+                and generation != self._velocity_cache_generation
+            ):
+                self.clear_velocity_cache()
+                self._velocity_cache_generation = generation
             cached = self._velocity_cache.get(key)
             if cached is not None:
+                self._velocity_cache.move_to_end(key)
                 return cached
-        east, north = east_north_basis(self.grid_x, self.grid_y)
-        vectors = (
-            u.astype(np.float64, copy=False)[:, np.newaxis] * east
-            + v.astype(np.float64, copy=False)[:, np.newaxis] * north
+        vectors = _east_north_to_ecef_numba(
+            np.ascontiguousarray(u),
+            np.ascontiguousarray(v),
+            self.grid_x,
+            self.grid_y,
         )
-        vectors = np.ascontiguousarray(vectors)
-        if cache_allowed:
-            if len(self._velocity_cache) >= 8:
-                self._velocity_cache.pop(next(iter(self._velocity_cache)))
+        if (
+            cache_allowed
+            and vectors.nbytes <= self._velocity_cache_max_bytes
+        ):
+            while (
+                self._velocity_cache
+                and self._velocity_cache_bytes + vectors.nbytes > self._velocity_cache_max_bytes
+            ):
+                _, evicted = self._velocity_cache.popitem(last=False)
+                self._velocity_cache_bytes -= evicted.nbytes
             self._velocity_cache[key] = vectors
+            self._velocity_cache_bytes += vectors.nbytes
         return vectors
+
+    def clear_velocity_cache(self) -> None:
+        """Release all prepared ECEF velocity slices held by this geometry."""
+        self._velocity_cache.clear()
+        self._velocity_cache_bytes = 0
 
     def update_particles_with_simplex(
         self,
@@ -438,6 +524,52 @@ class GeodeticGridGeometry:
         igeo=0,
     ):
         """Advance particles with normalized ECEF RK4 and face walking."""
+        lower = self.prepare_vector_field(lower_u, lower_v)
+        upper = lower if weight <= 0.0 else self.prepare_vector_field(upper_u, upper_v)
+        return self.update_particles_prepared_temporal_with_boundary_class(
+            x0,
+            y0,
+            lower,
+            upper,
+            weight,
+            dt,
+            simplex_ids=simplex_ids,
+            igeo=igeo,
+        )
+
+    def update_particles_prepared_temporal_with_boundary_class(
+        self,
+        x0,
+        y0,
+        lower_ecef,
+        upper_ecef,
+        weight,
+        dt,
+        simplex_ids=None,
+        igeo=0,
+    ):
+        """Advance particles with already prepared ECEF vector slices.
+
+        Parameters
+        ----------
+        x0, y0 : array-like
+            Initial longitude and latitude coordinates in degrees.
+        lower_ecef, upper_ecef : array-like
+            Prepared nodal ECEF velocities with shape ``(n_nodes, 3)``.
+        weight : float
+            Temporal interpolation weight.
+        dt : float
+            Integration timestep in seconds.
+        simplex_ids : array-like, optional
+            Cached starting face IDs.
+        igeo : int, default=0
+            Compatibility flag. Value 1 is invalid for geodetic geometry.
+
+        Returns
+        -------
+        tuple
+            New longitude, latitude, face IDs, and boundary class codes.
+        """
         if int(igeo) == 1:
             raise ValueError('igeo=1 is not used by geodetic runtime geometry.')
         longitude = np.asarray(x0, dtype=np.float64)
@@ -451,8 +583,11 @@ class GeodeticGridGeometry:
                 np.empty(0, dtype=np.int8),
             )
         starts = self.locate_points(longitude, latitude, simplex_ids)
-        lower = self.prepare_vector_field(lower_u, lower_v)
-        upper = lower if weight <= 0.0 else self.prepare_vector_field(upper_u, upper_v)
+        lower = _validate_prepared_vector_field(lower_ecef, self.grid_x.size)
+        upper = lower if weight <= 0.0 else _validate_prepared_vector_field(
+            upper_ecef,
+            self.grid_x.size,
+        )
         destination = self._rk4_ecef(
             longitude.ravel(),
             latitude.ravel(),
@@ -464,7 +599,8 @@ class GeodeticGridGeometry:
         )
         new_longitude, new_latitude = ecef_to_lonlat(destination)
         new_longitude = self._wrap_longitude(new_longitude)
-        new_faces = self.locate_points(new_longitude, new_latitude, starts)
+        unit_destination = destination / self.coordinate_transform.earth_radius_m
+        new_faces = self._locate_unit_ecef_points(unit_destination, starts)
         boundary_codes = self._boundary_codes_for_exits(
             destination,
             starts,
@@ -532,32 +668,34 @@ class GeodeticGridGeometry:
 
     def _rk4_ecef(self, longitude, latitude, starts, lower, upper, weight, dt):
         radius = self.coordinate_transform.earth_radius_m
-        r0 = lonlat_to_ecef(longitude, latitude, radius=radius)
-        k1 = self._velocity_at_ecef(r0, starts, lower, upper, weight)
+        unit0 = lonlat_to_ecef(longitude, latitude, radius=1.0)
+        r0 = radius * unit0
+        k1 = self._velocity_at_ecef(unit0, starts, lower, upper, weight)
         r2 = _normalize_to_radius(r0 + 0.5 * dt * k1, radius)
-        f2 = self.locate_points(*ecef_to_lonlat(r2), starts)
-        k2 = self._velocity_at_ecef(r2, f2, lower, upper, weight)
+        unit2 = r2 / radius
+        f2 = self._locate_unit_ecef_points(unit2, starts)
+        k2 = self._velocity_at_ecef(unit2, f2, lower, upper, weight)
         r3 = _normalize_to_radius(r0 + 0.5 * dt * k2, radius)
-        f3 = self.locate_points(*ecef_to_lonlat(r3), f2)
-        k3 = self._velocity_at_ecef(r3, f3, lower, upper, weight)
+        unit3 = r3 / radius
+        f3 = self._locate_unit_ecef_points(unit3, f2)
+        k3 = self._velocity_at_ecef(unit3, f3, lower, upper, weight)
         r4 = _normalize_to_radius(r0 + dt * k3, radius)
-        f4 = self.locate_points(*ecef_to_lonlat(r4), f3)
-        k4 = self._velocity_at_ecef(r4, f4, lower, upper, weight)
+        unit4 = r4 / radius
+        f4 = self._locate_unit_ecef_points(unit4, f3)
+        k4 = self._velocity_at_ecef(unit4, f4, lower, upper, weight)
         return _normalize_to_radius(r0 + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0, radius)
 
-    def _velocity_at_ecef(self, positions, faces, lower, upper, weight):
-        longitude, latitude = ecef_to_lonlat(positions)
-        lower_values = self._interpolate_ecef_velocity(lower, longitude, latitude, faces)
+    def _velocity_at_ecef(self, unit_positions, faces, lower, upper, weight):
+        lower_values = self._interpolate_ecef_velocity(lower, unit_positions, faces)
         if weight <= 0.0:
             values = lower_values
         else:
-            upper_values = self._interpolate_ecef_velocity(upper, longitude, latitude, faces)
+            upper_values = self._interpolate_ecef_velocity(upper, unit_positions, faces)
             values = lower_values + weight * (upper_values - lower_values)
-        unit = _normalize_to_radius(positions, 1.0)
-        return values - np.sum(values * unit, axis=1)[:, np.newaxis] * unit
+        return values - np.sum(values * unit_positions, axis=1)[:, np.newaxis] * unit_positions
 
-    def _interpolate_ecef_velocity(self, field, longitude, latitude, faces):
-        weights = self._weights_for_lonlat(longitude, latitude, faces)
+    def _interpolate_ecef_velocity(self, field, unit_points, faces):
+        weights = self._weights_for_ecef(unit_points, faces)
         result = np.zeros((len(faces), 3), dtype=np.float64)
         valid = faces >= 0
         if np.any(valid):
@@ -567,6 +705,10 @@ class GeodeticGridGeometry:
 
     def _weights_for_lonlat(self, longitude, latitude, faces):
         points = lonlat_to_ecef(longitude, latitude, radius=1.0)
+        return self._weights_for_ecef(points, faces)
+
+    def _weights_for_ecef(self, points, faces):
+        """Return face-local interpolation weights for unit ECEF points."""
         weights = np.full((len(faces), 3), np.nan, dtype=np.float64)
         valid = faces >= 0
         if not np.any(valid):
@@ -592,58 +734,19 @@ class GeodeticGridGeometry:
         weights[valid, 2] = w2
         return weights
 
-    def _walk_to_containing_face(self, point, start_face):
-        face = start_face
-        visited = set()
-        for _ in range(128):
-            if face < 0 or face in visited:
-                return -1
-            visited.add(face)
-            sides = self._face_sides(point, face)
-            edge = int(np.argmin(sides))
-            if sides[edge] >= -TRIANGLE_TOLERANCE:
-                return face
-            face = int(self.triangle_neighbors[face, edge])
-        return -1
-
-    def _point_in_face(self, point, face):
-        return bool(np.all(self._face_sides(point, face) >= -TRIANGLE_TOLERANCE))
-
-    def _face_sides(self, point, face):
-        vertices = self.node_unit_ecef[self.triangles[face]]
-        edge_normals = np.cross(
-            vertices[[1, 2, 0]],
-            vertices[[2, 0, 1]],
-        )
-        signs = edge_normals @ self.face_centres[face]
-        edge_normals *= np.where(signs < 0.0, -1.0, 1.0)[:, np.newaxis]
-        return edge_normals @ point
-
     def _boundary_codes_for_exits(self, destinations, starts, new_faces):
-        codes = np.zeros(len(starts), dtype=np.int8)
-        exits = (starts >= 0) & (new_faces < 0)
-        for index in np.flatnonzero(exits):
-            point = destinations[index] / np.linalg.norm(destinations[index])
-            codes[index] = self._walk_exit_code(point, int(starts[index]))
-        return codes
-
-    def _walk_exit_code(self, point, start_face):
-        """Walk toward a destination and return the crossed outer-edge class."""
-        face = int(start_face)
-        visited = set()
-        for _ in range(128):
-            if face < 0 or face in visited:
-                return BOUNDARY_CLASS_UNCLASSIFIED
-            visited.add(face)
-            sides = self._face_sides(point, face)
-            edge = int(np.argmin(sides))
-            if sides[edge] >= -TRIANGLE_TOLERANCE:
-                return BOUNDARY_CLASS_UNCLASSIFIED
-            neighbor = int(self.triangle_neighbors[face, edge])
-            if neighbor < 0:
-                return self.triangle_edge_class_codes[face, edge]
-            face = neighbor
-        return BOUNDARY_CLASS_UNCLASSIFIED
+        return _boundary_codes_for_exits_numba(
+            np.ascontiguousarray(destinations, dtype=np.float64),
+            np.ascontiguousarray(starts, dtype=np.int64),
+            np.ascontiguousarray(new_faces, dtype=np.int64),
+            self.triangles,
+            self.triangle_neighbors,
+            self.node_unit_ecef,
+            self.face_centres,
+            self.triangle_edge_class_codes,
+            MAX_FACE_WALK_STEPS,
+            TRIANGLE_TOLERANCE,
+        )
 
     def _wrap_longitude(self, longitude):
         """Apply the configured public longitude convention."""
@@ -778,16 +881,281 @@ def _normalize_to_radius(vectors, radius):
     return radius * vectors / norms[:, np.newaxis]
 
 
+def _validate_prepared_vector_field(values, node_count):
+    """Return a validated contiguous prepared ECEF vector field."""
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (node_count, 3):
+        raise ValueError(
+            f'Prepared vector field must have shape ({node_count}, 3), got {array.shape}.'
+        )
+    return np.ascontiguousarray(array)
+
+
 def _circular_mean_longitude(longitude):
     radians = np.deg2rad(longitude)
     return float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)), np.mean(np.cos(radians)))))
 
 
-def _array_identity(array):
-    interface = array.__array_interface__
+@njit(cache=True, parallel=True)
+def _east_north_to_ecef_numba(u, v, longitude, latitude):
+    """Convert east/north nodal vectors to ECEF without basis temporaries."""
+    vectors = np.empty((u.shape[0], 3), dtype=np.float64)
+    degrees_to_radians = np.pi / 180.0
+    for index in prange(u.shape[0]):
+        lon = longitude[index] * degrees_to_radians
+        lat = latitude[index] * degrees_to_radians
+        sin_lon = np.sin(lon)
+        cos_lon = np.cos(lon)
+        sin_lat = np.sin(lat)
+        cos_lat = np.cos(lat)
+        vectors[index, 0] = -u[index] * sin_lon - v[index] * sin_lat * cos_lon
+        vectors[index, 1] = u[index] * cos_lon - v[index] * sin_lat * sin_lon
+        vectors[index, 2] = v[index] * cos_lat
+    return vectors
+
+
+@njit(cache=True, inline='always')
+def _face_sides_ecef_numba(point, face, triangles, node_unit_ecef, face_centres):
+    """Return inward half-space values for one point and spherical face."""
+    i0 = triangles[face, 0]
+    i1 = triangles[face, 1]
+    i2 = triangles[face, 2]
+
+    v0x = node_unit_ecef[i0, 0]
+    v0y = node_unit_ecef[i0, 1]
+    v0z = node_unit_ecef[i0, 2]
+    v1x = node_unit_ecef[i1, 0]
+    v1y = node_unit_ecef[i1, 1]
+    v1z = node_unit_ecef[i1, 2]
+    v2x = node_unit_ecef[i2, 0]
+    v2y = node_unit_ecef[i2, 1]
+    v2z = node_unit_ecef[i2, 2]
+
+    n0x = v1y * v2z - v1z * v2y
+    n0y = v1z * v2x - v1x * v2z
+    n0z = v1x * v2y - v1y * v2x
+    norm0 = np.sqrt(n0x * n0x + n0y * n0y + n0z * n0z)
+    n0x /= norm0
+    n0y /= norm0
+    n0z /= norm0
+
+    n1x = v2y * v0z - v2z * v0y
+    n1y = v2z * v0x - v2x * v0z
+    n1z = v2x * v0y - v2y * v0x
+    norm1 = np.sqrt(n1x * n1x + n1y * n1y + n1z * n1z)
+    n1x /= norm1
+    n1y /= norm1
+    n1z /= norm1
+
+    n2x = v0y * v1z - v0z * v1y
+    n2y = v0z * v1x - v0x * v1z
+    n2z = v0x * v1y - v0y * v1x
+    norm2 = np.sqrt(n2x * n2x + n2y * n2y + n2z * n2z)
+    n2x /= norm2
+    n2y /= norm2
+    n2z /= norm2
+
+    centre_x = face_centres[face, 0]
+    centre_y = face_centres[face, 1]
+    centre_z = face_centres[face, 2]
+    if n0x * centre_x + n0y * centre_y + n0z * centre_z < 0.0:
+        n0x = -n0x
+        n0y = -n0y
+        n0z = -n0z
+    if n1x * centre_x + n1y * centre_y + n1z * centre_z < 0.0:
+        n1x = -n1x
+        n1y = -n1y
+        n1z = -n1z
+    if n2x * centre_x + n2y * centre_y + n2z * centre_z < 0.0:
+        n2x = -n2x
+        n2y = -n2y
+        n2z = -n2z
+
+    point_x = point[0]
+    point_y = point[1]
+    point_z = point[2]
     return (
-        int(interface['data'][0]),
-        array.shape,
-        array.strides,
-        array.dtype.str,
+        n0x * point_x + n0y * point_y + n0z * point_z,
+        n1x * point_x + n1y * point_y + n1z * point_z,
+        n2x * point_x + n2y * point_y + n2z * point_z,
     )
+
+
+@njit(cache=True, inline='always')
+def _walk_point_ecef_numba(
+    point,
+    start_face,
+    triangles,
+    triangle_neighbors,
+    node_unit_ecef,
+    face_centres,
+    max_steps,
+    tolerance,
+):
+    """Walk neighboring spherical faces for one unit ECEF point."""
+    face = start_face
+    previous_face = -1
+    for _ in range(max_steps):
+        if face < 0 or face >= triangles.shape[0]:
+            return -1
+        side0, side1, side2 = _face_sides_ecef_numba(
+            point,
+            face,
+            triangles,
+            node_unit_ecef,
+            face_centres,
+        )
+        edge = 0
+        minimum = side0
+        if side1 < minimum:
+            edge = 1
+            minimum = side1
+        if side2 < minimum:
+            edge = 2
+            minimum = side2
+        if minimum >= -tolerance:
+            return face
+        next_face = triangle_neighbors[face, edge]
+        if next_face < 0 or next_face == face or next_face == previous_face:
+            return -1
+        previous_face = face
+        face = next_face
+    return -1
+
+
+@njit(cache=True, parallel=True)
+def _walk_points_ecef_numba(
+    points,
+    start_faces,
+    triangles,
+    triangle_neighbors,
+    node_unit_ecef,
+    face_centres,
+    max_steps,
+    tolerance,
+):
+    """Walk cached spherical faces for an array of unit ECEF points."""
+    result = np.empty(start_faces.shape[0], dtype=np.int64)
+    for index in prange(start_faces.shape[0]):
+        result[index] = _walk_point_ecef_numba(
+            points[index],
+            start_faces[index],
+            triangles,
+            triangle_neighbors,
+            node_unit_ecef,
+            face_centres,
+            max_steps,
+            tolerance,
+        )
+    return result
+
+
+@njit(cache=True, parallel=True)
+def _locate_candidates_ecef_numba(
+    points,
+    candidates,
+    triangles,
+    node_unit_ecef,
+    face_centres,
+    tolerance,
+):
+    """Select the first containing candidate face for each unit ECEF point."""
+    result = np.full(points.shape[0], -1, dtype=np.int64)
+    for index in prange(points.shape[0]):
+        for candidate_index in range(candidates.shape[1]):
+            face = candidates[index, candidate_index]
+            side0, side1, side2 = _face_sides_ecef_numba(
+                points[index],
+                face,
+                triangles,
+                node_unit_ecef,
+                face_centres,
+            )
+            if side0 >= -tolerance and side1 >= -tolerance and side2 >= -tolerance:
+                result[index] = face
+                break
+    return result
+
+
+@njit(cache=True, inline='always')
+def _walk_exit_code_ecef_numba(
+    point,
+    start_face,
+    triangles,
+    triangle_neighbors,
+    node_unit_ecef,
+    face_centres,
+    triangle_edge_class_codes,
+    max_steps,
+    tolerance,
+):
+    """Walk to the first outer edge crossed by one ECEF destination."""
+    point_norm = np.sqrt(
+        point[0] * point[0]
+        + point[1] * point[1]
+        + point[2] * point[2]
+    )
+    if point_norm <= 0.0:
+        return BOUNDARY_CLASS_UNCLASSIFIED
+    scaled_tolerance = tolerance * point_norm
+    face = start_face
+    previous_face = -1
+    for _ in range(max_steps):
+        if face < 0 or face >= triangles.shape[0]:
+            return BOUNDARY_CLASS_UNCLASSIFIED
+        side0, side1, side2 = _face_sides_ecef_numba(
+            point,
+            face,
+            triangles,
+            node_unit_ecef,
+            face_centres,
+        )
+        edge = 0
+        minimum = side0
+        if side1 < minimum:
+            edge = 1
+            minimum = side1
+        if side2 < minimum:
+            edge = 2
+            minimum = side2
+        if minimum >= -scaled_tolerance:
+            return BOUNDARY_CLASS_UNCLASSIFIED
+        next_face = triangle_neighbors[face, edge]
+        if next_face < 0:
+            return triangle_edge_class_codes[face, edge]
+        if next_face == face or next_face == previous_face:
+            return BOUNDARY_CLASS_UNCLASSIFIED
+        previous_face = face
+        face = next_face
+    return BOUNDARY_CLASS_UNCLASSIFIED
+
+
+@njit(cache=True, parallel=True)
+def _boundary_codes_for_exits_numba(
+    destinations,
+    start_faces,
+    new_faces,
+    triangles,
+    triangle_neighbors,
+    node_unit_ecef,
+    face_centres,
+    triangle_edge_class_codes,
+    max_steps,
+    tolerance,
+):
+    """Classify all exiting particle segments with compiled face walks."""
+    codes = np.zeros(start_faces.shape[0], dtype=np.int8)
+    for index in prange(start_faces.shape[0]):
+        if start_faces[index] >= 0 and new_faces[index] < 0:
+            codes[index] = _walk_exit_code_ecef_numba(
+                destinations[index],
+                start_faces[index],
+                triangles,
+                triangle_neighbors,
+                node_unit_ecef,
+                face_centres,
+                triangle_edge_class_codes,
+                max_steps,
+                tolerance,
+            )
+    return codes

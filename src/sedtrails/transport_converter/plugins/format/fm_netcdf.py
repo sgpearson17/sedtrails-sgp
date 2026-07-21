@@ -35,6 +35,45 @@ class FormatPlugin(BaseFormatPlugin):
         Morphological acceleration factor used to decompress model time.
     """
 
+    SELECTABLE_FIELDS = frozenset(
+        {
+            'bed_level',
+            'depth_avg_flow_velocity',
+            'bed_load_transport',
+            'suspended_transport',
+            'water_depth',
+            'mean_bed_shear_stress',
+            'max_bed_shear_stress',
+            'sediment_concentration',
+            'nonlinear_wave_velocity',
+        }
+    )
+
+    _VARIABLE_MAP = {
+        'bed_level': 'bedlevel',
+        'water_depth': 'waterdepth',
+        'flow_velocity_x': 'sea_water_x_velocity',
+        'flow_velocity_y': 'sea_water_y_velocity',
+        'mean_bed_shear_stress': 'mean_bss_magnitude',
+        'max_bed_shear_stress': 'max_bss_magnitude',
+        'bed_load_transport_x': 'bedload_x_comp',
+        'bed_load_transport_y': 'bedload_y_comp',
+        'suspended_transport_x': 'susload_x_comp',
+        'suspended_transport_y': 'susload_y_comp',
+        'sediment_concentration': 'suspended_sed_conc',
+    }
+
+    _FIELD_COMPONENT_KEYS = {
+        'bed_level': ('bed_level',),
+        'depth_avg_flow_velocity': ('flow_velocity_x', 'flow_velocity_y'),
+        'bed_load_transport': ('bed_load_transport_x', 'bed_load_transport_y'),
+        'suspended_transport': ('suspended_transport_x', 'suspended_transport_y'),
+        'water_depth': ('water_depth',),
+        'mean_bed_shear_stress': ('mean_bed_shear_stress',),
+        'max_bed_shear_stress': ('max_bed_shear_stress',),
+        'sediment_concentration': ('sediment_concentration',),
+    }
+
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
         Initialize the plugin with the input file.
@@ -107,7 +146,12 @@ class FormatPlugin(BaseFormatPlugin):
         return decompress_time_info(time_info, self.morfac)
 
     def convert(
-        self, current_time=None, reading_interval=None, reference_date: Optional[np.datetime64] = None
+        self,
+        current_time=None,
+        reading_interval=None,
+        reference_date: Optional[np.datetime64] = None,
+        required_fields=None,
+        max_memory_bytes: int | None = None,
     ) -> SedtrailsData:
         """
         Delft3D from Flexible Mesh NetCDF.
@@ -118,6 +162,13 @@ class FormatPlugin(BaseFormatPlugin):
             Current simulation time in seconds
         reading_interval : float, optional
             Reading interval in seconds
+        reference_date : np.datetime64, optional
+            Reference date for converting time values.
+        required_fields : sequence of str, optional
+            SedTRAILS source fields to materialize. Omission preserves the
+            historical all-fields conversion.
+        max_memory_bytes : int, optional
+            Estimated byte limit for time-varying fields in this window.
 
         Returns
         -------
@@ -135,8 +186,17 @@ class FormatPlugin(BaseFormatPlugin):
         # Apply morfac decompression to time before time slicing
         time_info = self._decompress_time(time_info)
 
+        selected_fields = self._selectable_required_fields(required_fields)
         # Determine if we need to slice based on current_time and reading_interval
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
+        time_start_idx, time_end_idx = self._limit_time_slice_by_memory(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            current_time=current_time,
+            selected_fields=selected_fields,
+            max_memory_bytes=max_memory_bytes,
+        )
 
         # Apply time slicing if needed
         if time_start_idx is not None or time_end_idx is not None:
@@ -144,7 +204,12 @@ class FormatPlugin(BaseFormatPlugin):
             time_info = self._slice_time_info(time_info, time_slice)
 
         # Map the variables to SedtrailsData structure
-        mapped_data = self._map_dfm_variables(time_info, time_start_idx, time_end_idx)
+        mapped_data = self._map_dfm_variables(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            required_fields=selected_fields,
+        )
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
@@ -153,48 +218,37 @@ class FormatPlugin(BaseFormatPlugin):
             if isinstance(value, np.ndarray) and value.ndim > 2 and value.shape[0] == 1:
                 mapped_data[key] = np.squeeze(value, axis=0)
 
-        # Calculate magnitudes for vector quantities
-        # Flow velocity magnitude
-        depth_avg_velocity_magnitude = np.sqrt(
-            mapped_data['flow_velocity_x'] ** 2 + mapped_data['flow_velocity_y'] ** 2
+        depth_avg_flow_velocity = self._mapped_vector_field(
+            mapped_data,
+            'flow_velocity',
+            selected='depth_avg_flow_velocity' in selected_fields,
         )
-
-        # Bed load magnitude
-        bed_load_magnitude = np.sqrt(
-            mapped_data['bed_load_transport_x'] ** 2 + mapped_data['bed_load_transport_y'] ** 2
+        bed_load_transport = self._mapped_vector_field(
+            mapped_data,
+            'bed_load_transport',
+            selected='bed_load_transport' in selected_fields,
         )
-
-        # Suspended sediment magnitude
-        suspended_transport_magnitude = np.sqrt(
-            mapped_data['suspended_transport_x'] ** 2 + mapped_data['suspended_transport_y'] ** 2
+        suspended_transport = self._mapped_vector_field(
+            mapped_data,
+            'suspended_transport',
+            selected='suspended_transport' in selected_fields,
         )
-
-        # Create dictionaries for vector quantities
-        depth_avg_flow_velocity = {
-            'x': mapped_data['flow_velocity_x'],
-            'y': mapped_data['flow_velocity_y'],
-            'magnitude': depth_avg_velocity_magnitude,
-        }
-
-        bed_load_transport = {
-            'x': mapped_data['bed_load_transport_x'],
-            'y': mapped_data['bed_load_transport_y'],
-            'magnitude': bed_load_magnitude,
-        }
-
-        suspended_transport = {
-            'x': mapped_data['suspended_transport_x'],
-            'y': mapped_data['suspended_transport_y'],
-            'magnitude': suspended_transport_magnitude,
-        }
-
-        # Create nonlinear wave velocity dictionary with zeros
-        # Using the same shape as other vector quantities
-        nonlinear_wave_velocity = {
-            'x': np.zeros_like(mapped_data['flow_velocity_x']),
-            'y': np.zeros_like(mapped_data['flow_velocity_y']),
-            'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
-        }
+        if 'nonlinear_wave_velocity' in selected_fields:
+            if depth_avg_flow_velocity is not None:
+                nonlinear_wave_velocity = {
+                    'x': np.zeros_like(depth_avg_flow_velocity['x']),
+                    'y': np.zeros_like(depth_avg_flow_velocity['y']),
+                    'magnitude': np.zeros_like(depth_avg_flow_velocity['magnitude']),
+                }
+            else:
+                zero_shape = (len(seconds_since_ref), mapped_data['x'].size)
+                nonlinear_wave_velocity = {
+                    'x': np.zeros(zero_shape, dtype=float),
+                    'y': np.zeros(zero_shape, dtype=float),
+                    'magnitude': np.zeros(zero_shape, dtype=float),
+                }
+        else:
+            nonlinear_wave_velocity = None
 
         # Create SedtrailsMetadata object
         metadata = SedtrailsMetadata(
@@ -214,15 +268,15 @@ class FormatPlugin(BaseFormatPlugin):
             reference_date=self.reference_date,
             x=mapped_data['x'],
             y=mapped_data['y'],
-            bed_level=mapped_data['bed_level'],
+            bed_level=mapped_data.get('bed_level'),
             depth_avg_flow_velocity=depth_avg_flow_velocity,
             fractions=1,  # Default to 1 fraction
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
-            water_depth=mapped_data['water_depth'],
-            mean_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
-            max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
-            sediment_concentration=mapped_data['sediment_concentration'],
+            water_depth=mapped_data.get('water_depth'),
+            mean_bed_shear_stress=mapped_data.get('mean_bed_shear_stress'),
+            max_bed_shear_stress=mapped_data.get('max_bed_shear_stress'),
+            sediment_concentration=mapped_data.get('sediment_concentration'),
             nonlinear_wave_velocity=nonlinear_wave_velocity,
             node_x=mapped_data['x'],
             node_y=mapped_data['y'],
@@ -371,32 +425,223 @@ class FormatPlugin(BaseFormatPlugin):
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
 
-        # If no chunking parameters provided, load entire file
         if current_time is None or reading_interval is None:
+            return None, None
+        if reading_interval <= 0:
             return None, None
 
         times_array = np.asarray(time_info['seconds_since_reference'], dtype=float)
-        if times_array.size == 0:
+        if times_array.size <= 2:
             return None, None
-
         forcing_span = times_array[-1] - times_array[0]
-
-        # If reading_interval is 0 or spans the forcing window, load entire file.
-        if reading_interval <= 0 or forcing_span <= 0 or reading_interval >= forcing_span:
+        if forcing_span <= 0 or reading_interval >= forcing_span:
             return None, None
 
-        # Find current time index
-        current_idx = np.searchsorted(times_array, current_time)
+        start_idx, bracket_end_idx = self._interpolation_bracket(times_array, current_time)
+        requested_end_time = float(current_time) + float(reading_interval)
+        requested_upper_idx = int(np.searchsorted(times_array, requested_end_time, side='left'))
+        requested_upper_idx = min(
+            times_array.size - 1,
+            max(bracket_end_idx - 1, requested_upper_idx),
+        )
+        return start_idx, requested_upper_idx + 1
 
-        # Calculate chunk size based on reading interval and NetCDF timestep
-        netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
-        chunk_steps = max(10, int(reading_interval / netcdf_timestep))
+    @classmethod
+    def _selectable_required_fields(cls, required_fields) -> set[str]:
+        """Return supported source fields selected for materialization."""
+        if required_fields is None:
+            return set(cls.SELECTABLE_FIELDS)
+        return set(required_fields).intersection(cls.SELECTABLE_FIELDS)
 
-        # Calculate start and end indices with some buffer
-        start_idx = max(0, current_idx - chunk_steps // 4)
-        end_idx = min(len(times_array), current_idx + chunk_steps)
+    @staticmethod
+    def _mapped_vector_field(data: Dict, prefix: str, *, selected: bool) -> Dict | None:
+        """Build one selected vector field and its magnitude."""
+        if not selected:
+            return None
+        x_values = data[f'{prefix}_x']
+        y_values = data[f'{prefix}_y']
+        return {
+            'x': x_values,
+            'y': y_values,
+            'magnitude': np.hypot(x_values, y_values),
+        }
 
-        return start_idx, end_idx
+    @staticmethod
+    def _interpolation_bracket(
+        times: np.ndarray,
+        current_time: float | None,
+    ) -> tuple[int, int]:
+        """Return a two-plane slice bracketing the requested time."""
+        num_times = int(times.size)
+        if num_times <= 1:
+            return 0, num_times
+        if current_time is None:
+            return 0, 2
+
+        lower = int(np.searchsorted(times, current_time, side='right')) - 1
+        lower = min(max(lower, 0), num_times - 2)
+        return lower, lower + 2
+
+    def _limit_time_slice_by_memory(
+        self,
+        time_info: Dict,
+        start_idx: int | None,
+        end_idx: int | None,
+        *,
+        current_time: float | None,
+        selected_fields: set[str],
+        max_memory_bytes: int | None,
+    ) -> tuple[int | None, int | None]:
+        """Cap a time window by estimated retained field bytes."""
+        if max_memory_bytes is None:
+            return start_idx, end_idx
+
+        try:
+            memory_limit = int(max_memory_bytes)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('max_memory_bytes must be an integer byte count') from exc
+
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        num_times = int(times.size)
+        bytes_per_plane = self._estimate_bytes_per_time_plane(selected_fields)
+        if num_times == 0 or bytes_per_plane == 0:
+            return start_idx, end_idx
+
+        required_planes = min(2, num_times)
+        required_bytes = required_planes * bytes_per_plane
+        if memory_limit < required_bytes:
+            fields_text = ', '.join(sorted(selected_fields)) or '<none>'
+            raise MemoryError(
+                f'Delft3D-FM forcing requires at least {required_bytes} bytes for '
+                f'{required_planes} interpolation planes ({bytes_per_plane} bytes/plane) '
+                f'for fields [{fields_text}], but max_memory_bytes={memory_limit}. '
+                'Increase inputs.max_eulerian_memory_mb or request fewer fields.'
+            )
+
+        max_planes = min(
+            num_times,
+            max(required_planes, memory_limit // bytes_per_plane),
+        )
+        desired_start = 0 if start_idx is None else int(start_idx)
+        desired_end = num_times if end_idx is None else int(end_idx)
+        if desired_end - desired_start <= max_planes:
+            return start_idx, end_idx
+
+        bracket_start, bracket_end = self._interpolation_bracket(times, current_time)
+        latest_start = desired_end - max_planes
+        bounded_start = min(max(bracket_start, desired_start), latest_start)
+        bounded_start = max(desired_start, bounded_start)
+        if bracket_end > bounded_start + max_planes:
+            bounded_start = bracket_end - max_planes
+        return bounded_start, bounded_start + max_planes
+
+    def _estimate_bytes_per_time_plane(self, selected_fields: set[str]) -> int:
+        """Estimate retained array bytes for one selected forcing plane."""
+        if self.input_data is None or not selected_fields:
+            return 0
+        if 'net_xcc' not in self.input_data:
+            return 0
+
+        spatial_size = int(np.prod(self.input_data['net_xcc'].shape, dtype=np.int64))
+        fallback_bytes = spatial_size * np.dtype(np.float64).itemsize
+        total_bytes = 0
+        for field_name in selected_fields:
+            if field_name == 'nonlinear_wave_velocity':
+                total_bytes += 3 * fallback_bytes
+                continue
+
+            component_keys = self._FIELD_COMPONENT_KEYS.get(field_name, ())
+            variable_names = [self._VARIABLE_MAP[key] for key in component_keys]
+            component_bytes = [
+                self._source_component_plane_bytes(
+                    variable_name,
+                    fallback_bytes,
+                )
+                for variable_name in variable_names
+            ]
+            total_bytes += sum(component_bytes)
+            if len(component_bytes) == 2:
+                total_bytes += self._source_hypot_plane_bytes(
+                    variable_names[0],
+                    variable_names[1],
+                    spatial_size,
+                )
+        return total_bytes
+
+    def estimate_source_bytes_per_time_plane(self, required_fields=None) -> int:
+        """Return exact source-backed bytes retained for one forcing plane.
+
+        Parameters
+        ----------
+        required_fields : sequence of str, optional
+            SedTRAILS fields that the runtime plans to read. Omission selects
+            every field supported by this plugin.
+
+        Returns
+        -------
+        int
+            Bytes for one source time plane, including derived vector
+            magnitudes. Only dataset shape and dtype metadata are inspected.
+        """
+        if self.input_data is None:
+            self.load()
+        selected_fields = self._selectable_required_fields(required_fields)
+        return self._estimate_bytes_per_time_plane(selected_fields)
+
+    def _source_component_plane_bytes(
+        self,
+        variable_name: str,
+        fallback_bytes: int,
+    ) -> int:
+        """Return retained bytes for one source component and time plane."""
+        fallback_count = fallback_bytes // np.dtype(np.float64).itemsize
+        element_count, dtype = self._source_component_plane_spec(
+            variable_name,
+            fallback_count,
+        )
+        return element_count * dtype.itemsize
+
+    def _source_component_plane_spec(
+        self,
+        variable_name: str,
+        fallback_count: int,
+    ) -> tuple[int, np.dtype]:
+        """Return source element count and dtype without reading values."""
+        if self.input_data is None or variable_name not in self.input_data:
+            return fallback_count, np.dtype(np.float64)
+
+        variable = self.input_data[variable_name]
+        element_count = 1
+        for dimension, size in variable.sizes.items():
+            if dimension in {'time', 'layer'}:
+                continue
+            element_count *= int(size)
+        try:
+            dtype = np.dtype(variable.dtype)
+        except TypeError:
+            dtype = np.dtype(np.float64)
+        return element_count, dtype
+
+    def _source_hypot_plane_bytes(
+        self,
+        x_variable_name: str,
+        y_variable_name: str,
+        fallback_count: int,
+    ) -> int:
+        """Return exact bytes of a NumPy hypot-derived magnitude plane."""
+        x_count, x_dtype = self._source_component_plane_spec(
+            x_variable_name,
+            fallback_count,
+        )
+        y_count, y_dtype = self._source_component_plane_spec(
+            y_variable_name,
+            fallback_count,
+        )
+        magnitude_dtype = np.hypot(
+            np.zeros((), dtype=x_dtype),
+            np.zeros((), dtype=y_dtype),
+        ).dtype
+        return max(x_count, y_count) * magnitude_dtype.itemsize
 
     def load(self) -> Any:
         """
@@ -487,7 +732,11 @@ class FormatPlugin(BaseFormatPlugin):
         }
 
     def _map_dfm_variables(
-        self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
+        self,
+        time_info,
+        time_start_idx: Optional[int] = None,
+        time_end_idx: Optional[int] = None,
+        required_fields=None,
     ) -> Dict:
         """
         Map Delft3D Flexible Mesh variables to SedtrailsData structure.
@@ -517,29 +766,14 @@ class FormatPlugin(BaseFormatPlugin):
             else slice(None)
         )
 
-        # Variable mapping for DFM files
-        variable_map = {
-            'x': 'net_xcc',  # X-coordinates
-            'y': 'net_ycc',  # Y-coordinates
-            'bed_level': 'bedlevel',  # Bed level
-            'water_depth': 'waterdepth',  # Water depth
-            'flow_velocity_x': 'sea_water_x_velocity',  # X-component of flow velocity
-            'flow_velocity_y': 'sea_water_y_velocity',  # Y-component of flow velocity
-            'mean_bed_shear_stress': 'mean_bss_magnitude',  # Mean bed shear stress
-            'max_bed_shear_stress': 'max_bss_magnitude',  # Max bed shear stress
-            'bed_load_transport_x': 'bedload_x_comp',  # X-component of bed load sediment transport
-            'bed_load_transport_y': 'bedload_y_comp',  # Y-component of bed load sediment transport
-            'suspended_transport_x': 'susload_x_comp',  # X-component of suspended sediment transport
-            'suspended_transport_y': 'susload_y_comp',  # Y-component of suspended sediment transport
-            'sediment_concentration': 'suspended_sed_conc',  # Suspended sediment concentration
-        }
+        selected_fields = self._selectable_required_fields(required_fields)
 
         # Extract data from dataset
         data = {}
 
         # First, get spatial coordinates (typically not time-dependent)
         for key in ['x', 'y']:
-            var_name = variable_map[key]
+            var_name = f'net_{key}cc'
             if var_name in self.input_data:
                 data[key] = self.input_data[var_name].values
             else:
@@ -550,23 +784,14 @@ class FormatPlugin(BaseFormatPlugin):
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
 
-        # Extract time-dependent variables
-        time_dependent_vars = [
-            'bed_level',
-            'water_depth',
-            'mean_bed_shear_stress',
-            'max_bed_shear_stress',
-            'sediment_concentration',
-            'flow_velocity_x',
-            'flow_velocity_y',
-            'bed_load_transport_x',
-            'bed_load_transport_y',
-            'suspended_transport_x',
-            'suspended_transport_y',
-        ]
-
-        for key in time_dependent_vars:
-            var_name = variable_map[key]
+        selected_component_keys = {
+            component_key
+            for field_name in selected_fields
+            for component_key in self._FIELD_COMPONENT_KEYS.get(field_name, ())
+        }
+        for key, var_name in self._VARIABLE_MAP.items():
+            if key not in selected_component_keys:
+                continue
             if var_name in self.input_data:
                 var = self.input_data[var_name]
 
@@ -596,7 +821,7 @@ class FormatPlugin(BaseFormatPlugin):
             self._last_inner_boundary_mask = cache['mask_result']
             return cache['triangles']
 
-        source_connectivity = self._source_face_node_connectivity(node_count=np.asarray(node_x).size)
+        source_connectivity = self._source_face_node_connectivity(node_x, node_y)
         if source_connectivity is None:
             candidate_connectivity = delaunay_connectivity(
                 node_x,
@@ -752,7 +977,19 @@ class FormatPlugin(BaseFormatPlugin):
         right_array = np.asarray(right)
         return left.shape == right_array.shape and np.array_equal(left, right_array)
 
-    def _source_face_node_connectivity(self, node_count: int) -> np.ndarray | None:
+    def _source_face_node_connectivity(
+        self,
+        point_x: np.ndarray,
+        point_y: np.ndarray,
+    ) -> np.ndarray | None:
+        """Return source connectivity expressed in the point-coordinate index space."""
+        point_count = int(np.asarray(point_x).size)
+        if self._point_coordinates_are_mesh_nodes():
+            return self._primal_connectivity_for_nodes(point_count)
+        return self._dual_face_center_connectivity(point_x, point_y)
+
+    def _primal_connectivity_for_nodes(self, node_count: int) -> np.ndarray | None:
+        """Return primal topology only when points are verified mesh nodes."""
         for variable_name in _FACE_NODE_CONNECTIVITY_CANDIDATES:
             if variable_name in self.input_data:
                 connectivity = self._normalize_face_node_connectivity(
@@ -762,6 +999,104 @@ class FormatPlugin(BaseFormatPlugin):
                 )
                 if self._connectivity_compatible_with_points(connectivity, node_count):
                     return connectivity
+        return None
+
+    def _point_coordinates_are_mesh_nodes(self) -> bool:
+        """Return whether net_xcc/net_ycc explicitly share a node dimension."""
+        if self.input_data is None or 'net_xcc' not in self.input_data or 'net_ycc' not in self.input_data:
+            return False
+
+        x_variable = self.input_data['net_xcc']
+        y_variable = self.input_data['net_ycc']
+        if tuple(x_variable.dims) != tuple(y_variable.dims):
+            return False
+
+        locations = {
+            str(variable.attrs.get('location', '')).strip().lower()
+            for variable in (x_variable, y_variable)
+        }
+        if 'face' in locations:
+            return False
+        if 'node' in locations:
+            return True
+
+        dimension_text = ' '.join(str(dimension).lower() for dimension in x_variable.dims)
+        if 'face' in dimension_text or 'elem' in dimension_text:
+            return False
+        if 'node' in dimension_text:
+            return True
+
+        for x_name, y_name in zip(_NODE_X_CANDIDATES, _NODE_Y_CANDIDATES, strict=True):
+            if x_name not in self.input_data or y_name not in self.input_data:
+                continue
+            if (
+                tuple(self.input_data[x_name].dims) == tuple(x_variable.dims)
+                and tuple(self.input_data[y_name].dims) == tuple(y_variable.dims)
+            ):
+                return True
+        return False
+
+    def _dual_face_center_connectivity(
+        self,
+        face_x: np.ndarray,
+        face_y: np.ndarray,
+    ) -> np.ndarray | None:
+        """Derive face-centre triangles from authoritative primal UGRID topology."""
+        point_count = int(np.asarray(face_x).size)
+        try:
+            if isinstance(self.input_data, xu.UgridDataset):
+                grid = self.input_data.grid
+                if not isinstance(grid, xu.Ugrid2d) or int(grid.n_face) != point_count:
+                    return None
+            else:
+                node_variables = self._source_node_coordinate_variables()
+                if node_variables is None:
+                    return None
+                node_x_variable, node_y_variable = node_variables
+                source_faces = None
+                for variable_name in _FACE_NODE_CONNECTIVITY_CANDIDATES:
+                    if variable_name not in self.input_data:
+                        continue
+                    source_faces = self._normalize_face_node_connectivity(
+                        self.input_data[variable_name],
+                        node_count=int(np.asarray(node_x_variable).size),
+                        variable_name=variable_name,
+                    )
+                    break
+                if source_faces is None or source_faces.shape[0] != point_count:
+                    return None
+                grid = xu.Ugrid2d(
+                    np.asarray(node_x_variable),
+                    np.asarray(node_y_variable),
+                    -1,
+                    source_faces,
+                    projected=self._coordinate_system() != 'geographic',
+                )
+            triangulation, face_index = grid.centroid_triangulation
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return None
+
+        centroid_triangles = np.asarray(triangulation[2], dtype=np.int64)
+        source_face_index = np.asarray(face_index, dtype=np.int64)
+        if centroid_triangles.size == 0 or source_face_index.size == 0:
+            return None
+
+        triangles = source_face_index[centroid_triangles]
+        valid = np.all((triangles >= 0) & (triangles < point_count), axis=1)
+        valid &= triangles[:, 0] != triangles[:, 1]
+        valid &= triangles[:, 0] != triangles[:, 2]
+        valid &= triangles[:, 1] != triangles[:, 2]
+        if not np.all(valid):
+            triangles = triangles[valid]
+        return None if triangles.size == 0 else triangles
+
+    def _source_node_coordinate_variables(self):
+        """Return a paired source node-coordinate variable set when available."""
+        if self.input_data is None:
+            return None
+        for x_name, y_name in zip(_NODE_X_CANDIDATES, _NODE_Y_CANDIDATES, strict=True):
+            if x_name in self.input_data and y_name in self.input_data:
+                return self.input_data[x_name], self.input_data[y_name]
         return None
 
     @staticmethod
@@ -786,23 +1121,34 @@ class FormatPlugin(BaseFormatPlugin):
             faces = faces.T
 
         fill_value = _variable_fill_value(face_nodes_var)
-        valid_raw = faces.astype(np.float64)
-        valid_mask = np.isfinite(valid_raw)
-        if fill_value is not None:
-            valid_mask &= valid_raw != float(fill_value)
-
         start_index = _variable_start_index(face_nodes_var)
         if start_index is None:
             if variable_name in {'NetElemNode', 'net_elem_node', 'net_element_node'}:
                 start_index = 1
             else:
-                valid_values = valid_raw[valid_mask]
+                valid_mask = (
+                    np.isfinite(faces)
+                    if np.issubdtype(faces.dtype, np.floating)
+                    else np.ones(faces.shape, dtype=bool)
+                )
+                if fill_value is not None:
+                    valid_mask &= faces != fill_value
+                valid_values = faces[valid_mask]
                 if valid_values.size and np.nanmin(valid_values) >= 1 and np.nanmax(valid_values) <= node_count:
                     start_index = 1
                 else:
                     start_index = 0
 
-        normalized = faces.astype(np.int64) - int(start_index)
+        if (
+            np.issubdtype(faces.dtype, np.signedinteger)
+            and int(start_index) == 0
+            and (fill_value is None or int(fill_value) < 0)
+        ):
+            return faces
+
+        output_dtype = faces.dtype if np.issubdtype(faces.dtype, np.signedinteger) else np.int64
+        normalized = faces.astype(output_dtype, copy=True)
+        normalized -= int(start_index)
         invalid = normalized < 0
         if fill_value is not None:
             invalid |= faces == fill_value
@@ -816,6 +1162,22 @@ _FACE_NODE_CONNECTIVITY_CANDIDATES = (
     'NetElemNode',
     'net_elem_node',
     'net_element_node',
+)
+
+_NODE_X_CANDIDATES = (
+    'mesh2d_node_x',
+    'Mesh2_node_x',
+    'Mesh2d_node_x',
+    'NetNode_x',
+    'net_node_x',
+)
+
+_NODE_Y_CANDIDATES = (
+    'mesh2d_node_y',
+    'Mesh2_node_y',
+    'Mesh2d_node_y',
+    'NetNode_y',
+    'net_node_y',
 )
 
 

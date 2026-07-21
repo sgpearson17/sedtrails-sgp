@@ -841,3 +841,181 @@ def test_preserves_fraction_dimension_when_requested(tmp_path: Path) -> None:
     selected = plugin._select_first_dims(var, select_fraction_dims=False)
     assert selected.dims == ('LSED', 'M')
     np.testing.assert_array_equal(selected.values, var.values)
+
+
+def test_selective_d3d4_window_is_byte_bounded_and_bracketed(tmp_path: Path) -> None:
+    """Selected Delft3D fields should fit a bounded two-plane time window."""
+    input_file = tmp_path / 'bounded_d3d4.nc'
+    input_file.write_text('')
+    times = np.arange(0, 60, 10).astype('timedelta64[s]') + np.datetime64('1970-01-01')
+    water_depth = np.arange(24, dtype=float).reshape(6, 2, 2)
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'DPS': (('time', 'M', 'N'), water_depth),
+        },
+        coords={'time': times},
+    )
+
+    data = plugin.convert(
+        current_time=25.0,
+        reading_interval=100.0,
+        required_fields=('water_depth', 'derived_runtime_field'),
+        max_memory_bytes=64,
+    )
+
+    np.testing.assert_array_equal(data.times, np.array([20.0, 30.0]))
+    np.testing.assert_array_equal(data.water_depth, water_depth[2:4].reshape(2, 4))
+    assert data.bed_level is None
+    assert data.depth_avg_flow_velocity is None
+    assert data.bed_load_transport is None
+    assert data.suspended_transport is None
+    assert data.mean_bed_shear_stress is None
+    assert data.max_bed_shear_stress is None
+    assert data.sediment_concentration is None
+    assert data.nonlinear_wave_velocity is None
+
+
+def test_d3d4_memory_error_precedes_field_materialization(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Delft3D should reject a budget that cannot hold two required planes."""
+    input_file = tmp_path / 'undersized_d3d4.nc'
+    input_file.write_text('')
+    times = np.arange(0, 40, 10).astype('timedelta64[s]') + np.datetime64('1970-01-01')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'DPS': (('time', 'M', 'N'), np.ones((4, 2, 2))),
+        },
+        coords={'time': times},
+    )
+
+    def fail_mapping(*_args, **_kwargs):
+        raise AssertionError('field materialization must not start')
+
+    monkeypatch.setattr(plugin, '_map_delft3d4_variables', fail_mapping)
+
+    with pytest.raises(MemoryError, match=r'64 bytes.*max_memory_bytes=63'):
+        plugin.convert(
+            current_time=15.0,
+            reading_interval=10.0,
+            required_fields=('water_depth',),
+            max_memory_bytes=63,
+        )
+
+
+def test_d3d4_structured_topology_is_compact_cached_and_invalidated(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """D3D4 should build compact topology once per active-cell layout."""
+    input_file = tmp_path / 'cached_topology.nc'
+    input_file.write_text('')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'KCS': (('M', 'N'), np.ones((2, 2), dtype=np.int8)),
+        }
+    )
+    original_builder = plugin._build_active_structured_triangles
+    build_count = 0
+
+    def counted_builder(valid):
+        nonlocal build_count
+        build_count += 1
+        return original_builder(valid)
+
+    monkeypatch.setattr(plugin, '_build_active_structured_triangles', counted_builder)
+    first = plugin._active_structured_triangles_from_dataset()
+    second = plugin._active_structured_triangles_from_dataset()
+
+    assert first is second
+    assert first.dtype == np.int32
+    assert build_count == 1
+    assert plugin._filter_active_triangles(first) is first
+
+    plugin.input_data['KCS'].values[0, 0] = 0
+    changed = plugin._active_structured_triangles_from_dataset()
+
+    assert changed is not first
+    assert changed.dtype == np.int32
+    assert build_count == 2
+
+
+def test_d3d4_vector_peak_preflight_includes_centering_workset(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A retained-only budget must fail before D3D4 vector materialization."""
+    input_file = tmp_path / 'vector_peak.nc'
+    input_file.write_text('')
+    times = np.arange(0, 40, 10).astype('timedelta64[s]') + np.datetime64('1970-01-01')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    shape = (4, 2, 2)
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'U1': (('time', 'MC', 'N'), np.ones(shape)),
+            'V1': (('time', 'M', 'NC'), np.ones(shape)),
+            'KFU': (('time', 'MC', 'N'), np.ones(shape)),
+            'KFV': (('time', 'M', 'NC'), np.ones(shape)),
+        },
+        coords={'time': times},
+    )
+
+    def fail_mapping(*_args, **_kwargs):
+        raise AssertionError('field materialization must not start')
+
+    monkeypatch.setattr(plugin, '_map_delft3d4_variables', fail_mapping)
+
+    with pytest.raises(MemoryError, match=r'896 bytes.*max_memory_bytes=895'):
+        plugin.convert(
+            current_time=15.0,
+            reading_interval=10.0,
+            required_fields=('depth_avg_flow_velocity',),
+            max_memory_bytes=895,
+        )
+
+
+def test_d3d4_water_fallback_preflight_includes_dependencies(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """S1 replacement overlap must be included before reading water depth."""
+    input_file = tmp_path / 'water_fallback_peak.nc'
+    input_file.write_text('')
+    times = np.arange(0, 40, 10).astype('timedelta64[s]') + np.datetime64('1970-01-01')
+    plugin = d3d4_netcdf.FormatPlugin(str(input_file))
+    shape = (4, 2, 2)
+    plugin.input_data = xr.Dataset(
+        data_vars={
+            'XZ': (('M', 'N'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'YZ': (('M', 'N'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'DPS': (('time', 'M', 'N'), np.zeros(shape)),
+            'S1': (('time', 'M', 'N'), np.ones(shape)),
+            'DPS0': (('time', 'M', 'N'), np.ones(shape)),
+        },
+        coords={'time': times},
+    )
+
+    def fail_mapping(*_args, **_kwargs):
+        raise AssertionError('field materialization must not start')
+
+    monkeypatch.setattr(plugin, '_map_delft3d4_variables', fail_mapping)
+
+    with pytest.raises(MemoryError, match=r'320 bytes.*max_memory_bytes=319'):
+        plugin.convert(
+            current_time=15.0,
+            reading_interval=10.0,
+            required_fields=('water_depth',),
+            max_memory_bytes=319,
+        )

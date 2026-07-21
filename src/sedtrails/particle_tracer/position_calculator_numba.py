@@ -15,6 +15,9 @@ from numba import njit, prange
 from scipy.spatial import ConvexHull, Delaunay
 
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform, build_coordinate_transform
+from sedtrails.transport_converter.domain_mask import (
+    DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS,
+)
 
 TRIANGLE_TOLERANCE = 1e-10
 MAX_SIMPLEX_WALK_STEPS = 128
@@ -111,41 +114,57 @@ class GridGeometry:
             raise ValueError('Use create_grid_geometry() to construct geodetic runtime geometry.')
         metric_x, metric_y = coordinate_transform.source_to_metric(x, y)
 
-        points = np.column_stack((metric_x, metric_y))
-        source_points = np.column_stack((x, y))
-        finite_points = points[np.isfinite(source_points).all(axis=1)]
-        if finite_points.shape[0] < 3:
+        if x.size < 3:
             raise ValueError('At least three finite grid points are required for particle interpolation')
-        if finite_points.shape[0] != source_points.shape[0]:
+        if not _all_finite_xy(x, y):
             raise ValueError('grid_x and grid_y must contain only finite coordinates')
 
         triangle_finder = None
         if triangles is None:
+            if x.size > DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS:
+                raise ValueError(
+                    'Ocean-scale particle geometry requires authoritative triangular '
+                    'connectivity; the topology-free Delaunay fallback is limited to '
+                    f'{DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS} points.'
+                )
+            points = np.column_stack((metric_x, metric_y))
             # Delaunay owns the simplex search structure and affine transforms.
             triangulation = Delaunay(points)
-            triangle_array = np.asarray(triangulation.simplices, dtype=np.int64)
-            triangle_neighbors = np.asarray(triangulation.neighbors, dtype=np.int64)
+            index_dtype = np.int32 if x.size <= np.iinfo(np.int32).max else np.int64
+            triangle_array = np.asarray(triangulation.simplices, dtype=index_dtype)
+            triangle_neighbors = np.asarray(triangulation.neighbors, dtype=index_dtype)
+            unique_points = np.unique(points, axis=0)
+            if unique_points.shape[0] >= 3:
+                try:
+                    outer_envelope = unique_points[ConvexHull(unique_points).vertices]
+                except Exception:
+                    outer_envelope = _bounding_box(unique_points)
+            else:
+                outer_envelope = _bounding_box(unique_points)
         else:
             import matplotlib.tri as mtri
 
-            triangle_array = np.asarray(triangles, dtype=np.int64)
+            index_dtype = np.int32 if x.size <= np.iinfo(np.int32).max else np.int64
+            triangle_array = np.asarray(triangles, dtype=index_dtype)
             if triangle_array.ndim != 2 or triangle_array.shape[1] != 3:
                 raise ValueError('triangles must be an array with shape (n_triangles, 3)')
+            _validate_triangle_indices(triangle_array, x.size)
             triangulation = None
             if triangle_array.shape[0] == 0:
                 triangle_finder = None
+                triangle_neighbors = np.empty((0, 3), dtype=index_dtype)
             else:
-                triangle_finder = mtri.Triangulation(metric_x, metric_y, triangle_array).get_trifinder()
-            triangle_neighbors = _compute_triangle_neighbors(triangle_array)
-
-        unique_points = np.unique(finite_points, axis=0)
-        if unique_points.shape[0] >= 3:
-            try:
-                outer_envelope = unique_points[ConvexHull(unique_points).vertices]
-            except Exception:
-                outer_envelope = _bounding_box(unique_points)
-        else:
-            outer_envelope = _bounding_box(unique_points)
+                matplotlib_triangulation = mtri.Triangulation(
+                    metric_x,
+                    metric_y,
+                    triangle_array,
+                )
+                triangle_finder = matplotlib_triangulation.get_trifinder()
+                triangle_neighbors = np.asarray(
+                    matplotlib_triangulation.neighbors[:, [1, 2, 0]],
+                    dtype=index_dtype,
+                )
+            outer_envelope = _bounding_box_xy(metric_x, metric_y)
 
         p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(metric_x, metric_y, triangle_array)
 
@@ -915,6 +934,42 @@ def _bounding_box(points):
     return np.array([[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]], dtype=np.float64)
 
 
+def _bounding_box_xy(x, y, chunk_size=65_536):
+    """Return an x/y bounding box without constructing a coordinate matrix."""
+    min_x = np.inf
+    max_x = -np.inf
+    min_y = np.inf
+    max_y = -np.inf
+    for start in range(0, x.size, chunk_size):
+        stop = min(start + chunk_size, x.size)
+        min_x = min(min_x, float(np.min(x[start:stop])))
+        max_x = max(max_x, float(np.max(x[start:stop])))
+        min_y = min(min_y, float(np.min(y[start:stop])))
+        max_y = max(max_y, float(np.max(y[start:stop])))
+    return np.array(
+        [[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y]],
+        dtype=np.float64,
+    )
+
+
+def _all_finite_xy(x, y, chunk_size=65_536):
+    """Return whether all coordinate pairs are finite using bounded temporaries."""
+    for start in range(0, x.size, chunk_size):
+        stop = min(start + chunk_size, x.size)
+        if not np.all(np.isfinite(x[start:stop])) or not np.all(np.isfinite(y[start:stop])):
+            return False
+    return True
+
+
+def _validate_triangle_indices(triangles, point_count, chunk_size=65_536):
+    """Validate triangle index bounds without a mesh-sized Boolean array."""
+    for start in range(0, triangles.shape[0], chunk_size):
+        stop = min(start + chunk_size, triangles.shape[0])
+        block = triangles[start:stop]
+        if block.size and (int(np.min(block)) < 0 or int(np.max(block)) >= point_count):
+            raise ValueError('triangles contain an out-of-range grid point index')
+
+
 def _points_array(x_points, y_points):
     x = np.asarray(x_points, dtype=np.float64)
     y = np.asarray(y_points, dtype=np.float64)
@@ -980,7 +1035,8 @@ def _triangle_inverse_matrices(grid_x, grid_y, triangles):
 
 
 def _compute_triangle_neighbors(triangles):
-    neighbors = np.full((triangles.shape[0], 3), -1, dtype=np.int64)
+    index_dtype = triangles.dtype if np.issubdtype(triangles.dtype, np.signedinteger) else np.int64
+    neighbors = np.full((triangles.shape[0], 3), -1, dtype=index_dtype)
     edge_owner = {}
     opposite_edges = ((1, 2), (0, 2), (0, 1))
     for tri_index, triangle in enumerate(triangles):

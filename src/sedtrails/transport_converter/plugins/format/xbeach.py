@@ -6,40 +6,16 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import xarray as xr
-from scipy.spatial import Delaunay
 
-from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform, infer_coordinate_system_from_attrs
-from sedtrails.transport_converter.domain_mask import classify_boundary_edges_from_config
+from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
+from sedtrails.transport_converter.domain_mask import (
+    classify_boundary_edges_from_config,
+    delaunay_connectivity,
+)
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.time_utils import decompress_time_info
-
-
-def delaunay_connectivity(
-    node_x: np.ndarray,
-    node_y: np.ndarray,
-    coordinate_system: str | None = None,
-    source_crs: str | None = None,
-    metric_crs: str | None = None,
-) -> np.ndarray:
-    """Build triangular connectivity from flattened node coordinates."""
-    x = np.asarray(node_x, dtype=float).ravel()
-    y = np.asarray(node_y, dtype=float).ravel()
-    if x.shape != y.shape:
-        raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
-    if x.size < 3:
-        return np.empty((0, 3), dtype=np.int64)
-    transform = build_coordinate_transform(
-        x,
-        y,
-        coordinate_system,
-        source_crs=source_crs,
-        metric_crs=metric_crs,
-    )
-    metric_x, metric_y = transform.source_to_metric(x, y)
-    return np.asarray(Delaunay(np.column_stack((metric_x, metric_y))).simplices, dtype=np.int64)
-
 
 class FormatPlugin(BaseFormatPlugin):
     """
@@ -59,6 +35,19 @@ class FormatPlugin(BaseFormatPlugin):
 
     TIME_DIM = 'meantime'
     FRACTION_DIM = 'sediment_classes'
+    SELECTABLE_FIELDS = frozenset(
+        {
+            'bed_level',
+            'depth_avg_flow_velocity',
+            'bed_load_transport',
+            'suspended_transport',
+            'water_depth',
+            'mean_bed_shear_stress',
+            'max_bed_shear_stress',
+            'sediment_concentration',
+            'nonlinear_wave_velocity',
+        }
+    )
 
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
@@ -126,6 +115,8 @@ class FormatPlugin(BaseFormatPlugin):
         current_time=None,
         reading_interval=None,
         reference_date: Optional[np.datetime64] = None,
+        required_fields=None,
+        max_memory_bytes: int | None = None,
     ) -> SedtrailsData:
         """
         Convert XBeach NetCDF mean output to SedtrailsData.
@@ -138,6 +129,11 @@ class FormatPlugin(BaseFormatPlugin):
             Reading interval in seconds.
         reference_date : np.datetime64, optional
             Reference date for converting time values.
+        required_fields : sequence of str, optional
+            SedTRAILS source fields to materialize. Omission preserves the
+            historical all-fields conversion.
+        max_memory_bytes : int, optional
+            Estimated byte limit for time-varying fields in this window.
 
         Returns
         -------
@@ -167,47 +163,49 @@ class FormatPlugin(BaseFormatPlugin):
         time_info = self._get_time_info(self.input_data, reference_date=reference_date)
         time_info = self._decompress_time(time_info)
 
+        selected_fields = self._selectable_required_fields(required_fields)
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
+        time_start_idx, time_end_idx = self._limit_time_slice_by_memory(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            current_time=current_time,
+            selected_fields=selected_fields,
+            max_memory_bytes=max_memory_bytes,
+        )
         if time_start_idx is not None or time_end_idx is not None:
             time_slice = slice(time_start_idx, time_end_idx)
             time_info = self._slice_time_info(time_info, time_slice)
 
-        mapped_data = self._map_xbeach_variables(time_info, time_start_idx, time_end_idx)
+        mapped_data = self._map_xbeach_variables(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            required_fields=selected_fields,
+        )
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
-        depth_avg_velocity_magnitude = np.sqrt(
-            mapped_data['flow_velocity_x'] ** 2 + mapped_data['flow_velocity_y'] ** 2
+        depth_avg_flow_velocity = self._mapped_vector_field(
+            mapped_data,
+            'flow_velocity',
+            selected='depth_avg_flow_velocity' in selected_fields,
         )
-        bed_load_magnitude = np.sqrt(
-            mapped_data['bed_load_transport_x'] ** 2 + mapped_data['bed_load_transport_y'] ** 2
+        bed_load_transport = self._mapped_vector_field(
+            mapped_data,
+            'bed_load_transport',
+            selected='bed_load_transport' in selected_fields,
         )
-        suspended_transport_magnitude = np.sqrt(
-            mapped_data['suspended_transport_x'] ** 2 + mapped_data['suspended_transport_y'] ** 2
+        suspended_transport = self._mapped_vector_field(
+            mapped_data,
+            'suspended_transport',
+            selected='suspended_transport' in selected_fields,
         )
-
-        depth_avg_flow_velocity = {
-            'x': mapped_data['flow_velocity_x'],
-            'y': mapped_data['flow_velocity_y'],
-            'magnitude': depth_avg_velocity_magnitude,
-        }
-        bed_load_transport = {
-            'x': mapped_data['bed_load_transport_x'],
-            'y': mapped_data['bed_load_transport_y'],
-            'magnitude': bed_load_magnitude,
-        }
-        suspended_transport = {
-            'x': mapped_data['suspended_transport_x'],
-            'y': mapped_data['suspended_transport_y'],
-            'magnitude': suspended_transport_magnitude,
-        }
-        nonlinear_wave_velocity = {
-            'x': mapped_data['nonlinear_wave_velocity_x'],
-            'y': mapped_data['nonlinear_wave_velocity_y'],
-            'magnitude': np.sqrt(
-                mapped_data['nonlinear_wave_velocity_x'] ** 2 + mapped_data['nonlinear_wave_velocity_y'] ** 2
-            ),
-        }
+        nonlinear_wave_velocity = self._mapped_vector_field(
+            mapped_data,
+            'nonlinear_wave_velocity',
+            selected='nonlinear_wave_velocity' in selected_fields,
+        )
 
         metadata = SedtrailsMetadata(
             flowfield_domain={
@@ -222,7 +220,7 @@ class FormatPlugin(BaseFormatPlugin):
                 'model': 'xbeach',
                 'time_coordinate': self.TIME_DIM,
                 'uses_mean_variables': True,
-                'source_sediment_classes': mapped_data['source_sediment_classes'],
+                'source_sediment_classes': mapped_data.get('source_sediment_classes', 1),
                 'sediment_transport_fraction_handling': 'sum_over_source_sediment_classes',
                 'max_bed_shear_stress_source': 'taubx_mean/tauby_mean magnitude',
             }
@@ -243,17 +241,25 @@ class FormatPlugin(BaseFormatPlugin):
             reference_date=self.reference_date,
             x=mapped_data['x'],
             y=mapped_data['y'],
-            bed_level=mapped_data['bed_level'],
+            bed_level=mapped_data.get('bed_level'),
             depth_avg_flow_velocity=depth_avg_flow_velocity,
             fractions=1,
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
-            water_depth=mapped_data['water_depth'],
-            mean_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
+            water_depth=mapped_data.get('water_depth'),
+            mean_bed_shear_stress=(
+                mapped_data.get('mean_bed_shear_stress')
+                if 'mean_bed_shear_stress' in selected_fields
+                else None
+            ),
             # XBeach sample output has taub*_mean but no *_mean maximum. Use the
             # mean magnitude so downstream physics can run without reading *_max.
-            max_bed_shear_stress=mapped_data['mean_bed_shear_stress'],
-            sediment_concentration=mapped_data['sediment_concentration'],
+            max_bed_shear_stress=(
+                mapped_data.get('mean_bed_shear_stress')
+                if 'max_bed_shear_stress' in selected_fields
+                else None
+            ),
+            sediment_concentration=mapped_data.get('sediment_concentration'),
             nonlinear_wave_velocity=nonlinear_wave_velocity,
             node_x=mapped_data['x'],
             node_y=mapped_data['y'],
@@ -522,7 +528,11 @@ class FormatPlugin(BaseFormatPlugin):
         return sliced_info
 
     def _map_xbeach_variables(
-        self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
+        self,
+        time_info,
+        time_start_idx: Optional[int] = None,
+        time_end_idx: Optional[int] = None,
+        required_fields=None,
     ) -> Dict:
         """
         Map XBeach ``*_mean`` variables to SedtrailsData fields.
@@ -534,6 +544,7 @@ class FormatPlugin(BaseFormatPlugin):
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call load() first.')
 
+        selected_fields = self._selectable_required_fields(required_fields)
         num_times = time_info['num_times']
         time_selector = self._time_selector_from_indices(time_info.get('valid_time_indices'))
         if time_selector is None:
@@ -546,53 +557,78 @@ class FormatPlugin(BaseFormatPlugin):
         x, y = self._get_grid_coordinates()
         grid_size = x.size
 
-        bed_load_transport_x, bed_load_classes_x = self._mean_transport_component(
-            'Subg_mean', time_selector, num_times, grid_size
-        )
-        bed_load_transport_y, bed_load_classes_y = self._mean_transport_component(
-            'Svbg_mean', time_selector, num_times, grid_size
-        )
-        suspended_transport_x, suspended_classes_x = self._mean_transport_component(
-            'Susg_mean', time_selector, num_times, grid_size
-        )
-        suspended_transport_y, suspended_classes_y = self._mean_transport_component(
-            'Svsg_mean', time_selector, num_times, grid_size
-        )
-        source_sediment_classes = max(
-            bed_load_classes_x,
-            bed_load_classes_y,
-            suspended_classes_x,
-            suspended_classes_y,
-        )
-
         data = {
             'x': x,
             'y': y,
-            'bed_level': self._mean_scalar('zb_mean', time_selector, num_times, grid_size),
-            'water_depth': self._mean_scalar('hh_mean', time_selector, num_times, grid_size),
-            'flow_velocity_x': self._mean_scalar('ue_mean', time_selector, num_times, grid_size),
-            'flow_velocity_y': self._mean_scalar('ve_mean', time_selector, num_times, grid_size),
-            'sediment_concentration': self._mean_scalar('cctot_mean', time_selector, num_times, grid_size),
-            'bed_load_transport_x': bed_load_transport_x,
-            'bed_load_transport_y': bed_load_transport_y,
-            'suspended_transport_x': suspended_transport_x,
-            'suspended_transport_y': suspended_transport_y,
-            'source_sediment_classes': source_sediment_classes,
+            'source_sediment_classes': 1,
         }
 
-        taubx = self._mean_scalar('taubx_mean', time_selector, num_times, grid_size)
-        tauby = self._mean_scalar('tauby_mean', time_selector, num_times, grid_size)
-        data['mean_bed_shear_stress'] = np.sqrt(taubx**2 + tauby**2)
+        if 'bed_level' in selected_fields:
+            data['bed_level'] = self._mean_scalar('zb_mean', time_selector, num_times, grid_size)
+        if 'water_depth' in selected_fields:
+            data['water_depth'] = self._mean_scalar('hh_mean', time_selector, num_times, grid_size)
+        if 'depth_avg_flow_velocity' in selected_fields:
+            data['flow_velocity_x'] = self._mean_scalar('ue_mean', time_selector, num_times, grid_size)
+            data['flow_velocity_y'] = self._mean_scalar('ve_mean', time_selector, num_times, grid_size)
+        if 'sediment_concentration' in selected_fields:
+            data['sediment_concentration'] = self._mean_scalar(
+                'cctot_mean',
+                time_selector,
+                num_times,
+                grid_size,
+            )
+        if 'bed_load_transport' in selected_fields:
+            data['bed_load_transport_x'], bed_load_classes_x = self._mean_transport_component(
+                'Subg_mean',
+                time_selector,
+                num_times,
+                grid_size,
+            )
+            data['bed_load_transport_y'], bed_load_classes_y = self._mean_transport_component(
+                'Svbg_mean',
+                time_selector,
+                num_times,
+                grid_size,
+            )
+            data['source_sediment_classes'] = max(
+                data['source_sediment_classes'],
+                bed_load_classes_x,
+                bed_load_classes_y,
+            )
+        if 'suspended_transport' in selected_fields:
+            data['suspended_transport_x'], suspended_classes_x = self._mean_transport_component(
+                'Susg_mean',
+                time_selector,
+                num_times,
+                grid_size,
+            )
+            data['suspended_transport_y'], suspended_classes_y = self._mean_transport_component(
+                'Svsg_mean',
+                time_selector,
+                num_times,
+                grid_size,
+            )
+            data['source_sediment_classes'] = max(
+                data['source_sediment_classes'],
+                suspended_classes_x,
+                suspended_classes_y,
+            )
 
-        if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
-            theta = self._mean_scalar('thetamean_mean', time_selector, num_times, grid_size)
-            ua = self._mean_scalar('ua_mean', time_selector, num_times, grid_size)
-            data['nonlinear_wave_velocity_x'] = ua * np.cos(np.deg2rad(theta))
-            data['nonlinear_wave_velocity_y'] = ua * np.sin(np.deg2rad(theta))
-        else:
-            data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
-            data['nonlinear_wave_velocity_y'] = np.zeros((num_times, grid_size), dtype=float)
-            print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
+        if selected_fields.intersection({'mean_bed_shear_stress', 'max_bed_shear_stress'}):
+            taubx = self._mean_scalar('taubx_mean', time_selector, num_times, grid_size)
+            tauby = self._mean_scalar('tauby_mean', time_selector, num_times, grid_size)
+            data['mean_bed_shear_stress'] = np.hypot(taubx, tauby)
+
+        if 'nonlinear_wave_velocity' in selected_fields:
+            if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
+                theta = self._mean_scalar('thetamean_mean', time_selector, num_times, grid_size)
+                ua = self._mean_scalar('ua_mean', time_selector, num_times, grid_size)
+                data['nonlinear_wave_velocity_x'] = ua * np.cos(np.deg2rad(theta))
+                data['nonlinear_wave_velocity_y'] = ua * np.sin(np.deg2rad(theta))
+            else:
+                data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
+                data['nonlinear_wave_velocity_y'] = np.zeros((num_times, grid_size), dtype=float)
+                print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
 
         return data
 
@@ -688,8 +724,10 @@ class FormatPlugin(BaseFormatPlugin):
             return None
 
         active_mask = self._active_mask_from_coordinates(x_grid.ravel(), y_grid.ravel())
-        index_map = np.full(active_mask.size, -1, dtype=np.int64)
-        index_map[active_mask] = np.arange(np.count_nonzero(active_mask), dtype=np.int64)
+        active_count = int(np.count_nonzero(active_mask))
+        index_dtype = np.int32 if active_count <= np.iinfo(np.int32).max else np.int64
+        index_map = np.full(active_mask.size, -1, dtype=index_dtype)
+        index_map[active_mask] = np.arange(active_count, dtype=index_dtype)
 
         mapped = index_map.reshape(ny, nx)
         lower_left = mapped[:-1, :-1].ravel()
@@ -698,7 +736,7 @@ class FormatPlugin(BaseFormatPlugin):
         upper_right = mapped[1:, 1:].ravel()
 
         n_cells = lower_left.size
-        candidate_triangles = np.empty((2 * n_cells, 3), dtype=np.int64)
+        candidate_triangles = np.empty((2 * n_cells, 3), dtype=index_dtype)
         candidate_triangles[0::2, 0] = lower_left
         candidate_triangles[0::2, 1] = lower_right
         candidate_triangles[0::2, 2] = upper_right
@@ -706,9 +744,16 @@ class FormatPlugin(BaseFormatPlugin):
         candidate_triangles[1::2, 1] = upper_right
         candidate_triangles[1::2, 2] = upper_left
 
+        return self._filter_active_triangles(candidate_triangles)
+
+    @staticmethod
+    def _filter_active_triangles(candidate_triangles: np.ndarray) -> np.ndarray:
+        """Return candidates by identity when every triangle is active."""
         active_triangles = np.all(candidate_triangles >= 0, axis=1)
+        if np.all(active_triangles):
+            return candidate_triangles
         if not np.any(active_triangles):
-            return np.empty((0, 3), dtype=np.int64)
+            return np.empty((0, 3), dtype=candidate_triangles.dtype)
         return candidate_triangles[active_triangles]
 
     def _geometry_cache_matches(self, cache: dict[str, Any] | None, x: np.ndarray, y: np.ndarray) -> bool:
@@ -886,13 +931,159 @@ class FormatPlugin(BaseFormatPlugin):
         """Calculate time slice indices based on current time and reading interval."""
         if current_time is None or reading_interval is None:
             return None, None
-        if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
+        if reading_interval <= 0:
             return None, None
 
-        times_array = time_info['seconds_since_reference']
-        current_idx = np.searchsorted(times_array, current_time)
-        netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
-        chunk_steps = max(10, int(reading_interval / netcdf_timestep))
-        start_idx = max(0, current_idx - chunk_steps // 4)
-        end_idx = min(len(times_array), current_idx + chunk_steps)
+        times_array = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times_array.size <= 2:
+            return None, None
+
+        start_idx, bracket_end_idx = self._interpolation_bracket(times_array, current_time)
+        requested_end_time = float(current_time) + float(reading_interval)
+        requested_upper_idx = int(np.searchsorted(times_array, requested_end_time, side='left'))
+        requested_upper_idx = min(times_array.size - 1, max(bracket_end_idx - 1, requested_upper_idx))
+        end_idx = requested_upper_idx + 1
         return start_idx, end_idx
+
+    @classmethod
+    def _selectable_required_fields(cls, required_fields) -> set[str]:
+        """Return supported source fields selected for materialization."""
+        if required_fields is None:
+            return set(cls.SELECTABLE_FIELDS)
+        return set(required_fields).intersection(cls.SELECTABLE_FIELDS)
+
+    @staticmethod
+    def _mapped_vector_field(data: Dict, prefix: str, *, selected: bool) -> Dict | None:
+        """Build one selected vector field and its magnitude."""
+        if not selected:
+            return None
+        x_values = data[f'{prefix}_x']
+        y_values = data[f'{prefix}_y']
+        return {
+            'x': x_values,
+            'y': y_values,
+            'magnitude': np.hypot(x_values, y_values),
+        }
+
+    @staticmethod
+    def _interpolation_bracket(times: np.ndarray, current_time: float | None) -> tuple[int, int]:
+        """Return a two-plane slice bracketing the requested time."""
+        num_times = int(times.size)
+        if num_times <= 1:
+            return 0, num_times
+        if current_time is None:
+            return 0, 2
+
+        lower = int(np.searchsorted(times, current_time, side='right')) - 1
+        lower = min(max(lower, 0), num_times - 2)
+        return lower, lower + 2
+
+    def _limit_time_slice_by_memory(
+        self,
+        time_info: Dict,
+        start_idx: int | None,
+        end_idx: int | None,
+        *,
+        current_time: float | None,
+        selected_fields: set[str],
+        max_memory_bytes: int | None,
+    ) -> tuple[int | None, int | None]:
+        """Cap a time window by estimated retained field bytes."""
+        if max_memory_bytes is None:
+            return start_idx, end_idx
+
+        try:
+            memory_limit = int(max_memory_bytes)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('max_memory_bytes must be an integer byte count') from exc
+
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        num_times = int(times.size)
+        bytes_per_plane = self._estimate_bytes_per_time_plane(selected_fields)
+        if num_times == 0 or bytes_per_plane == 0:
+            return start_idx, end_idx
+
+        required_planes = min(2, num_times)
+        required_bytes = required_planes * bytes_per_plane
+        if memory_limit < required_bytes:
+            fields_text = ', '.join(sorted(selected_fields)) or '<none>'
+            raise MemoryError(
+                f'XBeach forcing requires at least {required_bytes} bytes for '
+                f'{required_planes} interpolation planes ({bytes_per_plane} bytes/plane) '
+                f'for fields [{fields_text}], but max_memory_bytes={memory_limit}. '
+                'Increase inputs.max_eulerian_memory_mb or request fewer fields.'
+            )
+
+        max_planes = min(num_times, max(required_planes, memory_limit // bytes_per_plane))
+        desired_start = 0 if start_idx is None else int(start_idx)
+        desired_end = num_times if end_idx is None else int(end_idx)
+        if desired_end - desired_start <= max_planes:
+            return start_idx, end_idx
+
+        bracket_start, bracket_end = self._interpolation_bracket(times, current_time)
+        latest_start = desired_end - max_planes
+        bounded_start = min(max(bracket_start, desired_start), latest_start)
+        bounded_start = max(desired_start, bounded_start)
+        if bracket_end > bounded_start + max_planes:
+            bounded_start = bracket_end - max_planes
+        return bounded_start, bounded_start + max_planes
+
+    def _estimate_bytes_per_time_plane(self, selected_fields: set[str]) -> int:
+        """Estimate retained float-array bytes for one selected time plane."""
+        if self.input_data is None or not selected_fields:
+            return 0
+        if 'globalx' not in self.input_data:
+            return 0
+
+        spatial_size = int(np.prod(self.input_data['globalx'].shape, dtype=np.int64))
+        components = 0
+        if 'bed_level' in selected_fields:
+            components += 1
+        if 'depth_avg_flow_velocity' in selected_fields:
+            components += 3
+        if 'bed_load_transport' in selected_fields:
+            components += 3 + self._source_sediment_class_count('Subg_mean', 'Svbg_mean')
+        if 'suspended_transport' in selected_fields:
+            components += 3 + self._source_sediment_class_count('Susg_mean', 'Svsg_mean')
+        if 'water_depth' in selected_fields:
+            components += 1
+        if selected_fields.intersection({'mean_bed_shear_stress', 'max_bed_shear_stress'}):
+            components += 3
+        if 'sediment_concentration' in selected_fields:
+            components += 1
+        if 'nonlinear_wave_velocity' in selected_fields:
+            components += 3
+        return components * spatial_size * np.dtype(np.float64).itemsize
+
+    def estimate_source_bytes_per_time_plane(self, required_fields=None) -> int:
+        """Return exact source-backed bytes retained for one forcing plane.
+
+        Parameters
+        ----------
+        required_fields : sequence of str, optional
+            SedTRAILS fields that the runtime plans to read. Omission selects
+            every field supported by this plugin.
+
+        Returns
+        -------
+        int
+            Bytes for one source time plane after the XBeach reader's
+            explicit float64 conversion. Only dataset metadata are inspected.
+        """
+        if self.input_data is None:
+            self.load()
+        selected_fields = self._selectable_required_fields(required_fields)
+        return self._estimate_bytes_per_time_plane(selected_fields)
+
+    def _source_sediment_class_count(self, *variable_names: str) -> int:
+        """Return the largest source sediment-class count."""
+        if self.input_data is None:
+            return 1
+        return max(
+            (
+                int(self.input_data[name].sizes.get(self.FRACTION_DIM, 1))
+                for name in variable_names
+                if name in self.input_data
+            ),
+            default=1,
+        )

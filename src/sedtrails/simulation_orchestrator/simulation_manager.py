@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import sys
@@ -22,6 +23,9 @@ from sedtrails.simulation_orchestrator.global_logger import log_simulation_state
 from sedtrails.simulation_orchestrator.runtime_plan import (
     build_plan_sedtrails_data,
     build_population_runtime_plans,
+    plan_forcing_identity,
+    required_input_fields,
+    split_eulerian_memory_budget,
     unique_flow_field_names,
     validate_population_runtime_configurations,
 )
@@ -1239,18 +1243,88 @@ class Simulation:
         default_fraction_index = input_model_config.get('sediment_fraction_index', 0)
         default_fraction_name = input_model_config.get('sediment_fraction_name')
 
-        return {
-            runtime_plan.population_index: FieldDataRetriever(
-                build_plan_sedtrails_data(
+        plan_data_by_identity = {}
+        retrievers = {}
+        for runtime_plan in runtime_plans:
+            identity = plan_forcing_identity(
+                runtime_plan.tracer,
+                runtime_plan.population_config,
+                default_fraction_index,
+                default_fraction_name,
+            )
+            if identity not in plan_data_by_identity:
+                plan_data_by_identity[identity] = build_plan_sedtrails_data(
                     sedtrails_data,
                     runtime_plan.tracer,
                     population_config=runtime_plan.population_config,
                     default_fraction_index=default_fraction_index,
                     default_fraction_name=default_fraction_name,
                 )
+            retrievers[runtime_plan.population_index] = FieldDataRetriever(
+                plan_data_by_identity[identity]
             )
+        return retrievers
+
+    def clear_geodetic_velocity_caches(self, populations) -> None:
+        """Release prepared velocity slices once per shared grid geometry.
+
+        Parameters
+        ----------
+        populations : Iterable
+            Particle populations whose grid geometries may share ECEF caches.
+        """
+        cleared_geometry_ids = set()
+        for population in populations:
+            geometry = getattr(population, 'grid_geometry', None)
+            geometry_id = id(geometry)
+            if geometry_id in cleared_geometry_ids:
+                continue
+            clear_cache = getattr(geometry, 'clear_velocity_cache', None)
+            if callable(clear_cache):
+                clear_cache()
+                cleared_geometry_ids.add(geometry_id)
+
+    def _allocate_eulerian_memory_budget(
+        self,
+        runtime_plans,
+        spatial_size,
+        input_field_names,
+    ):
+        """Allocate source and derived bytes for the active runtime plans."""
+        total_memory_mb = self._controller.get(
+            'inputs.max_eulerian_memory_mb',
+            2048,
+        )
+        total_memory_bytes = int(float(total_memory_mb) * 1024 * 1024)
+        input_model_config = self._controller.get('general.input_model', {})
+        source_estimator = getattr(
+            self.format_converter,
+            'estimate_source_bytes_per_time_plane',
+            None,
+        )
+        source_bytes_per_plane = (
+            source_estimator(input_field_names)
+            if source_estimator is not None
+            else None
+        )
+        geodetic_runtime = any(
+            getattr(runtime_plan.population.grid_geometry, 'is_geodetic', False)
             for runtime_plan in runtime_plans
-        }
+        )
+        return split_eulerian_memory_budget(
+            total_memory_bytes,
+            runtime_plans,
+            spatial_size,
+            default_fraction_index=input_model_config.get(
+                'sediment_fraction_index',
+                0,
+            ),
+            default_fraction_name=input_model_config.get(
+                'sediment_fraction_name'
+            ),
+            source_bytes_per_plane=source_bytes_per_plane,
+            geodetic_runtime=geodetic_runtime,
+        )
 
     def _run_impl(self):
         """
@@ -1307,6 +1381,20 @@ class Simulation:
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
+        input_field_names = required_input_fields(runtime_plans)
+        input_source_memory_bytes, derived_memory_reserve_bytes = (
+            self._allocate_eulerian_memory_budget(
+            runtime_plans,
+            np.asarray(seeding_field_data.x).size,
+            input_field_names,
+            )
+        )
+        self.logger.info(
+            'Eulerian memory budget: %d bytes source forcing, %d bytes '
+            'derived runtime reserve.',
+            input_source_memory_bytes,
+            derived_memory_reserve_bytes,
+        )
 
         self._remove_permanently_buried_populations(populations, runtime_plans)
 
@@ -1425,6 +1513,7 @@ class Simulation:
                     input_time_bounds,
                 )
                 if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
+                    self.clear_geodetic_velocity_caches(populations)
                     # Avoid recreating SedTRAILS data if current time is before the first time step
                     if (
                         sedtrails_data is not None
@@ -1433,10 +1522,28 @@ class Simulation:
                     ):
                         timer.advance()
                         continue
+                    if sedtrails_data is not None:
+                        # Release the previous forcing graph before materializing
+                        # the replacement window. Loop locals otherwise retain
+                        # retrievers and large plan-specific arrays.
+                        plan_retrievers.clear()
+                        sedtrails_data = None
+                        dashboard_flow_field = None
+                        retriever = None
+                        flow_field = None
+                        bed_level = None
+                        mixing_depth = None
+                        transport_prob = None
+                        dashboard_retriever = None
+                        bathymetry = None
+                        gc.collect()
                     # Convert to SedTRAILS format
                     with self._profile_section('convert_to_sedtrails'):
                         sedtrails_data = self.format_converter.convert_to_sedtrails(
-                            current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
+                            current_time=field_time_seconds,
+                            reading_interval=simulation_time.read_input_interval.seconds,
+                            required_fields=input_field_names,
+                            max_memory_bytes=input_source_memory_bytes,
                         )
                     plan_retrievers = self._build_plan_retrievers(sedtrails_data, runtime_plans)
 

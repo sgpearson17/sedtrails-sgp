@@ -16,6 +16,41 @@ def _existing_input_path():
     return __file__
 
 
+def test_xbeach_unstructured_fallback_uses_shared_bounded_helper():
+    """One-dimensional XBeach points use the runtime-compatible shared fallback."""
+    x = np.array([0.0, 1.0, 0.0])
+    y = np.array([0.0, 0.0, 1.0])
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    plugin.input_data = xr.Dataset(
+        coords={
+            'globalx': (('point',), x),
+            'globaly': (('point',), y),
+        }
+    )
+
+    triangles = plugin._particle_face_connectivity(x, y)
+
+    assert triangles.shape == (1, 3)
+    assert set(triangles[0]) == {0, 1, 2}
+
+
+def test_xbeach_public_source_plane_estimator_uses_reader_float64_shape():
+    """Public byte estimate uses metadata and the reader's float64 outputs."""
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    plugin.input_data = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.zeros((2, 2))),
+            'globaly': (('ny', 'nx'), np.zeros((2, 2))),
+        }
+    )
+
+    estimated = plugin.estimate_source_bytes_per_time_plane(
+        ('bed_level', 'depth_avg_flow_velocity')
+    )
+
+    assert estimated == 4 * 4 * np.dtype(np.float64).itemsize
+
+
 def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatch):
     """Checks XBeach mean output maps to SedTRAILS dimensions."""
     globalx = np.array([[0.0, 1.0], [0.0, 1.0]])
@@ -142,8 +177,8 @@ def test_xbeach_convert_skips_numeric_fill_meantime_rows(monkeypatch):
         reference_date=np.datetime64('1970-01-01T00:00:00'),
     )
 
-    np.testing.assert_array_equal(chunked_data.times, np.arange(8, num_valid_times, dtype=float) * 10.0)
-    np.testing.assert_array_equal(chunked_data.bed_level, scalar[8:num_valid_times].reshape(5, 4))
+    np.testing.assert_array_equal(chunked_data.times, np.array([100.0, 110.0]))
+    np.testing.assert_array_equal(chunked_data.bed_level, scalar[10:12].reshape(2, 4))
 
 
 def test_xbeach_get_time_bounds_skips_declared_fill_values(monkeypatch):
@@ -379,3 +414,104 @@ def test_xbeach_transport_component_without_fraction_dim_is_not_summed(monkeypat
 
     assert source_sediment_classes == 1
     np.testing.assert_array_equal(total_transport, transport.reshape(2, 4))
+
+
+def test_selective_xbeach_window_is_byte_bounded_and_bracketed(monkeypatch):
+    """Selected XBeach fields should fit a bounded two-plane time window."""
+    bed_level = np.arange(24, dtype=float).reshape(6, 2, 2)
+    dataset = xr.Dataset(
+        data_vars={
+            'zb_mean': (('meantime', 'ny', 'nx'), bed_level),
+        },
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'meantime': (('meantime',), np.arange(0.0, 60.0, 10.0)),
+        },
+    )
+
+    def fake_load(self):
+        self.input_data = dataset
+        return dataset
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    data = xbeach.FormatPlugin(_existing_input_path()).convert(
+        current_time=25.0,
+        reading_interval=100.0,
+        required_fields=('bed_level', 'derived_runtime_field'),
+        max_memory_bytes=64,
+    )
+
+    np.testing.assert_array_equal(data.times, np.array([20.0, 30.0]))
+    np.testing.assert_array_equal(data.bed_level, bed_level[2:4].reshape(2, 4))
+    assert data.depth_avg_flow_velocity is None
+    assert data.bed_load_transport is None
+    assert data.suspended_transport is None
+    assert data.water_depth is None
+    assert data.mean_bed_shear_stress is None
+    assert data.max_bed_shear_stress is None
+    assert data.sediment_concentration is None
+    assert data.nonlinear_wave_velocity is None
+
+
+def test_xbeach_memory_error_precedes_field_materialization(monkeypatch):
+    """XBeach should reject a budget that cannot hold two required planes."""
+    dataset = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+            'meantime': (('meantime',), np.arange(0.0, 40.0, 10.0)),
+        },
+    )
+
+    def fake_load(self):
+        self.input_data = dataset
+        return dataset
+
+    def fail_mapping(*_args, **_kwargs):
+        raise AssertionError('field materialization must not start')
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    monkeypatch.setattr(xbeach.FormatPlugin, '_map_xbeach_variables', fail_mapping)
+
+    with pytest.raises(MemoryError, match=r'64 bytes.*max_memory_bytes=63'):
+        xbeach.FormatPlugin(_existing_input_path()).convert(
+            current_time=15.0,
+            reading_interval=10.0,
+            required_fields=('bed_level',),
+            max_memory_bytes=63,
+        )
+
+
+def test_xbeach_structured_topology_is_compact_reused_and_not_filtered(monkeypatch):
+    """XBeach should retain the all-active int32 candidate table by identity."""
+    dataset = xr.Dataset(
+        coords={
+            'globalx': (('ny', 'nx'), np.array([[0.0, 1.0], [0.0, 1.0]])),
+            'globaly': (('ny', 'nx'), np.array([[0.0, 0.0], [1.0, 1.0]])),
+        }
+    )
+
+    def fake_load(self):
+        self.input_data = dataset
+        return dataset
+
+    monkeypatch.setattr(xbeach.FormatPlugin, 'load', fake_load)
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    x, y = plugin.get_seeding_coordinates()
+    original_builder = plugin._structured_grid_connectivity
+    build_count = 0
+
+    def counted_builder():
+        nonlocal build_count
+        build_count += 1
+        return original_builder()
+
+    monkeypatch.setattr(plugin, '_structured_grid_connectivity', counted_builder)
+    first = plugin._particle_face_connectivity(x, y)
+    second = plugin._particle_face_connectivity(x.copy(), y.copy())
+
+    assert first is second
+    assert first.dtype == np.int32
+    assert build_count == 1
+    assert plugin._filter_active_triangles(first) is first

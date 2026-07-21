@@ -38,6 +38,12 @@ class FieldDataRetriever:
         self.sedtrails_data = sedtrails_data
         self.fraction_index = fraction_index
         self._flow_max_cache = {}
+        self._forcing_generation = getattr(sedtrails_data, 'forcing_generation', None)
+        self._forcing_identity = getattr(
+            sedtrails_data,
+            'forcing_identity',
+            ('source',),
+        )
 
     def get_interpolation_indices(self, target_time: float) -> Tuple[int, int, float]:
         """
@@ -275,7 +281,29 @@ class FieldDataRetriever:
             'weight': weight,
             'lower_index': lower_index,
             'upper_index': upper_index,
+            'cache_generation': {
+                'lower': self._flow_slice_cache_key(
+                    flow_field_name,
+                    lower_index,
+                ),
+                'upper': self._flow_slice_cache_key(
+                    flow_field_name,
+                    upper_index,
+                ),
+            },
         }
+
+    def _flow_slice_cache_key(self, flow_field_name: str, time_index: int):
+        """Return a collision-safe identity for one forcing vector slice."""
+        if self._forcing_generation is None:
+            return None
+        return (
+            int(self._forcing_generation),
+            self._forcing_identity,
+            flow_field_name,
+            int(self.fraction_index),
+            int(time_index),
+        )
 
     def get_flow_max_velocity_bound(self, time: float, flow_field_name: str) -> float:
         """

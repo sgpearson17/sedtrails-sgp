@@ -15,6 +15,40 @@ from sedtrails.transport_converter.physics_converter import PhysicsConfig, Physi
 DEFAULT_PASSIVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
 SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten'})
 DEFAULT_TRANSPORT_PROBABILITY_METHOD = 'no_probability'
+_BASE_RUNTIME_INPUT_FIELDS = ('bed_level',)
+_METHOD_RUNTIME_INPUT_FIELDS = {
+    'passive_tracer': ('depth_avg_flow_velocity',),
+    'soulsby': (
+        'depth_avg_flow_velocity',
+        'mean_bed_shear_stress',
+        'max_bed_shear_stress',
+    ),
+    'vanwesten': (
+        'depth_avg_flow_velocity',
+        'mean_bed_shear_stress',
+        'max_bed_shear_stress',
+        'bed_load_transport',
+        'suspended_transport',
+    ),
+}
+_METHOD_TRANSIENT_ARRAY_COUNTS = {
+    'passive_tracer': 0,
+    'soulsby': 40,
+    'vanwesten': 32,
+}
+_DERIVED_MEMORY_SAFETY_FACTOR = 1.25
+_SOURCE_FIELD_ARRAY_COUNTS = {
+    'bed_level': 1,
+    'depth_avg_flow_velocity': 3,
+    'bed_load_transport': 3,
+    'suspended_transport': 3,
+    'water_depth': 1,
+    'mean_bed_shear_stress': 1,
+    'max_bed_shear_stress': 1,
+    'sediment_concentration': 1,
+    'nonlinear_wave_velocity': 3,
+}
+_MIN_SOURCE_ITEMSIZE = np.dtype(np.int8).itemsize
 
 
 @dataclass(frozen=True)
@@ -128,6 +162,39 @@ def unique_flow_field_names(runtime_plans: Sequence[PopulationRuntimePlan]) -> l
     )
 
 
+def required_input_fields(
+    runtime_plans: Sequence[PopulationRuntimePlan],
+) -> tuple[str, ...]:
+    """Return Eulerian source fields needed by the active runtime plans.
+
+    Parameters
+    ----------
+    runtime_plans : Sequence[PopulationRuntimePlan]
+        Population runtime plans to inspect.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Unique SedTRAILS source field names in stable order.
+    """
+    fields = list(_BASE_RUNTIME_INPUT_FIELDS)
+    for runtime_plan in runtime_plans:
+        tracer_plan = runtime_plan.tracer
+        fields.extend(_METHOD_RUNTIME_INPUT_FIELDS[tracer_plan.method_name])
+        fields.extend(tracer_plan.flow_field_names)
+        if (
+            tracer_plan.method_name == 'vanwesten'
+            and getattr(
+                tracer_plan.converter.config,
+                'suspended_velocity_method',
+                'soulsby_2011',
+            )
+            == 'macdonald_2006'
+        ):
+            fields.append('water_depth')
+    return tuple(_unique_preserving_order(fields))
+
+
 def build_plan_sedtrails_data(
     sedtrails_data: Any,
     tracer_plan: TracerRuntimePlan,
@@ -173,9 +240,18 @@ def build_plan_sedtrails_data(
     )
 
     plan_data = _shallow_sedtrails_data_clone(fraction_selected_data)
+    plan_data.forcing_identity = plan_forcing_identity(
+        tracer_plan,
+        population_config,
+        default_fraction_index,
+        default_fraction_name,
+    )
     for field_name in tracer_plan.required_physics_fields:
         if working_data.has_physics_field(field_name):
-            plan_data.add_physics_field(field_name, _copy_physics_value(getattr(working_data, field_name)))
+            plan_data.add_physics_field(
+                field_name,
+                _share_immutable_physics_value(getattr(working_data, field_name)),
+            )
     return plan_data
 
 
@@ -385,14 +461,255 @@ def _shallow_sedtrails_data_clone(sedtrails_data: Any) -> Any:
     return cloned_data
 
 
-def _copy_physics_value(value: Any) -> Any:
+def _share_immutable_physics_value(value: Any) -> Any:
+    """Transfer physics values without duplicating full numeric arrays."""
     if isinstance(value, dict):
-        return {key: _copy_physics_value(item) for key, item in value.items()}
+        return {
+            key: _share_immutable_physics_value(item)
+            for key, item in value.items()
+        }
     if isinstance(value, np.ndarray):
-        return np.array(value, copy=True)
-    if hasattr(value, 'copy'):
-        return value.copy()
-    return copy.deepcopy(value)
+        value.flags.writeable = False
+        return value
+    return value
+
+
+def plan_forcing_identity(
+    tracer_plan: TracerRuntimePlan,
+    population_config: Mapping[str, Any] | None,
+    default_fraction_index: int,
+    default_fraction_name: str | None,
+) -> tuple:
+    """Return a stable identity for equivalent population forcing plans.
+
+    Parameters
+    ----------
+    tracer_plan : TracerRuntimePlan
+        Runtime physics and flow-field configuration.
+    population_config : Mapping[str, Any] or None
+        Population configuration containing an optional fraction selection.
+    default_fraction_index : int
+        Fallback sediment fraction index.
+    default_fraction_name : str or None
+        Fallback sediment fraction name.
+
+    Returns
+    -------
+    tuple
+        Hashable identity shared only by equivalent forcing plans.
+    """
+    fraction_selection = _resolve_fraction_selection(
+        population_config,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+    )
+    return (
+        'runtime-plan',
+        tracer_plan.method_name,
+        _freeze_identity_value(tracer_plan.method_config),
+        tuple(tracer_plan.flow_field_names),
+        tracer_plan.transport_probability_method,
+        tuple(tracer_plan.required_physics_fields),
+        _freeze_identity_value(getattr(tracer_plan.converter, 'config', None)),
+        _freeze_identity_value(fraction_selection),
+    )
+
+
+def estimate_runtime_physics_reserve_bytes(
+    runtime_plans: Sequence[PopulationRuntimePlan],
+    spatial_size: int,
+    *,
+    time_planes: int = 2,
+    default_fraction_index: int = 0,
+    default_fraction_name: str | None = None,
+    geodetic_runtime: bool = False,
+) -> int:
+    """Estimate peak bytes retained by unique runtime physics plans.
+
+    Parameters
+    ----------
+    runtime_plans : Sequence[PopulationRuntimePlan]
+        Active population runtime plans.
+    spatial_size : int
+        Number of Eulerian locations in one field plane.
+    time_planes : int, default=2
+        Number of temporal interpolation planes retained concurrently.
+    default_fraction_index : int, default=0
+        Fallback sediment fraction index.
+    default_fraction_name : str, optional
+        Fallback sediment fraction name.
+    geodetic_runtime : bool, default=False
+        Include prepared ECEF vector fields used by geodetic integration.
+
+    Returns
+    -------
+    int
+        Conservative derived-field and conversion-transient reserve in bytes.
+
+    Notes
+    -----
+    Source fields are budgeted by the format reader. This estimate covers
+    derived arrays retained by distinct plan identities plus the largest
+    method-specific conversion workspace, with a 25 percent safety margin.
+    """
+    spatial_count = max(0, int(spatial_size))
+    plane_count = max(1, int(time_planes))
+    if spatial_count == 0 or not runtime_plans:
+        return 0
+
+    unique_plans = {}
+    for runtime_plan in runtime_plans:
+        identity = plan_forcing_identity(
+            runtime_plan.tracer,
+            runtime_plan.population_config,
+            default_fraction_index,
+            default_fraction_name,
+        )
+        unique_plans.setdefault(identity, runtime_plan)
+
+    retained_arrays = 0
+    peak_arrays = 0
+    geodetic_vector_arrays = 0
+    for runtime_plan in unique_plans.values():
+        tracer_plan = runtime_plan.tracer
+        method_name = tracer_plan.method_name
+        retained_for_plan = sum(
+            3 if field_name.endswith('velocity') else 1
+            for field_name in tracer_plan.required_physics_fields
+            if not (
+                method_name == 'passive_tracer'
+                and field_name == 'depth_avg_flow_velocity'
+            )
+        )
+        transient_arrays = _METHOD_TRANSIENT_ARRAY_COUNTS[method_name]
+        peak_arrays = max(
+            peak_arrays,
+            retained_arrays + retained_for_plan + transient_arrays,
+        )
+        retained_arrays += retained_for_plan
+        if geodetic_runtime:
+            geodetic_vector_arrays += 3 * len(set(tracer_plan.flow_field_names))
+
+    peak_arrays = max(
+        peak_arrays,
+        retained_arrays + geodetic_vector_arrays,
+    )
+    raw_bytes = (
+        peak_arrays
+        * plane_count
+        * spatial_count
+        * np.dtype(np.float64).itemsize
+    )
+    return int(np.ceil(raw_bytes * _DERIVED_MEMORY_SAFETY_FACTOR))
+
+
+def split_eulerian_memory_budget(
+    total_memory_bytes: int,
+    runtime_plans: Sequence[PopulationRuntimePlan],
+    spatial_size: int,
+    *,
+    default_fraction_index: int = 0,
+    default_fraction_name: str | None = None,
+    source_bytes_per_plane: int | None = None,
+    geodetic_runtime: bool = False,
+) -> tuple[int, int]:
+    """Split total Eulerian memory between source and derived runtime fields.
+
+    Parameters
+    ----------
+    total_memory_bytes : int
+        Complete configured Eulerian memory budget.
+    runtime_plans : Sequence[PopulationRuntimePlan]
+        Active population runtime plans.
+    spatial_size : int
+        Number of Eulerian locations in one field plane.
+    default_fraction_index : int, default=0
+        Fallback sediment fraction index.
+    default_fraction_name : str, optional
+        Fallback sediment fraction name.
+    source_bytes_per_plane : int, optional
+        Exact selected source bytes per plane reported by the active plugin.
+        The generic one-byte itemsize lower bound is used when unavailable.
+    geodetic_runtime : bool, default=False
+        Include prepared ECEF vector fields used by geodetic integration.
+
+    Returns
+    -------
+    tuple[int, int]
+        Source-reader budget and derived-runtime reserve in bytes.
+
+    Raises
+    ------
+    MemoryError
+        If derived runtime fields alone consume the complete budget.
+    """
+    total_bytes = int(total_memory_bytes)
+    derived_bytes_per_plane = estimate_runtime_physics_reserve_bytes(
+        runtime_plans,
+        spatial_size,
+        time_planes=1,
+        default_fraction_index=default_fraction_index,
+        default_fraction_name=default_fraction_name,
+        geodetic_runtime=geodetic_runtime,
+    )
+    source_array_count = sum(
+        _SOURCE_FIELD_ARRAY_COUNTS.get(field_name, 0)
+        for field_name in required_input_fields(runtime_plans)
+    )
+    if source_bytes_per_plane is None or int(source_bytes_per_plane) <= 0:
+        source_bytes_per_plane = (
+            max(0, int(spatial_size))
+            * source_array_count
+            * _MIN_SOURCE_ITEMSIZE
+        )
+    else:
+        source_bytes_per_plane = int(source_bytes_per_plane)
+    if derived_bytes_per_plane == 0 or source_bytes_per_plane == 0:
+        return total_bytes, 0
+
+    total_bytes_per_plane = source_bytes_per_plane + derived_bytes_per_plane
+    source_bytes = int(
+        total_bytes * source_bytes_per_plane // total_bytes_per_plane
+    )
+    reserve_bytes = total_bytes - source_bytes
+    if source_bytes <= 0:
+        raise MemoryError(
+            'inputs.max_eulerian_memory_mb cannot reserve a positive source '
+            'forcing budget after accounting for the per-plane derived '
+            f'runtime working set ({derived_bytes_per_plane} bytes/plane). '
+            'Increase the memory budget or reduce grid size or distinct '
+            'tracer configurations.'
+        )
+    return source_bytes, reserve_bytes
+
+
+def _freeze_identity_value(value: Any) -> Any:
+    """Convert configuration values to a deterministic hashable identity."""
+    if is_dataclass(value):
+        return _freeze_identity_value(asdict(value))
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (str(key), _freeze_identity_value(item))
+                for key, item in value.items()
+            )
+        )
+    if isinstance(value, np.ndarray):
+        return (
+            'ndarray',
+            value.dtype.str,
+            value.shape,
+            np.ascontiguousarray(value).tobytes(),
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(_freeze_identity_value(item) for item in value)
+    if isinstance(value, np.generic):
+        return value.item()
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
 
 
 def _select_population_fraction_data(

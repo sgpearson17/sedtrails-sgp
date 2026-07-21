@@ -286,6 +286,12 @@
           "default": "30D12H25M0S",
           "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
         },
+        "max_eulerian_memory_mb": {
+          "type": "integer",
+          "minimum": 64,
+          "default": 2048,
+          "description": "Maximum total MiB for selected source forcing, derived tracer fields, geodetic ECEF vectors, and conversion workspaces in one input window. Readers reduce the loaded timestep count to keep the complete working set within this limit."
+        },
         "repeat_eulerian_fields": {
           "type": "boolean",
           "default": false,

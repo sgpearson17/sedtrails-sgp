@@ -44,7 +44,7 @@ To **create a physics plugin for SedTRAILS**, follow these steps:
         """
         Add physics using XX approach.
         """
-        print('Using XX compute transport velocities and add to SedTRAILS data...')
+        print('Using XX to compute transport velocities and add to SedTRAILS data...')
 
         ## Your to convert transport velocities and add them to the SedtrailsData object
     ```

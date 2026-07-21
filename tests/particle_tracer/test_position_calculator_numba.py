@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import sedtrails.particle_tracer.position_calculator_numba as position_module
 from sedtrails.particle_tracer.position_calculator_numba import (
     BOUNDARY_CLASS_LAND,
     BOUNDARY_CLASS_OPEN,
@@ -183,6 +184,34 @@ def test_explicit_triangle_connectivity_is_preserved():
     calculator = create_numba_particle_calculator(grid_x, grid_y, triangles=triangles)
 
     np.testing.assert_array_equal(calculator['triangles'], triangles)
+
+
+def test_authoritative_planar_geometry_avoids_global_hull_and_preserves_int32(monkeypatch):
+    """Explicit topology bypasses point deduplication/hull and retains compact indices."""
+    grid_x, grid_y = square_grid()
+    triangles = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
+
+    monkeypatch.setattr(
+        position_module.np,
+        'unique',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('authoritative topology must not deduplicate all points')
+        ),
+    )
+    monkeypatch.setattr(
+        position_module,
+        'ConvexHull',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('authoritative topology must not build a convex hull')
+        ),
+    )
+
+    geometry = create_grid_geometry(grid_x, grid_y, triangles=triangles)
+
+    assert geometry.triangles is triangles
+    assert geometry.triangles.dtype == np.int32
+    assert geometry.triangle_neighbors.dtype == np.int32
+    assert geometry.outer_envelope.shape == (4, 2)
 
 
 def test_explicit_empty_triangle_connectivity_disables_delaunay_fallback():

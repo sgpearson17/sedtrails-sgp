@@ -1,5 +1,7 @@
 import numpy as np
+import pytest
 
+import sedtrails.transport_converter.domain_mask as domain_mask
 from sedtrails.transport_converter.domain_mask import (
     classify_boundary_edges,
     delaunay_connectivity,
@@ -82,6 +84,23 @@ def test_geodetic_delaunay_connectivity_crosses_antimeridian_without_projection(
     assert set(np.unique(connectivity)) == {0, 1, 2, 3}
 
 
+def test_delaunay_connectivity_rejects_large_fallback_before_scipy(monkeypatch):
+    """Oversized topology-free meshes fail before global SciPy allocation."""
+
+    def unexpected_scipy_call(*_args, **_kwargs):
+        raise AssertionError('SciPy topology construction must not run above the limit')
+
+    monkeypatch.setattr(domain_mask, 'Delaunay', unexpected_scipy_call)
+    monkeypatch.setattr(domain_mask, 'ConvexHull', unexpected_scipy_call)
+
+    with pytest.raises(ValueError, match='authoritative source face connectivity'):
+        delaunay_connectivity(
+            np.arange(5, dtype=float),
+            np.zeros(5),
+            max_points=4,
+        )
+
+
 def test_geodetic_inner_polygon_masks_faces_across_antimeridian():
     """Spherical centroids and polygon unwrapping select the seam-side face."""
     node_x = np.array([179.0, -179.0, 180.0, 0.0, 1.0, 0.0])
@@ -129,6 +148,91 @@ def test_triangulate_face_connectivity_splits_quads_without_reindexing_nodes():
     triangles = triangulate_face_connectivity(connectivity)
 
     np.testing.assert_array_equal(triangles, np.array([[0, 1, 2], [0, 2, 3], [4, 5, 6]], dtype=np.int64))
+
+
+def test_triangulate_face_connectivity_reuses_valid_triangles():
+    """Already triangular integer connectivity is returned without a copy."""
+
+    connectivity = np.array([[0, 1, 2], [2, 3, 0]], dtype=np.int32)
+
+    triangles = triangulate_face_connectivity(connectivity)
+
+    assert triangles is connectivity
+    assert np.shares_memory(triangles, connectivity)
+
+
+def test_triangulate_face_connectivity_chunks_ragged_padding():
+    """Ragged fan splitting remains correct across bounded chunks."""
+
+    connectivity = np.array(
+        [
+            [0, 1, -1, 2, -1],
+            [3, 4, 5, 6, 7],
+            [8, 9, -1, -1, -1],
+            [10, 11, 12, 13, -1],
+        ],
+        dtype=np.int32,
+    )
+
+    triangles = triangulate_face_connectivity(connectivity, chunk_size=2)
+
+    np.testing.assert_array_equal(
+        triangles,
+        np.array(
+            [
+                [0, 1, 2],
+                [3, 4, 5],
+                [3, 5, 6],
+                [3, 6, 7],
+                [10, 11, 12],
+                [10, 12, 13],
+            ],
+            dtype=np.int32,
+        ),
+    )
+
+
+def test_filter_without_polygons_reuses_connectivity():
+    """A no-op polygon mask does not duplicate ocean-scale connectivity."""
+
+    connectivity = np.array([[0, 1, 2]], dtype=np.int32)
+
+    result = filter_connectivity_by_inner_polygons(
+        np.array([0.0, 1.0, 0.0]),
+        np.array([0.0, 0.0, 1.0]),
+        connectivity,
+        [],
+    )
+
+    assert result.connectivity is connectivity
+
+
+def test_polygon_filter_chunks_face_centroids(monkeypatch):
+    """Polygon masking bounds temporary centroid arrays by the chunk size."""
+
+    node_x = np.arange(15, dtype=float)
+    node_y = np.zeros(15)
+    connectivity = np.arange(15, dtype=np.int32).reshape(5, 3)
+    polygon = np.array([[100.0, 100.0], [101.0, 100.0], [100.0, 101.0]])
+    original_face_centroids = domain_mask.face_centroids
+    block_sizes = []
+
+    def recording_face_centroids(x, y, faces):
+        block_sizes.append(faces.shape[0])
+        return original_face_centroids(x, y, faces)
+
+    monkeypatch.setattr(domain_mask, '_CONNECTIVITY_CHUNK_SIZE', 2)
+    monkeypatch.setattr(domain_mask, 'face_centroids', recording_face_centroids)
+
+    result = filter_connectivity_by_inner_polygons(
+        node_x,
+        node_y,
+        connectivity,
+        [polygon],
+    )
+
+    assert block_sizes == [2, 2, 1]
+    assert result.connectivity is connectivity
 
 
 def test_extract_boundary_edges_returns_edges_used_once():

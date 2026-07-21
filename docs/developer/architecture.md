@@ -3,7 +3,7 @@
 SedTRAILS was designed with a modular architecture to facilitate maintenance, scalability, and extensibility.
 This document describes the software architecture of SedTRAILS (Sediment Transport and Lagrangian Simulator), a particle tracking system for coastal environments. The architecture follows the [C4 model](https://c4model.com/), presenting the system at multiple levels of detail from high-level context to detailed component diagrams.
 :::important
-SedTRAILS is still under active development. Some architectural details may be missing form the implementation and others may evolve as new features are added and improvements are made.
+SedTRAILS is still under active development. Some architectural details may be missing from the implementation and others may evolve as new features are added and improvements are made.
 :::
 
 
@@ -367,4 +367,4 @@ SedTRAILS can be used in multiple ways:
 2. **Python API**: Primary interface for Python users who want to use SedTRAILS
 programmatically.
 
-The system integrates with supported Eulerian flow-field outputs through the active D-Flow FM, XBeach, and SFINCS converters and provides NetCDF trajectory output for visualization and downstream post-processing.
+The system integrates with supported Eulerian flow-field outputs through the active D-Flow FM, Delft3D4, XBeach, and SFINCS converters and provides NetCDF trajectory output for visualization and downstream post-processing.

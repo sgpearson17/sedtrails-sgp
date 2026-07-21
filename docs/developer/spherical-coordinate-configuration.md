@@ -27,7 +27,7 @@ zone and selects geodetic geometry otherwise.
 
 ## Runtime paths
 
-```mermaid
+```text
 flowchart LR
     source["Read coordinates and metadata"] --> resolve["Resolve coordinate descriptor"]
     resolve --> choice{"Runtime geometry"}
@@ -57,8 +57,10 @@ work but are rejected by geodetic geometry rather than silently approximated.
 Geodetic geometry prefers authoritative triangular connectivity from the input
 format. Planar Delaunay triangulation is not used for a global or
 antimeridian-crossing mesh. When a format exposes only field points, the
-converter builds outward spherical Delaunay faces from the ECEF convex hull;
-degenerate point sets fail clearly before particle creation.
+converter may build outward spherical Delaunay faces from the ECEF convex hull
+only for a bounded small mesh. Ocean-scale inputs without authoritative
+topology fail with an actionable error instead of starting an unbounded Qhull
+operation. Degenerate point sets fail clearly before particle creation.
 
 Boundary behavior is topological. Each outer mesh edge may be classified as
 `open`, `land`, or `unclassified`. Face walking follows intermediate faces so a
@@ -70,17 +72,25 @@ actually reaches.
 - Static node and face geometry is built once and shared by populations.
 - Connectivity and adjacency use 32-bit indices when the mesh permits it.
 - Neighbor construction is array based and rejects non-manifold edges.
-- Point location uses cached face walking and bounded ECEF tree candidates; it
-  never scans every face for each missed particle.
-- Mutable forcing buffers bypass the vector cache to prevent stale values.
-  Read-only forcing slices are converted to ECEF once and shared.
+- Cached-face point location and RK4 stage interpolation use compiled,
+  array-oriented ECEF kernels. Tree candidates are bounded and used only for
+  unresolved points.
+- Forcing slices carry an explicit generation token. Writable source arrays
+  are converted to ECEF once per time slice and shared across particle chunks
+  and populations without relying on array writeability.
+- Format readers receive the exact source-field set needed by active runtime
+  plans and an `inputs.max_eulerian_memory_mb` byte budget. They retain the
+  interpolation bracket while shortening oversized requested time windows.
+- Static grid metadata is cached by complete geometry and transform content in
+  a count- and byte-bounded LRU. Repeated forcing windows reuse it safely.
 - Particle movement and NetCDF coordinate transforms run in bounded chunks.
 - Plotting samples particles and avoids loading unnecessary trajectory data.
 
-Large production meshes should supply native connectivity and use read-only
-forcing windows after loading. The `netcdf.particle_chunk` setting controls
-output chunking; particle stepping uses the same bounded default of 65536
-particles per operation.
+Large production meshes must supply native connectivity. Set
+`inputs.max_eulerian_memory_mb` for the memory available to one forcing window;
+the default is 2048 MiB. The `netcdf.particle_chunk` setting controls output
+chunking; particle stepping uses the same bounded default of 65536 particles
+per operation.
 
 ## Seeding and output
 

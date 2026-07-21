@@ -15,6 +15,12 @@ from sedtrails.particle_tracer.geodetic_geometry import ecef_to_lonlat, lonlat_t
 from sedtrails.transport_converter.tekal import read_tekal_polygons
 
 
+DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS = 250_000
+"""Maximum point count accepted by the global SciPy topology fallback."""
+
+_CONNECTIVITY_CHUNK_SIZE = 262_144
+
+
 @dataclass(frozen=True)
 class ConnectivityMaskResult:
     """Filtered connectivity and diagnostics for a polygon mask operation."""
@@ -182,6 +188,7 @@ def delaunay_connectivity(
     source_crs: str | None = None,
     metric_crs: str | None = None,
     runtime_geometry: str = 'planar',
+    max_points: int = DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS,
 ) -> np.ndarray:
     """Build triangular candidate connectivity from node coordinates.
 
@@ -198,6 +205,9 @@ def delaunay_connectivity(
     runtime_geometry : str, default='planar'
         Runtime geometry selection. Geodetic geometry uses the outward facets
         of the ECEF convex hull instead of a planar projection.
+    max_points : int, default=250000
+        Maximum number of points for the global SciPy fallback. Larger meshes
+        must provide authoritative source connectivity instead.
 
     Returns
     -------
@@ -209,18 +219,30 @@ def delaunay_connectivity(
     Raises
     ------
     ValueError
-        If ``node_x`` and ``node_y`` do not have matching shapes.
+        If ``node_x`` and ``node_y`` do not have matching shapes or the point
+        count exceeds ``max_points``.
     scipy.spatial.QhullError
         If SciPy cannot construct a Delaunay triangulation for the supplied
         coordinates.
     """
 
-    x = np.asarray(node_x, dtype=float).ravel()
-    y = np.asarray(node_y, dtype=float).ravel()
+    x = np.asarray(node_x).ravel()
+    y = np.asarray(node_y).ravel()
     if x.shape != y.shape:
         raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     if x.size < 3:
         return np.empty((0, 3), dtype=np.int64)
+    if max_points < 3:
+        raise ValueError(f'max_points must be at least 3, got {max_points}')
+    if x.size > max_points:
+        raise ValueError(
+            'Automatic Delaunay/ConvexHull connectivity is limited to '
+            f'{max_points} points, but received {x.size}. Provide authoritative '
+            'source face connectivity, precompute particle connectivity, or '
+            'partition the mesh before conversion.'
+        )
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
     transform = build_coordinate_transform(
         x,
         y,
@@ -280,7 +302,9 @@ def filter_connectivity_by_inner_polygons(
         and the number of removed faces or triangles.
     """
 
-    faces = np.asarray(connectivity, dtype=np.int64)
+    faces = np.asarray(connectivity)
+    if not np.issubdtype(faces.dtype, np.integer):
+        faces = np.asarray(connectivity, dtype=np.int64)
     if faces.size == 0:
         empty_mask = np.zeros(faces.shape[0], dtype=bool)
         return ConnectivityMaskResult(connectivity=faces, active_mask=empty_mask, removed_count=0)
@@ -288,7 +312,7 @@ def filter_connectivity_by_inner_polygons(
     polygon_list = [np.asarray(polygon, dtype=float) for polygon in polygons if np.asarray(polygon).shape[0] >= 3]
     if not polygon_list:
         return ConnectivityMaskResult(
-            connectivity=faces.copy(),
+            connectivity=faces,
             active_mask=np.ones(faces.shape[0], dtype=bool),
             removed_count=0,
         )
@@ -301,23 +325,57 @@ def filter_connectivity_by_inner_polygons(
         metric_crs=metric_crs,
         runtime_geometry=runtime_geometry,
     )
+    inside = np.zeros(faces.shape[0], dtype=bool)
     if transform.is_geodetic:
-        centroids = spherical_face_centroids(node_x, node_y, faces)
-        inside = points_inside_geographic_polygons(centroids, polygon_list)
+        x = np.asarray(node_x, dtype=float).ravel()
+        y = np.asarray(node_y, dtype=float).ravel()
+        if x.shape != y.shape:
+            raise ValueError(
+                f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}'
+            )
+        node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
+            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
+            centroids = _spherical_face_centroids_from_ecef(
+                node_ecef,
+                faces[start:stop],
+            )
+            inside[start:stop] = points_inside_geographic_polygons(
+                centroids,
+                polygon_list,
+            )
     else:
-        centroids = face_centroids(node_x, node_y, faces)
-        centroid_x, centroid_y = transform.source_to_metric(centroids[:, 0], centroids[:, 1])
-        metric_centroids = np.column_stack((centroid_x, centroid_y))
-        inside = points_inside_any_polygon(metric_centroids, transform.polygons_to_metric(polygon_list))
+        metric_polygons = transform.polygons_to_metric(polygon_list)
+        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
+            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
+            centroids = face_centroids(
+                node_x,
+                node_y,
+                faces[start:stop],
+            )
+            centroid_x, centroid_y = transform.source_to_metric(
+                centroids[:, 0],
+                centroids[:, 1],
+            )
+            metric_centroids = np.column_stack((centroid_x, centroid_y))
+            inside[start:stop] = points_inside_any_polygon(
+                metric_centroids,
+                metric_polygons,
+            )
     active_mask = ~inside
+    removed_count = int(np.count_nonzero(inside))
     return ConnectivityMaskResult(
-        connectivity=faces[active_mask],
+        connectivity=faces if removed_count == 0 else faces[active_mask],
         active_mask=active_mask,
-        removed_count=int(np.count_nonzero(inside)),
+        removed_count=removed_count,
     )
 
 
-def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
+def triangulate_face_connectivity(
+    connectivity: np.ndarray,
+    *,
+    chunk_size: int = _CONNECTIVITY_CHUNK_SIZE,
+) -> np.ndarray:
     """Convert padded polygon face-node connectivity to triangles by fan split.
 
     Parameters
@@ -325,6 +383,8 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
     connectivity : np.ndarray
         Face-node connectivity with shape ``(n_faces, max_nodes_per_face)``.
         Negative entries are treated as invalid padding.
+    chunk_size : int, default=262144
+        Maximum number of padded faces compacted at once.
 
     Returns
     -------
@@ -333,21 +393,74 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
         indices are preserved and nodes are not reindexed.
     """
 
-    faces = np.asarray(connectivity, dtype=np.int64)
-    triangles: list[list[int]] = []
-    for face in faces:
-        valid = face[face >= 0]
-        if valid.size < 3:
-            continue
-        if valid.size == 3:
-            triangles.append([int(valid[0]), int(valid[1]), int(valid[2])])
-            continue
-        for index in range(1, valid.size - 1):
-            triangles.append([int(valid[0]), int(valid[index]), int(valid[index + 1])])
+    faces = np.asarray(connectivity)
+    if faces.ndim != 2:
+        raise ValueError(f'connectivity must be two-dimensional, got shape {faces.shape}')
+    if not np.issubdtype(faces.dtype, np.integer):
+        faces = np.asarray(connectivity, dtype=np.int64)
+    if chunk_size < 1:
+        raise ValueError(f'chunk_size must be positive, got {chunk_size}')
 
-    if not triangles:
+    n_faces, face_width = faces.shape
+    if n_faces == 0 or face_width < 3:
         return np.empty((0, 3), dtype=np.int64)
-    return np.asarray(triangles, dtype=np.int64)
+
+    has_no_padding = _connectivity_has_no_padding(faces, chunk_size)
+    if has_no_padding and face_width == 3:
+        return faces
+    if has_no_padding:
+        triangles = np.empty((n_faces, face_width - 2, 3), dtype=faces.dtype)
+        triangles[:, :, 0] = faces[:, 0, np.newaxis]
+        triangles[:, :, 1] = faces[:, 1:-1]
+        triangles[:, :, 2] = faces[:, 2:]
+        return triangles.reshape(-1, 3)
+
+    triangle_count = 0
+    for start in range(0, n_faces, chunk_size):
+        block = faces[start : start + chunk_size]
+        counts = np.count_nonzero(block >= 0, axis=1)
+        triangle_count += int(np.maximum(counts - 2, 0).sum(dtype=np.int64))
+    if triangle_count == 0:
+        return np.empty((0, 3), dtype=np.int64)
+
+    triangles = np.empty((triangle_count, 3), dtype=faces.dtype)
+    output_offset = 0
+    for start in range(0, n_faces, chunk_size):
+        block = faces[start : start + chunk_size]
+        valid = block >= 0
+        counts = np.count_nonzero(valid, axis=1)
+        triangles_per_face = np.maximum(counts - 2, 0)
+        block_triangle_count = int(triangles_per_face.sum(dtype=np.int64))
+        if block_triangle_count == 0:
+            continue
+
+        positions = np.cumsum(valid, axis=1, dtype=np.int32) - 1
+        compact = np.full(block.shape, -1, dtype=faces.dtype)
+        valid_rows, valid_columns = np.nonzero(valid)
+        compact[valid_rows, positions[valid]] = block[valid_rows, valid_columns]
+        base = (
+            output_offset
+            + np.cumsum(triangles_per_face, dtype=np.int64)
+            - triangles_per_face
+        )
+        max_triangles = int(triangles_per_face.max(initial=0))
+        for fan_index in range(max_triangles):
+            rows = np.flatnonzero(triangles_per_face > fan_index)
+            destination = base[rows] + fan_index
+            triangles[destination, 0] = compact[rows, 0]
+            triangles[destination, 1] = compact[rows, fan_index + 1]
+            triangles[destination, 2] = compact[rows, fan_index + 2]
+        output_offset += block_triangle_count
+
+    return triangles
+
+
+def _connectivity_has_no_padding(faces: np.ndarray, chunk_size: int) -> bool:
+    """Return whether connectivity contains no negative padding."""
+    for start in range(0, faces.shape[0], chunk_size):
+        if np.any(faces[start : start + chunk_size] < 0):
+            return False
+    return True
 
 
 def extract_boundary_edges(connectivity: np.ndarray) -> np.ndarray:
@@ -704,10 +817,22 @@ def spherical_face_centroids(node_x, node_y, connectivity) -> np.ndarray:
     """Return normalized ECEF face centroids as longitude/latitude."""
     x = np.asarray(node_x, dtype=float).ravel()
     y = np.asarray(node_y, dtype=float).ravel()
-    faces = np.asarray(connectivity, dtype=np.int64)
-    valid = (faces >= 0) & (faces < x.size)
-    clipped = np.clip(faces, 0, max(x.size - 1, 0))
+    if x.shape != y.shape:
+        raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+    return _spherical_face_centroids_from_ecef(node_ecef, connectivity)
+
+
+def _spherical_face_centroids_from_ecef(
+    node_ecef: np.ndarray,
+    connectivity: np.ndarray,
+) -> np.ndarray:
+    """Return face centroids from precomputed unit-ECEF node coordinates."""
+    faces = np.asarray(connectivity, dtype=np.int64)
+    if node_ecef.shape[0] == 0:
+        return np.full((faces.shape[0], 2), np.nan, dtype=float)
+    valid = (faces >= 0) & (faces < node_ecef.shape[0])
+    clipped = np.clip(faces, 0, node_ecef.shape[0] - 1)
     vectors = np.where(valid[:, :, np.newaxis], node_ecef[clipped], 0.0).sum(axis=1)
     norms = np.linalg.norm(vectors, axis=1)
     result = np.full((faces.shape[0], 2), np.nan, dtype=float)

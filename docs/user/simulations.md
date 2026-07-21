@@ -47,6 +47,7 @@ general:
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+  max_eulerian_memory_mb: 2048  # Bound time-varying input fields per window
 # Optional domain controls for islands/cutouts and boundary actions.
 # Tekal .pol paths are resolved relative to this configuration file.
 # Omit domain entirely if no custom extent, cutouts, or boundary overrides are needed.

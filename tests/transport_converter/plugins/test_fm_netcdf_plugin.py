@@ -100,7 +100,11 @@ def test_convert_squeezes_leading_singleton_axis_only(tmp_path, monkeypatch):
         'max_bed_shear_stress': one_by_time_by_node + 0.8,
         'sediment_concentration': one_by_time_by_node + 0.01,
     }
-    monkeypatch.setattr(plugin, '_map_dfm_variables', lambda time_info, time_start_idx, time_end_idx: mapped_data)
+    monkeypatch.setattr(
+        plugin,
+        '_map_dfm_variables',
+        lambda time_info, time_start_idx, time_end_idx, required_fields=None: mapped_data,
+    )
 
     sedtrails_data = plugin.convert()
 

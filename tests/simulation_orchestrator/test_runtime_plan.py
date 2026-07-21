@@ -1,6 +1,7 @@
 """Tests for population tracer runtime planning."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,10 +15,54 @@ from sedtrails.simulation_orchestrator.runtime_plan import (
     _resolve_fraction_selection,
     _select_fraction_value,
     build_population_runtime_plans,
+    estimate_runtime_physics_reserve_bytes,
+    required_input_fields,
     required_physics_fields,
+    split_eulerian_memory_budget,
     validate_population_runtime_configurations,
     unique_flow_field_names,
 )
+
+
+def test_required_input_fields_are_method_specific_and_unique():
+    """Return only source fields needed by active tracer methods."""
+    passive = SimpleNamespace(
+        tracer=SimpleNamespace(
+            method_name='passive_tracer',
+            flow_field_names=('depth_avg_flow_velocity',),
+            converter=SimpleNamespace(config=SimpleNamespace()),
+        )
+    )
+    soulsby = SimpleNamespace(
+        tracer=SimpleNamespace(
+            method_name='soulsby',
+            flow_field_names=('grain_velocity',),
+            converter=SimpleNamespace(config=SimpleNamespace()),
+        )
+    )
+
+    assert required_input_fields((passive, soulsby)) == (
+        'bed_level',
+        'depth_avg_flow_velocity',
+        'mean_bed_shear_stress',
+        'max_bed_shear_stress',
+        'grain_velocity',
+    )
+
+
+def test_required_input_fields_include_macdonald_water_depth():
+    """MacDonald suspended velocity requires water depth input."""
+    plan = SimpleNamespace(
+        tracer=SimpleNamespace(
+            method_name='vanwesten',
+            flow_field_names=('suspended_velocity',),
+            converter=SimpleNamespace(
+                config=SimpleNamespace(suspended_velocity_method='macdonald_2006')
+            ),
+        )
+    )
+
+    assert 'water_depth' in required_input_fields((plan,))
 
 
 def _population_config(
@@ -278,8 +323,8 @@ def test_required_physics_fields_are_method_specific_and_unique():
     )
 
 
-def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
-    """Copy only required converted physics fields into plan-local sedtrails data."""
+def test_build_plan_sedtrails_data_transfers_required_physics_without_array_copy():
+    """Transfer required converted arrays once and make them immutable."""
     source_data = _FakeSedtrailsData()
     converter = _FakePhysicsConverter()
     tracer_plan = TracerRuntimePlan(
@@ -298,8 +343,243 @@ def test_build_plan_sedtrails_data_copies_only_required_physics_fields():
     assert plan_data.get_physics_fields() == ['bed_load_velocity', 'mixing_layer_thickness']
     assert not plan_data.has_physics_field('ignored_field')
     assert plan_data.bed_load_velocity is not converter.generated_velocity
-    assert plan_data.bed_load_velocity['x'] is not converter.generated_velocity['x']
+    assert plan_data.bed_load_velocity['x'] is converter.generated_velocity['x']
+    assert not plan_data.bed_load_velocity['x'].flags.writeable
     np.testing.assert_array_equal(plan_data.bed_load_velocity['x'], np.array([1.0, 2.0]))
+
+
+def test_runtime_physics_reserve_uses_actual_default_fraction_identity():
+    """Default fraction one and explicit fraction zero require distinct plans."""
+    tracer = TracerRuntimePlan(
+        method_name='soulsby',
+        method_config={'flow_field_name': ['grain_velocity']},
+        flow_field_names=('grain_velocity',),
+        transport_probability_method='no_probability',
+        required_physics_fields=(
+            'grain_velocity',
+            'mixing_layer_thickness',
+            'soulsby_a',
+            'soulsby_b',
+        ),
+        converter=SimpleNamespace(config=None),
+    )
+    default_plan = SimpleNamespace(tracer=tracer, population_config={})
+    explicit_default = SimpleNamespace(
+        tracer=tracer,
+        population_config={'sediment_fraction_index': 1},
+    )
+    explicit_other = SimpleNamespace(
+        tracer=tracer,
+        population_config={'sediment_fraction_index': 0},
+    )
+
+    one_plan = estimate_runtime_physics_reserve_bytes(
+        (default_plan,),
+        100,
+        time_planes=1,
+        default_fraction_index=1,
+    )
+    equivalent_plans = estimate_runtime_physics_reserve_bytes(
+        (default_plan, explicit_default),
+        100,
+        time_planes=1,
+        default_fraction_index=1,
+    )
+    distinct_plans = estimate_runtime_physics_reserve_bytes(
+        (default_plan, explicit_other),
+        100,
+        time_planes=1,
+        default_fraction_index=1,
+    )
+
+    assert equivalent_plans == one_plan
+    assert distinct_plans > one_plan
+
+
+def test_eulerian_budget_scales_reader_bytes_by_per_plane_working_set():
+    """A low-source Soulsby plan must not spend the total budget on source planes."""
+    tracer = TracerRuntimePlan(
+        method_name='soulsby',
+        method_config={'flow_field_name': ['grain_velocity']},
+        flow_field_names=('grain_velocity',),
+        transport_probability_method='no_probability',
+        required_physics_fields=(
+            'grain_velocity',
+            'mixing_layer_thickness',
+            'soulsby_a',
+            'soulsby_b',
+        ),
+        converter=SimpleNamespace(config=None),
+    )
+    runtime_plan = SimpleNamespace(tracer=tracer, population_config={})
+    total_bytes = 1_000_000
+    spatial_size = 100
+
+    source_budget, reserved_budget = split_eulerian_memory_budget(
+        total_bytes,
+        (runtime_plan,),
+        spatial_size,
+    )
+    derived_per_plane = estimate_runtime_physics_reserve_bytes(
+        (runtime_plan,),
+        spatial_size,
+        time_planes=1,
+    )
+    source_per_plane = 6 * spatial_size * np.dtype(np.float64).itemsize
+    admitted_planes = source_budget // source_per_plane
+
+    assert source_budget + reserved_budget == total_bytes
+    assert admitted_planes < total_bytes // source_per_plane
+    assert admitted_planes * (source_per_plane + derived_per_plane) <= total_bytes
+
+
+def test_eulerian_budget_rejects_zero_source_remainder():
+    """An unusably small total budget should fail before source conversion."""
+    tracer = TracerRuntimePlan(
+        method_name='vanwesten',
+        method_config={'flow_field_name': ['bed_load_velocity']},
+        flow_field_names=('bed_load_velocity',),
+        transport_probability_method='stochastic_transport',
+        required_physics_fields=('bed_load_velocity', 'mixing_layer_thickness'),
+        converter=SimpleNamespace(config=None),
+    )
+    runtime_plan = SimpleNamespace(tracer=tracer, population_config={})
+
+    with pytest.raises(MemoryError, match='positive source forcing budget'):
+        split_eulerian_memory_budget(1, (runtime_plan,), 1_000)
+
+
+def test_eulerian_budget_bounds_int16_source_planes():
+    """Actual int16 reader planes must remain inside the total working set."""
+    tracer = TracerRuntimePlan(
+        method_name='soulsby',
+        method_config={'flow_field_name': ['grain_velocity']},
+        flow_field_names=('grain_velocity',),
+        transport_probability_method='no_probability',
+        required_physics_fields=(
+            'grain_velocity',
+            'mixing_layer_thickness',
+            'soulsby_a',
+            'soulsby_b',
+        ),
+        converter=SimpleNamespace(config=None),
+    )
+    runtime_plan = SimpleNamespace(tracer=tracer, population_config={})
+    total_bytes = 2_000_000
+    spatial_size = 100
+
+    source_budget, _ = split_eulerian_memory_budget(
+        total_bytes,
+        (runtime_plan,),
+        spatial_size,
+        source_bytes_per_plane=(
+            6 * spatial_size * np.dtype(np.int16).itemsize
+        ),
+    )
+    derived_per_plane = estimate_runtime_physics_reserve_bytes(
+        (runtime_plan,),
+        spatial_size,
+        time_planes=1,
+    )
+    source_per_plane = 6 * spatial_size * np.dtype(np.int16).itemsize
+    admitted_planes = source_budget // source_per_plane
+
+    assert admitted_planes * (source_per_plane + derived_per_plane) <= total_bytes
+
+
+def test_default_budget_retains_multiple_million_cell_soulsby_planes():
+    """Exact source sizing should keep a useful ocean-scale reader window."""
+    tracer = TracerRuntimePlan(
+        method_name='soulsby',
+        method_config={'flow_field_name': ['grain_velocity']},
+        flow_field_names=('grain_velocity',),
+        transport_probability_method='no_probability',
+        required_physics_fields=(
+            'grain_velocity',
+            'mixing_layer_thickness',
+            'soulsby_a',
+            'soulsby_b',
+        ),
+        converter=SimpleNamespace(config=None),
+    )
+    runtime_plan = SimpleNamespace(tracer=tracer, population_config={})
+    spatial_size = 1_000_000
+    total_bytes = 2048 * 1024**2
+    source_per_plane = 6 * spatial_size * np.dtype(np.float64).itemsize
+
+    source_budget, _ = split_eulerian_memory_budget(
+        total_bytes,
+        (runtime_plan,),
+        spatial_size,
+        source_bytes_per_plane=source_per_plane,
+    )
+    derived_per_plane = estimate_runtime_physics_reserve_bytes(
+        (runtime_plan,),
+        spatial_size,
+        time_planes=1,
+    )
+    admitted_planes = source_budget // source_per_plane
+
+    assert admitted_planes >= 2
+    assert admitted_planes * (source_per_plane + derived_per_plane) <= total_bytes
+
+
+def test_geodetic_budget_counts_prepared_ecef_vectors_at_ten_million_nodes():
+    """Ocean-scale geodetic plans must reserve three ECEF components per flow."""
+    tracer = TracerRuntimePlan(
+        method_name='passive_tracer',
+        method_config={'flow_field_name': ['depth_avg_flow_velocity']},
+        flow_field_names=('depth_avg_flow_velocity',),
+        transport_probability_method='no_probability',
+        required_physics_fields=('depth_avg_flow_velocity',),
+        converter=SimpleNamespace(config=None),
+    )
+    runtime_plan = SimpleNamespace(tracer=tracer, population_config={})
+    spatial_size = 10_000_000
+
+    planar_bytes = estimate_runtime_physics_reserve_bytes(
+        (runtime_plan,),
+        spatial_size,
+        time_planes=1,
+    )
+    geodetic_bytes = estimate_runtime_physics_reserve_bytes(
+        (runtime_plan,),
+        spatial_size,
+        time_planes=1,
+        geodetic_runtime=True,
+    )
+
+    expected_ecef_bytes = int(
+        np.ceil(3 * spatial_size * np.dtype(np.float64).itemsize * 1.25)
+    )
+    assert planar_bytes == 0
+    assert geodetic_bytes == expected_ecef_bytes
+
+
+def test_equivalent_plan_clones_share_collision_safe_forcing_identity():
+    """Equivalent plans should preserve a common window and field identity."""
+    source_data = _FakeSedtrailsData(forcing_generation=73)
+
+    def build_equivalent_plan():
+        return TracerRuntimePlan(
+            method_name='vanwesten',
+            method_config={'flow_field_name': ['bed_load_velocity']},
+            flow_field_names=('bed_load_velocity',),
+            transport_probability_method='stochastic_transport',
+            required_physics_fields=('bed_load_velocity',),
+            converter=_FakePhysicsConverter(),
+        )
+
+    first = build_plan_sedtrails_data(source_data, build_equivalent_plan())
+    second = build_plan_sedtrails_data(source_data, build_equivalent_plan())
+
+    assert first.forcing_generation == second.forcing_generation == 73
+    assert first.forcing_identity == second.forcing_identity
+    assert first.bed_load_velocity['x'] is not second.bed_load_velocity['x']
+    np.testing.assert_array_equal(
+        first.bed_load_velocity['x'],
+        second.bed_load_velocity['x'],
+    )
 
 
 def test_plan_local_physics_data_keeps_same_named_fields_from_overwriting():
@@ -526,12 +806,19 @@ def test_build_plan_sedtrails_data_requires_index_when_labels_unavailable():
 class _FakeSedtrailsData:
     """Minimal sedtrails-data test double storing physics fields by name."""
 
-    def __init__(self, fractions=1, bed_load_transport=None, metadata=None):
+    def __init__(
+        self,
+        fractions=1,
+        bed_load_transport=None,
+        metadata=None,
+        forcing_generation=1,
+    ):
         """Initialize an empty physics field store."""
         self._physics_fields = {}
         self.fractions = fractions
         self.bed_load_transport = bed_load_transport
         self.metadata = metadata
+        self.forcing_generation = forcing_generation
 
     def add_physics_field(self, name, data):
         """Store a named physics field and expose it as an attribute."""

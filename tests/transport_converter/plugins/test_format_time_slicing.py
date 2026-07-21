@@ -48,4 +48,4 @@ def test_short_read_interval_still_chunks_epoch_based_forcing_axis(tmp_path, plu
         current_time=1474485600.0,
         reading_interval=600.0,
         time_info=time_info,
-    ) == (0, 3)
+    ) == (0, 2)
