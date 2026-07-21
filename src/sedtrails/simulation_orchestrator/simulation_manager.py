@@ -1384,9 +1384,9 @@ class Simulation:
         input_field_names = required_input_fields(runtime_plans)
         input_source_memory_bytes, derived_memory_reserve_bytes = (
             self._allocate_eulerian_memory_budget(
-            runtime_plans,
-            np.asarray(seeding_field_data.x).size,
-            input_field_names,
+                runtime_plans,
+                np.asarray(seeding_field_data.x).size,
+                input_field_names,
             )
         )
         self.logger.info(

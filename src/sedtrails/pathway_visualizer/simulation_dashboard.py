@@ -433,6 +433,8 @@ class SimulationDashboard:
             'spherical',
             'lonlat',
             'latlon',
+            'longlat',
+            'latitude_longitude',
         }
         self._earth_radius_m = float(
             self.coordinate_metadata.get('earth_radius_m', EARTH_MEAN_RADIUS_M)

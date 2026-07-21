@@ -1,6 +1,6 @@
 # Contributions
 
-We welcome any kind of contribution to **SedTRAILS**, from a simple comment or a question, to a full fledged [pull request](https://help.github.com/articles/about-pull-requests/).
+We welcome any kind of contribution to **SedTRAILS**, from a simple comment or a question, to a full-fledged [pull request](https://help.github.com/articles/about-pull-requests/).
 
 A contribution can be made in the following cases:
 
