@@ -67,6 +67,28 @@ In the Stommel case, velocities are derived from finite differences of $\psi$, w
 
 The longitudinal shear benchmark seeds particles from -30 to 60 degrees latitude and plots in degrees to match the original formulation on a flat grid. Peninsula and Stommel cases include additional seed points and longer integration windows to ensure better spatial coverage. The peninsula benchmark also stops early if any particle reaches x=100 km.
 
+Large planar particle runs
+--------------------------
+
+The operational planar tracer is designed to keep particle-sized temporary
+arrays bounded for populations with 1 million or more particles. Population
+location, field interpolation, advection, boundary handling, and diffusion use
+chunks of at most 65,536 particles. Public geometry calls also bound their
+point-location and cached interpolation work.
+
+Particle populations are initialized directly as NumPy arrays. The legacy
+ParticleFactory.create_particles object API remains available for compatibility,
+but it is not used by the simulation path. Planar velocity fields are prepared
+once per forcing slice and reused across all particle chunks. Authoritative
+triangle and triangle-neighbor connectivity should be provided for large
+meshes.
+
+Use the 65,537-particle unit tests for routine chunk-boundary regression
+coverage. Million-particle timing and resident-memory measurements belong in a
+separate benchmark run so normal test execution remains predictable. Measure
+process RSS or native allocator usage; tracemalloc alone does not capture all
+NumPy, SciPy, and Numba allocations.
+
 Consistency notes
 -----------------
 

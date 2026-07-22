@@ -169,6 +169,41 @@ def _sample_burial_depth(burial_depth_config, rng: random.Random | None = None) 
     return float(burial_depth_config)
 
 
+def _sample_burial_depth_array(
+    burial_depth_config,
+    size: int,
+    rng: random.Random | None = None,
+) -> np.ndarray:
+    """Return burial depths without constructing per-particle objects.
+
+    Parameters
+    ----------
+    burial_depth_config : dict or float
+        Constant or uniform-random burial-depth configuration.
+    size : int
+        Number of particle values.
+    rng : random.Random, optional
+        Local random generator used for reproducible uniform sampling.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float64 burial depths.
+    """
+    if size < 0:
+        raise ValueError('size must be non-negative.')
+    if isinstance(burial_depth_config, dict) and 'random' in burial_depth_config:
+        generator = rng if rng is not None else random
+        maximum = float(burial_depth_config['random'])
+        return np.fromiter(
+            (generator.uniform(0.0, maximum) for _ in range(size)),
+            dtype=np.float64,
+            count=size,
+        )
+    value = _sample_burial_depth(burial_depth_config, rng=rng)
+    return np.full(size, value, dtype=np.float64)
+
+
 def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float | None:
     """Return the 2-D seeding area in m^2 for area-based strategies, or None.
 
@@ -1122,6 +1157,86 @@ class ParticleFactory:
     """
 
     @staticmethod
+    def create_particle_arrays(
+        config: PopulationConfig,
+        reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE,
+    ) -> dict[str, np.ndarray]:
+        """Create compact particle-state arrays directly.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Population and seeding configuration.
+        reference_date : str or numpy.datetime64, optional
+            Reference date used to convert the release time to seconds.
+
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            Initial x, y, release_time, and burial_depth arrays.
+        """
+        strategy_map = {
+            'point': PointStrategy(),
+            'random': RandomStrategy(),
+            'grid': GridStrategy(),
+            'transect': TransectStrategy(),
+            'file_points': FilePointsStrategy(),
+        }
+        particle_type = getattr(config, 'particle_type', '').lower()
+        if particle_type not in {'sand', 'mud', 'passive'}:
+            raise ValueError(f'Unknown particle type: {particle_type}')
+        strategy_name = getattr(config, 'strategy', '').lower()
+        if strategy_name not in strategy_map:
+            raise ValueError(f'Unknown seeding strategy: {strategy_name}')
+
+        empty = {
+            'x': np.empty(0, dtype=np.float64),
+            'y': np.empty(0, dtype=np.float64),
+            'release_time': np.empty(0, dtype=np.float64),
+            'burial_depth': np.empty(0, dtype=np.float64),
+        }
+        if int(config.quantity) <= 0:
+            return empty
+
+        positions = strategy_map[strategy_name].seed(config)
+        transform = getattr(config, 'strategy_settings', {}).get(
+            '_coordinate_transform',
+            None,
+        )
+        if strategy_name not in {'random', 'grid'}:
+            positions = _seed_positions_to_metric(positions, transform)
+        _log_seeding_box_volume(config, positions)
+        if not positions:
+            return empty
+
+        quantities = np.asarray([int(item[0]) for item in positions], dtype=np.intp)
+        if np.any(quantities < 0):
+            raise ValueError('Particle quantities must be non-negative.')
+        x_locations = np.asarray([item[1] for item in positions], dtype=np.float64)
+        y_locations = np.asarray([item[2] for item in positions], dtype=np.float64)
+        x_values = np.repeat(x_locations, quantities)
+        y_values = np.repeat(y_locations, quantities)
+        size = x_values.size
+
+        strategy_seed = getattr(config, 'strategy_settings', {}).get('seed')
+        burial_rng = random.Random(strategy_seed)
+        burial_values = _sample_burial_depth_array(
+            getattr(config, 'burial_depth', None),
+            size,
+            rng=burial_rng,
+        )
+        release_seconds = _release_time_to_seconds(
+            getattr(config, 'release_start', None),
+            reference_date,
+        )
+        return {
+            'x': x_values,
+            'y': y_values,
+            'release_time': np.full(size, release_seconds, dtype=np.float64),
+            'burial_depth': burial_values,
+        }
+
+    @staticmethod
     def create_particles(config: PopulationConfig) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
@@ -1279,18 +1394,17 @@ class ParticlePopulation:
         if isinstance(getattr(self.population_config, 'strategy_settings', None), dict):
             self.population_config.strategy_settings['_coordinate_transform'] = self.grid_geometry.coordinate_transform
 
-        # generate particles based on the configuration
-        _particles = ParticleFactory.create_particles(self.population_config)
+        # Build compact state arrays directly; the object factory remains a
+        # compatibility API for callers that explicitly request Particle objects.
+        initial_state = ParticleFactory.create_particle_arrays(
+            self.population_config,
+            self.reference_date,
+        )
+        particle_count = initial_state['x'].size
         self.particles = {
-            'x': np.array([p.x for p in _particles]),
-            'y': np.array([p.y for p in _particles]),
-            'release_time': np.array(
-                [_release_time_to_seconds(p.release_time, self.reference_date) for p in _particles],
-                dtype=float,
-            ),
-            'burial_depth': np.array([p.burial_depth for p in _particles]),
-            'status_left_domain': np.zeros(len(_particles), dtype=bool),
-            'status_beached': np.zeros(len(_particles), dtype=bool),
+            **initial_state,
+            'status_left_domain': np.zeros(particle_count, dtype=bool),
+            'status_beached': np.zeros(particle_count, dtype=bool),
         }
         self._particle_simplices = self._locate_particle_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
@@ -1747,15 +1861,12 @@ class ParticlePopulation:
         status_mobile = np.asarray(self.particles['status_mobile'], dtype=bool)
         if not np.any(status_mobile):
             return
-        prepared_flow_field = self._prepare_geodetic_flow_field(flow_field)
-        chunk_size = 65_536
-        for start in range(0, status_mobile.size, chunk_size):
-            particle_indices = np.flatnonzero(
-                status_mobile[start : start + chunk_size]
-            )
+        prepared_flow_field = self._prepare_flow_field(flow_field)
+        for chunk in particle_chunk_slices(status_mobile.size):
+            particle_indices = np.flatnonzero(status_mobile[chunk])
             if particle_indices.size == 0:
                 continue
-            particle_indices += start
+            particle_indices += chunk.start
             self._update_position_chunk(
                 flow_field,
                 current_timestep,
@@ -1764,9 +1875,9 @@ class ParticlePopulation:
             )
         self._mark_particle_simplices_current()
 
-    def _prepare_geodetic_flow_field(self, flow_field: Dict):
-        """Prepare each geodetic forcing slice once for all particle chunks."""
-        if not getattr(self.grid_geometry, 'is_geodetic', False):
+    def _prepare_flow_field(self, flow_field: Dict):
+        """Prepare each forcing slice once for all particle chunks."""
+        if not hasattr(self.grid_geometry, 'prepare_vector_field'):
             return None
         generations = flow_field.get('cache_generation', {})
         if _is_temporal_flow_field(flow_field):
@@ -1798,6 +1909,10 @@ class ParticlePopulation:
         )
         return {'lower': prepared, 'upper': prepared}
 
+    def _prepare_geodetic_flow_field(self, flow_field: Dict):
+        """Compatibility alias for the backend-neutral forcing preparer."""
+        return self._prepare_flow_field(flow_field)
+
     def _update_position_chunk(
         self,
         flow_field: Dict,
@@ -1808,20 +1923,20 @@ class ParticlePopulation:
     ) -> None:
         """Advance one bounded chunk of mobile particles."""
         ix = particle_indices
-        old_x = self.particles['x'][ix].copy()
-        old_y = self.particles['y'][ix].copy()
-        old_simplices = self._particle_simplices[particle_indices].copy()
+        old_x = self.particles['x'][ix]
+        old_y = self.particles['y'][ix]
+        old_simplices = self._particle_simplices[particle_indices]
 
         if prepared_flow_field is not None:
             new_x, new_y, new_simplices, boundary_class_codes = (
                 self.grid_geometry.update_particles_prepared_temporal_with_boundary_class(
-                    self.particles['x'][ix],
-                    self.particles['y'][ix],
+                    old_x,
+                    old_y,
                     prepared_flow_field['lower'],
                     prepared_flow_field['upper'],
                     flow_field['weight'] if _is_temporal_flow_field(flow_field) else 0.0,
                     current_timestep,
-                    simplex_ids=self._particle_simplices[particle_indices],
+                    simplex_ids=old_simplices,
                 )
             )
         elif _is_temporal_flow_field(flow_field):

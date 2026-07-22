@@ -7,13 +7,15 @@ search instead of scanning every triangle for every interpolation point when
 connectivity is not supplied explicitly.
 """
 
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from numba import njit, prange
 from scipy.spatial import ConvexHull, Delaunay
 
+from sedtrails.particle_tracer._chunking import particle_chunk_slices
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform, build_coordinate_transform
 from sedtrails.transport_converter.domain_mask import (
     DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS,
@@ -24,6 +26,18 @@ MAX_SIMPLEX_WALK_STEPS = 128
 BOUNDARY_CLASS_UNCLASSIFIED = np.int8(0)
 BOUNDARY_CLASS_OPEN = np.int8(1)
 BOUNDARY_CLASS_LAND = np.int8(2)
+DEFAULT_VELOCITY_CACHE_BYTES = 512 * 1024**2
+
+
+def _forcing_cache_generation(cache_key) -> int | None:
+    """Extract the monotonic forcing generation from a cache key."""
+    if (
+        isinstance(cache_key, tuple)
+        and cache_key
+        and isinstance(cache_key[0], (int, np.integer))
+    ):
+        return int(cache_key[0])
+    return None
 
 
 @dataclass
@@ -53,6 +67,22 @@ class GridGeometry:
     velocity_east_y: np.ndarray | None = None
     velocity_north_x: np.ndarray | None = None
     velocity_north_y: np.ndarray | None = None
+    _velocity_cache: OrderedDict[object, tuple[np.ndarray, np.ndarray]] = field(
+        init=False,
+        default_factory=OrderedDict,
+        repr=False,
+    )
+    _velocity_cache_bytes: int = field(init=False, default=0, repr=False)
+    _velocity_cache_max_bytes: int = field(
+        init=False,
+        default=DEFAULT_VELOCITY_CACHE_BYTES,
+        repr=False,
+    )
+    _velocity_cache_generation: int | None = field(
+        init=False,
+        default=None,
+        repr=False,
+    )
 
     @property
     def is_geodetic(self) -> bool:
@@ -74,6 +104,8 @@ class GridGeometry:
         earth_radius_m=6_371_008.8,
         longitude_wrap='auto',
         velocity_basis='auto',
+        *,
+        triangle_neighbors=None,
     ):
         """
         Build cached grid geometry from point coordinates.
@@ -86,6 +118,9 @@ class GridGeometry:
             Grid node y coordinates.
         triangles : object
             Triangle connectivity array.
+        triangle_neighbors : object, optional
+            Authoritative neighboring-face connectivity. Entries correspond
+            to the edge opposite each local triangle vertex.
 
         Returns
         -------
@@ -160,10 +195,16 @@ class GridGeometry:
                     triangle_array,
                 )
                 triangle_finder = matplotlib_triangulation.get_trifinder()
-                triangle_neighbors = np.asarray(
-                    matplotlib_triangulation.neighbors[:, [1, 2, 0]],
-                    dtype=index_dtype,
-                )
+                if triangle_neighbors is None:
+                    triangle_neighbors = np.asarray(
+                        matplotlib_triangulation.neighbors[:, [1, 2, 0]],
+                        dtype=index_dtype,
+                    )
+                else:
+                    triangle_neighbors = _validate_triangle_neighbors(
+                        triangle_array,
+                        triangle_neighbors,
+                    )
             outer_envelope = _bounding_box_xy(metric_x, metric_y)
 
         p0_x, p0_y, inv00, inv01, inv10, inv11 = _triangle_inverse_matrices(metric_x, metric_y, triangle_array)
@@ -243,41 +284,61 @@ class GridGeometry:
         return int(self.triangle_finder([metric_x], [metric_y])[0])
 
     def locate_points(self, x_points, y_points, start_simplices=None):
-        """
-        Locate points, using cached simplices first and global search only for misses.
+        """Locate points with bounded temporary coordinate arrays.
 
         Parameters
         ----------
-        x_points : object
-            Point x coordinates to sample.
-        y_points : object
-            Point y coordinates to sample.
-        start_simplices : object
-            Initial simplex ids used to seed local point searches.
+        x_points, y_points : array-like
+            Runtime metric point coordinates.
+        start_simplices : array-like, optional
+            Cached containing-face ids.
 
         Returns
         -------
-        np.ndarray
-            Simplex index for each input point, or -1 outside the triangulation.
+        numpy.ndarray
+            Flat containing-face ids, or -1 outside the mesh.
         """
-        points = self._metric_points_array(x_points, y_points)
-        if points.size == 0:
+        x_values = np.asarray(x_points, dtype=np.float64)
+        y_values = np.asarray(y_points, dtype=np.float64)
+        if x_values.shape != y_values.shape:
+            raise ValueError(
+                f'x_points and y_points must have the same shape, '
+                f'got {x_values.shape} and {y_values.shape}'
+            )
+        x_flat = x_values.ravel()
+        y_flat = y_values.ravel()
+        if x_flat.size == 0:
             return np.empty(0, dtype=np.int64)
         if self.triangles.shape[0] == 0:
-            return np.full(points.shape[0], -1, dtype=np.int64)
+            return np.full(x_flat.size, -1, dtype=np.int64)
 
+        starts = None
+        if start_simplices is not None:
+            starts = np.asarray(start_simplices, dtype=np.int64).ravel()
+            if starts.shape != x_flat.shape:
+                raise ValueError(
+                    f'start_simplices must have shape {x_flat.shape}, got {starts.shape}'
+                )
+
+        simplices = np.empty(x_flat.size, dtype=np.int64)
+        for chunk in particle_chunk_slices(x_flat.size):
+            simplices[chunk] = self._locate_points_chunk(
+                x_flat[chunk],
+                y_flat[chunk],
+                None if starts is None else starts[chunk],
+            )
+        return simplices
+
+    def _locate_points_chunk(self, x_points, y_points, start_simplices=None):
+        """Locate one bounded contiguous point chunk."""
+        points = np.column_stack((x_points, y_points))
         if start_simplices is None:
             simplices = np.full(points.shape[0], -1, dtype=np.int64)
         else:
-            simplices = np.asarray(start_simplices, dtype=np.int64).copy()
-            if simplices.shape != (points.shape[0],):
-                raise ValueError(
-                    f'start_simplices must have shape {(points.shape[0],)}, got {simplices.shape}'
-                )
             simplices = _locate_points_walk_numba(
                 points[:, 0],
                 points[:, 1],
-                simplices,
+                np.ascontiguousarray(start_simplices, dtype=np.int64),
                 self.triangle_neighbors,
                 self.p0_x,
                 self.p0_y,
@@ -292,109 +353,79 @@ class GridGeometry:
         missing = simplices < 0
         if not np.any(missing):
             return simplices
-
         if self.triangulation is not None:
-            simplices[missing] = self.triangulation.find_simplex(points[missing], tol=TRIANGLE_TOLERANCE)
+            simplices[missing] = self.triangulation.find_simplex(
+                points[missing],
+                tol=TRIANGLE_TOLERANCE,
+            )
         else:
             simplices[missing] = np.asarray(
                 self.triangle_finder(points[missing, 0], points[missing, 1]),
                 dtype=np.int64,
             )
-
         return simplices
 
     def barycentric_weights(self, x_points, y_points):
-        """
-        Return simplex indices and barycentric weights for points.
+        """Return face ids and barycentric weights in bounded batches."""
+        return self.barycentric_weights_with_simplex(
+            x_points,
+            y_points,
+            simplex_ids=None,
+        )
+
+    def barycentric_weights_with_simplex(
+        self,
+        x_points,
+        y_points,
+        simplex_ids=None,
+    ):
+        """Return face ids and weights while reusing cached face ids.
 
         Parameters
         ----------
-        x_points : object
-            Point x coordinates to sample.
-        y_points : object
-            Point y coordinates to sample.
+        x_points, y_points : array-like
+            Runtime metric coordinates.
+        simplex_ids : array-like, optional
+            Cached containing-face ids.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray]
-            Simplex indices and barycentric weights for each point.
+        tuple of numpy.ndarray
+            Flat face ids and an array of three weights per point.
         """
-        points = self._metric_points_array(x_points, y_points)
-        if self.triangles.shape[0] == 0:
-            return np.full(points.shape[0], -1, dtype=np.int64), np.zeros((points.shape[0], 3), dtype=np.float64)
+        x_values = np.asarray(x_points, dtype=np.float64)
+        y_values = np.asarray(y_points, dtype=np.float64)
+        if x_values.shape != y_values.shape:
+            raise ValueError(
+                f'x_points and y_points must have the same shape, '
+                f'got {x_values.shape} and {y_values.shape}'
+            )
+        x_flat = x_values.ravel()
+        y_flat = y_values.ravel()
+        starts = None
+        if simplex_ids is not None:
+            starts = np.asarray(simplex_ids, dtype=np.int64).ravel()
+            if starts.shape != x_flat.shape:
+                raise ValueError(
+                    f'simplex_ids must have shape {x_flat.shape}, got {starts.shape}'
+                )
 
-        weights = np.zeros((points.shape[0], 3), dtype=np.float64)
-
-        if self.triangulation is not None:
-            simplices = self.triangulation.find_simplex(points, tol=TRIANGLE_TOLERANCE)
-            valid = simplices >= 0
+        simplices = self.locate_points(x_flat, y_flat, starts)
+        weights = np.zeros((x_flat.size, 3), dtype=np.float64)
+        for chunk in particle_chunk_slices(x_flat.size):
+            chunk_simplices = simplices[chunk]
+            valid = chunk_simplices >= 0
             if not np.any(valid):
-                return simplices, weights
-
-            transform = self.triangulation.transform[simplices[valid]]
-            delta = points[valid] - transform[:, 2, :]
-            first_two = np.einsum('ijk,ik->ij', transform[:, :2, :], delta)
-            weights[valid, :2] = first_two
-            weights[valid, 2] = 1.0 - first_two.sum(axis=1)
-            return simplices, weights
-
-        simplices = np.asarray(self.triangle_finder(points[:, 0], points[:, 1]), dtype=np.int64)
-        valid_indices = np.flatnonzero(simplices >= 0)
-        if valid_indices.size:
-            vertices = self.triangles[simplices[valid_indices]]
-            local_weights, nondegenerate = _triangle_barycentric_weights(
-                self.metric_grid_x,
-                self.metric_grid_y,
-                vertices,
-                points[valid_indices],
-            )
-            weights[valid_indices[nondegenerate]] = local_weights[nondegenerate]
-            simplices[valid_indices[~nondegenerate]] = -1
-
-        return simplices, weights
-
-    def barycentric_weights_with_simplex(self, x_points, y_points, simplex_ids=None):
-        """
-        Return simplex indices and barycentric weights using cached simplex ids.
-
-        Parameters
-        ----------
-        x_points : object
-            Point x coordinates to sample.
-        y_points : object
-            Point y coordinates to sample.
-        simplex_ids : object
-            Cached simplex ids for the point coordinates.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray]
-            Simplex indices and barycentric weights for each point.
-        """
-        if simplex_ids is None:
-            return self.barycentric_weights(x_points, y_points)
-
-        points = self._metric_points_array(x_points, y_points)
-        simplices = self.locate_points(x_points, y_points, simplex_ids)
-        weights = np.zeros((points.shape[0], 3), dtype=np.float64)
-
-        valid_indices = np.flatnonzero(simplices >= 0)
-        if valid_indices.size:
-            valid_simplices = simplices[valid_indices]
-            dx = points[valid_indices, 0] - self.p0_x[valid_simplices]
-            dy = points[valid_indices, 1] - self.p0_y[valid_simplices]
-            w1 = self.inv00[valid_simplices] * dx + self.inv01[valid_simplices] * dy
-            w2 = self.inv10[valid_simplices] * dx + self.inv11[valid_simplices] * dy
-            nondegenerate = (
-                (self.inv00[valid_simplices] != 0.0)
-                | (self.inv01[valid_simplices] != 0.0)
-                | (self.inv10[valid_simplices] != 0.0)
-                | (self.inv11[valid_simplices] != 0.0)
-            )
-            local_weights = np.column_stack((1.0 - w1 - w2, w1, w2))
-            weights[valid_indices[nondegenerate]] = local_weights[nondegenerate]
-            simplices[valid_indices[~nondegenerate]] = -1
-
+                continue
+            valid_faces = chunk_simplices[valid]
+            dx = x_flat[chunk][valid] - self.p0_x[valid_faces]
+            dy = y_flat[chunk][valid] - self.p0_y[valid_faces]
+            w1 = self.inv00[valid_faces] * dx + self.inv01[valid_faces] * dy
+            w2 = self.inv10[valid_faces] * dx + self.inv11[valid_faces] * dy
+            local_weights = weights[chunk]
+            local_weights[valid, 0] = 1.0 - w1 - w2
+            local_weights[valid, 1] = w1
+            local_weights[valid, 2] = w2
         return simplices, weights
 
     def interpolate_field(self, field, x_points, y_points):
@@ -418,96 +449,94 @@ class GridGeometry:
         return self.interpolate_fields((field,), x_points, y_points)[0]
 
     def interpolate_fields(self, fields, x_points, y_points):
-        """
-        Interpolate multiple nodal fields using one point-location pass.
-
-        Parameters
-        ----------
-        fields : object
-            Scalar field arrays defined on grid nodes.
-        x_points : object
-            Point x coordinates to sample.
-        y_points : object
-            Point y coordinates to sample.
-
-        Returns
-        -------
-        tuple[np.ndarray, ...]
-            Interpolated field values for each supplied field.
-        """
-        fields = tuple(fields)
-        simplices, weights = self.barycentric_weights(x_points, y_points)
-        outputs = [np.full(len(simplices), np.nan, dtype=np.float64) for _ in fields]
-
-        valid = simplices >= 0
-        if np.any(valid):
-            vertices = self.triangles[simplices[valid]]
-            valid_weights = weights[valid]
-            for output, field in zip(outputs, fields, strict=True):
-                values = np.asarray(field).ravel()
-                output[valid] = np.einsum('ij,ij->i', values[vertices], valid_weights)
-
-        return tuple(outputs)
+        """Interpolate multiple fields through the bounded cached workhorse."""
+        values, _ = self.interpolate_fields_with_simplex(
+            fields,
+            x_points,
+            y_points,
+        )
+        return values
 
     def interpolate_fields_with_simplex(self, fields, x_points, y_points, simplex_ids=None):
-        """
-        Interpolate nodal fields and return refreshed simplex ids.
+        """Interpolate nodal fields in bounded batches and refresh face ids.
 
         Parameters
         ----------
-        fields : object
-            Scalar field arrays defined on grid nodes.
-        x_points : object
-            Point x coordinates to sample.
-        y_points : object
-            Point y coordinates to sample.
-        simplex_ids : object
-            Cached simplex ids for the point coordinates.
+        fields : iterable of array-like
+            Nodal scalar fields.
+        x_points, y_points : array-like
+            Runtime metric particle coordinates.
+        simplex_ids : array-like, optional
+            Cached containing-face ids.
 
         Returns
         -------
-        tuple[tuple[np.ndarray, ...], np.ndarray]
-            Interpolated field values and the containing simplex index for each point.
+        tuple
+            Flat interpolated field arrays and refreshed face ids.
         """
         fields = tuple(fields)
-        if not fields:
-            simplices = self.locate_points(x_points, y_points, simplex_ids)
-            return (), simplices
-
-        points = self._metric_points_array(x_points, y_points)
         x_values = np.asarray(x_points, dtype=np.float64)
         y_values = np.asarray(y_points, dtype=np.float64)
-        if y_values.shape != x_values.shape:
+        if x_values.shape != y_values.shape:
             raise ValueError(
-                f'x_points and y_points must have the same shape, got {x_values.shape} and {y_values.shape}'
+                f'x_points and y_points must have the same shape, '
+                f'got {x_values.shape} and {y_values.shape}'
             )
+        x_flat = x_values.ravel()
+        y_flat = y_values.ravel()
+
+        starts = None
+        if simplex_ids is not None:
+            starts = np.asarray(simplex_ids, dtype=np.int64).ravel()
+            if starts.shape != x_flat.shape:
+                raise ValueError(
+                    f'simplex_ids must have shape {x_flat.shape}, got {starts.shape}'
+                )
 
         field_values = []
         n_nodes = self.grid_x.size
-        for field in fields:
-            values = np.asarray(field, dtype=np.float64).ravel()
+        for field_value in fields:
+            values = np.asarray(field_value, dtype=np.float64).ravel()
             if values.size != n_nodes:
-                raise ValueError(f'field arrays must have {n_nodes} values, got {values.size}')
+                raise ValueError(
+                    f'field arrays must have {n_nodes} values, got {values.size}'
+                )
             field_values.append(values)
 
-        simplices = self.locate_points(x_values, y_values, simplex_ids)
-        stacked_fields = np.vstack(field_values)
-        output_values, refreshed_simplices = _interpolate_fields_at_simplices_numba(
-            stacked_fields,
-            simplices,
-            points[:, 0],
-            points[:, 1],
-            self.triangles,
-            self.p0_x,
-            self.p0_y,
-            self.inv00,
-            self.inv01,
-            self.inv10,
-            self.inv11,
-            TRIANGLE_TOLERANCE,
-        )
-        outputs = tuple(output_values[i].copy() for i in range(output_values.shape[0]))
-        return outputs, refreshed_simplices
+        if not field_values:
+            return (), self.locate_points(x_flat, y_flat, starts)
+
+        outputs = [
+            np.empty(x_flat.size, dtype=np.float64)
+            for _ in field_values
+        ]
+        refreshed_simplices = np.empty(x_flat.size, dtype=np.int64)
+        for chunk in particle_chunk_slices(x_flat.size):
+            chunk_simplices = self.locate_points(
+                x_flat[chunk],
+                y_flat[chunk],
+                None if starts is None else starts[chunk],
+            )
+            chunk_refreshed = chunk_simplices
+            for field_index, values in enumerate(field_values):
+                chunk_output, candidate_refreshed = _interpolate_field_at_simplices_numba(
+                    values,
+                    chunk_refreshed,
+                    x_flat[chunk],
+                    y_flat[chunk],
+                    self.triangles,
+                    self.p0_x,
+                    self.p0_y,
+                    self.inv00,
+                    self.inv01,
+                    self.inv10,
+                    self.inv11,
+                    TRIANGLE_TOLERANCE,
+                )
+                outputs[field_index][chunk] = chunk_output
+                chunk_refreshed = candidate_refreshed
+            refreshed_simplices[chunk] = chunk_refreshed
+        return tuple(outputs), refreshed_simplices
 
     def update_particles(self, x0, y0, grid_u, grid_v, dt, igeo=0):
         """
@@ -712,19 +741,64 @@ class GridGeometry:
         simplex_ids=None,
         igeo=0,
     ):
-        """
-        Advance particles and return exit boundary class codes.
+        """Advance particles and return exit boundary class codes."""
+        lower = self.prepare_vector_field(lower_u, lower_v)
+        upper = lower if weight <= 0.0 else self.prepare_vector_field(upper_u, upper_v)
+        return self.update_particles_prepared_temporal_with_boundary_class(
+            x0,
+            y0,
+            lower,
+            upper,
+            weight,
+            dt,
+            simplex_ids=simplex_ids,
+            igeo=igeo,
+        )
 
-        Parameters are the same as ``update_particles_temporal_with_simplex``.
+    def update_particles_prepared_temporal_with_boundary_class(
+        self,
+        x0,
+        y0,
+        lower_prepared,
+        upper_prepared,
+        weight,
+        dt,
+        simplex_ids=None,
+        igeo=0,
+    ):
+        """Advance particles using already prepared planar vector slices.
+
+        Parameters
+        ----------
+        x0, y0 : array-like
+            Runtime metric particle coordinates.
+        lower_prepared, upper_prepared : tuple of numpy.ndarray
+            Prepared x/y nodal velocity components.
+        weight : float
+            Temporal interpolation weight.
+        dt : float
+            Integration time step in seconds.
+        simplex_ids : array-like, optional
+            Cached containing-face ids.
+        igeo : int, default=0
+            Legacy geographic flag; value 1 is unsupported.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-            Updated x positions, y positions, simplex ids, and exit boundary
-            class codes.
+        tuple
+            New x/y coordinates, face ids, and boundary class codes.
         """
+        if int(igeo) == 1:
+            raise ValueError(
+                'igeo=1 local geographic scaling is no longer supported; use projected metric coordinates.'
+            )
         x0_metric = np.asarray(x0, dtype=np.float64)
         y0_metric = np.asarray(y0, dtype=np.float64)
+        if x0_metric.shape != y0_metric.shape:
+            raise ValueError(
+                f'x0 and y0 must have the same shape, got '
+                f'{x0_metric.shape} and {y0_metric.shape}'
+            )
         particle_shape = x0_metric.shape
         if x0_metric.size == 0:
             return (
@@ -734,21 +808,26 @@ class GridGeometry:
                 np.empty(0, dtype=np.int8),
             )
 
-        lower_u_adj, lower_v_adj = self._velocity_arrays(lower_u, lower_v, igeo)
+        lower_u_adj, lower_v_adj = _validate_prepared_planar_vector_field(
+            lower_prepared,
+            self.grid_x.size,
+        )
         if weight <= 0.0:
-            upper_u_adj = lower_u_adj
-            upper_v_adj = lower_v_adj
+            upper_u_adj, upper_v_adj = lower_u_adj, lower_v_adj
         else:
-            upper_u_adj, upper_v_adj = self._velocity_arrays(upper_u, upper_v, igeo)
+            upper_u_adj, upper_v_adj = _validate_prepared_planar_vector_field(
+                upper_prepared,
+                self.grid_x.size,
+            )
 
         starts = self.locate_points(x0_metric, y0_metric, simplex_ids)
         x_new, y_new, new_simplices, boundary_class_codes = _update_particles_temporal_numba(
             x0_metric.ravel(),
             y0_metric.ravel(),
-            np.asarray(lower_u_adj).ravel(),
-            np.asarray(lower_v_adj).ravel(),
-            np.asarray(upper_u_adj).ravel(),
-            np.asarray(upper_v_adj).ravel(),
+            lower_u_adj,
+            lower_v_adj,
+            upper_u_adj,
+            upper_v_adj,
             float(weight),
             float(dt),
             starts,
@@ -838,6 +917,68 @@ class GridGeometry:
             lower_v_values + weight * (upper_v_values - lower_v_values),
         )
 
+    def prepare_vector_field(self, grid_u, grid_v, *, cache_key=None):
+        """Prepare one planar nodal vector field for repeated particle chunks.
+
+        Parameters
+        ----------
+        grid_u, grid_v : array-like
+            Nodal velocity components.
+        cache_key : hashable, optional
+            Forcing-slice generation key. Converted geographic fields are
+            cached only when an explicit key is supplied.
+
+        Returns
+        -------
+        tuple of numpy.ndarray
+            Runtime metric x/y velocity components.
+        """
+        u = np.asarray(grid_u).ravel()
+        v = np.asarray(grid_v).ravel()
+        if u.size != self.grid_x.size or v.size != self.grid_x.size:
+            raise ValueError(
+                f'Vector fields must have {self.grid_x.size} values, '
+                f'got {u.size} and {v.size}.'
+            )
+        if not self.coordinate_transform.is_geographic:
+            return np.ascontiguousarray(u), np.ascontiguousarray(v)
+
+        if cache_key is not None:
+            try:
+                hash(cache_key)
+            except TypeError as exc:
+                raise TypeError('cache_key must be hashable.') from exc
+            generation = _forcing_cache_generation(cache_key)
+            if generation is not None and generation != self._velocity_cache_generation:
+                self.clear_velocity_cache()
+                self._velocity_cache_generation = generation
+            cached = self._velocity_cache.get(cache_key)
+            if cached is not None:
+                self._velocity_cache.move_to_end(cache_key)
+                return cached
+
+        prepared = self._velocity_arrays(u, v, igeo=0)
+        prepared = (
+            np.ascontiguousarray(prepared[0], dtype=np.float64),
+            np.ascontiguousarray(prepared[1], dtype=np.float64),
+        )
+        prepared_bytes = prepared[0].nbytes + prepared[1].nbytes
+        if cache_key is not None and prepared_bytes <= self._velocity_cache_max_bytes:
+            while (
+                self._velocity_cache
+                and self._velocity_cache_bytes + prepared_bytes > self._velocity_cache_max_bytes
+            ):
+                _, evicted = self._velocity_cache.popitem(last=False)
+                self._velocity_cache_bytes -= evicted[0].nbytes + evicted[1].nbytes
+            self._velocity_cache[cache_key] = prepared
+            self._velocity_cache_bytes += prepared_bytes
+        return prepared
+
+    def clear_velocity_cache(self) -> None:
+        """Release cached projected velocity fields."""
+        self._velocity_cache.clear()
+        self._velocity_cache_bytes = 0
+
     def _velocity_arrays(self, grid_u, grid_v, igeo):
         grid_u = np.asarray(grid_u).ravel()
         grid_v = np.asarray(grid_v).ravel()
@@ -922,6 +1063,22 @@ class GridGeometry:
 
     def _metric_points_array(self, x_points, y_points):
         return _points_array(x_points, y_points)
+
+
+def _validate_prepared_planar_vector_field(values, node_count):
+    """Return validated contiguous prepared x/y velocity arrays."""
+    if not isinstance(values, tuple) or len(values) != 2:
+        raise ValueError('Prepared planar vector fields must be an (x, y) tuple.')
+    x_values = np.asarray(values[0])
+    y_values = np.asarray(values[1])
+    if x_values.size != node_count or y_values.size != node_count:
+        raise ValueError(
+            f'Prepared planar vector fields must have {node_count} values per component.'
+        )
+    return (
+        np.ascontiguousarray(x_values).ravel(),
+        np.ascontiguousarray(y_values).ravel(),
+    )
 
 
 def _bounding_box(points):
@@ -1032,6 +1189,18 @@ def _triangle_inverse_matrices(grid_x, grid_y, triangles):
     inv11[valid] = m00[valid] / det[valid]
 
     return x0, y0, inv00, inv01, inv10, inv11
+
+
+def _validate_triangle_neighbors(triangles, triangle_neighbors):
+    """Validate authoritative planar topology using the shared compact checks."""
+    from sedtrails.particle_tracer.geodetic_grid import (
+        _validate_triangle_neighbors as _validate_shared_triangle_neighbors,
+    )
+
+    try:
+        return _validate_shared_triangle_neighbors(triangles, triangle_neighbors)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace('Geodetic', 'Planar')) from exc
 
 
 def _compute_triangle_neighbors(triangles):
@@ -1412,6 +1581,60 @@ def _locate_points_walk_numba(
 
 
 @njit(cache=True, parallel=True)
+def _interpolate_field_at_simplices_numba(
+    field_values,
+    simplices,
+    x_points,
+    y_points,
+    triangles,
+    p0_x,
+    p0_y,
+    inv00,
+    inv01,
+    inv10,
+    inv11,
+    tolerance,
+):
+    """Interpolate one field without copying all nodal fields into a stack."""
+    output = np.empty(simplices.shape[0], dtype=np.float64)
+    refreshed = simplices.copy()
+    for index in prange(simplices.shape[0]):
+        simplex = simplices[index]
+        if simplex < 0:
+            output[index] = np.nan
+            continue
+        if (
+            inv00[simplex] == 0.0
+            and inv01[simplex] == 0.0
+            and inv10[simplex] == 0.0
+            and inv11[simplex] == 0.0
+        ):
+            refreshed[index] = -1
+            output[index] = np.nan
+            continue
+
+        dx = x_points[index] - p0_x[simplex]
+        dy = y_points[index] - p0_y[simplex]
+        w1 = inv00[simplex] * dx + inv01[simplex] * dy
+        w2 = inv10[simplex] * dx + inv11[simplex] * dy
+        w0 = 1.0 - w1 - w2
+        if w0 < -tolerance or w1 < -tolerance or w2 < -tolerance:
+            refreshed[index] = -1
+            output[index] = np.nan
+            continue
+
+        node0 = triangles[simplex, 0]
+        node1 = triangles[simplex, 1]
+        node2 = triangles[simplex, 2]
+        output[index] = (
+            field_values[node0] * w0
+            + field_values[node1] * w1
+            + field_values[node2] * w2
+        )
+    return output, refreshed
+
+
+@njit(cache=True, parallel=True)
 def _interpolate_fields_at_simplices_numba(
     fields,
     simplices,
@@ -1759,6 +1982,7 @@ def create_grid_geometry(
         grid_x,
         grid_y,
         triangles=triangles,
+        triangle_neighbors=triangle_neighbors,
         boundary_edge_classification=boundary_edge_classification,
         coordinate_system=coordinate_system,
         source_crs=source_crs,

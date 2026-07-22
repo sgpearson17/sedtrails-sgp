@@ -1396,6 +1396,59 @@ def population_config():
     )
 
 
+def test_particle_factory_builds_million_particle_arrays_directly():
+    """Million-particle initialization should allocate only final arrays."""
+    config = PopulationConfig(
+        {
+            'name': 'million-array-seed',
+            'particle_type': 'passive',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1_000_001,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.25},
+            },
+        }
+    )
+
+    arrays = ParticleFactory.create_particle_arrays(config)
+
+    assert set(arrays) == {'x', 'y', 'release_time', 'burial_depth'}
+    assert all(values.shape == (1_000_001,) for values in arrays.values())
+    assert all(values.dtype == np.float64 for values in arrays.values())
+    np.testing.assert_allclose(arrays['x'], 0.5)
+    np.testing.assert_allclose(arrays['burial_depth'], 0.25)
+
+
+def test_population_initialization_does_not_materialize_particle_objects(monkeypatch):
+    """Operational population creation must bypass the legacy object list."""
+    monkeypatch.setattr(
+        ParticleFactory,
+        'create_particles',
+        lambda *_args, **_kwargs: pytest.fail('object factory must not run'),
+    )
+    config = PopulationConfig(
+        {
+            'name': 'array-population',
+            'particle_type': 'passive',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 4,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+    )
+
+    population = ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+    )
+
+    assert population.particles['x'].shape == (4,)
+
+
 class TestParticlePopulation:
     @staticmethod
     def _diffusing_passive_population(diffusion_coefficient=0.5):
@@ -1438,8 +1491,8 @@ class TestParticlePopulation:
         np.testing.assert_allclose(population.particles['x'], np.array([0.5, 0.6]) + sigma * np.array([1.0, -1.0]))
         np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]) + sigma * np.array([0.5, -0.5]))
 
-    def test_position_updates_are_bounded_to_particle_chunks(self):
-        """The hot path never sends more than 65536 particles to one kernel call."""
+    def test_position_updates_are_bounded_to_particle_chunks(self, monkeypatch):
+        """The hot path prepares forcing once and bounds every kernel call."""
         population = self._diffusing_passive_population(diffusion_coefficient=0.0)
         count = 65_537
         population.particles['x'] = np.full(count, 0.5)
@@ -1451,18 +1504,38 @@ class TestParticlePopulation:
         population.particles['status_beached'] = np.zeros(count, dtype=bool)
         population._particle_simplices = np.zeros(count, dtype=np.int64)
         observed_sizes = []
+        preparation_count = 0
 
-        def advance(x, y, _u, _v, _dt, simplex_ids=None):
+        def prepare(u_values, v_values, cache_key=None):
+            nonlocal preparation_count
+            preparation_count += 1
+            return np.asarray(u_values), np.asarray(v_values)
+
+        def advance(
+            x,
+            y,
+            _lower,
+            _upper,
+            _weight,
+            _dt,
+            simplex_ids=None,
+        ):
             observed_sizes.append(len(x))
             return x + 0.01, y, np.asarray(simplex_ids), np.zeros(len(x), dtype=np.int8)
 
-        population._position_calculator_with_boundary_class = advance
+        monkeypatch.setattr(population.grid_geometry, 'prepare_vector_field', prepare)
+        monkeypatch.setattr(
+            population.grid_geometry,
+            'update_particles_prepared_temporal_with_boundary_class',
+            advance,
+        )
 
         population.update_position(
             flow_field={'u': np.zeros(4), 'v': np.zeros(4)},
             current_timestep=1.0,
         )
 
+        assert preparation_count == 1
         assert observed_sizes == [65_536, 1]
         np.testing.assert_allclose(population.particles['x'], 0.51)
 
