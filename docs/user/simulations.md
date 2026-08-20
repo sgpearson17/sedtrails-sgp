@@ -41,9 +41,13 @@ general:
     format: fm_netcdf
     reference_date: 1970-01-01  # Default reference date for the input model
     morfac: 1  # Morphological acceleration factor for time decompression
+    coordinate_system: auto  # Use geographic for lon/lat files without coordinate attrs
+    source_crs: EPSG:4326
+    metric_crs: auto_utm
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
   read_interval: 10D  # Time chunk size for reading input data
+  max_eulerian_memory_mb: 2048  # Bound time-varying input fields per window
 # Optional domain controls for islands/cutouts and boundary actions.
 # Tekal .pol paths are resolved relative to this configuration file.
 # Omit domain entirely if no custom extent, cutouts, or boundary overrides are needed.
@@ -297,6 +301,9 @@ general:
     format: fm_netcdf
     reference_date: '1970-01-01'
     morfac: 1
+    coordinate_system: auto
+    source_crs: EPSG:4326
+    metric_crs: auto_utm
 inputs:
   data: ./sample-data/inlet_sedtrails.nc
 time:

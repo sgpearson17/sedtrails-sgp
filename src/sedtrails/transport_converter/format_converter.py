@@ -7,12 +7,25 @@ use in the SedTRAILS particle tracking system.
 """
 
 from dataclasses import dataclass
+import inspect
 from types import ModuleType
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
+
+COORDINATE_OPTION_NAMES = (
+    'coordinate_system',
+    'source_crs',
+    'metric_crs',
+    'runtime_geometry',
+    'surface_model',
+    'earth_radius_m',
+    'longitude_wrap',
+    'velocity_basis',
+)
 
 
 @dataclass
@@ -34,8 +47,11 @@ class SeederFieldData:
     reference_date: np.datetime64
     face_node_connectivity: np.ndarray | None = None
     particle_face_connectivity: np.ndarray | None = None
+    face_face_connectivity: np.ndarray | None = None
+    particle_triangle_neighbors: np.ndarray | None = None
     boundary_edge_classification: dict | None = None
     face_node_fill_value: int = -1
+    metadata: SedtrailsMetadata | None = None
 
 
 class FormatConverter:
@@ -179,6 +195,15 @@ class FormatConverter:
             except AttributeError:
                 pass
 
+        for option_name in COORDINATE_OPTION_NAMES:
+            option_value = self.config.get(option_name)
+            if option_value is None:
+                continue
+            try:
+                setattr(plugin, option_name, option_value)
+            except AttributeError:
+                continue
+
         for option_name in ('sediment_fraction_index', 'sediment_fraction_name'):
             if option_name not in self.config:
                 continue
@@ -187,7 +212,13 @@ class FormatConverter:
             except AttributeError:
                 continue
 
-    def convert_to_sedtrails(self, current_time=None, reading_interval=None) -> SedtrailsData:
+    def convert_to_sedtrails(
+        self,
+        current_time=None,
+        reading_interval=None,
+        required_fields: Sequence[str] | None = None,
+        max_memory_bytes: int | None = None,
+    ) -> SedtrailsData:
         """
         Converts dataset to SedtrailsData format.
 
@@ -197,6 +228,12 @@ class FormatConverter:
             Current simulation time in seconds
         reading_interval : float, optional
             Reading interval in seconds
+        required_fields : Sequence[str], optional
+            SedTRAILS fields required by the active runtime plans. Plugins that
+            support selective reads use this to avoid materializing unrelated
+            variables.
+        max_memory_bytes : int, optional
+            Estimated byte limit for time-varying fields in one input window.
 
         Returns
         -------
@@ -209,9 +246,69 @@ class FormatConverter:
         else:
             plugin = self._format_plugin
 
-        sedtrails_data = plugin.convert(current_time, reading_interval, self.reference_date)
+        optional_arguments = {
+            'required_fields': None if required_fields is None else tuple(required_fields),
+            'max_memory_bytes': max_memory_bytes,
+        }
+        signature = inspect.signature(plugin.convert)
+        accepts_keywords = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        supported_arguments = {
+            name: value
+            for name, value in optional_arguments.items()
+            if accepts_keywords or name in signature.parameters
+        }
+        sedtrails_data = plugin.convert(
+            current_time,
+            reading_interval,
+            self.reference_date,
+            **supported_arguments,
+        )
+        self._apply_configured_coordinate_metadata(sedtrails_data.metadata)
 
         return sedtrails_data
+
+    def estimate_source_bytes_per_time_plane(
+        self,
+        required_fields: Sequence[str] | None = None,
+    ) -> int | None:
+        """Estimate selected source forcing bytes without materializing fields.
+
+        Parameters
+        ----------
+        required_fields : Sequence[str], optional
+            SedTRAILS source fields required by active runtime plans.
+
+        Returns
+        -------
+        int or None
+            Exact plugin estimate for one retained source plane, or ``None``
+            when a legacy plugin does not expose an estimator.
+        """
+        plugin = self.format_plugin
+        public_estimator = getattr(
+            plugin,
+            'estimate_source_bytes_per_time_plane',
+            None,
+        )
+        if callable(public_estimator):
+            return max(0, int(public_estimator(required_fields)))
+        estimator = getattr(plugin, '_estimate_bytes_per_time_plane', None)
+        if estimator is None:
+            return None
+        load = getattr(plugin, 'load', None)
+        if load is not None:
+            load()
+        selector = getattr(plugin, '_selectable_required_fields', None)
+        selected_fields = (
+            None if required_fields is None else set(required_fields)
+        )
+        if selector is not None:
+            selected_fields = selector(required_fields)
+        estimate = estimator(selected_fields)
+        return max(0, int(estimate))
 
     def get_time_bounds(self) -> Tuple[float, float]:
         """
@@ -285,6 +382,33 @@ class FormatConverter:
         if reference_date is None:
             reference_date = self.reference_date
 
+        coordinate_system = getattr(field_data, 'coordinate_system', None)
+        if coordinate_system is None and metadata is not None:
+            coordinate_system = getattr(metadata, 'coordinate_system', None)
+        seeding_metadata = metadata
+        if seeding_metadata is None:
+            seeding_metadata = SedtrailsMetadata(
+                flowfield_domain={
+                    'x_min': np.nanmin(field_data.x),
+                    'x_max': np.nanmax(field_data.x),
+                    'y_min': np.nanmin(field_data.y),
+                    'y_max': np.nanmax(field_data.y),
+                }
+            )
+        if coordinate_system is not None:
+            seeding_metadata.add('coordinate_system', coordinate_system)
+        for attr_name in COORDINATE_OPTION_NAMES:
+            if attr_name == 'coordinate_system':
+                continue
+            attr_value = getattr(field_data, attr_name, None)
+            if attr_value is None and metadata is not None:
+                attr_value = getattr(metadata, attr_name, None)
+            if attr_value is None:
+                attr_value = self.config.get(attr_name)
+            if attr_value is not None:
+                seeding_metadata.add(attr_name, attr_value)
+        self._apply_configured_coordinate_metadata(seeding_metadata)
+
         return SeederFieldData(
             x=np.asarray(field_data.x),
             y=np.asarray(field_data.y),
@@ -295,16 +419,43 @@ class FormatConverter:
             particle_face_connectivity=self._optional_connectivity_array(
                 getattr(field_data, 'particle_face_connectivity', None)
             ),
+            face_face_connectivity=self._optional_connectivity_array(
+                getattr(field_data, 'face_face_connectivity', None)
+            ),
+            particle_triangle_neighbors=self._optional_connectivity_array(
+                getattr(field_data, 'particle_triangle_neighbors', None)
+            ),
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=getattr(field_data, 'face_node_fill_value', -1),
+            metadata=seeding_metadata,
         )
 
     @staticmethod
     def _optional_connectivity_array(connectivity):
-        """Return optional connectivity as an integer array."""
+        """Return optional connectivity while preserving compact signed indices."""
         if connectivity is None:
             return None
-        return np.asarray(connectivity, dtype=np.int64)
+        array = np.asarray(connectivity)
+        if np.issubdtype(array.dtype, np.signedinteger) and array.dtype.itemsize <= 4:
+            return array
+        if np.issubdtype(array.dtype, np.integer) and (
+            array.size == 0
+            or (
+                int(np.min(array)) >= np.iinfo(np.int32).min
+                and int(np.max(array)) <= np.iinfo(np.int32).max
+            )
+        ):
+            return np.asarray(array, dtype=np.int32)
+        return np.asarray(array, dtype=np.int64)
+
+    def _apply_configured_coordinate_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Overlay explicit coordinate configuration on converted metadata."""
+        for option_name in COORDINATE_OPTION_NAMES:
+            option_value = self.config.get(option_name)
+            if option_value is not None and not (
+                option_name == 'coordinate_system' and str(option_value).strip().lower() == 'auto'
+            ):
+                metadata.add(option_name, option_value)
 
 if __name__ == '__main__':
     print('Please see the examples directory for usage examples.')

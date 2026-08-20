@@ -2,6 +2,7 @@
 Unit tests for particle seeding strategies.
 """
 
+import random
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,6 +10,9 @@ import pytest
 
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError, DateFormatError
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
+import sedtrails.particle_tracer.geodetic_grid as geodetic_grid_module
+import sedtrails.particle_tracer.particle_seeder as particle_seeder_module
 from sedtrails.particle_tracer.particle_seeder import (
     FilePointsStrategy,
     GridStrategy,
@@ -20,13 +24,77 @@ from sedtrails.particle_tracer.particle_seeder import (
     RandomStrategy,
     TransectStrategy,
     _compute_seeding_area,
+    _geometry_triangles_from_field_data,
     _log_seeding_box_volume,
     _parse_polygon,
     _read_polygon_file,
 )
 
 
+def test_geometry_triangles_downcast_safe_direct_int64_topology():
+    """Direct seeding field data keeps ocean-scale topology compact."""
+    field_data = SimpleNamespace(
+        x=np.arange(4, dtype=float),
+        particle_face_connectivity=np.array(
+            [[0, 1, 2], [0, 2, 3]],
+            dtype=np.int64,
+        ),
+    )
+
+    triangles = _geometry_triangles_from_field_data(field_data)
+
+    assert triangles.dtype == np.int32
+    np.testing.assert_array_equal(
+        triangles,
+        np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32),
+    )
+
+
 # Strategy fixtures
+def test_particle_seeder_uses_supplied_native_geodetic_neighbors(monkeypatch):
+    """Seeding must use authoritative topology without rebuilding neighbors."""
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    native_neighbors = np.array([[1, -1, -1], [-1, 0, -1]], dtype=np.int32)
+    field_data = SimpleNamespace(
+        x=np.array([0.0, 1.0, 0.0, 1.0]),
+        y=np.array([0.0, 0.0, 1.0, 1.0]),
+        particle_face_connectivity=triangles,
+        particle_triangle_neighbors=native_neighbors,
+        metadata=SimpleNamespace(
+            coordinate_system="geographic",
+            runtime_geometry="geodetic",
+            surface_model="sphere",
+            velocity_basis="east_north",
+        ),
+        reference_date=np.datetime64("1970-01-01T00:00:00"),
+    )
+    config = {
+        "name": "native-neighbors",
+        "particle_type": "sand",
+        "seeding": {
+            "strategy": {"point": {"locations": ["0.25,0.25"]}},
+            "quantity": 1,
+            "burial_depth": {"constant": 0.0},
+        },
+    }
+
+    def unexpected_fallback(*args, **kwargs):
+        raise AssertionError("The fallback neighbor construction must not run.")
+
+    monkeypatch.setattr(
+        geodetic_grid_module,
+        "_compute_triangle_neighbors",
+        unexpected_fallback,
+    )
+
+    population = ParticleSeeder([config]).seed(field_data)[0]
+
+    np.testing.assert_array_equal(
+        population.grid_geometry.triangle_neighbors,
+        native_neighbors,
+    )
+
+
 @pytest.fixture
 def point_strategy():
     return PointStrategy()
@@ -50,6 +118,181 @@ def transect_strategy():
 @pytest.fixture
 def file_points_strategy():
     return FilePointsStrategy()
+
+
+def test_grid_seeding_uses_meter_spacing_on_geographic_grids():
+    """Grid seeding should interpret dx/dy as metres for lon/lat model grids."""
+    sedtrails_data = SimpleNamespace(
+        x=np.array([4.0, 4.001, 4.001, 4.0]),
+        y=np.array([52.0, 52.0, 52.001, 52.001]),
+        metadata=SimpleNamespace(coordinate_system='geographic'),
+        reference_date=np.datetime64('1970-01-01T00:00:00'),
+    )
+    seeder = ParticleSeeder(
+        [
+            {
+                'name': 'geo-grid',
+                'particle_type': 'sand',
+                'seeding': {
+                    'strategy': {
+                        'grid': {
+                            'bbox': {
+                                'xmin': 4.0,
+                                'ymin': 52.0,
+                                'xmax': 4.001,
+                                'ymax': 52.001,
+                            },
+                            'separation': {'dx': 20.0, 'dy': 20.0},
+                        }
+                    },
+                    'quantity': 1,
+                    'burial_depth': {'constant': 0.0},
+                },
+            }
+        ]
+    )
+
+    population = seeder.seed(sedtrails_data)[0]
+    source_x, source_y = population.grid_geometry.coordinate_transform.metric_to_source(
+        population.particles['x'],
+        population.particles['y'],
+    )
+
+    assert population.grid_geometry.coordinate_transform.is_geographic
+    assert population.grid_geometry.coordinate_transform.metric_crs == 'EPSG:32631'
+    assert np.nanmin(source_x) >= 4.0 - 5.0e-5
+    assert np.nanmax(source_x) <= 4.001 + 5.0e-5
+    assert np.nanmin(source_y) >= 52.0 - 5.0e-5
+    assert np.nanmax(source_y) <= 52.001 + 5.0e-5
+    assert np.min(np.diff(np.unique(np.round(population.particles['y'], 9)))) == pytest.approx(20.0)
+
+
+def test_random_bbox_seeding_samples_metric_space_on_geographic_grids():
+    """Random bbox seeding should draw uniformly in local metres for lon/lat grids."""
+    transform = build_coordinate_transform(
+        np.array([4.0, 4.001]),
+        np.array([52.0, 52.001]),
+        coordinate_system='geographic',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'geo-random-bbox',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'random': {
+                        'bbox': '4.0,52.0 4.001,52.001',
+                        'nlocations': 1,
+                        'seed': 13,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 3,
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+    )
+
+    result = RandomStrategy().seed(config)
+
+    rng = random.Random(13)
+    mx, my = transform.source_to_metric(
+        np.array([4.0, 4.0, 4.001, 4.001]),
+        np.array([52.0, 52.001, 52.0, 52.001]),
+    )
+    expected_x = rng.uniform(float(np.min(mx)), float(np.max(mx)))
+    expected_y = rng.uniform(float(np.min(my)), float(np.max(my)))
+    assert result == pytest.approx([(3, expected_x, expected_y)])
+
+
+def test_geodetic_random_bbox_samples_across_antimeridian_with_requested_wrap():
+    """Geodetic random seeding uses spherical area and keeps 0-360 longitude."""
+    transform = build_coordinate_transform(
+        np.array([179.0, -179.0]),
+        np.array([-1.0, 1.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        longitude_wrap='0_360',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'global-random',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'random': {
+                        'bbox': '179,-1 -179,1',
+                        'nlocations': 20,
+                        'seed': 7,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 1,
+            },
+        }
+    )
+
+    result = RandomStrategy().seed(config)
+    longitudes = np.asarray([x for _, x, _ in result])
+
+    assert len(result) == 20
+    assert np.all((longitudes >= 179.0) & (longitudes <= 181.0))
+
+
+def test_geodetic_transect_uses_short_great_circle_across_antimeridian():
+    """A geodetic transect crosses the seam rather than interpolating via zero."""
+    transform = build_coordinate_transform(
+        np.array([179.0, -179.0]),
+        np.array([0.0, 0.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+    )
+    config = PopulationConfig(
+        {
+            'name': 'global-transect',
+            'particle_type': 'sand',
+            'seeding': {
+                'strategy': {
+                    'transect': {
+                        'segments': ['179,0 -179,0'],
+                        'k': 3,
+                        '_coordinate_transform': transform,
+                    }
+                },
+                'quantity': 1,
+            },
+        }
+    )
+
+    result = TransectStrategy().seed(config)
+
+    assert abs(abs(result[1][1]) - 180.0) < 1.0e-10
+
+
+def test_geodetic_bbox_area_is_reported_in_square_metres():
+    """A one-degree spherical box has the analytic spherical surface area."""
+    radius = 6_371_008.8
+    transform = build_coordinate_transform(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        coordinate_system='geographic',
+        runtime_geometry='geodetic',
+        surface_model='sphere',
+        earth_radius_m=radius,
+    )
+
+    area = _compute_seeding_area(
+        'random',
+        {
+            'bbox': '0,0 1,1',
+            '_coordinate_transform': transform,
+        },
+    )
+
+    expected = radius**2 * np.deg2rad(1.0) * np.sin(np.deg2rad(1.0))
+    assert area == pytest.approx(expected)
 
 
 # Config fixtures
@@ -1153,6 +1396,59 @@ def population_config():
     )
 
 
+def test_particle_factory_builds_million_particle_arrays_directly():
+    """Million-particle initialization should allocate only final arrays."""
+    config = PopulationConfig(
+        {
+            'name': 'million-array-seed',
+            'particle_type': 'passive',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1_000_001,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.25},
+            },
+        }
+    )
+
+    arrays = ParticleFactory.create_particle_arrays(config)
+
+    assert set(arrays) == {'x', 'y', 'release_time', 'burial_depth'}
+    assert all(values.shape == (1_000_001,) for values in arrays.values())
+    assert all(values.dtype == np.float64 for values in arrays.values())
+    np.testing.assert_allclose(arrays['x'], 0.5)
+    np.testing.assert_allclose(arrays['burial_depth'], 0.25)
+
+
+def test_population_initialization_does_not_materialize_particle_objects(monkeypatch):
+    """Operational population creation must bypass the legacy object list."""
+    monkeypatch.setattr(
+        ParticleFactory,
+        'create_particles',
+        lambda *_args, **_kwargs: pytest.fail('object factory must not run'),
+    )
+    config = PopulationConfig(
+        {
+            'name': 'array-population',
+            'particle_type': 'passive',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 4,
+                'release_start': '0',
+                'burial_depth': {'constant': 0.0},
+            },
+        }
+    )
+
+    population = ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 1.0, 0.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+    )
+
+    assert population.particles['x'].shape == (4,)
+
+
 class TestParticlePopulation:
     @staticmethod
     def _diffusing_passive_population(diffusion_coefficient=0.5):
@@ -1194,6 +1490,54 @@ class TestParticlePopulation:
         sigma = np.sqrt(2.0 * 0.5 * 0.02)
         np.testing.assert_allclose(population.particles['x'], np.array([0.5, 0.6]) + sigma * np.array([1.0, -1.0]))
         np.testing.assert_allclose(population.particles['y'], np.array([0.5, 0.6]) + sigma * np.array([0.5, -0.5]))
+
+    def test_position_updates_are_bounded_to_particle_chunks(self, monkeypatch):
+        """The hot path prepares forcing once and bounds every kernel call."""
+        population = self._diffusing_passive_population(diffusion_coefficient=0.0)
+        count = 65_537
+        population.particles['x'] = np.full(count, 0.5)
+        population.particles['y'] = np.full(count, 0.5)
+        population.particles['status_mobile'] = np.ones(count, dtype=bool)
+        population.particles['status_domain'] = np.ones(count, dtype=bool)
+        population.particles['status_alive'] = np.ones(count, dtype=bool)
+        population.particles['status_left_domain'] = np.zeros(count, dtype=bool)
+        population.particles['status_beached'] = np.zeros(count, dtype=bool)
+        population._particle_simplices = np.zeros(count, dtype=np.int64)
+        observed_sizes = []
+        preparation_count = 0
+
+        def prepare(u_values, v_values, cache_key=None):
+            nonlocal preparation_count
+            preparation_count += 1
+            return np.asarray(u_values), np.asarray(v_values)
+
+        def advance(
+            x,
+            y,
+            _lower,
+            _upper,
+            _weight,
+            _dt,
+            simplex_ids=None,
+        ):
+            observed_sizes.append(len(x))
+            return x + 0.01, y, np.asarray(simplex_ids), np.zeros(len(x), dtype=np.int8)
+
+        monkeypatch.setattr(population.grid_geometry, 'prepare_vector_field', prepare)
+        monkeypatch.setattr(
+            population.grid_geometry,
+            'update_particles_prepared_temporal_with_boundary_class',
+            advance,
+        )
+
+        population.update_position(
+            flow_field={'u': np.zeros(4), 'v': np.zeros(4)},
+            current_timestep=1.0,
+        )
+
+        assert preparation_count == 1
+        assert observed_sizes == [65_536, 1]
+        np.testing.assert_allclose(population.particles['x'], 0.51)
 
     def test_diffusion_receives_velocity_arrays_matching_particle_coordinates(self, monkeypatch):
         """Diffusion strategies always receive coordinate-shaped velocity inputs."""
@@ -2688,4 +3032,77 @@ def _boundary_action_field_data():
             'edge_nodes': [[0, 1], [2, 0], [1, 2]],
             'edge_classes': ['open', 'land', 'unclassified'],
         },
+    )
+
+
+def test_particle_location_refresh_and_interpolation_use_bounded_batches(monkeypatch):
+    """Particle lifecycle operations must preserve order across bounded chunks."""
+    population = _single_particle_population(release_start='0')
+    count = 8
+    population.particles['x'] = np.linspace(0.1, 0.8, count)
+    population.particles['y'] = np.linspace(0.2, 0.9, count)
+    population._particle_simplices = np.arange(count, dtype=np.int64)
+    population._mark_particle_simplices_current()
+
+    def small_chunks(size):
+        for start in range(0, size, 3):
+            yield slice(start, min(start + 3, size))
+
+    monkeypatch.setattr(particle_seeder_module, 'particle_chunk_slices', small_chunks)
+    location_calls = []
+
+    def locate_points(x_points, y_points, start_simplices=None):
+        location_calls.append((
+            np.asarray(x_points).copy(),
+            np.asarray(y_points).copy(),
+            None if start_simplices is None else np.asarray(start_simplices).copy(),
+        ))
+        if start_simplices is None:
+            return np.arange(len(x_points), dtype=np.int64)
+        return np.asarray(start_simplices, dtype=np.int64) + 100
+
+    monkeypatch.setattr(population.grid_geometry, 'locate_points', locate_points)
+    direct_simplices = population._locate_particle_points(
+        population.particles['x'],
+        population.particles['y'],
+    )
+
+    assert [call[0].size for call in location_calls] == [3, 3, 2]
+    np.testing.assert_array_equal(direct_simplices, np.array([0, 1, 2, 0, 1, 2, 0, 1]))
+
+    location_calls.clear()
+    population._refresh_particle_simplices()
+
+    assert [call[0].size for call in location_calls] == [3, 3, 2]
+    np.testing.assert_array_equal(
+        population._particle_simplices,
+        np.arange(count, dtype=np.int64) + 100,
+    )
+
+    interpolation_calls = []
+
+    def interpolate_fields(fields, x_points, y_points, simplex_ids=None):
+        interpolation_calls.append((
+            len(fields),
+            np.asarray(x_points).copy(),
+            None if simplex_ids is None else np.asarray(simplex_ids).copy(),
+        ))
+        values = tuple(
+            np.asarray(x_points, dtype=float) + float(index)
+            for index, _ in enumerate(fields)
+        )
+        return values, np.asarray(simplex_ids, dtype=np.int64) + 10
+
+    monkeypatch.setattr(population, '_field_interpolator_multi_with_simplex', interpolate_fields)
+    values_a, values_b = population._interpolate_particle_fields(
+        (np.zeros(4), np.ones(4)),
+    )
+
+    assert [call[1].size for call in interpolation_calls] == [3, 3, 2]
+    assert [call[0] for call in interpolation_calls] == [2, 2, 2]
+    np.testing.assert_allclose(values_a, population.particles['x'])
+    np.testing.assert_allclose(values_b, population.particles['x'] + 1.0)
+    np.testing.assert_array_equal(
+        population._particle_simplices,
+        np.arange(count, dtype=np.int64) + 110,
     )

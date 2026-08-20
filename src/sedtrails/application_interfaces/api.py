@@ -285,13 +285,14 @@ def create_restart_config(
 def plot_trajectories(
     results_file: str,
     output: str | None = None,
-    max_particles: int | None = None,
+    max_particles: int | None = 10_000,
     sample_fraction: float | None = None,
     sample_seed: int = 0,
     markers: str = 'start-end',
     marker_size: float = 12.0,
     panels: str = 'spatial',
     show: bool | None = None,
+    max_plot_points: int | None = 2_000_000,
 ) -> None:
     """
     Plot particle trajectories from a SedTRAILS NetCDF results file.
@@ -313,6 +314,9 @@ def plot_trajectories(
         ``max_particles``.
     sample_seed : int, optional
         Seed used for deterministic sampling.
+    max_plot_points : int, optional
+        Maximum selected particle-time coordinates to render. Defaults to
+        2,000,000. Set to `None` to retain every selected timestep.
     markers : str, optional
         Endpoint marker mode: ``none``, ``end``, or ``start-end``.
     marker_size : float, optional
@@ -348,6 +352,7 @@ def plot_trajectories(
             max_particles=max_particles,
             sample_fraction=sample_fraction,
             sample_seed=sample_seed,
+            max_plot_points=max_plot_points,
             markers=markers,
             marker_size=marker_size,
             panels=panels,

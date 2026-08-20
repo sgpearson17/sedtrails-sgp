@@ -25,11 +25,20 @@ from typing import Any, Dict, List, Protocol, Tuple, Union
 import numpy as np
 from matplotlib.path import Path
 from numpy import ndarray
+from pyproj import Geod
 
 from sedtrails.application_interfaces.find import find_value
 from sedtrails.exceptions import MissingConfigurationParameter
 from sedtrails.exceptions.exceptions import ConfigurationError
+from sedtrails.particle_tracer._chunking import particle_chunk_slices
+from sedtrails.particle_tracer.coordinate_transform import (
+    CoordinateTransform,
+    coordinate_system_from_metadata,
+    metric_crs_from_metadata,
+    source_crs_from_metadata,
+)
 from sedtrails.particle_tracer.diffusion_library import BrownianDiffusionStrategy, DiffusionCalculator
+from sedtrails.particle_tracer.geodetic_geometry import normalize_longitude
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.position_calculator_numba import (
     BOUNDARY_CLASS_LAND,
@@ -160,8 +169,43 @@ def _sample_burial_depth(burial_depth_config, rng: random.Random | None = None) 
     return float(burial_depth_config)
 
 
+def _sample_burial_depth_array(
+    burial_depth_config,
+    size: int,
+    rng: random.Random | None = None,
+) -> np.ndarray:
+    """Return burial depths without constructing per-particle objects.
+
+    Parameters
+    ----------
+    burial_depth_config : dict or float
+        Constant or uniform-random burial-depth configuration.
+    size : int
+        Number of particle values.
+    rng : random.Random, optional
+        Local random generator used for reproducible uniform sampling.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float64 burial depths.
+    """
+    if size < 0:
+        raise ValueError('size must be non-negative.')
+    if isinstance(burial_depth_config, dict) and 'random' in burial_depth_config:
+        generator = rng if rng is not None else random
+        maximum = float(burial_depth_config['random'])
+        return np.fromiter(
+            (generator.uniform(0.0, maximum) for _ in range(size)),
+            dtype=np.float64,
+            count=size,
+        )
+    value = _sample_burial_depth(burial_depth_config, rng=rng)
+    return np.full(size, value, dtype=np.float64)
+
+
 def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float | None:
-    """Return the 2-D seeding area in m² for area-based strategies, or None.
+    """Return the 2-D seeding area in m^2 for area-based strategies, or None.
 
     Only ``random`` and ``grid`` strategies define a spatial area (via ``bbox``
     or ``poly``).  For all other strategies (point, transect, file_points) the
@@ -177,16 +221,22 @@ def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float 
     Returns
     -------
     float or None
-        Area in m², or None when not computable.
+        Area in m^2, or None when not computable.
     """
     if strategy_name not in ('random', 'grid'):
         return None
 
     poly = strategy_settings.get('poly')
     bbox = strategy_settings.get('bbox')
+    transform = strategy_settings.get('_coordinate_transform')
 
     if poly is not None:
         vertices = _parse_polygon(poly)
+        if _is_geodetic_transform(transform):
+            return _geodetic_area(vertices, transform.earth_radius_m)
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            x_metric, y_metric = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+            vertices = np.column_stack((x_metric, y_metric))
         n = len(vertices)
         area = 0.5 * abs(
             sum(
@@ -198,11 +248,21 @@ def _compute_seeding_area(strategy_name: str, strategy_settings: dict) -> float 
         return area
 
     if bbox is not None:
+        if _is_geodetic_transform(transform):
+            xmin, ymin, xmax, ymax = _parse_bbox(bbox)
+            _, longitude_span = _longitude_interval(xmin, xmax)
+            return (
+                transform.earth_radius_m**2
+                * np.deg2rad(longitude_span)
+                * abs(np.sin(np.deg2rad(ymax)) - np.sin(np.deg2rad(ymin)))
+            )
         if isinstance(bbox, str):
             parts = bbox.replace(',', ' ').split()
             xmin, ymin, xmax, ymax = map(float, parts)
         else:
             xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            xmin, ymin, xmax, ymax = _metric_bbox_from_source_bbox(transform, xmin, ymin, xmax, ymax)
         return (xmax - xmin) * (ymax - ymin)
 
     return None
@@ -224,6 +284,158 @@ def _compute_repr_volume(config, n_particles: int) -> float | None:
     if area is None or n_particles == 0:
         return None
     return area * max_depth / n_particles
+
+
+def _seed_positions_to_metric(
+    positions: list[Tuple[int, float, float]],
+    transform: CoordinateTransform | None,
+) -> list[Tuple[int, float, float]]:
+    """Project source-coordinate seed positions to runtime metric coordinates."""
+    if not isinstance(transform, CoordinateTransform) or not transform.is_geographic or not positions:
+        return positions
+    quantities = [int(qty) for qty, *_ in positions]
+    source_x = np.asarray([x for _, x, _ in positions], dtype=float)
+    source_y = np.asarray([y for _, _, y in positions], dtype=float)
+    metric_x, metric_y = transform.source_to_metric(source_x, source_y)
+    return [
+        (quantity, float(x), float(y))
+        for quantity, x, y in zip(quantities, metric_x, metric_y, strict=True)
+    ]
+
+
+def _metric_bbox_from_source_bbox(
+    transform: CoordinateTransform,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+) -> tuple[float, float, float, float]:
+    """Project all source bbox corners and return a metric axis-aligned bbox."""
+    corners_x, corners_y = transform.source_to_metric(
+        np.array([xmin, xmin, xmax, xmax], dtype=float),
+        np.array([ymin, ymax, ymin, ymax], dtype=float),
+    )
+    return (
+        float(np.min(corners_x)),
+        float(np.min(corners_y)),
+        float(np.max(corners_x)),
+        float(np.max(corners_y)),
+    )
+
+
+def _is_geodetic_transform(transform: CoordinateTransform | None) -> bool:
+    """Return whether a transform uses intrinsic geodetic runtime geometry."""
+    return isinstance(transform, CoordinateTransform) and transform.is_geodetic
+
+
+def _parse_bbox(bbox) -> tuple[float, float, float, float]:
+    """Return a validated bounding box as ``xmin, ymin, xmax, ymax``."""
+    if isinstance(bbox, str):
+        parts = bbox.replace(',', ' ').split()
+        if len(parts) != 4:
+            raise ValueError(f"Invalid bbox format. Expected 'xmin,ymin xmax,ymax', got: {bbox}")
+        values = tuple(map(float, parts))
+    else:
+        values = (
+            float(bbox['xmin']),
+            float(bbox['ymin']),
+            float(bbox['xmax']),
+            float(bbox['ymax']),
+        )
+    xmin, ymin, xmax, ymax = values
+    if not np.all(np.isfinite(values)):
+        raise ValueError('bbox coordinates must be finite')
+    if ymin < -90.0 or ymax > 90.0 or ymin > ymax:
+        raise ValueError('geographic bbox latitude must satisfy -90 <= ymin <= ymax <= 90')
+    return xmin, ymin, xmax, ymax
+
+
+def _longitude_interval(xmin: float, xmax: float) -> tuple[float, float]:
+    """Return an unwrapped interval start and nonnegative span in degrees."""
+    raw_span = float(xmax) - float(xmin)
+    if abs(raw_span) >= 360.0:
+        return float(xmin), 360.0
+    span = raw_span if raw_span >= 0.0 else raw_span + 360.0
+    return float(xmin), span
+
+
+def _unwrap_polygon_longitudes(vertices: np.ndarray) -> np.ndarray:
+    """Return polygon vertices with consecutive longitudes on one branch."""
+    unwrapped = np.asarray(vertices, dtype=float).copy()
+    unwrapped[:, 0] = np.rad2deg(np.unwrap(np.deg2rad(unwrapped[:, 0])))
+    return unwrapped
+
+
+def _longitudes_on_branch(longitudes, reference: float) -> np.ndarray:
+    """Move longitudes to the branch centered on ``reference``."""
+    values = np.asarray(longitudes, dtype=float)
+    return reference + (values - reference + 180.0) % 360.0 - 180.0
+
+
+def _wrap_seed_longitude(longitudes, transform: CoordinateTransform) -> np.ndarray:
+    """Apply the configured longitude convention to seed coordinates."""
+    wrapped = normalize_longitude(longitudes)
+    if transform.longitude_wrap == '0_360':
+        return np.mod(wrapped, 360.0)
+    return wrapped
+
+
+def _geodetic_area(vertices: np.ndarray, radius_m: float) -> float:
+    """Return absolute spherical polygon area in square metres."""
+    geod = Geod(a=float(radius_m), b=float(radius_m))
+    area, _ = geod.polygon_area_perimeter(vertices[:, 0], vertices[:, 1])
+    return abs(float(area))
+
+
+def _sample_geographic_bbox(
+    rng: random.Random,
+    bbox,
+    count: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample a longitude/latitude box uniformly by spherical surface area."""
+    xmin, ymin, xmax, ymax = _parse_bbox(bbox)
+    lon_start, lon_span = _longitude_interval(xmin, xmax)
+    sin_ymin = np.sin(np.deg2rad(ymin))
+    sin_ymax = np.sin(np.deg2rad(ymax))
+    longitudes = np.empty(count, dtype=float)
+    latitudes = np.empty(count, dtype=float)
+    for index in range(count):
+        longitudes[index] = lon_start + rng.random() * lon_span
+        sin_latitude = sin_ymin + rng.random() * (sin_ymax - sin_ymin)
+        latitudes[index] = np.rad2deg(np.arcsin(np.clip(sin_latitude, -1.0, 1.0)))
+    return normalize_longitude(longitudes), latitudes
+
+
+def _geodetic_grid_candidates(
+    bbox,
+    dx_m: float,
+    dy_m: float,
+    radius_m: float,
+) -> np.ndarray:
+    """Build a bounded lon/lat grid with approximately metric spacing."""
+    xmin, ymin, xmax, ymax = _parse_bbox(bbox)
+    if dx_m <= 0.0 or dy_m <= 0.0:
+        raise ValueError('grid separation dx and dy must be positive')
+    lon_start, lon_span = _longitude_interval(xmin, xmax)
+    latitude_step = np.rad2deg(dy_m / radius_m)
+    latitudes = np.arange(ymin, ymax + 0.5 * latitude_step, latitude_step)
+    rows = []
+    for latitude in latitudes:
+        cosine = max(abs(np.cos(np.deg2rad(latitude))), 1.0e-12)
+        longitude_step = np.rad2deg(dx_m / (radius_m * cosine))
+        longitudes = np.arange(lon_start, lon_start + lon_span + 0.5 * longitude_step, longitude_step)
+        if longitudes.size:
+            rows.append(
+                np.column_stack(
+                    (
+                        normalize_longitude(longitudes),
+                        np.full(longitudes.shape, latitude, dtype=float),
+                    )
+                )
+            )
+    if not rows:
+        return np.empty((0, 2), dtype=float)
+    return np.vstack(rows)
 
 
 def _log_seeding_box_volume(config, positions: list) -> None:
@@ -553,18 +765,32 @@ class RandomStrategy(SeedingStrategy):
 
         if poly is not None:
             vertices = _parse_polygon(poly)
-            xmin, ymin = vertices.min(axis=0)
-            xmax, ymax = vertices.max(axis=0)
-            poly_path = Path(vertices)
+            transform = settings.get('_coordinate_transform')
+            if _is_geodetic_transform(transform):
+                sample_vertices = _unwrap_polygon_longitudes(vertices)
+            elif isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                vx, vy = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+                sample_vertices = np.column_stack((vx, vy))
+            else:
+                transform = None
+                sample_vertices = vertices
+            xmin, ymin = sample_vertices.min(axis=0)
+            xmax, ymax = sample_vertices.max(axis=0)
+            poly_path = Path(sample_vertices)
 
             seed_locations: list[Tuple[int, float, float]] = []
             max_attempts = max(nlocations * 1000, 10_000)
             attempts = 0
             while len(seed_locations) < nlocations and attempts < max_attempts:
                 x = random.uniform(xmin, xmax)
-                y = random.uniform(ymin, ymax)
+                if _is_geodetic_transform(transform):
+                    sin_y = random.uniform(np.sin(np.deg2rad(ymin)), np.sin(np.deg2rad(ymax)))
+                    y = np.rad2deg(np.arcsin(np.clip(sin_y, -1.0, 1.0)))
+                else:
+                    y = random.uniform(ymin, ymax)
                 if poly_path.contains_point((x, y), radius=1e-9):
-                    seed_locations.append((quantity, x, y))
+                    output_x = float(_wrap_seed_longitude(x, transform)) if _is_geodetic_transform(transform) else x
+                    seed_locations.append((quantity, output_x, y))
                 attempts += 1
 
             if len(seed_locations) < nlocations:
@@ -573,12 +799,40 @@ class RandomStrategy(SeedingStrategy):
                     f'after {max_attempts} attempts. The polygon may be very narrow relative to its bounding box.'
                 )
         else:
-            _bbox = bbox.replace(',', ' ').split()
+            transform = settings.get('_coordinate_transform')
             seed_locations = []
-            for _ in range(nlocations):
-                x = random.uniform(float(_bbox[0]), float(_bbox[2]))
-                y = random.uniform(float(_bbox[1]), float(_bbox[3]))
-                seed_locations.append((quantity, x, y))
+            if _is_geodetic_transform(transform):
+                sampled_x, sampled_y = _sample_geographic_bbox(random, bbox, nlocations)
+                sampled_x = _wrap_seed_longitude(sampled_x, transform)
+                seed_locations.extend(
+                    (quantity, float(x), float(y))
+                    for x, y in zip(sampled_x, sampled_y, strict=True)
+                )
+            else:
+                if isinstance(bbox, str):
+                    xmin, ymin, xmax, ymax = map(float, bbox.replace(',', ' ').split()[:4])
+                else:
+                    xmin = float(bbox['xmin'])
+                    ymin = float(bbox['ymin'])
+                    xmax = float(bbox['xmax'])
+                    ymax = float(bbox['ymax'])
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic and not transform.is_geodetic:
+                metric_xmin, metric_ymin, metric_xmax, metric_ymax = _metric_bbox_from_source_bbox(
+                    transform,
+                    xmin,
+                    ymin,
+                    xmax,
+                    ymax,
+                )
+                for _ in range(nlocations):
+                    metric_sample_x = random.uniform(metric_xmin, metric_xmax)
+                    metric_sample_y = random.uniform(metric_ymin, metric_ymax)
+                    seed_locations.append((quantity, metric_sample_x, metric_sample_y))
+            elif not _is_geodetic_transform(transform):
+                for _ in range(nlocations):
+                    x = random.uniform(xmin, xmax)
+                    y = random.uniform(ymin, ymax)
+                    seed_locations.append((quantity, x, y))
 
         return seed_locations
 
@@ -638,12 +892,41 @@ class GridStrategy(SeedingStrategy):
         quantity = int(config.quantity)
         dx = separation['dx']
         dy = separation['dy']
+        transform = settings.get('_coordinate_transform')
+
+        if _is_geodetic_transform(transform):
+            radius_m = transform.earth_radius_m
+            if poly is not None:
+                vertices = _parse_polygon(poly)
+                unwrapped_vertices = _unwrap_polygon_longitudes(vertices)
+                grid_bbox = {
+                    'xmin': float(np.min(unwrapped_vertices[:, 0])),
+                    'ymin': float(np.min(unwrapped_vertices[:, 1])),
+                    'xmax': float(np.max(unwrapped_vertices[:, 0])),
+                    'ymax': float(np.max(unwrapped_vertices[:, 1])),
+                }
+                candidates = _geodetic_grid_candidates(grid_bbox, dx, dy, radius_m)
+                reference = float(np.mean(unwrapped_vertices[:, 0]))
+                candidate_test = candidates.copy()
+                candidate_test[:, 0] = _longitudes_on_branch(candidate_test[:, 0], reference)
+                mask = Path(unwrapped_vertices).contains_points(candidate_test, radius=1e-9)
+                candidates = candidates[mask]
+            else:
+                candidates = _geodetic_grid_candidates(bbox, dx, dy, radius_m)
+            candidates[:, 0] = _wrap_seed_longitude(candidates[:, 0], transform)
+            return [(quantity, float(x), float(y)) for x, y in candidates]
 
         if poly is not None:
             vertices = _parse_polygon(poly)
-            xmin, ymin = vertices.min(axis=0)
-            xmax, ymax = vertices.max(axis=0)
-            poly_path = Path(vertices)
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                vx, vy = transform.source_to_metric(vertices[:, 0], vertices[:, 1])
+                grid_vertices = np.column_stack((vx, vy))
+            else:
+                transform = None
+                grid_vertices = vertices
+            xmin, ymin = grid_vertices.min(axis=0)
+            xmax, ymax = grid_vertices.max(axis=0)
+            poly_path = Path(grid_vertices)
         else:
             poly_path = None
             if isinstance(bbox, str):
@@ -653,6 +936,10 @@ class GridStrategy(SeedingStrategy):
                 xmin, ymin, xmax, ymax = map(float, _bbox)
             else:
                 xmin, ymin, xmax, ymax = bbox['xmin'], bbox['ymin'], bbox['xmax'], bbox['ymax']
+            if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+                xmin, ymin, xmax, ymax = _metric_bbox_from_source_bbox(transform, xmin, ymin, xmax, ymax)
+            else:
+                transform = None
 
         seed_locations = []
         x = xmin
@@ -699,6 +986,7 @@ class TransectStrategy(SeedingStrategy):
         if config.quantity is None:
             raise MissingConfigurationParameter('"quantity" must be an integer for TransectStrategy.')
         quantity = int(config.quantity)
+        transform = getattr(config, 'strategy_settings', {}).get('_coordinate_transform')
 
         seed_locations = []
         # Process each segment
@@ -717,12 +1005,20 @@ class TransectStrategy(SeedingStrategy):
                 x2_str, y2_str = points[1].split(',')
                 x2, y2 = float(x2_str.strip()), float(y2_str.strip())
 
-                # Generate k equally spaced points along the segment
-                for i in range(k):
-                    frac = i / (k - 1) if k > 1 else 0
-                    x = x1 + frac * (x2 - x1)
-                    y = y1 + frac * (y2 - y1)
-                    seed_locations.append((quantity, x, y))
+                if _is_geodetic_transform(transform) and k > 1:
+                    geod = Geod(a=transform.earth_radius_m, b=transform.earth_radius_m)
+                    interior = geod.npts(x1, y1, x2, y2, max(int(k) - 2, 0))
+                    points = [(x1, y1), *interior, (x2, y2)]
+                    seed_locations.extend(
+                        (quantity, float(_wrap_seed_longitude(x, transform)), float(y))
+                        for x, y in points
+                    )
+                else:
+                    for i in range(k):
+                        frac = i / (k - 1) if k > 1 else 0
+                        x = x1 + frac * (x2 - x1)
+                        y = y1 + frac * (y2 - y1)
+                        seed_locations.append((quantity, x, y))
 
             except Exception as e:
                 raise ValueError(f"Invalid segment string '{segment_str}': {e}") from e
@@ -861,6 +1157,86 @@ class ParticleFactory:
     """
 
     @staticmethod
+    def create_particle_arrays(
+        config: PopulationConfig,
+        reference_date: str | np.datetime64 = DEFAULT_REFERENCE_DATE,
+    ) -> dict[str, np.ndarray]:
+        """Create compact particle-state arrays directly.
+
+        Parameters
+        ----------
+        config : PopulationConfig
+            Population and seeding configuration.
+        reference_date : str or numpy.datetime64, optional
+            Reference date used to convert the release time to seconds.
+
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            Initial x, y, release_time, and burial_depth arrays.
+        """
+        strategy_map = {
+            'point': PointStrategy(),
+            'random': RandomStrategy(),
+            'grid': GridStrategy(),
+            'transect': TransectStrategy(),
+            'file_points': FilePointsStrategy(),
+        }
+        particle_type = getattr(config, 'particle_type', '').lower()
+        if particle_type not in {'sand', 'mud', 'passive'}:
+            raise ValueError(f'Unknown particle type: {particle_type}')
+        strategy_name = getattr(config, 'strategy', '').lower()
+        if strategy_name not in strategy_map:
+            raise ValueError(f'Unknown seeding strategy: {strategy_name}')
+
+        empty = {
+            'x': np.empty(0, dtype=np.float64),
+            'y': np.empty(0, dtype=np.float64),
+            'release_time': np.empty(0, dtype=np.float64),
+            'burial_depth': np.empty(0, dtype=np.float64),
+        }
+        if int(config.quantity) <= 0:
+            return empty
+
+        positions = strategy_map[strategy_name].seed(config)
+        transform = getattr(config, 'strategy_settings', {}).get(
+            '_coordinate_transform',
+            None,
+        )
+        if strategy_name not in {'random', 'grid'}:
+            positions = _seed_positions_to_metric(positions, transform)
+        _log_seeding_box_volume(config, positions)
+        if not positions:
+            return empty
+
+        quantities = np.asarray([int(item[0]) for item in positions], dtype=np.intp)
+        if np.any(quantities < 0):
+            raise ValueError('Particle quantities must be non-negative.')
+        x_locations = np.asarray([item[1] for item in positions], dtype=np.float64)
+        y_locations = np.asarray([item[2] for item in positions], dtype=np.float64)
+        x_values = np.repeat(x_locations, quantities)
+        y_values = np.repeat(y_locations, quantities)
+        size = x_values.size
+
+        strategy_seed = getattr(config, 'strategy_settings', {}).get('seed')
+        burial_rng = random.Random(strategy_seed)
+        burial_values = _sample_burial_depth_array(
+            getattr(config, 'burial_depth', None),
+            size,
+            rng=burial_rng,
+        )
+        release_seconds = _release_time_to_seconds(
+            getattr(config, 'release_start', None),
+            reference_date,
+        )
+        return {
+            'x': x_values,
+            'y': y_values,
+            'release_time': np.full(size, release_seconds, dtype=np.float64),
+            'burial_depth': burial_values,
+        }
+
+    @staticmethod
     def create_particles(config: PopulationConfig) -> list[Particle]:
         """
         Create a list of particles of the specified type using a seeding strategy.
@@ -902,6 +1278,9 @@ class ParticleFactory:
         # computes seeding positions using the strategy in config
         burial_depth = getattr(config, 'burial_depth', None)
         positions = StrategyClass.seed(config)
+        transform = getattr(config, 'strategy_settings', {}).get('_coordinate_transform', None)
+        if strategy_name.lower() not in {'random', 'grid'}:
+            positions = _seed_positions_to_metric(positions, transform)
         _log_seeding_box_volume(config, positions)
 
         # Build a dedicated local RNG for burial-depth sampling, isolated from
@@ -1012,20 +1391,22 @@ class ParticlePopulation:
                 rng = np.random.default_rng(self.population_config.diffusion_seed)
             self._diffusion_calculator = DiffusionCalculator(BrownianDiffusionStrategy(), rng=rng)
 
-        # generate particles based on the configuration
-        _particles = ParticleFactory.create_particles(self.population_config)
+        if isinstance(getattr(self.population_config, 'strategy_settings', None), dict):
+            self.population_config.strategy_settings['_coordinate_transform'] = self.grid_geometry.coordinate_transform
+
+        # Build compact state arrays directly; the object factory remains a
+        # compatibility API for callers that explicitly request Particle objects.
+        initial_state = ParticleFactory.create_particle_arrays(
+            self.population_config,
+            self.reference_date,
+        )
+        particle_count = initial_state['x'].size
         self.particles = {
-            'x': np.array([p.x for p in _particles]),
-            'y': np.array([p.y for p in _particles]),
-            'release_time': np.array(
-                [_release_time_to_seconds(p.release_time, self.reference_date) for p in _particles],
-                dtype=float,
-            ),
-            'burial_depth': np.array([p.burial_depth for p in _particles]),
-            'status_left_domain': np.zeros(len(_particles), dtype=bool),
-            'status_beached': np.zeros(len(_particles), dtype=bool),
+            **initial_state,
+            'status_left_domain': np.zeros(particle_count, dtype=bool),
+            'status_beached': np.zeros(particle_count, dtype=bool),
         }
-        self._particle_simplices = self.grid_geometry.locate_points(self.particles['x'], self.particles['y'])
+        self._particle_simplices = self._locate_particle_points(self.particles['x'], self.particles['y'])
         self._mark_particle_simplices_current()
         self._validate_seed_locations_inside_domain()
 
@@ -1076,11 +1457,9 @@ class ParticlePopulation:
         pop_name = self.population_config.population_config.get('name', 'unknown')
 
         # Interpolate max-exposure field to each particle's current position.
-        max_exposure = self._field_interpolator(
-            max_exposure_depth, self.particles['x'], self.particles['y']
-        )
+        max_exposure = self._interpolate_particle_fields((max_exposure_depth,))[0]
         # NaN means outside the grid — keep those particles (conservative).
-        max_exposure = np.where(np.isnan(max_exposure), np.inf, max_exposure)
+        max_exposure[np.isnan(max_exposure)] = np.inf
 
         keep = self.particles['burial_depth'] <= max_exposure
         n_removed = int(np.sum(~keep))
@@ -1150,12 +1529,51 @@ class ParticlePopulation:
             return False
         return not self._particle_simplices_stale
 
+    def _locate_particle_points(self, x_points, y_points, start_simplices=None) -> np.ndarray:
+        """Locate particle positions in bounded batches.
+
+        Parameters
+        ----------
+        x_points, y_points : array-like
+            Particle coordinates in the grid coordinate system.
+        start_simplices : array-like, optional
+            Cached containing-face ids aligned with the particle coordinates.
+
+        Returns
+        -------
+        ndarray
+            One containing-face id per particle, or ``-1`` outside the grid.
+        """
+        x_values = np.asarray(x_points)
+        y_values = np.asarray(y_points)
+        if x_values.shape != y_values.shape:
+            raise ValueError('x_points and y_points must have the same shape.')
+        if x_values.size == 0:
+            return np.empty(0, dtype=np.int64)
+
+        starts = None
+        if start_simplices is not None:
+            candidate_starts = np.asarray(start_simplices, dtype=np.int64).ravel()
+            if candidate_starts.shape == (x_values.size,):
+                starts = candidate_starts
+
+        simplices = np.empty(x_values.size, dtype=np.int64)
+        x_flat = x_values.ravel()
+        y_flat = y_values.ravel()
+        for chunk in particle_chunk_slices(x_values.size):
+            simplices[chunk] = self.grid_geometry.locate_points(
+                x_flat[chunk],
+                y_flat[chunk],
+                None if starts is None else starts[chunk],
+            )
+        return simplices
+
     def _refresh_particle_simplices(self) -> None:
         """Refresh cached simplex ids from the current particle coordinates."""
         simplex_ids = self._particle_simplices
         if simplex_ids.shape[0] != len(self.particles['x']):
             simplex_ids = None
-        self._particle_simplices = self.grid_geometry.locate_points(
+        self._particle_simplices = self._locate_particle_points(
             self.particles['x'],
             self.particles['y'],
             simplex_ids,
@@ -1220,20 +1638,57 @@ class ParticlePopulation:
         return field_array.size > 0
 
     def _interpolate_particle_fields(self, fields):
-        """Interpolate fields at particle positions and refresh cached simplex ids."""
+        """Interpolate fields and refresh simplex ids in bounded particle batches."""
+        fields = tuple(fields)
+        x_values = np.asarray(self.particles['x'])
+        y_values = np.asarray(self.particles['y'])
+        n_particles = x_values.size
         simplex_ids = self._particle_simplices
-        if self._particle_simplices_stale or simplex_ids.shape[0] != len(self.particles['x']):
+        if self._particle_simplices_stale or simplex_ids.shape[0] != n_particles:
             simplex_ids = None
-        particle_values, simplices = self._field_interpolator_multi_with_simplex(
-            tuple(fields),
-            self.particles['x'],
-            self.particles['y'],
-            simplex_ids=simplex_ids,
-        )
-        if simplices.shape[0] == len(self.particles['x']):
-            self._particle_simplices = simplices
+        if n_particles == 0:
+            particle_values, simplices = self._field_interpolator_multi_with_simplex(
+                fields,
+                x_values,
+                y_values,
+                simplex_ids=simplex_ids,
+            )
+            if np.asarray(simplices).shape == (0,):
+                self._particle_simplices = np.asarray(simplices, dtype=np.int64)
+                self._mark_particle_simplices_current()
+            return particle_values
+
+        outputs = None
+        refreshed_simplices = np.empty(n_particles, dtype=np.int64)
+        complete_simplices = True
+        for chunk in particle_chunk_slices(n_particles):
+            chunk_values, chunk_simplices = self._field_interpolator_multi_with_simplex(
+                fields,
+                x_values[chunk],
+                y_values[chunk],
+                simplex_ids=None if simplex_ids is None else simplex_ids[chunk],
+            )
+            if outputs is None:
+                outputs = [None] * len(chunk_values)
+            if len(chunk_values) != len(outputs):
+                raise ValueError('Multi-field interpolation returned an unexpected field count.')
+            for index, values in enumerate(chunk_values):
+                values_array = np.asarray(values).ravel()
+                if values_array.size != x_values[chunk].size:
+                    raise ValueError('Field interpolation returned an unexpected particle count.')
+                if outputs[index] is None:
+                    outputs[index] = np.empty(n_particles, dtype=values_array.dtype)
+                outputs[index][chunk] = values_array
+            chunk_simplices = np.asarray(chunk_simplices)
+            if chunk_simplices.shape == (x_values[chunk].size,):
+                refreshed_simplices[chunk] = chunk_simplices
+            else:
+                complete_simplices = False
+
+        if complete_simplices:
+            self._particle_simplices = refreshed_simplices
             self._mark_particle_simplices_current()
-        return particle_values
+        return tuple(outputs or ())
 
     def _update_particle_field(self, name: str, field_value) -> None:
         if field_value is None:
@@ -1403,15 +1858,88 @@ class ParticlePopulation:
         if len(self.particles['x']) == 0:
             return
 
-        ix = np.asarray(self.particles['status_mobile'], dtype=bool).copy()  # Freeze current mobile-particle mask.
-        particle_indices = np.flatnonzero(ix)
-        if particle_indices.size == 0:
+        status_mobile = np.asarray(self.particles['status_mobile'], dtype=bool)
+        if not np.any(status_mobile):
             return
-        old_x = self.particles['x'][ix].copy()
-        old_y = self.particles['y'][ix].copy()
-        old_simplices = self._particle_simplices[particle_indices].copy()
+        prepared_flow_field = self._prepare_flow_field(flow_field)
+        for chunk in particle_chunk_slices(status_mobile.size):
+            particle_indices = np.flatnonzero(status_mobile[chunk])
+            if particle_indices.size == 0:
+                continue
+            particle_indices += chunk.start
+            self._update_position_chunk(
+                flow_field,
+                current_timestep,
+                particle_indices,
+                prepared_flow_field=prepared_flow_field,
+            )
+        self._mark_particle_simplices_current()
 
+    def _prepare_flow_field(self, flow_field: Dict):
+        """Prepare each forcing slice once for all particle chunks."""
+        if not hasattr(self.grid_geometry, 'prepare_vector_field'):
+            return None
+        generations = flow_field.get('cache_generation', {})
         if _is_temporal_flow_field(flow_field):
+            lower_generation = generations.get('lower') if isinstance(generations, dict) else None
+            upper_generation = generations.get('upper') if isinstance(generations, dict) else None
+            lower = self.grid_geometry.prepare_vector_field(
+                flow_field['lower']['u'],
+                flow_field['lower']['v'],
+                cache_key=lower_generation,
+            )
+            if flow_field['weight'] <= 0.0 or (
+                flow_field['lower']['u'] is flow_field['upper']['u']
+                and flow_field['lower']['v'] is flow_field['upper']['v']
+            ):
+                upper = lower
+            else:
+                upper = self.grid_geometry.prepare_vector_field(
+                    flow_field['upper']['u'],
+                    flow_field['upper']['v'],
+                    cache_key=upper_generation,
+                )
+            return {'lower': lower, 'upper': upper}
+
+        generation = generations.get('value') if isinstance(generations, dict) else generations
+        prepared = self.grid_geometry.prepare_vector_field(
+            flow_field['u'],
+            flow_field['v'],
+            cache_key=generation,
+        )
+        return {'lower': prepared, 'upper': prepared}
+
+    def _prepare_geodetic_flow_field(self, flow_field: Dict):
+        """Compatibility alias for the backend-neutral forcing preparer."""
+        return self._prepare_flow_field(flow_field)
+
+    def _update_position_chunk(
+        self,
+        flow_field: Dict,
+        current_timestep: float,
+        particle_indices: np.ndarray,
+        *,
+        prepared_flow_field=None,
+    ) -> None:
+        """Advance one bounded chunk of mobile particles."""
+        ix = particle_indices
+        old_x = self.particles['x'][ix]
+        old_y = self.particles['y'][ix]
+        old_simplices = self._particle_simplices[particle_indices]
+
+        if prepared_flow_field is not None:
+            new_x, new_y, new_simplices, boundary_class_codes = (
+                self.grid_geometry.update_particles_prepared_temporal_with_boundary_class(
+                    old_x,
+                    old_y,
+                    prepared_flow_field['lower'],
+                    prepared_flow_field['upper'],
+                    flow_field['weight'] if _is_temporal_flow_field(flow_field) else 0.0,
+                    current_timestep,
+                    simplex_ids=old_simplices,
+                )
+            )
+        elif _is_temporal_flow_field(flow_field):
             new_x, new_y, new_simplices, boundary_class_codes = self._position_calculator_temporal_with_boundary_class(
                 self.particles['x'][ix],
                 self.particles['y'][ix],
@@ -1464,10 +1992,21 @@ class ParticlePopulation:
                 start_x = new_x[local_indices]
                 start_y = new_y[local_indices]
                 start_simplices = new_simplices[local_indices]
-                diffused_x, diffused_y = self._diffusion_calculator.calc_diffusion(
-                    start_x, start_y, np.zeros_like(start_x), np.zeros_like(start_y),
+                diffusion_x, diffusion_y = self._diffusion_calculator.calc_diffusion(
+                    np.zeros_like(start_x), np.zeros_like(start_y),
+                    np.zeros_like(start_x), np.zeros_like(start_y),
                     self.population_config.diffusion_coefficient, current_timestep,
                 )
+                if getattr(self.grid_geometry, 'is_geodetic', False):
+                    diffused_x, diffused_y = self.grid_geometry.apply_diffusion(
+                        start_x,
+                        start_y,
+                        diffusion_x,
+                        diffusion_y,
+                    )
+                else:
+                    diffused_x = start_x + diffusion_x
+                    diffused_y = start_y + diffusion_y
                 diffused_simplices = self.grid_geometry.locate_points(
                     diffused_x, diffused_y, start_simplices
                 )
@@ -1502,7 +2041,6 @@ class ParticlePopulation:
         self.particles['x'][ix] = new_x
         self.particles['y'][ix] = new_y
         self._particle_simplices[particle_indices] = new_simplices
-        self._mark_particle_simplices_current()
 
 
 class ParticleSeeder:
@@ -1549,11 +2087,23 @@ class ParticleSeeder:
             raise ValueError('No population configurations provided for seeding.')
 
         populations = []
+        metadata = getattr(sedtrails_data, 'metadata', None)
+        triangles = _geometry_triangles_from_field_data(sedtrails_data)
+        triangle_neighbors = _geometry_triangle_neighbors_from_field_data(sedtrails_data, triangles)
         grid_geometry = create_grid_geometry(
             sedtrails_data.x,
             sedtrails_data.y,
-            triangles=_geometry_triangles_from_field_data(sedtrails_data),
+            triangles=triangles,
+            triangle_neighbors=triangle_neighbors,
             boundary_edge_classification=getattr(sedtrails_data, 'boundary_edge_classification', None),
+            coordinate_system=coordinate_system_from_metadata(metadata),
+            source_crs=source_crs_from_metadata(metadata),
+            metric_crs=metric_crs_from_metadata(metadata),
+            runtime_geometry=_metadata_option(metadata, 'runtime_geometry', 'planar'),
+            surface_model=_metadata_option(metadata, 'surface_model', 'sphere'),
+            earth_radius_m=_metadata_option(metadata, 'earth_radius_m', 6_371_008.8),
+            longitude_wrap=_metadata_option(metadata, 'longitude_wrap', 'auto'),
+            velocity_basis=_metadata_option(metadata, 'velocity_basis', 'auto'),
         )
         for pop_config in self.population_configs:
             config = PopulationConfig(population_config=pop_config)
@@ -1577,7 +2127,17 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
     if connectivity is None:
         return None
 
-    triangles = np.asarray(connectivity, dtype=np.int64)
+    triangles = np.asarray(connectivity)
+    if np.issubdtype(triangles.dtype, np.integer) and (
+        triangles.size == 0
+        or (
+            int(np.min(triangles)) >= np.iinfo(np.int32).min
+            and int(np.max(triangles)) <= np.iinfo(np.int32).max
+        )
+    ):
+        triangles = np.asarray(triangles, dtype=np.int32)
+    elif not np.issubdtype(triangles.dtype, np.signedinteger):
+        triangles = np.asarray(triangles, dtype=np.int64)
     if triangles.ndim != 2 or triangles.shape[1] != 3:
         return None
     if triangles.shape[0] == 0:
@@ -1590,6 +2150,38 @@ def _geometry_triangles_from_field_data(sedtrails_data: HasFieldCoordinates) -> 
     if np.any(np.sum(valid, axis=1) != 3):
         return None
     return triangles
+
+
+def _geometry_triangle_neighbors_from_field_data(
+    sedtrails_data: HasFieldCoordinates,
+    triangles: np.ndarray | None,
+) -> np.ndarray | None:
+    """Return authoritative neighbor topology matching particle triangles."""
+    if triangles is None:
+        return None
+    neighbors = getattr(sedtrails_data, 'particle_triangle_neighbors', None)
+    if neighbors is None:
+        neighbors = getattr(sedtrails_data, 'face_face_connectivity', None)
+    if neighbors is None:
+        return None
+    array = np.asarray(neighbors)
+    if not np.issubdtype(array.dtype, np.integer):
+        raise ValueError('particle_triangle_neighbors must contain integer face ids.')
+    if array.shape != triangles.shape:
+        raise ValueError(
+            'particle_triangle_neighbors must have the same shape as particle face connectivity.'
+        )
+    return np.ascontiguousarray(array, dtype=triangles.dtype)
+
+
+
+def _metadata_option(metadata, key: str, default):
+    """Return a coordinate metadata option from mappings or attribute objects."""
+    if metadata is None:
+        return default
+    if hasattr(metadata, 'get'):
+        return metadata.get(key, default)
+    return getattr(metadata, key, default)
 
 
 # if __name__ == '__main__':

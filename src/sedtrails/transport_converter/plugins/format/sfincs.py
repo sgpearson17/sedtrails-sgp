@@ -6,6 +6,11 @@ import numpy as np
 import xarray as xr
 import xugrid as xu
 
+from sedtrails.transport_converter.plugins.format._xugrid_compat import create_ugrid2d
+from sedtrails.particle_tracer.coordinate_transform import (
+    build_coordinate_transform,
+    infer_coordinate_system_from_attrs,
+)
 from sedtrails.transport_converter.domain_mask import (
     classify_boundary_edges_from_config,
     delaunay_connectivity,
@@ -23,6 +28,27 @@ class FormatPlugin(BaseFormatPlugin):
     """
     Plugin for converting SFINCS NetCDF to SedTRAILS format.
     """
+
+    SELECTABLE_FIELDS = frozenset(
+        {
+            'bed_level',
+            'depth_avg_flow_velocity',
+            'water_depth',
+        }
+    )
+
+    _VARIABLE_MAP = {
+        'bed_level': 'zb',
+        'water_depth': 'h',
+        'flow_velocity_x': 'u',
+        'flow_velocity_y': 'v',
+    }
+
+    _FIELD_COMPONENT_KEYS = {
+        'bed_level': ('bed_level',),
+        'depth_avg_flow_velocity': ('flow_velocity_x', 'flow_velocity_y'),
+        'water_depth': ('water_depth',),
+    }
 
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
@@ -44,12 +70,16 @@ class FormatPlugin(BaseFormatPlugin):
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
         self.domain_config: Dict[str, Any] = {}
+        self.coordinate_system: str | None = None
+        self.source_crs: str | None = None
+        self.metric_crs: str | None = None
         self._inner_boundary_polygons: list[np.ndarray] | None = None
         self._inner_boundary_polygons_signature: str | None = None
         self._last_inner_boundary_mask: SimpleNamespace | None = None
         self._active_face_mask_cache: dict[str, Any] | None = None
         self._active_face_center_triangles_cache: dict[str, Any] | None = None
         self._boundary_edge_classification_cache: dict[str, Any] | None = None
+        self._mapped_static_geometry_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -89,6 +119,8 @@ class FormatPlugin(BaseFormatPlugin):
         current_time=None,
         reading_interval=None,
         reference_date: Optional[np.datetime64] = None,
+        required_fields=None,
+        max_memory_bytes: int | None = None,
     ) -> SedtrailsData:
         """
         SedtrailsData from SFINCS Netcdf.
@@ -101,6 +133,11 @@ class FormatPlugin(BaseFormatPlugin):
             Reading interval in seconds
         reference_date : np.datetime64, optional
             Reference date for converting time values
+        required_fields : sequence of str, optional
+            SedTRAILS source fields to materialize. Omission preserves the
+            historical all-fields conversion.
+        max_memory_bytes : int, optional
+            Estimated byte limit for time-varying fields in this window.
 
         Returns
         -------
@@ -117,8 +154,17 @@ class FormatPlugin(BaseFormatPlugin):
         time_info = self._get_time_info(self.input_data, reference_date=reference_date)
         time_info = self._decompress_time(time_info)
 
+        selected_fields = self._selectable_required_fields(required_fields)
         # Determine if we need to slice based on current_time and reading_interval
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
+        time_start_idx, time_end_idx = self._limit_time_slice_by_memory(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            current_time=current_time,
+            selected_fields=selected_fields,
+            max_memory_bytes=max_memory_bytes,
+        )
 
         # Apply time slicing if needed
         if time_start_idx is not None or time_end_idx is not None:
@@ -126,22 +172,20 @@ class FormatPlugin(BaseFormatPlugin):
             time_info = self._slice_time_info(time_info, time_slice)
 
         # Map the variables to SedtrailsData structure
-        mapped_data = self._map_sfincs_variables(time_info, time_start_idx, time_end_idx)
+        mapped_data = self._map_sfincs_variables(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            required_fields=selected_fields,
+        )
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
-        # Calculate magnitudes for vector quantities
-        # Flow velocity magnitude
-        depth_avg_velocity_magnitude = np.sqrt(
-            mapped_data['flow_velocity_x'] ** 2 + mapped_data['flow_velocity_y'] ** 2
+        depth_avg_flow_velocity = self._mapped_vector_field(
+            mapped_data,
+            'flow_velocity',
+            selected='depth_avg_flow_velocity' in selected_fields,
         )
-
-        # Create dictionaries for vector quantities
-        depth_avg_flow_velocity = {
-            'x': mapped_data['flow_velocity_x'],
-            'y': mapped_data['flow_velocity_y'],
-            'magnitude': depth_avg_velocity_magnitude,
-        }
 
         # Create SedtrailsMetadata object
         metadata = SedtrailsMetadata(
@@ -152,6 +196,8 @@ class FormatPlugin(BaseFormatPlugin):
                 'y_max': np.max(mapped_data['y']),
             }
         )
+        metadata.add('coordinate_system', self._coordinate_system())
+        self._add_crs_metadata(metadata)
 
         # Create SedtrailsData object
         sedtrails_data = SedtrailsData(
@@ -159,9 +205,9 @@ class FormatPlugin(BaseFormatPlugin):
             reference_date=self.reference_date,
             x=mapped_data['x'],
             y=mapped_data['y'],
-            bed_level=mapped_data['bed_level'],
+            bed_level=mapped_data.get('bed_level'),
             depth_avg_flow_velocity=depth_avg_flow_velocity,
-            water_depth=mapped_data['water_depth'],
+            water_depth=mapped_data.get('water_depth'),
             metadata=metadata,
             fractions=0,  # Default to 0 fractions
             # this has no meaning for SFINCS runs
@@ -223,6 +269,9 @@ class FormatPlugin(BaseFormatPlugin):
             particle_face_connectivity=particle_triangles,
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
+            coordinate_system=self._coordinate_system(),
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
         )
 
     def get_seeding_coordinates(self):
@@ -323,8 +372,8 @@ class FormatPlugin(BaseFormatPlugin):
 
         if self.input_data is None:
             try:
-                # First try using xugrid's open_dataset which handles UGRID conventions
-                self.input_data = xu.load_dataset(
+                # Keep arrays lazy; forcing windows materialize selected slices.
+                self.input_data = xu.open_dataset(
                     self.input_file,
                     decode_times=True,
                     decode_timedelta=True,
@@ -469,7 +518,11 @@ class FormatPlugin(BaseFormatPlugin):
         return sliced_info
 
     def _map_sfincs_variables(
-        self, time_info, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
+        self,
+        time_info,
+        time_start_idx: Optional[int] = None,
+        time_end_idx: Optional[int] = None,
+        required_fields=None,
     ) -> Dict:
         """
         Map SFINCS variables to SedtrailsData structure.
@@ -491,6 +544,7 @@ class FormatPlugin(BaseFormatPlugin):
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call read_data() first.')
 
+        selected_fields = self._selectable_required_fields(required_fields)
         # Get time information
         num_times = time_info['num_times']
         time_slice = (
@@ -499,55 +553,31 @@ class FormatPlugin(BaseFormatPlugin):
             else slice(None)
         )
 
-        # Derive face coordinates and keep generic UGRID geometry for visualization.
-        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = self._get_face_node_mesh_variables()
-
-        face_x, face_y = compute_face_centroids(
-            node_x_var,
-            node_y_var,
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
-        )
-        face_node_connectivity = normalize_face_node_connectivity(
-            face_nodes_var,
-            start_index=start_index,
-            fill_value=fill_value,
-        )
-        active_face_mask = self._active_face_mask(face_x, face_y)
-
-        # Variable mapping for SFINCS files
-        variable_map = {
-            'bed_level': 'zb',  # Bed level
-            'water_depth': 'h',  # Water depth
-            'flow_velocity_x': 'u',  # X-component of flow velocity
-            'flow_velocity_y': 'v',  # Y-component of flow velocity
+        static_geometry = self._mapped_static_geometry()
+        active_face_mask = static_geometry['active_face_mask']
+        data = {
+            key: static_geometry[key]
+            for key in (
+                'x',
+                'y',
+                'node_x',
+                'node_y',
+                'face_node_connectivity',
+                'particle_face_connectivity',
+            )
         }
-
-        # Extract data from dataset
-        data = {}
-
-        # First, get spatial coordinates (typically not time-dependent)
-        data['x'] = np.asarray(face_x)[active_face_mask]
-        data['y'] = np.asarray(face_y)[active_face_mask]
-        data['node_x'] = np.asarray(node_x_var)
-        data['node_y'] = np.asarray(node_y_var)
-        data['face_node_connectivity'] = face_node_connectivity[active_face_mask]
-        data['particle_face_connectivity'] = self._active_face_center_triangles(data['x'], data['y'])
 
         # Determine the spatial grid dimensions
         grid_shape = data['x'].shape
 
-        # Extract time-dependent variables
-        time_dependent_vars = [
-            'bed_level',
-            'water_depth',
-            'flow_velocity_x',
-            'flow_velocity_y',
-        ]
-
-        for key in time_dependent_vars:
-            var_name = variable_map.get(key, key)
+        selected_component_keys = {
+            component_key
+            for field_name in selected_fields
+            for component_key in self._FIELD_COMPONENT_KEYS.get(field_name, ())
+        }
+        for key, var_name in self._VARIABLE_MAP.items():
+            if key not in selected_component_keys:
+                continue
             try:
                 var = self._get_variable(var_name)
             except KeyError:
@@ -573,6 +603,104 @@ class FormatPlugin(BaseFormatPlugin):
 
         return data
 
+    def _mapped_static_geometry(self) -> dict[str, np.ndarray]:
+        """Return cached static SFINCS geometry used by forcing windows."""
+        node_x_var, node_y_var, face_nodes_var, start_index, fill_value = (
+            self._get_face_node_mesh_variables()
+        )
+        signature = self._mapped_static_geometry_signature(
+            node_x_var,
+            node_y_var,
+            face_nodes_var,
+            start_index,
+            fill_value,
+        )
+        cache = self._mapped_static_geometry_cache
+        if cache is not None and cache.get('signature') == signature:
+            self._last_inner_boundary_mask = cache['mask_result']
+            return cache
+
+        face_node_connectivity = normalize_face_node_connectivity(
+            face_nodes_var,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
+        face_x, face_y = compute_face_centroids(
+            node_x_var,
+            node_y_var,
+            face_nodes_var,
+            start_index=start_index,
+            fill_value=fill_value,
+            normalized_connectivity=face_node_connectivity,
+        )
+        active_face_mask = self._active_face_mask(face_x, face_y)
+        if np.all(active_face_mask):
+            active_x = np.asarray(face_x)
+            active_y = np.asarray(face_y)
+            active_connectivity = face_node_connectivity
+        else:
+            active_x = np.asarray(face_x)[active_face_mask]
+            active_y = np.asarray(face_y)[active_face_mask]
+            active_connectivity = face_node_connectivity[active_face_mask]
+
+        cache = {
+            'signature': signature,
+            'x': active_x,
+            'y': active_y,
+            'node_x': np.asarray(node_x_var),
+            'node_y': np.asarray(node_y_var),
+            'face_node_connectivity': active_connectivity,
+            'particle_face_connectivity': self._active_face_center_triangles(
+                active_x,
+                active_y,
+                source_grid=(
+                    np.asarray(node_x_var),
+                    np.asarray(node_y_var),
+                    face_node_connectivity,
+                ),
+            ),
+            'active_face_mask': active_face_mask,
+            'mask_result': self._last_inner_boundary_mask,
+        }
+        self._mapped_static_geometry_cache = cache
+        return cache
+
+    def _mapped_static_geometry_signature(
+        self,
+        node_x_var,
+        node_y_var,
+        face_nodes_var,
+        start_index,
+        fill_value,
+    ) -> tuple:
+        """Return an identity signature for static source geometry and masking."""
+        return (
+            id(self.input_data),
+            self._geometry_source_token(node_x_var),
+            self._geometry_source_token(node_y_var),
+            self._geometry_source_token(face_nodes_var),
+            int(start_index),
+            None if fill_value is None else int(fill_value),
+            self._domain_config_signature(),
+            self._coordinate_system(),
+            self.source_crs,
+            self.metric_crs,
+            getattr(self, 'runtime_geometry', 'planar'),
+        )
+
+    @staticmethod
+    def _geometry_source_token(values) -> tuple:
+        """Return a stable token for one lazy or in-memory geometry source."""
+        variable = getattr(values, 'variable', None)
+        storage = getattr(variable, '_data', None) if variable is not None else None
+        if storage is None:
+            storage = values
+        return (
+            id(storage),
+            tuple(getattr(values, 'shape', ())),
+            str(getattr(values, 'dtype', '')),
+        )
+
     def _active_face_mask(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
         """Return faces whose centroids are outside configured inner-boundary polygons."""
         x = np.asarray(face_x, dtype=float).ravel()
@@ -580,6 +708,7 @@ class FormatPlugin(BaseFormatPlugin):
         if x.shape != y.shape:
             raise ValueError(f'face_x and face_y must have the same shape, got {x.shape} and {y.shape}')
 
+        coordinate_system = self._coordinate_system()
         cache = self._active_face_mask_cache
         if self._geometry_cache_matches(cache, x, y):
             self._last_inner_boundary_mask = cache['mask_result']
@@ -590,7 +719,18 @@ class FormatPlugin(BaseFormatPlugin):
             active_mask = np.ones(x.shape[0], dtype=bool)
             removed_count = 0
         else:
-            inside = points_inside_any_polygon(np.column_stack((x, y)), polygons)
+            transform = build_coordinate_transform(
+                x,
+                y,
+                coordinate_system,
+                source_crs=self.source_crs,
+                metric_crs=self.metric_crs,
+            )
+            metric_x, metric_y = transform.source_to_metric(x, y)
+            inside = points_inside_any_polygon(
+                np.column_stack((metric_x, metric_y)),
+                transform.polygons_to_metric(polygons),
+            )
             active_mask = ~inside
             removed_count = int(np.count_nonzero(inside))
 
@@ -606,31 +746,213 @@ class FormatPlugin(BaseFormatPlugin):
             'node_x': x,
             'node_y': y,
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'active_mask': active_mask,
             'mask_result': self._last_inner_boundary_mask,
         }
         return active_mask
 
-    def _active_face_center_triangles(self, face_x: np.ndarray, face_y: np.ndarray) -> np.ndarray:
+    def _active_face_center_triangles(
+        self,
+        face_x: np.ndarray,
+        face_y: np.ndarray,
+        source_grid: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    ) -> np.ndarray:
         """Build active particle-location triangles over SFINCS face-centre coordinates."""
+        coordinate_system = self._coordinate_system()
         cache = self._active_face_center_triangles_cache
         if self._geometry_cache_matches(cache, face_x, face_y):
             return cache['triangles']
 
-        candidate_connectivity = delaunay_connectivity(face_x, face_y)
+        candidate_connectivity = self._source_face_center_triangles(
+            face_x,
+            face_y,
+            source_grid=source_grid,
+        )
+        if candidate_connectivity is None:
+            candidate_connectivity = delaunay_connectivity(
+                face_x,
+                face_y,
+                coordinate_system=coordinate_system,
+                source_crs=self.source_crs,
+                metric_crs=self.metric_crs,
+                runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
+            )
         triangles = filter_connectivity_by_inner_polygons(
             face_x,
             face_y,
             candidate_connectivity,
             self._get_inner_boundary_polygons(),
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
+            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
         ).connectivity
         self._active_face_center_triangles_cache = {
             'node_x': np.asarray(face_x),
             'node_y': np.asarray(face_y),
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'triangles': triangles,
         }
         return triangles
+
+    def _source_face_center_triangles(
+        self,
+        active_face_x: np.ndarray,
+        active_face_y: np.ndarray,
+        source_grid: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    ) -> np.ndarray | None:
+        """Derive face-centre triangles from authoritative UGRID topology.
+
+        Parameters
+        ----------
+        active_face_x, active_face_y : np.ndarray
+            Face-centre coordinates after applying the active face mask.
+
+        Returns
+        -------
+        np.ndarray or None
+            Triangles indexing the active face-centre arrays. ``None`` means
+            that the source topology does not contain enough shared-node
+            information and the bounded geometric fallback is required.
+        """
+        mask_cache = self._active_face_mask_cache
+        if (
+            mask_cache is not None
+            and mask_cache.get('domain_signature') == self._domain_config_signature()
+        ):
+            full_face_x = mask_cache['node_x']
+            full_face_y = mask_cache['node_y']
+            active_mask = mask_cache['active_mask']
+        else:
+            try:
+                full_face_x, full_face_y = self._face_coordinates()
+                active_mask = self._active_face_mask(full_face_x, full_face_y)
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        active_x = np.asarray(active_face_x)
+        active_y = np.asarray(active_face_y)
+        if not self._masked_coordinates_equal(
+            full_face_x,
+            full_face_y,
+            active_mask,
+            active_x,
+            active_y,
+        ):
+            return None
+
+        try:
+            if isinstance(self.input_data, xu.UgridDataset):
+                grid = self.input_data.grid
+                if not isinstance(grid, xu.Ugrid2d):
+                    return None
+            elif source_grid is not None:
+                source_node_x, source_node_y, source_faces = source_grid
+                grid = create_ugrid2d(
+                    source_node_x,
+                    source_node_y,
+                    source_faces,
+                    is_projected=self._coordinate_system() != 'geographic',
+                )
+            else:
+                node_x_var, node_y_var, face_nodes_var, start_index, fill_value = (
+                    self._get_face_node_mesh_variables()
+                )
+                source_faces = normalize_face_node_connectivity(
+                    face_nodes_var,
+                    start_index=start_index,
+                    fill_value=fill_value,
+                )
+                grid = create_ugrid2d(
+                    np.asarray(node_x_var),
+                    np.asarray(node_y_var),
+                    source_faces,
+                    is_projected=self._coordinate_system() != 'geographic',
+                )
+            triangulation, face_index = grid.centroid_triangulation
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return None
+
+        centroid_triangles = np.asarray(triangulation[2], dtype=np.int64)
+        source_face_index = np.asarray(face_index, dtype=np.int64)
+        if centroid_triangles.size == 0 or source_face_index.size == 0:
+            return None
+
+        source_triangles = source_face_index[centroid_triangles]
+        valid = np.all(
+            (source_triangles >= 0) & (source_triangles < active_mask.size),
+            axis=1,
+        )
+        valid &= source_triangles[:, 0] != source_triangles[:, 1]
+        valid &= source_triangles[:, 0] != source_triangles[:, 2]
+        valid &= source_triangles[:, 1] != source_triangles[:, 2]
+        if not np.all(valid):
+            source_triangles = source_triangles[valid]
+        if source_triangles.size == 0:
+            return None
+
+        if np.all(active_mask):
+            return source_triangles
+
+        active_triangles = np.empty(source_triangles.shape[0], dtype=bool)
+        chunk_size = 262_144
+        for start in range(0, source_triangles.shape[0], chunk_size):
+            stop = min(start + chunk_size, source_triangles.shape[0])
+            active_triangles[start:stop] = np.all(
+                active_mask[source_triangles[start:stop]],
+                axis=1,
+            )
+        source_triangles = source_triangles[active_triangles]
+        if source_triangles.size == 0:
+            return np.empty((0, 3), dtype=np.int64)
+
+        active_source_faces = np.flatnonzero(active_mask)
+        return np.searchsorted(active_source_faces, source_triangles).astype(np.int64, copy=False)
+
+    @staticmethod
+    def _masked_coordinates_equal(
+        full_x: np.ndarray,
+        full_y: np.ndarray,
+        active_mask: np.ndarray,
+        active_x: np.ndarray,
+        active_y: np.ndarray,
+    ) -> bool:
+        """Compare masked coordinates without a full-size temporary copy."""
+        full_x_array = np.asarray(full_x)
+        full_y_array = np.asarray(full_y)
+        if (
+            full_x_array.shape != active_mask.shape
+            or full_y_array.shape != active_mask.shape
+            or active_x.shape != active_y.shape
+            or int(np.count_nonzero(active_mask)) != active_x.size
+        ):
+            return False
+
+        active_offset = 0
+        chunk_size = 262_144
+        for start in range(0, active_mask.size, chunk_size):
+            stop = min(start + chunk_size, active_mask.size)
+            block_mask = active_mask[start:stop]
+            block_count = int(np.count_nonzero(block_mask))
+            active_stop = active_offset + block_count
+            if not np.array_equal(
+                full_x_array[start:stop][block_mask],
+                active_x[active_offset:active_stop],
+            ):
+                return False
+            if not np.array_equal(
+                full_y_array[start:stop][block_mask],
+                active_y[active_offset:active_stop],
+            ):
+                return False
+            active_offset = active_stop
+        return True
 
     def _filter_face_field(self, field_value: np.ndarray, active_face_mask: np.ndarray) -> np.ndarray:
         """Filter arrays with a trailing face dimension by the active-face mask."""
@@ -680,6 +1002,7 @@ class FormatPlugin(BaseFormatPlugin):
         if connectivity is None:
             return None
 
+        coordinate_system = self._coordinate_system()
         cache = self._boundary_edge_classification_cache
         if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
             return cache['metadata']
@@ -689,6 +1012,10 @@ class FormatPlugin(BaseFormatPlugin):
             node_y,
             connectivity,
             getattr(self, 'domain_config', {}),
+            coordinate_system=coordinate_system,
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
+            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
         )
         classification_metadata = None if classification is None else classification.to_metadata()
         self._boundary_edge_classification_cache = {
@@ -696,12 +1023,38 @@ class FormatPlugin(BaseFormatPlugin):
             'node_y': np.asarray(node_y),
             'connectivity': np.asarray(connectivity),
             'domain_signature': self._domain_config_signature(),
+            'coordinate_system': coordinate_system,
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
             'metadata': classification_metadata,
         }
         return classification_metadata
 
     def _domain_config_signature(self) -> str:
         return repr(getattr(self, 'domain_config', {}) or {})
+
+    def _coordinate_system(self) -> str:
+        """Return the coordinate-system label inferred from SFINCS mesh coordinates."""
+        if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
+            return str(self.coordinate_system)
+        if self.input_data is None:
+            return 'projected'
+        try:
+            x_var = self._get_variable('mesh2d_node_x')
+            y_var = self._get_variable('mesh2d_node_y')
+        except Exception:
+            return 'projected'
+        return infer_coordinate_system_from_attrs(x_var, y_var)
+
+    def _add_crs_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Add configured CRS labels to SedTRAILS metadata."""
+        self._add_runtime_coordinate_metadata(metadata)
+        if self._coordinate_system() != 'geographic':
+            return
+        if self.source_crs is not None:
+            metadata.add('source_crs', self.source_crs)
+        if self.metric_crs is not None:
+            metadata.add('metric_crs', self.metric_crs)
 
     def _geometry_cache_matches(
         self,
@@ -711,6 +1064,10 @@ class FormatPlugin(BaseFormatPlugin):
         connectivity: np.ndarray | None = None,
     ) -> bool:
         if cache is None or cache.get('domain_signature') != self._domain_config_signature():
+            return False
+        if cache.get('coordinate_system') != self._coordinate_system():
+            return False
+        if cache.get('source_crs') != self.source_crs or cache.get('metric_crs') != self.metric_crs:
             return False
         if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
             return False
@@ -748,32 +1105,233 @@ class FormatPlugin(BaseFormatPlugin):
     def _calculate_time_slice(self, current_time, reading_interval, time_info):
         """Calculate time slice indices based on current time and reading interval."""
 
-        # If no chunking parameters provided, load entire file
         if current_time is None or reading_interval is None:
+            return None, None
+        if reading_interval <= 0:
             return None, None
 
         times_array = np.asarray(time_info['seconds_since_reference'], dtype=float)
-        if times_array.size == 0:
+        if times_array.size <= 2:
             return None, None
-
         forcing_span = times_array[-1] - times_array[0]
-
-        # If reading_interval is 0 or spans the forcing window, load entire file.
-        if reading_interval <= 0 or forcing_span <= 0 or reading_interval >= forcing_span:
+        if forcing_span <= 0 or reading_interval >= forcing_span:
             return None, None
 
-        # Find current time index
-        current_idx = np.searchsorted(times_array, current_time)
+        start_idx, bracket_end_idx = self._interpolation_bracket(times_array, current_time)
+        requested_end_time = float(current_time) + float(reading_interval)
+        requested_upper_idx = int(np.searchsorted(times_array, requested_end_time, side='left'))
+        requested_upper_idx = min(
+            times_array.size - 1,
+            max(bracket_end_idx - 1, requested_upper_idx),
+        )
+        return start_idx, requested_upper_idx + 1
 
-        # Calculate chunk size based on reading interval and NetCDF timestep
-        netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
-        chunk_steps = max(10, int(reading_interval / netcdf_timestep))
+    @classmethod
+    def _selectable_required_fields(cls, required_fields) -> set[str]:
+        """Return supported source fields selected for materialization."""
+        if required_fields is None:
+            return set(cls.SELECTABLE_FIELDS)
+        return set(required_fields).intersection(cls.SELECTABLE_FIELDS)
 
-        # Calculate start and end indices with some buffer
-        start_idx = max(0, current_idx - chunk_steps // 4)
-        end_idx = min(len(times_array), current_idx + chunk_steps)
+    @staticmethod
+    def _mapped_vector_field(data: Dict, prefix: str, *, selected: bool) -> Dict | None:
+        """Build one selected vector field and its magnitude."""
+        if not selected:
+            return None
+        x_values = data[f'{prefix}_x']
+        y_values = data[f'{prefix}_y']
+        return {
+            'x': x_values,
+            'y': y_values,
+            'magnitude': np.hypot(x_values, y_values),
+        }
 
-        return start_idx, end_idx
+    @staticmethod
+    def _interpolation_bracket(
+        times: np.ndarray,
+        current_time: float | None,
+    ) -> tuple[int, int]:
+        """Return a two-plane slice bracketing the requested time."""
+        num_times = int(times.size)
+        if num_times <= 1:
+            return 0, num_times
+        if current_time is None:
+            return 0, 2
+
+        lower = int(np.searchsorted(times, current_time, side='right')) - 1
+        lower = min(max(lower, 0), num_times - 2)
+        return lower, lower + 2
+
+    def _limit_time_slice_by_memory(
+        self,
+        time_info: Dict,
+        start_idx: int | None,
+        end_idx: int | None,
+        *,
+        current_time: float | None,
+        selected_fields: set[str],
+        max_memory_bytes: int | None,
+    ) -> tuple[int | None, int | None]:
+        """Cap a time window by estimated retained field bytes."""
+        if max_memory_bytes is None:
+            return start_idx, end_idx
+
+        try:
+            memory_limit = int(max_memory_bytes)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('max_memory_bytes must be an integer byte count') from exc
+
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        num_times = int(times.size)
+        bytes_per_plane = self._estimate_bytes_per_time_plane(selected_fields)
+        if num_times == 0 or bytes_per_plane == 0:
+            return start_idx, end_idx
+
+        required_planes = min(2, num_times)
+        required_bytes = required_planes * bytes_per_plane
+        if memory_limit < required_bytes:
+            fields_text = ', '.join(sorted(selected_fields)) or '<none>'
+            raise MemoryError(
+                f'SFINCS forcing requires at least {required_bytes} bytes for '
+                f'{required_planes} interpolation planes ({bytes_per_plane} bytes/plane) '
+                f'for fields [{fields_text}], but max_memory_bytes={memory_limit}. '
+                'Increase inputs.max_eulerian_memory_mb or request fewer fields.'
+            )
+
+        max_planes = min(
+            num_times,
+            max(required_planes, memory_limit // bytes_per_plane),
+        )
+        desired_start = 0 if start_idx is None else int(start_idx)
+        desired_end = num_times if end_idx is None else int(end_idx)
+        if desired_end - desired_start <= max_planes:
+            return start_idx, end_idx
+
+        bracket_start, bracket_end = self._interpolation_bracket(times, current_time)
+        latest_start = desired_end - max_planes
+        bounded_start = min(max(bracket_start, desired_start), latest_start)
+        bounded_start = max(desired_start, bounded_start)
+        if bracket_end > bounded_start + max_planes:
+            bounded_start = bracket_end - max_planes
+        return bounded_start, bounded_start + max_planes
+
+    def _estimate_bytes_per_time_plane(self, selected_fields: set[str]) -> int:
+        """Estimate retained array bytes for one selected forcing plane."""
+        if self.input_data is None or not selected_fields:
+            return 0
+
+        spatial_size = self._source_face_count()
+        fallback_bytes = spatial_size * np.dtype(np.float64).itemsize
+        total_bytes = 0
+        for field_name in selected_fields:
+            component_keys = self._FIELD_COMPONENT_KEYS.get(field_name, ())
+            variable_names = [self._VARIABLE_MAP[key] for key in component_keys]
+            component_bytes = [
+                self._source_component_plane_bytes(
+                    variable_name,
+                    fallback_bytes,
+                )
+                for variable_name in variable_names
+            ]
+            total_bytes += sum(component_bytes)
+            if len(component_bytes) == 2:
+                total_bytes += self._source_hypot_plane_bytes(
+                    variable_names[0],
+                    variable_names[1],
+                    spatial_size,
+                )
+        return total_bytes
+
+    def estimate_source_bytes_per_time_plane(self, required_fields=None) -> int:
+        """Return exact source-backed bytes retained for one forcing plane.
+
+        Parameters
+        ----------
+        required_fields : sequence of str, optional
+            SedTRAILS fields that the runtime plans to read. Omission selects
+            every field supported by this plugin.
+
+        Returns
+        -------
+        int
+            Bytes for one source time plane, including derived vector
+            magnitudes. Only dataset shape and dtype metadata are inspected.
+        """
+        if self.input_data is None:
+            self.load()
+        selected_fields = self._selectable_required_fields(required_fields)
+        return self._estimate_bytes_per_time_plane(selected_fields)
+
+    def _source_component_plane_bytes(
+        self,
+        variable_name: str,
+        fallback_bytes: int,
+    ) -> int:
+        """Return retained bytes for one source component and time plane."""
+        fallback_count = fallback_bytes // np.dtype(np.float64).itemsize
+        element_count, dtype = self._source_component_plane_spec(
+            variable_name,
+            fallback_count,
+        )
+        return element_count * dtype.itemsize
+
+    def _source_component_plane_spec(
+        self,
+        variable_name: str,
+        fallback_count: int,
+    ) -> tuple[int, np.dtype]:
+        """Return source element count and dtype without reading values."""
+        try:
+            variable = self._get_variable(variable_name)
+        except KeyError:
+            return fallback_count, np.dtype(np.float64)
+        element_count = 1
+        for dimension, size in variable.sizes.items():
+            if dimension in {'time', 'layer'}:
+                continue
+            element_count *= int(size)
+        try:
+            dtype = np.dtype(variable.dtype)
+        except TypeError:
+            dtype = np.dtype(np.float64)
+        return element_count, dtype
+
+    def _source_hypot_plane_bytes(
+        self,
+        x_variable_name: str,
+        y_variable_name: str,
+        fallback_count: int,
+    ) -> int:
+        """Return exact bytes of a NumPy hypot-derived magnitude plane."""
+        x_count, x_dtype = self._source_component_plane_spec(
+            x_variable_name,
+            fallback_count,
+        )
+        y_count, y_dtype = self._source_component_plane_spec(
+            y_variable_name,
+            fallback_count,
+        )
+        magnitude_dtype = np.hypot(
+            np.zeros((), dtype=x_dtype),
+            np.zeros((), dtype=y_dtype),
+        ).dtype
+        return max(x_count, y_count) * magnitude_dtype.itemsize
+
+    def _source_face_count(self) -> int:
+        """Return the source face count without materializing connectivity."""
+        try:
+            face_nodes = self._get_variable('mesh2d_face_nodes')
+        except KeyError:
+            if isinstance(self.input_data, xu.UgridDataset):
+                return int(self.input_data.grid.n_face)
+            return 0
+
+        if face_nodes.ndim != 2:
+            return 0
+        first, second = face_nodes.shape
+        if first <= 8 and second > 8:
+            return int(second)
+        return int(first)
 
 
 def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_value=-999):
@@ -795,7 +1353,17 @@ def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_valu
         Zero-based face-node connectivity with invalid entries set to -1.
     """
     faces = np.asarray(mesh2d_face_nodes)
-    normalized = faces.astype(np.int64) - int(start_index)
+    start_index = int(start_index)
+    if (
+        np.issubdtype(faces.dtype, np.signedinteger)
+        and start_index == 0
+        and (fill_value is None or int(fill_value) < 0)
+    ):
+        return faces
+
+    output_dtype = faces.dtype if np.issubdtype(faces.dtype, np.signedinteger) else np.int64
+    normalized = faces.astype(output_dtype, copy=True)
+    normalized -= start_index
     invalid = normalized < 0
     if fill_value is not None:
         invalid |= faces == fill_value
@@ -803,7 +1371,14 @@ def normalize_face_node_connectivity(mesh2d_face_nodes, start_index=1, fill_valu
     return normalized
 
 
-def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, start_index=1, fill_value=-999):
+def compute_face_centroids(
+    mesh2d_node_x,
+    mesh2d_node_y,
+    mesh2d_face_nodes,
+    start_index=1,
+    fill_value=-999,
+    normalized_connectivity=None,
+):
     """
     Compute face centroids from UGRID mesh node coordinates and face->node connectivity.
 
@@ -817,6 +1392,9 @@ def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, star
         0 or 1 depending on file convention.
     fill_value : int
         Padding value in mesh2d_face_nodes.
+    normalized_connectivity : array-like, optional
+        Pre-normalized zero-based connectivity. Supplying it avoids repeating
+        normalization when static topology is already cached.
 
     Returns
     -------
@@ -825,19 +1403,38 @@ def compute_face_centroids(mesh2d_node_x, mesh2d_node_y, mesh2d_face_nodes, star
     """
     node_x = np.asarray(mesh2d_node_x)
     node_y = np.asarray(mesh2d_node_y)
-    faces = normalize_face_node_connectivity(mesh2d_face_nodes, start_index=start_index, fill_value=fill_value)
+    if normalized_connectivity is None:
+        faces = normalize_face_node_connectivity(
+            mesh2d_face_nodes,
+            start_index=start_index,
+            fill_value=fill_value,
+        )
+    else:
+        faces = np.asarray(normalized_connectivity)
 
-    face_x = np.empty(faces.shape[0], dtype=np.float64)
-    face_y = np.empty(faces.shape[0], dtype=np.float64)
+    face_x = np.full(faces.shape[0], np.nan, dtype=np.float64)
+    face_y = np.full(faces.shape[0], np.nan, dtype=np.float64)
+    usable_node_count = min(node_x.size, node_y.size)
+    if usable_node_count == 0:
+        return face_x, face_y
 
-    for i, face in enumerate(faces):
-        # Drop padded indices and out-of-range
-        valid = face[face >= 0]
-        if valid.size == 0:
-            face_x[i] = np.nan
-            face_y[i] = np.nan
+    chunk_size = 262_144
+    for start in range(0, faces.shape[0], chunk_size):
+        stop = min(start + chunk_size, faces.shape[0])
+        block = faces[start:stop]
+        valid = (block >= 0) & (block < usable_node_count)
+        counts = np.count_nonzero(valid, axis=1)
+        populated = counts > 0
+        if not np.any(populated):
             continue
-        face_x[i] = node_x[valid].mean()
-        face_y[i] = node_y[valid].mean()
+        clipped = np.clip(block, 0, usable_node_count - 1)
+        block_x = np.where(valid, node_x[clipped], 0.0)
+        block_y = np.where(valid, node_y[clipped], 0.0)
+        face_x[start:stop][populated] = (
+            np.sum(block_x[populated], axis=1) / counts[populated]
+        )
+        face_y[start:stop][populated] = (
+            np.sum(block_y[populated], axis=1) / counts[populated]
+        )
 
     return face_x, face_y

@@ -19,6 +19,7 @@ dependencies = [
   "xugrid",
   "numba",
   "tqdm",
+  "pyproj>=3.6,<4",
   "referencing>=0.36.2",
 ]
 requires-python = ">=3.10, <3.14"

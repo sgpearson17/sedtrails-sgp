@@ -16,6 +16,8 @@ SedTRAILS computes particle pathways based on pre-existing hydrodynamic and/or s
 In the sections below we provide information about the output settings required in these models in order to be used in SedTRAILS.
 
 
+SedTRAILS keeps particle input/output coordinates in the model's native coordinate system. For geometric work such as triangulation, point location, boundary checks, and CFL spacing, longitude/latitude grids are projected internally through `pyproj` to a metric CRS. The converter infers this from NetCDF coordinate attributes such as `degrees_east` and `degrees_north`; set `general.input_model.coordinate_system: geographic` when those attributes are missing. By default SedTRAILS uses `metric_crs: auto_utm` to choose a local UTM EPSG zone from the grid, or you can set an explicit projected CRS such as `EPSG:32631`.
+
 ## D-Flow FM
 ```
 format: fm_netcdf
@@ -89,6 +91,8 @@ cctot
 ```
 
 In practice, the GUI uses the spatial coordinates from `globalx` and `globaly`, and bathymetry preview defaults to `zb_mean` when it is available.
+
+XBeach coordinate names alone do not prove whether a grid is projected or longitude/latitude. If `globalx`/`globaly` do not carry longitude/latitude units, configure `general.input_model.coordinate_system` explicitly.
 
 ## SFINCS
 ```

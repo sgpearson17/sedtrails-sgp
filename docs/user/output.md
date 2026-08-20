@@ -64,21 +64,20 @@ DATA VARIABLES:
   trajectory_id: ('n_particles',) int64 (15,)
   population_id: ('n_particles',) int32 (15,)
   flowfield_name: ('n_flowfields',) str (2,)
-  time: ('n_particles', 'n_timesteps') float64 (15, 25)
-  x: ('n_particles', 'n_timesteps') float64 (15, 25)
-  y: ('n_particles', 'n_timesteps') float64 (15, 25)
-  z: ('n_particles', 'n_timesteps') float64 (15, 25)
-  burial_depth: ('n_particles', 'n_timesteps') float64 (15, 25)
-  mixing_depth: ('n_particles', 'n_timesteps') float64 (15, 25)
-  status_alive: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_buried: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_domain: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_transported: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_released: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_mobile: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_beached: ('n_particles', 'n_timesteps') int32 (15, 25)
-  status_left_domain: ('n_particles', 'n_timesteps') int32 (15, 25)
-  covered_distance: ('n_flowfields', 'n_particles', 'n_timesteps') float64 (2, 15, 25)
+  time: ('n_timesteps',) float64 (25,)
+  x: ('n_timesteps', 'n_particles') float64 (25, 15)
+  y: ('n_timesteps', 'n_particles') float64 (25, 15)
+  z: ('n_timesteps', 'n_particles') float64 (25, 15)
+  burial_depth: ('n_timesteps', 'n_particles') float64 (25, 15)
+  mixing_depth: ('n_timesteps', 'n_particles') float64 (25, 15)
+  status_alive: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_buried: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_domain: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_transported: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_released: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_mobile: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_beached: ('n_timesteps', 'n_particles') int32 (25, 15)
+  status_left_domain: ('n_timesteps', 'n_particles') int32 (25, 15)
 
 ====================================================================================
 ```
@@ -171,7 +170,8 @@ The following options can be used to save and customize the plot:
 - ``--output``: Exact plot file path to write. When used, the plot is saved directly and no figure window is opened by default.
  - ``--save``/``--no-save`` or ``-s``: Save the figure as ``particle_trajectories.png`` (default). Use ``--no-save`` to display the figure instead.
  - ``--output-dir`` or ``-o``: Directory for the saved PNG when ``--output`` is not provided. Defaults to the NetCDF file directory.
-- ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
+- ``--max-particles``: Maximum number of particles to plot. The default is ``10000``. The sample is deterministic and stratified when static population metadata is available.
+- ``--max-plot-points``: Maximum selected particle-time coordinates to render. The default is ``2000000``; SedTRAILS evenly decimates saved times before loading coordinates to stay within the budget.
 - ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
 - ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.
 - ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default is ``end``.

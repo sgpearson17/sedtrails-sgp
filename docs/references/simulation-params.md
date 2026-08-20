@@ -41,11 +41,19 @@ Nested under `general.input_model`:
 When configuration defaults are applied, `general.input_model` is created if it
 is omitted and populated with the nested defaults below.
 
-| Parameter        | Type   | Required | Default      | Description                                                                                                          |
-| ---------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `format`         | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `xbeach` (XBeach), `sfincs` (SFINCS).                          |
-| `reference_date` | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
-| `morfac`         | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
+| Parameter           | Type   | Required | Default      | Description                                                                                                          |
+| ------------------- | ------ | -------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `format`            | string | Optional | `fm_netcdf`  | Input model format. Options: `fm_netcdf` (D-Flow FM), `d3d4_netcdf` (Delft3D 4), `xbeach` (XBeach), and `sfincs` (SFINCS). |
+| `reference_date`    | string | Optional | `1970-01-01` | Reference date for time series in input data. Accepted formats include `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS`. Used as the time origin for simulation and particle `release_start`. |
+| `morfac`            | number | Optional | `1`          | Morphological acceleration factor for time decompression. Value of 1 means no acceleration.                          |
+| `coordinate_system` | string | Optional | `auto`       | Source x/y representation: `auto`, `projected`, `geographic`, or the `spherical` alias for geographic longitude/latitude. |
+| `source_crs`        | string | Optional | `EPSG:4326`  | CRS for geographic source coordinates. Empty CRS labels are rejected. |
+| `runtime_geometry`  | string | Optional | `auto`       | Runtime backend: `auto`, `planar`, or `geodetic`. Auto selects local projected geometry for safe regional lon/lat grids and geodetic geometry for wide, polar, or seam-crossing grids. |
+| `metric_crs`        | string or null | Optional | `auto_utm` | Projected metre CRS for planar geographic geometry, such as `EPSG:32631`. Set to `null` for explicit geodetic geometry. |
+| `surface_model`     | string | Optional | `sphere`     | Surface model: `from_crs`, `sphere`, or `ellipsoid`. Geodetic runtime currently requires `sphere`; unsupported models fail explicitly. |
+| `earth_radius_m`    | number | Optional | `6371008.8`  | Positive sphere radius in metres, used when `surface_model: sphere`. |
+| `longitude_wrap`    | string | Optional | `auto`       | Geographic longitude convention: `auto`, `-180_180`, or `0_360`. |
+| `velocity_basis`    | string | Optional | `auto`       | Horizontal velocity basis: `auto`, `east_north`, `source_xy`, or `grid_aligned`. Geodetic runtime requires resolved east/north vectors. |
 
 **Example:**
 
@@ -58,6 +66,14 @@ general:
     format: fm_netcdf
     reference_date: "2020-01-01 00:00:00"
     morfac: 1.0
+    coordinate_system: auto
+    source_crs: EPSG:4326
+    runtime_geometry: auto
+    metric_crs: auto_utm
+    surface_model: sphere
+    earth_radius_m: 6371008.8
+    longitude_wrap: auto
+    velocity_basis: auto
 ```
 
 ---
@@ -70,7 +86,8 @@ Specifies paths to input data and reading parameters.
 | Parameter                 | Type    | Required     | Default       | Description                                                                                                                                   |
 | ------------------------- | ------- | ------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data`                    | string  | **Required** | -             | Path to the flow field data file (e.g., D-Flow FM NetCDF output).                                                                             |
-| `read_interval`           | string  | Optional     | `30D12H25M0S` | Time chunk size for reading input data. Format: `DDdHHhMMmSSs` (e.g., `30D` for 30 days, `12H` for 12 hours).                                 |
+| `read_interval`           | string  | Optional     | `30D12H25M0S` | Requested time span for each input window. Readers may shorten it to satisfy the memory budget.                                                |
+| `max_eulerian_memory_mb`  | integer | Optional     | `2048`        | Maximum total MiB for selected source forcing, derived tracer fields, geodetic ECEF vectors, and conversion workspaces. The reader window is scaled to keep these arrays within the limit. Must be at least 64 MiB. |
 | `repeat_eulerian_fields`  | boolean | Optional     | `false`       | Repeat Eulerian flow fields only after a valid simulation start inside the forcing window. If `false`, reuse the final fields after the forcing period is exhausted. |
 | `comp_dir`                | string  | Optional     | -             | Path to directory containing complementary validation data.                                                                                   |
 
@@ -80,6 +97,7 @@ Specifies paths to input data and reading parameters.
 inputs:
   data: /path/to/flow_model_output.nc
   read_interval: "15D"
+  max_eulerian_memory_mb: 2048
   repeat_eulerian_fields: true
   comp_dir: /path/to/validation_data/
 ```
@@ -312,6 +330,7 @@ The `characteristics` object varies by `particle_type`:
 | ----------------------- | ------ | ------------ | ------- | ---------------------------------- |
 | `diffusion_coefficient` | number | Optional (legacy) | `0.0` | Legacy fallback for the top-level `diffusion.coefficient`; prefer the top-level configuration. |
 
+(per-population-diffusion)=
 #### Per-population diffusion
 
 The optional `diffusion` object applies to every particle type and tracer method. `method` is `brownian` (default) or `none`; `coefficient` is a non-negative horizontal diffusivity in `m^2/s` and defaults to `0.0`; `seed` is an optional integer that makes draws reproducible for that population. A zero coefficient and `method: none` both disable diffusion.

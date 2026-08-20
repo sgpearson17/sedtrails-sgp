@@ -32,7 +32,8 @@ The following options can be used to save and customize the plot:
 
 - ``--file`` or ``-f``: Path to the SedTRAILS NetCDF file to visualize. By default, it expects ``sedtrails_results.nc`` in the current directory.
 - ``--output`` or ``-o``: Output target. If this points to an existing directory, SedTRAILS writes ``particle_trajectories.png`` inside it. Otherwise, SedTRAILS treats it as a filename. If omitted, SedTRAILS writes ``particle_trajectories.png`` next to the NetCDF file.
-- ``--max-particles``: Maximum number of particles to plot. The sample is deterministic and stratified by population where population IDs are available.
+- ``--max-particles``: Maximum number of particles to plot. The default is ``10000``. The sample is deterministic and stratified when static population metadata is available.
+- ``--max-plot-points``: Maximum selected particle-time coordinates to render. The default is ``2000000``; SedTRAILS evenly decimates saved times before loading coordinates to stay within the budget.
 - ``--sample-fraction``: Fraction of particles to plot. This cannot be combined with ``--max-particles``.
 - ``--sample-seed``: Seed for deterministic sampling. The default is ``0``.
 - ``--markers``: Endpoint markers to draw: ``none``, ``end``, or ``start-end``. The default is ``end``.

@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import sys
@@ -13,6 +14,7 @@ from sedtrails.application_interfaces.configuration_controller import Configurat
 from sedtrails.data_manager import DataManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer import ParticleSeeder
+from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.timer import Duration, Time, Timer
@@ -21,6 +23,9 @@ from sedtrails.simulation_orchestrator.global_logger import log_simulation_state
 from sedtrails.simulation_orchestrator.runtime_plan import (
     build_plan_sedtrails_data,
     build_population_runtime_plans,
+    plan_forcing_identity,
+    required_input_fields,
+    split_eulerian_memory_budget,
     unique_flow_field_names,
     validate_population_runtime_configurations,
 )
@@ -356,7 +361,26 @@ class Simulation:
         if dashboard_enabled:
             reference_date = self._controller.get('general.input_model.reference_date', '1970-01-01')
             figsize = (12, 8)
-            dashboard = SimulationDashboard(reference_date=reference_date)
+            coordinate_metadata = {
+                name: self._controller.get(f'general.input_model.{name}', None)
+                for name in (
+                    'coordinate_system',
+                    'runtime_geometry',
+                    'surface_model',
+                    'earth_radius_m',
+                    'longitude_wrap',
+                    'velocity_basis',
+                )
+            }
+            coordinate_metadata = {
+                name: value
+                for name, value in coordinate_metadata.items()
+                if value is not None
+            }
+            dashboard = SimulationDashboard(
+                reference_date=reference_date,
+                coordinate_metadata=coordinate_metadata,
+            )
             dashboard.initialize_dashboard(figsize)
             # Force initial display and bring window to front
             dashboard.fig.show()
@@ -415,10 +439,15 @@ class Simulation:
     @classmethod
     def _dashboard_particle_data(cls, population) -> dict[str, np.ndarray]:
         """Build dashboard particle arrays from a population."""
-        particle_x = population.particles['x']
+        particle_x = np.asarray(population.particles['x'])
+        particle_y = np.asarray(population.particles['y'])
+        transform = getattr(getattr(population, 'grid_geometry', None), 'coordinate_transform', None)
+        if isinstance(transform, CoordinateTransform) and transform.is_geographic:
+            particle_x, particle_y = transform.metric_to_source(particle_x, particle_y)
+
         particle_data = {
             'x': particle_x,
-            'y': population.particles['y'],
+            'y': particle_y,
         }
 
         burial_depth = population.particles.get('burial_depth')
@@ -770,6 +799,49 @@ class Simulation:
         )
 
     @staticmethod
+    def _coordinate_output_metadata(metadata) -> dict[str, Any]:
+        """Return lightweight coordinate metadata for particle output files."""
+        if metadata is None:
+            return {}
+
+        keys = (
+            'coordinate_metadata_version',
+            'coordinate_system',
+            'source_coordinate_system',
+            'runtime_geometry',
+            'runtime_coordinate_system',
+            'metric_coordinate_system',
+            'source_crs',
+            'metric_crs',
+            'surface_model',
+            'earth_radius_m',
+            'longitude_wrap',
+            'velocity_basis',
+            'horizontal_distance_units',
+            'utm_zone',
+            'utm_hemisphere',
+            'min_resolution_m',
+        )
+        output_metadata: dict[str, Any] = {}
+        for key in keys:
+            if hasattr(metadata, 'get'):
+                value = metadata.get(key, None)
+            else:
+                value = getattr(metadata, key, None)
+            if value is not None:
+                output_metadata[key] = value
+        if str(output_metadata.get('coordinate_system', 'projected')).lower() not in (
+            'geographic',
+            'spherical',
+            'lonlat',
+            'longlat',
+            'latitude_longitude',
+        ):
+            for key in ('source_crs', 'metric_crs', 'utm_zone', 'utm_hemisphere'):
+                output_metadata.pop(key, None)
+        return output_metadata
+
+    @staticmethod
     def _estimate_output_timesteps(simulation_time: Time, save_interval_seconds: int | float) -> int:
         """Count output slots for initial, scheduled, and final trajectory samples."""
         if save_interval_seconds <= 0:
@@ -875,6 +947,14 @@ class Simulation:
             'input_format': self._controller.get('general.input_model.format'),  # Specify the input format
             'reference_date': self._controller.get('general.input_model.reference_date'),
             'morfac': self._controller.get('general.input_model.morfac', 1.0),
+            'coordinate_system': self._controller.get('general.input_model.coordinate_system', None),
+            'source_crs': self._controller.get('general.input_model.source_crs', None),
+            'metric_crs': self._controller.get('general.input_model.metric_crs', None),
+            'runtime_geometry': self._controller.get('general.input_model.runtime_geometry', None),
+            'surface_model': self._controller.get('general.input_model.surface_model', None),
+            'earth_radius_m': self._controller.get('general.input_model.earth_radius_m', None),
+            'longitude_wrap': self._controller.get('general.input_model.longitude_wrap', None),
+            'velocity_basis': self._controller.get('general.input_model.velocity_basis', None),
             'domain_config': self._get_domain_config(),
         }
 
@@ -1163,18 +1243,88 @@ class Simulation:
         default_fraction_index = input_model_config.get('sediment_fraction_index', 0)
         default_fraction_name = input_model_config.get('sediment_fraction_name')
 
-        return {
-            runtime_plan.population_index: FieldDataRetriever(
-                build_plan_sedtrails_data(
+        plan_data_by_identity = {}
+        retrievers = {}
+        for runtime_plan in runtime_plans:
+            identity = plan_forcing_identity(
+                runtime_plan.tracer,
+                runtime_plan.population_config,
+                default_fraction_index,
+                default_fraction_name,
+            )
+            if identity not in plan_data_by_identity:
+                plan_data_by_identity[identity] = build_plan_sedtrails_data(
                     sedtrails_data,
                     runtime_plan.tracer,
                     population_config=runtime_plan.population_config,
                     default_fraction_index=default_fraction_index,
                     default_fraction_name=default_fraction_name,
                 )
+            retrievers[runtime_plan.population_index] = FieldDataRetriever(
+                plan_data_by_identity[identity]
             )
+        return retrievers
+
+    def clear_geodetic_velocity_caches(self, populations) -> None:
+        """Release prepared velocity slices once per shared grid geometry.
+
+        Parameters
+        ----------
+        populations : Iterable
+            Particle populations whose grid geometries may share ECEF caches.
+        """
+        cleared_geometry_ids = set()
+        for population in populations:
+            geometry = getattr(population, 'grid_geometry', None)
+            geometry_id = id(geometry)
+            if geometry_id in cleared_geometry_ids:
+                continue
+            clear_cache = getattr(geometry, 'clear_velocity_cache', None)
+            if callable(clear_cache):
+                clear_cache()
+                cleared_geometry_ids.add(geometry_id)
+
+    def _allocate_eulerian_memory_budget(
+        self,
+        runtime_plans,
+        spatial_size,
+        input_field_names,
+    ):
+        """Allocate source and derived bytes for the active runtime plans."""
+        total_memory_mb = self._controller.get(
+            'inputs.max_eulerian_memory_mb',
+            2048,
+        )
+        total_memory_bytes = int(float(total_memory_mb) * 1024 * 1024)
+        input_model_config = self._controller.get('general.input_model', {})
+        source_estimator = getattr(
+            self.format_converter,
+            'estimate_source_bytes_per_time_plane',
+            None,
+        )
+        source_bytes_per_plane = (
+            source_estimator(input_field_names)
+            if source_estimator is not None
+            else None
+        )
+        geodetic_runtime = any(
+            getattr(runtime_plan.population.grid_geometry, 'is_geodetic', False)
             for runtime_plan in runtime_plans
-        }
+        )
+        return split_eulerian_memory_budget(
+            total_memory_bytes,
+            runtime_plans,
+            spatial_size,
+            default_fraction_index=input_model_config.get(
+                'sediment_fraction_index',
+                0,
+            ),
+            default_fraction_name=input_model_config.get(
+                'sediment_fraction_name'
+            ),
+            source_bytes_per_plane=source_bytes_per_plane,
+            geodetic_runtime=geodetic_runtime,
+        )
 
     def _run_impl(self):
         """
@@ -1206,11 +1356,45 @@ class Simulation:
         # Load only x/y field coordinates needed for the population seeder.
         with self._profile_section('get_seeding_field_data'):
             seeding_field_data = self.format_converter.get_seeding_field_data()
+        if self.dashboard is not None:
+            metadata = getattr(seeding_field_data, 'metadata', None)
+            resolved_coordinates = {
+                name: (
+                    metadata.get(name)
+                    if hasattr(metadata, 'get')
+                    else getattr(metadata, name, None)
+                )
+                for name in (
+                    'coordinate_system',
+                    'runtime_geometry',
+                    'surface_model',
+                    'earth_radius_m',
+                    'longitude_wrap',
+                    'velocity_basis',
+                )
+            }
+            self.dashboard.set_coordinate_metadata(
+                {name: value for name, value in resolved_coordinates.items() if value is not None}
+            )
 
         seeder = ParticleSeeder(populations_config)  # intialize seeder with population config
         populations = seeder.seed(seeding_field_data)  # seed particles for all populations
         runtime_plans = build_population_runtime_plans(populations_config, populations, self._get_physics_config())
         flow_field_names = unique_flow_field_names(runtime_plans)
+        input_field_names = required_input_fields(runtime_plans)
+        input_source_memory_bytes, derived_memory_reserve_bytes = (
+            self._allocate_eulerian_memory_budget(
+                runtime_plans,
+                np.asarray(seeding_field_data.x).size,
+                input_field_names,
+            )
+        )
+        self.logger.info(
+            'Eulerian memory budget: %d bytes source forcing, %d bytes '
+            'derived runtime reserve.',
+            input_source_memory_bytes,
+            derived_memory_reserve_bytes,
+        )
 
         self._remove_permanently_buried_populations(populations, runtime_plans)
 
@@ -1252,6 +1436,11 @@ class Simulation:
             n_output_slots,
             store_tracks,
         )
+        coordinate_metadata = self._coordinate_output_metadata(getattr(seeding_field_data, 'metadata', None))
+        if populations:
+            coordinate_metadata.update(populations[0].grid_geometry.coordinate_transform.metadata())
+        netcdf_options['coordinate_metadata'] = coordinate_metadata
+        checkpoint_options.setdefault('writer_kwargs', {})['coordinate_metadata'] = coordinate_metadata
 
         self._initialize_population_output_status(populations, timer.current)
         nc_handle = None
@@ -1324,6 +1513,7 @@ class Simulation:
                     input_time_bounds,
                 )
                 if self._should_attempt_sedtrails_reload(sedtrails_data, field_time_seconds, input_data_exhausted):
+                    self.clear_geodetic_velocity_caches(populations)
                     # Avoid recreating SedTRAILS data if current time is before the first time step
                     if (
                         sedtrails_data is not None
@@ -1332,10 +1522,28 @@ class Simulation:
                     ):
                         timer.advance()
                         continue
+                    if sedtrails_data is not None:
+                        # Release the previous forcing graph before materializing
+                        # the replacement window. Loop locals otherwise retain
+                        # retrievers and large plan-specific arrays.
+                        plan_retrievers.clear()
+                        sedtrails_data = None
+                        dashboard_flow_field = None
+                        retriever = None
+                        flow_field = None
+                        bed_level = None
+                        mixing_depth = None
+                        transport_prob = None
+                        dashboard_retriever = None
+                        bathymetry = None
+                        gc.collect()
                     # Convert to SedTRAILS format
                     with self._profile_section('convert_to_sedtrails'):
                         sedtrails_data = self.format_converter.convert_to_sedtrails(
-                            current_time=field_time_seconds, reading_interval=simulation_time.read_input_interval.seconds
+                            current_time=field_time_seconds,
+                            reading_interval=simulation_time.read_input_interval.seconds,
+                            required_fields=input_field_names,
+                            max_memory_bytes=input_source_memory_bytes,
                         )
                     plan_retrievers = self._build_plan_retrievers(sedtrails_data, runtime_plans)
 
@@ -1366,7 +1574,7 @@ class Simulation:
                 with self._profile_section('compute_cfl_timestep'):
                     timer.compute_cfl_timestep_from_max_velocity(
                         max_velocity,
-                        sedtrails_data.metadata.min_resolution,
+                        getattr(sedtrails_data.metadata, 'min_resolution_m', sedtrails_data.metadata.min_resolution),
                         sedtrails_data.metadata.timestep,
                     )
                     timer.current_timestep = min(timer.current_timestep, simulation_time.end - timer.current)

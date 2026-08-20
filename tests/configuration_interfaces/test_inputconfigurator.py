@@ -375,6 +375,7 @@ class TestYAMLConfigValidator:
         result = validator.validate_yaml(str(config_file))
 
         assert result['inputs']['repeat_eulerian_fields'] is False
+        assert result['inputs']['max_eulerian_memory_mb'] == 2048
 
     def test_validate_yaml_accepts_report_domain_exit_updates(self, tmp_path):
         """General config accepts optional per-timestep domain-exit update logging."""

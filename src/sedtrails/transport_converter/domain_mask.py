@@ -8,9 +8,17 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 from matplotlib.path import Path as MplPath
-from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull, Delaunay
 
+from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
+from sedtrails.particle_tracer.geodetic_geometry import ecef_to_lonlat, lonlat_to_ecef
 from sedtrails.transport_converter.tekal import read_tekal_polygons
+
+
+DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS = 250_000
+"""Maximum point count accepted by the global SciPy topology fallback."""
+
+_CONNECTIVITY_CHUNK_SIZE = 262_144
 
 
 @dataclass(frozen=True)
@@ -173,13 +181,33 @@ def load_boundary_class_polygons(domain_config: Mapping[str, Any] | None) -> dic
     }
 
 
-def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
+def delaunay_connectivity(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
+    max_points: int = DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS,
+) -> np.ndarray:
     """Build triangular candidate connectivity from node coordinates.
 
     Parameters
     ----------
     node_x, node_y : np.ndarray
         One-dimensional or flattenable arrays with node x and y coordinates.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before triangulation.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
+    runtime_geometry : str, default='planar'
+        Runtime geometry selection. Geodetic geometry uses the outward facets
+        of the ECEF convex hull instead of a planar projection.
+    max_points : int, default=250000
+        Maximum number of points for the global SciPy fallback. Larger meshes
+        must provide authoritative source connectivity instead.
 
     Returns
     -------
@@ -191,19 +219,51 @@ def delaunay_connectivity(node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
     Raises
     ------
     ValueError
-        If ``node_x`` and ``node_y`` do not have matching shapes.
+        If ``node_x`` and ``node_y`` do not have matching shapes or the point
+        count exceeds ``max_points``.
     scipy.spatial.QhullError
         If SciPy cannot construct a Delaunay triangulation for the supplied
         coordinates.
     """
 
-    x = np.asarray(node_x, dtype=float).ravel()
-    y = np.asarray(node_y, dtype=float).ravel()
+    x = np.asarray(node_x).ravel()
+    y = np.asarray(node_y).ravel()
     if x.shape != y.shape:
         raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
     if x.size < 3:
         return np.empty((0, 3), dtype=np.int64)
-    return np.asarray(Delaunay(np.column_stack((x, y))).simplices, dtype=np.int64)
+    if max_points < 3:
+        raise ValueError(f'max_points must be at least 3, got {max_points}')
+    if x.size > max_points:
+        raise ValueError(
+            'Automatic Delaunay/ConvexHull connectivity is limited to '
+            f'{max_points} points, but received {x.size}. Provide authoritative '
+            'source face connectivity, precompute particle connectivity, or '
+            'partition the mesh before conversion.'
+        )
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    transform = build_coordinate_transform(
+        x,
+        y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+    )
+    if transform.is_geodetic:
+        unit_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        hull = ConvexHull(unit_ecef, qhull_options='QJ')
+        simplices = np.asarray(hull.simplices, dtype=np.int64)
+        outward = hull.equations[:, :3]
+        face_centres = np.mean(unit_ecef[simplices], axis=1)
+        exterior_surface = np.sum(outward * face_centres, axis=1) > 0.0
+        simplices = simplices[exterior_surface]
+        if simplices.size == 0:
+            raise ValueError('Spherical triangulation did not produce any outward mesh faces.')
+        return simplices
+    metric_x, metric_y = transform.source_to_metric(x, y)
+    return np.asarray(Delaunay(np.column_stack((metric_x, metric_y))).simplices, dtype=np.int64)
 
 
 def filter_connectivity_by_inner_polygons(
@@ -211,6 +271,10 @@ def filter_connectivity_by_inner_polygons(
     node_y: np.ndarray,
     connectivity: np.ndarray,
     polygons: Iterable[np.ndarray],
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> ConnectivityMaskResult:
     """Remove faces or triangles whose centroid falls inside any polygon.
 
@@ -224,6 +288,12 @@ def filter_connectivity_by_inner_polygons(
     polygons : Iterable[np.ndarray]
         Polygon coordinate arrays. Polygons with fewer than three vertices are
         ignored.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -232,7 +302,9 @@ def filter_connectivity_by_inner_polygons(
         and the number of removed faces or triangles.
     """
 
-    faces = np.asarray(connectivity, dtype=np.int64)
+    faces = np.asarray(connectivity)
+    if not np.issubdtype(faces.dtype, np.integer):
+        faces = np.asarray(connectivity, dtype=np.int64)
     if faces.size == 0:
         empty_mask = np.zeros(faces.shape[0], dtype=bool)
         return ConnectivityMaskResult(connectivity=faces, active_mask=empty_mask, removed_count=0)
@@ -240,22 +312,70 @@ def filter_connectivity_by_inner_polygons(
     polygon_list = [np.asarray(polygon, dtype=float) for polygon in polygons if np.asarray(polygon).shape[0] >= 3]
     if not polygon_list:
         return ConnectivityMaskResult(
-            connectivity=faces.copy(),
+            connectivity=faces,
             active_mask=np.ones(faces.shape[0], dtype=bool),
             removed_count=0,
         )
 
-    centroids = face_centroids(node_x, node_y, faces)
-    inside = points_inside_any_polygon(centroids, polygon_list)
+    transform = build_coordinate_transform(
+        node_x,
+        node_y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+    )
+    inside = np.zeros(faces.shape[0], dtype=bool)
+    if transform.is_geodetic:
+        x = np.asarray(node_x, dtype=float).ravel()
+        y = np.asarray(node_y, dtype=float).ravel()
+        if x.shape != y.shape:
+            raise ValueError(
+                f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}'
+            )
+        node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
+            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
+            centroids = _spherical_face_centroids_from_ecef(
+                node_ecef,
+                faces[start:stop],
+            )
+            inside[start:stop] = points_inside_geographic_polygons(
+                centroids,
+                polygon_list,
+            )
+    else:
+        metric_polygons = transform.polygons_to_metric(polygon_list)
+        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
+            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
+            centroids = face_centroids(
+                node_x,
+                node_y,
+                faces[start:stop],
+            )
+            centroid_x, centroid_y = transform.source_to_metric(
+                centroids[:, 0],
+                centroids[:, 1],
+            )
+            metric_centroids = np.column_stack((centroid_x, centroid_y))
+            inside[start:stop] = points_inside_any_polygon(
+                metric_centroids,
+                metric_polygons,
+            )
     active_mask = ~inside
+    removed_count = int(np.count_nonzero(inside))
     return ConnectivityMaskResult(
-        connectivity=faces[active_mask],
+        connectivity=faces if removed_count == 0 else faces[active_mask],
         active_mask=active_mask,
-        removed_count=int(np.count_nonzero(inside)),
+        removed_count=removed_count,
     )
 
 
-def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
+def triangulate_face_connectivity(
+    connectivity: np.ndarray,
+    *,
+    chunk_size: int = _CONNECTIVITY_CHUNK_SIZE,
+) -> np.ndarray:
     """Convert padded polygon face-node connectivity to triangles by fan split.
 
     Parameters
@@ -263,6 +383,8 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
     connectivity : np.ndarray
         Face-node connectivity with shape ``(n_faces, max_nodes_per_face)``.
         Negative entries are treated as invalid padding.
+    chunk_size : int, default=262144
+        Maximum number of padded faces compacted at once.
 
     Returns
     -------
@@ -271,21 +393,74 @@ def triangulate_face_connectivity(connectivity: np.ndarray) -> np.ndarray:
         indices are preserved and nodes are not reindexed.
     """
 
-    faces = np.asarray(connectivity, dtype=np.int64)
-    triangles: list[list[int]] = []
-    for face in faces:
-        valid = face[face >= 0]
-        if valid.size < 3:
-            continue
-        if valid.size == 3:
-            triangles.append([int(valid[0]), int(valid[1]), int(valid[2])])
-            continue
-        for index in range(1, valid.size - 1):
-            triangles.append([int(valid[0]), int(valid[index]), int(valid[index + 1])])
+    faces = np.asarray(connectivity)
+    if faces.ndim != 2:
+        raise ValueError(f'connectivity must be two-dimensional, got shape {faces.shape}')
+    if not np.issubdtype(faces.dtype, np.integer):
+        faces = np.asarray(connectivity, dtype=np.int64)
+    if chunk_size < 1:
+        raise ValueError(f'chunk_size must be positive, got {chunk_size}')
 
-    if not triangles:
+    n_faces, face_width = faces.shape
+    if n_faces == 0 or face_width < 3:
         return np.empty((0, 3), dtype=np.int64)
-    return np.asarray(triangles, dtype=np.int64)
+
+    has_no_padding = _connectivity_has_no_padding(faces, chunk_size)
+    if has_no_padding and face_width == 3:
+        return faces
+    if has_no_padding:
+        triangles = np.empty((n_faces, face_width - 2, 3), dtype=faces.dtype)
+        triangles[:, :, 0] = faces[:, 0, np.newaxis]
+        triangles[:, :, 1] = faces[:, 1:-1]
+        triangles[:, :, 2] = faces[:, 2:]
+        return triangles.reshape(-1, 3)
+
+    triangle_count = 0
+    for start in range(0, n_faces, chunk_size):
+        block = faces[start : start + chunk_size]
+        counts = np.count_nonzero(block >= 0, axis=1)
+        triangle_count += int(np.maximum(counts - 2, 0).sum(dtype=np.int64))
+    if triangle_count == 0:
+        return np.empty((0, 3), dtype=np.int64)
+
+    triangles = np.empty((triangle_count, 3), dtype=faces.dtype)
+    output_offset = 0
+    for start in range(0, n_faces, chunk_size):
+        block = faces[start : start + chunk_size]
+        valid = block >= 0
+        counts = np.count_nonzero(valid, axis=1)
+        triangles_per_face = np.maximum(counts - 2, 0)
+        block_triangle_count = int(triangles_per_face.sum(dtype=np.int64))
+        if block_triangle_count == 0:
+            continue
+
+        positions = np.cumsum(valid, axis=1, dtype=np.int32) - 1
+        compact = np.full(block.shape, -1, dtype=faces.dtype)
+        valid_rows, valid_columns = np.nonzero(valid)
+        compact[valid_rows, positions[valid]] = block[valid_rows, valid_columns]
+        base = (
+            output_offset
+            + np.cumsum(triangles_per_face, dtype=np.int64)
+            - triangles_per_face
+        )
+        max_triangles = int(triangles_per_face.max(initial=0))
+        for fan_index in range(max_triangles):
+            rows = np.flatnonzero(triangles_per_face > fan_index)
+            destination = base[rows] + fan_index
+            triangles[destination, 0] = compact[rows, 0]
+            triangles[destination, 1] = compact[rows, fan_index + 1]
+            triangles[destination, 2] = compact[rows, fan_index + 2]
+        output_offset += block_triangle_count
+
+    return triangles
+
+
+def _connectivity_has_no_padding(faces: np.ndarray, chunk_size: int) -> bool:
+    """Return whether connectivity contains no negative padding."""
+    for start in range(0, faces.shape[0], chunk_size):
+        if np.any(faces[start : start + chunk_size] < 0):
+            return False
+    return True
 
 
 def extract_boundary_edges(connectivity: np.ndarray) -> np.ndarray:
@@ -360,6 +535,10 @@ def classify_boundary_edges_from_config(
     node_y: np.ndarray,
     connectivity: np.ndarray,
     domain_config: Mapping[str, Any] | None,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> BoundaryEdgeClassification | None:
     """Classify active boundary edges using configured polygon overrides.
 
@@ -372,6 +551,12 @@ def classify_boundary_edges_from_config(
     domain_config : Mapping[str, Any] or None
         Domain configuration mapping containing optional
         ``boundary_class_pol_files`` entries for ``open`` and ``land``.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -391,7 +576,17 @@ def classify_boundary_edges_from_config(
     if not any(class_files.values()):
         return None
     class_polygons = load_boundary_class_polygons(domain_config)
-    return classify_boundary_edges(node_x, node_y, connectivity, class_polygons, class_files=class_files)
+    return classify_boundary_edges(
+        node_x,
+        node_y,
+        connectivity,
+        class_polygons,
+        class_files=class_files,
+        coordinate_system=coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+    )
 
 
 def classify_boundary_edges(
@@ -400,6 +595,10 @@ def classify_boundary_edges(
     connectivity: np.ndarray,
     class_polygons: Mapping[str, Iterable[np.ndarray]],
     class_files: Mapping[str, list[str]] | None = None,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
 ) -> BoundaryEdgeClassification:
     """Classify active boundary edges by polygon-contained edge midpoints.
 
@@ -415,6 +614,12 @@ def classify_boundary_edges(
     class_files : Mapping[str, list[str]], optional
         Configured polygon file paths by class, carried through for
         diagnostics.
+    coordinate_system : str, optional
+        Coordinate-system label. Geographic coordinates are projected to
+        ``metric_crs`` before containment tests.
+    source_crs, metric_crs : str, optional
+        CRS labels for geographic source coordinates and projected runtime
+        metric coordinates.
 
     Returns
     -------
@@ -441,11 +646,29 @@ def classify_boundary_edges(
         midpoints[valid_edges, 0] = np.mean(x[edges[valid_edges]], axis=1)
         midpoints[valid_edges, 1] = np.mean(y[edges[valid_edges]], axis=1)
 
-    matches_by_class = {
-        class_name: points_inside_any_polygon(midpoints, polygons)
-        for class_name, polygons in class_polygons.items()
-        if class_name in BOUNDARY_CLASS_NAMES
-    }
+    transform = build_coordinate_transform(
+        x,
+        y,
+        coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+    )
+    if transform.is_geodetic:
+        midpoints = spherical_edge_midpoints(x, y, edges)
+        matches_by_class = {
+            class_name: points_inside_geographic_polygons(midpoints, polygons)
+            for class_name, polygons in class_polygons.items()
+            if class_name in BOUNDARY_CLASS_NAMES
+        }
+    else:
+        midpoint_x, midpoint_y = transform.source_to_metric(midpoints[:, 0], midpoints[:, 1])
+        metric_midpoints = np.column_stack((midpoint_x, midpoint_y))
+        matches_by_class = {
+            class_name: points_inside_any_polygon(metric_midpoints, transform.polygons_to_metric(polygons))
+            for class_name, polygons in class_polygons.items()
+            if class_name in BOUNDARY_CLASS_NAMES
+        }
 
     open_matches = matches_by_class.get('open', np.zeros(edges.shape[0], dtype=bool))
     land_matches = matches_by_class.get('land', np.zeros(edges.shape[0], dtype=bool))
@@ -570,3 +793,66 @@ def points_inside_any_polygon(points: np.ndarray, polygons: Iterable[np.ndarray]
 
     inside[finite] = finite_inside
     return inside
+
+
+def points_inside_geographic_polygons(points: np.ndarray, polygons: Iterable[np.ndarray]) -> np.ndarray:
+    """Return containment after placing each lon/lat polygon on one branch."""
+    points_array = np.asarray(points, dtype=float)
+    inside = np.zeros(points_array.shape[0], dtype=bool)
+    finite = np.isfinite(points_array[:, :2]).all(axis=1)
+    for polygon in polygons:
+        polygon_array = np.asarray(polygon, dtype=float)
+        if polygon_array.shape[0] < 3:
+            continue
+        polygon_xy = polygon_array[:, :2].copy()
+        polygon_xy[:, 0] = np.rad2deg(np.unwrap(np.deg2rad(polygon_xy[:, 0])))
+        reference = float(np.mean(polygon_xy[:, 0]))
+        test_points = points_array[finite, :2].copy()
+        test_points[:, 0] = reference + (test_points[:, 0] - reference + 180.0) % 360.0 - 180.0
+        inside[finite] |= MplPath(polygon_xy).contains_points(test_points)
+    return inside
+
+
+def spherical_face_centroids(node_x, node_y, connectivity) -> np.ndarray:
+    """Return normalized ECEF face centroids as longitude/latitude."""
+    x = np.asarray(node_x, dtype=float).ravel()
+    y = np.asarray(node_y, dtype=float).ravel()
+    if x.shape != y.shape:
+        raise ValueError(f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}')
+    node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+    return _spherical_face_centroids_from_ecef(node_ecef, connectivity)
+
+
+def _spherical_face_centroids_from_ecef(
+    node_ecef: np.ndarray,
+    connectivity: np.ndarray,
+) -> np.ndarray:
+    """Return face centroids from precomputed unit-ECEF node coordinates."""
+    faces = np.asarray(connectivity, dtype=np.int64)
+    if node_ecef.shape[0] == 0:
+        return np.full((faces.shape[0], 2), np.nan, dtype=float)
+    valid = (faces >= 0) & (faces < node_ecef.shape[0])
+    clipped = np.clip(faces, 0, node_ecef.shape[0] - 1)
+    vectors = np.where(valid[:, :, np.newaxis], node_ecef[clipped], 0.0).sum(axis=1)
+    norms = np.linalg.norm(vectors, axis=1)
+    result = np.full((faces.shape[0], 2), np.nan, dtype=float)
+    usable = norms > 0.0
+    if np.any(usable):
+        longitude, latitude = ecef_to_lonlat(vectors[usable])
+        result[usable] = np.column_stack((longitude, latitude))
+    return result
+
+
+def spherical_edge_midpoints(node_x, node_y, edges) -> np.ndarray:
+    """Return minor-arc edge midpoints as longitude/latitude."""
+    x = np.asarray(node_x, dtype=float).ravel()
+    y = np.asarray(node_y, dtype=float).ravel()
+    edge_array = np.asarray(edges, dtype=np.int64)
+    result = np.full((edge_array.shape[0], 2), np.nan, dtype=float)
+    valid = ((edge_array >= 0) & (edge_array < x.size)).all(axis=1)
+    if np.any(valid):
+        node_ecef = lonlat_to_ecef(x, y, radius=1.0)
+        vectors = node_ecef[edge_array[valid]].sum(axis=1)
+        longitude, latitude = ecef_to_lonlat(vectors)
+        result[valid] = np.column_stack((longitude, latitude))
+    return result

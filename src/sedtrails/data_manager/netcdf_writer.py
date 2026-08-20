@@ -12,6 +12,8 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
+from sedtrails.particle_tracer.coordinate_transform import coordinate_transform_from_metadata
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PARTICLE_CHUNK = 65_536
@@ -80,6 +82,9 @@ class NetCDFWriter:
         self._write_count = 0
         self._sync_interval = DEFAULT_SYNC_INTERVAL
         self._reopen_interval = None
+        self._particle_chunk = DEFAULT_PARTICLE_CHUNK
+        self._coordinate_metadata = {}
+        self._output_coordinate_transform = None
 
     def _validate_filename(self, filename):
         """
@@ -150,6 +155,159 @@ class NetCDFWriter:
 
         return str(particle_type)
 
+    @staticmethod
+    def _apply_coordinate_metadata(ds, coordinate_metadata: dict | None) -> None:
+        """Attach coordinate-system metadata to trajectory coordinate variables."""
+        metadata = coordinate_metadata or {}
+        coordinate_system = str(metadata.get('coordinate_system', 'projected')).lower()
+        if coordinate_system in ('geographic', 'spherical', 'lonlat', 'longlat', 'latitude_longitude'):
+            coordinate_system = 'geographic'
+            x_attrs = {
+                'units': 'degrees_east',
+                'standard_name': 'longitude',
+                'long_name': 'particle longitude',
+                'axis': 'X',
+            }
+            y_attrs = {
+                'units': 'degrees_north',
+                'standard_name': 'latitude',
+                'long_name': 'particle latitude',
+                'axis': 'Y',
+            }
+        else:
+            coordinate_system = 'projected'
+            x_attrs = {
+                'units': 'm',
+                'standard_name': 'projection_x_coordinate',
+                'long_name': 'particle x coordinate',
+                'axis': 'X',
+            }
+            y_attrs = {
+                'units': 'm',
+                'standard_name': 'projection_y_coordinate',
+                'long_name': 'particle y coordinate',
+                'axis': 'Y',
+            }
+
+        ds.coordinate_system = coordinate_system
+        metadata_keys = [
+            'coordinate_metadata_version',
+            'source_coordinate_system',
+            'runtime_geometry',
+            'runtime_coordinate_system',
+            'metric_coordinate_system',
+            'surface_model',
+            'earth_radius_m',
+            'longitude_wrap',
+            'velocity_basis',
+            'horizontal_distance_units',
+            'min_resolution_m',
+        ]
+        if coordinate_system == 'geographic':
+            metadata_keys.extend([
+                'source_crs',
+                'metric_crs',
+                'utm_zone',
+                'utm_hemisphere',
+            ])
+
+        for key in metadata_keys:
+            value = metadata.get(key)
+            if value is not None:
+                setattr(ds, key, value)
+        if 'x' in ds.variables:
+            for key, value in x_attrs.items():
+                setattr(ds['x'], key, value)
+        if 'y' in ds.variables:
+            for key, value in y_attrs.items():
+                setattr(ds['y'], key, value)
+        if 'z' in ds.variables:
+            ds['z'].units = 'm'
+            ds['z'].positive = 'up'
+
+    @staticmethod
+    def _needs_native_coordinate_output(coordinate_metadata: dict | None) -> bool:
+        metadata = coordinate_metadata or {}
+        return (
+            str(metadata.get('coordinate_system', 'projected')).lower()
+            in ('geographic', 'spherical', 'lonlat', 'longlat', 'latitude_longitude')
+            and str(metadata.get('runtime_coordinate_system', '')).lower() == 'metric_projected'
+        )
+
+    @classmethod
+    def _build_output_coordinate_transform(cls, coordinate_metadata: dict | None):
+        """Return the cached transform needed for native-coordinate output."""
+        if not cls._needs_native_coordinate_output(coordinate_metadata):
+            return None
+        return coordinate_transform_from_metadata(coordinate_metadata)
+
+    @staticmethod
+    def _output_xy_arrays(
+        particles: dict,
+        output_coordinate_transform=None,
+        particle_slice: slice | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return particle coordinates in the configured output coordinate system."""
+        x_values = np.asarray(particles['x'])
+        y_values = np.asarray(particles['y'])
+        if particle_slice is not None:
+            x_values = x_values[particle_slice]
+            y_values = y_values[particle_slice]
+        if output_coordinate_transform is None:
+            return x_values, y_values
+        source_x, source_y = output_coordinate_transform.metric_to_source(x_values, y_values)
+        return source_x, source_y
+
+    @staticmethod
+    def _particle_field_slice(particles: dict, name: str, default, particle_slice: slice):
+        """Return one particle-field slice without expanding scalar defaults."""
+        value = NetCDFWriter._particle_field(particles, name, default)
+        value_array = np.asarray(value)
+        if value_array.ndim == 0:
+            return value
+        return value_array[particle_slice]
+
+    @staticmethod
+    def _particle_slices(n_particles: int, particle_chunk: int):
+        """Yield bounded slices over one particle population."""
+        chunk_size = max(1, int(particle_chunk))
+        for start in range(0, int(n_particles), chunk_size):
+            yield slice(start, min(start + chunk_size, int(n_particles)))
+
+    def _write_particle_chunk(
+        self,
+        h,
+        particles: dict,
+        source_slice: slice,
+        destination_slice: slice,
+        output_coordinate_transform=None,
+        slot_idx: int | None = None,
+    ) -> None:
+        """Transform and write one bounded particle chunk."""
+        output_x, output_y = self._output_xy_arrays(
+            particles,
+            output_coordinate_transform,
+            source_slice,
+        )
+        destination = destination_slice if slot_idx is None else (slot_idx, destination_slice)
+        h['x'][destination] = output_x
+        h['y'][destination] = output_y
+        h['z'][destination] = self._particle_field_slice(particles, 'z', 0.0, source_slice)
+        h['burial_depth'][destination] = np.asarray(particles['burial_depth'])[source_slice]
+        h['mixing_depth'][destination] = self._particle_field_slice(
+            particles,
+            'mixing_depth',
+            np.nan,
+            source_slice,
+        )
+        for status_name, default in _STATUS_DEFAULTS.items():
+            h[status_name][destination] = self._particle_field_slice(
+                particles,
+                status_name,
+                default,
+                source_slice,
+            )
+
     @classmethod
     def _create_static_metadata(
         cls,
@@ -170,7 +328,12 @@ class NetCDFWriter:
         ds.createVariable('population_id', 'i4', ('n_particles',))
         ds.createVariable('flowfield_name', str, ('n_flowfields',))
 
-        ds['trajectory_id'][:] = np.arange(n_particles, dtype=np.int64)
+        for particle_slice in cls._particle_slices(n_particles, DEFAULT_PARTICLE_CHUNK):
+            ds['trajectory_id'][particle_slice] = np.arange(
+                particle_slice.start,
+                particle_slice.stop,
+                dtype=np.int64,
+            )
 
         particle_offset = 0
         for pop_idx, population in enumerate(populations):
@@ -214,6 +377,7 @@ class NetCDFWriter:
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
         sync_interval: int | None = DEFAULT_SYNC_INTERVAL,
         reopen_interval: int | None = None,
+        coordinate_metadata: dict | None = None,
     ):
         """
         Open a streaming output file with pre-allocated dimensions.
@@ -259,6 +423,10 @@ class NetCDFWriter:
         reopen_interval : int or None, optional
             Proactively close and reopen the output file every N writes. This is
             useful on unstable network filesystems but is disabled by default.
+        coordinate_metadata : dict or None, optional
+            Coordinate-system metadata from the converted input grid. Geographic
+            runs store longitude/latitude units on ``x``/``y`` and preserve the
+            projected runtime CRS as global attributes.
         Returns
         -------
         netCDF4.Dataset
@@ -296,6 +464,8 @@ class NetCDFWriter:
         ds.written_slots = 0
         ds.sync_interval = 0 if sync_interval is None else int(sync_interval)
         ds.reopen_interval = 0 if reopen_interval is None else int(reopen_interval)
+        self._coordinate_metadata = coordinate_metadata or {}
+        self._output_coordinate_transform = self._build_output_coordinate_transform(self._coordinate_metadata)
 
         self._create_static_metadata(
             ds,
@@ -335,32 +505,38 @@ class NetCDFWriter:
                 **compression_kwargs,
             )
 
+        self._apply_coordinate_metadata(ds, coordinate_metadata)
+
         # Store path so record_output can reopen on network/HDF errors
         self._streaming_path = str(output_path)
         self._write_count = 0
         self._sync_interval = 0 if sync_interval is None else int(sync_interval)
         self._reopen_interval = None if reopen_interval is None else int(reopen_interval)
+        self._particle_chunk = time_particle_chunks[1]
 
         ds.sync()
         return ds
 
-    @classmethod
-    def _write_slot(cls, h, populations: list, slot_idx: int, current_time: float) -> None:
+    def _write_slot(self, h, populations: list, slot_idx: int, current_time: float) -> None:
         """Write one save-interval slot to an open netCDF4 handle."""
         particle_offset = 0
         h['time'][slot_idx] = current_time
         for population in populations:
             particles = population.particles
             num_particles = len(population.particles['x'])
-            sl = slice(particle_offset, particle_offset + num_particles)
-
-            h['x'][slot_idx, sl] = np.asarray(particles['x'])
-            h['y'][slot_idx, sl] = np.asarray(particles['y'])
-            h['z'][slot_idx, sl] = cls._particle_field(particles, 'z', 0.0)
-            h['burial_depth'][slot_idx, sl] = np.asarray(particles['burial_depth'])
-            h['mixing_depth'][slot_idx, sl] = cls._particle_field(particles, 'mixing_depth', np.nan)
-            for status_name, default in _STATUS_DEFAULTS.items():
-                h[status_name][slot_idx, sl] = cls._particle_field(particles, status_name, default)
+            for source_slice in self._particle_slices(num_particles, self._particle_chunk):
+                destination_slice = slice(
+                    particle_offset + source_slice.start,
+                    particle_offset + source_slice.stop,
+                )
+                self._write_particle_chunk(
+                    h,
+                    particles,
+                    source_slice,
+                    destination_slice,
+                    self._output_coordinate_transform,
+                    slot_idx=slot_idx,
+                )
 
             particle_offset += num_particles
 
@@ -455,6 +631,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        coordinate_metadata: dict | None = None,
     ) -> Path:
         """Write a compact one-snapshot particle-state NetCDF file."""
         self._validate_filename(filename)
@@ -467,6 +644,7 @@ class NetCDFWriter:
         n_populations = len(populations)
         particle_chunk = max(1, min(int(particle_chunk), max(1, int(n_particles))))
         compression_kwargs = self._compression_kwargs(compression, int(compression_level), shuffle)
+        output_coordinate_transform = self._build_output_coordinate_transform(coordinate_metadata)
 
         if tmp_path.exists():
             tmp_path.unlink()
@@ -519,18 +697,24 @@ class NetCDFWriter:
                     **compression_kwargs,
                 )
 
+            self._apply_coordinate_metadata(ds, coordinate_metadata)
+
             particle_offset = 0
             for population in populations:
                 particles = population.particles
                 n_part = len(particles['x'])
-                sl = slice(particle_offset, particle_offset + n_part)
-                ds['x'][sl] = np.asarray(particles['x'])
-                ds['y'][sl] = np.asarray(particles['y'])
-                ds['z'][sl] = self._particle_field(particles, 'z', 0.0)
-                ds['burial_depth'][sl] = np.asarray(particles['burial_depth'])
-                ds['mixing_depth'][sl] = self._particle_field(particles, 'mixing_depth', np.nan)
-                for status_name, default in _STATUS_DEFAULTS.items():
-                    ds[status_name][sl] = self._particle_field(particles, status_name, default)
+                for source_slice in self._particle_slices(n_part, particle_chunk):
+                    destination_slice = slice(
+                        particle_offset + source_slice.start,
+                        particle_offset + source_slice.stop,
+                    )
+                    self._write_particle_chunk(
+                        ds,
+                        particles,
+                        source_slice,
+                        destination_slice,
+                        output_coordinate_transform,
+                    )
                 particle_offset += n_part
 
             ds.sync()
@@ -554,6 +738,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        coordinate_metadata: dict | None = None,
     ) -> Path:
         """
         Write a compact restart checkpoint containing only the current state.
@@ -582,6 +767,8 @@ class NetCDFWriter:
             Whether the NetCDF shuffle filter is enabled.
         particle_chunk : int
             Particle chunk size for NetCDF variables.
+        coordinate_metadata : dict or None
+            Coordinate-system metadata to attach to the checkpoint.
 
         Returns
         -------
@@ -604,6 +791,7 @@ class NetCDFWriter:
             compression_level=compression_level,
             shuffle=shuffle,
             particle_chunk=particle_chunk,
+            coordinate_metadata=coordinate_metadata,
         )
 
     def write_end_positions(
@@ -620,6 +808,7 @@ class NetCDFWriter:
         compression_level: int = 1,
         shuffle: bool = True,
         particle_chunk: int = DEFAULT_PARTICLE_CHUNK,
+        coordinate_metadata: dict | None = None,
     ) -> Path:
         """
         Write compact end-position results containing one state per particle.
@@ -648,6 +837,8 @@ class NetCDFWriter:
             Whether the NetCDF shuffle filter is enabled.
         particle_chunk : int
             Particle chunk size for NetCDF variables.
+        coordinate_metadata : dict or None
+            Coordinate-system metadata to attach to the end-position file.
 
         Returns
         -------
@@ -670,6 +861,7 @@ class NetCDFWriter:
             compression_level=compression_level,
             shuffle=shuffle,
             particle_chunk=particle_chunk,
+            coordinate_metadata=coordinate_metadata,
         )
 
     def close_output(self, nc_handle) -> Path:

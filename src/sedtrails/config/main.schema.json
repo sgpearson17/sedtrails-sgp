@@ -116,6 +116,79 @@
           "default": 1,
           "description": "morphological acceleration factor for time decompression (default: 1 = no decompression)"
         },
+        "coordinate_system": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "projected",
+            "geographic",
+            "spherical"
+          ],
+          "default": "auto",
+          "description": "coordinate representation of model x/y values. Auto infers from input metadata; projected uses Cartesian source coordinates; geographic and spherical are longitude/latitude aliases."
+        },
+        "source_crs": {
+          "type": "string",
+          "minLength": 1,
+          "default": "EPSG:4326",
+          "description": "CRS of geographic source coordinates, expressed as an EPSG identifier, WKT, or another pyproj-compatible value."
+        },
+        "runtime_geometry": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "planar",
+            "geodetic"
+          ],
+          "default": "auto",
+          "description": "runtime geometry backend. Auto preserves projected inputs and selects an appropriate geographic backend; planar uses metric_crs for geographic sources; geodetic performs longitude/latitude geometry directly."
+        },
+        "metric_crs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "default": "auto_utm",
+          "description": "projected metre CRS used by planar geographic geometry. Auto_utm selects a defensible local UTM zone; null disables projected-CRS selection for geodetic geometry."
+        },
+        "surface_model": {
+          "type": "string",
+          "enum": [
+            "from_crs",
+            "sphere",
+            "ellipsoid"
+          ],
+          "default": "sphere",
+          "description": "Earth surface model used by geographic distance and movement calculations. The operational geodetic backend currently supports sphere."
+        },
+        "earth_radius_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 6371008.8,
+          "description": "sphere radius in metres when surface_model is sphere."
+        },
+        "longitude_wrap": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "-180_180",
+            "0_360"
+          ],
+          "default": "auto",
+          "description": "native longitude convention used for geographic input, output, and restart coordinates."
+        },
+        "velocity_basis": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "east_north",
+            "source_xy",
+            "grid_aligned"
+          ],
+          "default": "auto",
+          "description": "horizontal velocity component basis. Auto uses unambiguous format metadata; east_north is geographic east/north; source_xy follows source coordinate axes; grid_aligned follows model grid axes."
+        },
         "sediment_fraction_index": {
           "type": "integer",
           "minimum": 0,
@@ -126,7 +199,32 @@
           "type": "string",
           "description": "Delft3D4 only: sediment fraction name to select when available in fraction coordinates (takes precedence over sediment_fraction_index)."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "runtime_geometry": {
+                "const": "geodetic"
+              }
+            },
+            "required": [
+              "runtime_geometry"
+            ]
+          },
+          "then": {
+            "properties": {
+              "coordinate_system": {
+                "enum": [
+                  "auto",
+                  "geographic",
+                  "spherical"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "fm_format_type": {
       "type": "string",
@@ -187,6 +285,12 @@
           "type": "string",
           "default": "30D12H25M0S",
           "description": "time chunk size for reading input data; e.g., '30D12H25M0S' for 30 days, 12 hours, and 25 minutes."
+        },
+        "max_eulerian_memory_mb": {
+          "type": "integer",
+          "minimum": 64,
+          "default": 2048,
+          "description": "Maximum total MiB for selected source forcing, derived tracer fields, geodetic ECEF vectors, and conversion workspaces in one input window. Readers reduce the loaded timestep count to keep the complete working set within this limit."
         },
         "repeat_eulerian_fields": {
           "type": "boolean",

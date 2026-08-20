@@ -451,7 +451,11 @@ class Timer:
 
             max_velocity = max(max_velocity, 1e-12)
 
-            min_resolution = sedtrails_data.metadata.min_resolution
+            min_resolution = getattr(
+                sedtrails_data.metadata,
+                'min_resolution_m',
+                sedtrails_data.metadata.min_resolution,
+            )
             self.compute_cfl_timestep_from_max_velocity(max_velocity, min_resolution, sedtrails_data.metadata.timestep)
 
     def compute_cfl_timestep_from_max_velocity(

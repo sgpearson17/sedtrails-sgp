@@ -8,7 +8,16 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+from sedtrails.particle_tracer.geodetic_geometry import (
+    EARTH_MEAN_RADIUS_M,
+    spherical_distance,
+)
 from matplotlib.collections import LineCollection
+
+
+DEFAULT_MAX_PLOT_PARTICLES = 10_000
+DEFAULT_MAX_PLOT_POINTS = 2_000_000
+DEFAULT_RENDER_PARTICLE_CHUNK = 256
 
 
 def _decode_netcdf_name(raw_value) -> str:
@@ -135,6 +144,162 @@ def _particle_count(ds: xr.Dataset) -> int:
     return int(ds.sizes[particle_dim])
 
 
+def _sample_target(
+    n_particles: int,
+    *,
+    max_particles: int | None,
+    sample_fraction: float | None,
+) -> int:
+    """Validate sampling options and return the selected particle count."""
+    if max_particles is not None and max_particles < 1:
+        raise ValueError("'max_particles' must be at least 1.")
+    if sample_fraction is not None and not (0.0 < sample_fraction <= 1.0):
+        raise ValueError("'sample_fraction' must be greater than 0 and less than or equal to 1.")
+    if max_particles is not None and sample_fraction is not None and max_particles != DEFAULT_MAX_PLOT_PARTICLES:
+        raise ValueError("'max_particles' and 'sample_fraction' are mutually exclusive.")
+
+    if n_particles <= 0:
+        return 0
+    if sample_fraction is not None:
+        return max(1, min(int(np.ceil(n_particles * sample_fraction)), n_particles))
+    if max_particles is None:
+        return n_particles
+    return min(int(max_particles), n_particles)
+
+
+def _population_sample_counts(population_sizes: np.ndarray, target: int) -> np.ndarray:
+    """Allocate a deterministic stratified sample budget across populations."""
+    population_sizes = np.asarray(population_sizes, dtype=np.int64)
+    counts = np.zeros(population_sizes.size, dtype=int)
+    active = population_sizes > 0
+    if target <= 0 or not np.any(active):
+        return counts
+
+    ideal = population_sizes[active] * target / int(population_sizes.sum())
+    active_counts = np.floor(ideal).astype(int)
+    if target >= int(np.count_nonzero(active)):
+        active_counts = np.maximum(active_counts, 1)
+    active_counts = np.minimum(active_counts, population_sizes[active])
+
+    while active_counts.sum() > target:
+        removable = np.flatnonzero(active_counts > (1 if target >= active_counts.size else 0))
+        if removable.size == 0:
+            break
+        candidate = removable[np.argmin(ideal[removable] - active_counts[removable])]
+        active_counts[candidate] -= 1
+
+    fractional = ideal - np.floor(ideal)
+    while active_counts.sum() < target:
+        capacity = population_sizes[active] - active_counts
+        candidates = np.flatnonzero(capacity > 0)
+        if candidates.size == 0:
+            break
+        candidate = candidates[np.argmax(fractional[candidates])]
+        active_counts[candidate] += 1
+        fractional[candidate] = -1.0
+
+    counts[active] = active_counts
+    return counts
+
+
+def _population_ranges_from_metadata(ds: xr.Dataset, n_particles: int) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return validated contiguous population ranges from static output metadata."""
+    if 'population_start_idx' not in ds or 'population_count' not in ds:
+        return None
+
+    starts = np.asarray(ds['population_start_idx'].values, dtype=np.int64)
+    counts = np.asarray(ds['population_count'].values, dtype=np.int64)
+    if starts.ndim != 1 or counts.ndim != 1 or starts.shape != counts.shape:
+        return None
+    if np.any(starts < 0) or np.any(counts < 0) or int(counts.sum()) != n_particles:
+        return None
+
+    ends = starts + counts
+    order = np.argsort(starts, kind='stable')
+    if np.any(ends > n_particles) or np.any(starts[order][1:] < ends[order][:-1]):
+        return None
+    return starts, counts
+
+
+def _stratified_indices_from_ranges(
+    starts: np.ndarray,
+    counts: np.ndarray,
+    target: int,
+    sample_seed: int,
+) -> np.ndarray:
+    """Sample bounded per-population index arrays from contiguous metadata ranges."""
+    selected_counts = _population_sample_counts(counts, target)
+    rng = np.random.default_rng(sample_seed)
+    selected = [
+        int(start) + rng.choice(int(count), size=int(selected_count), replace=False)
+        for start, count, selected_count in zip(starts, counts, selected_counts, strict=True)
+        if selected_count > 0
+    ]
+    if not selected:
+        return np.empty(0, dtype=int)
+    return np.sort(np.concatenate(selected).astype(int, copy=False))
+
+
+def _trajectory_time_dimension(ds: xr.Dataset) -> str | None:
+    """Return the one-dimensional trajectory time dimension when present."""
+    if 'time' not in ds or ds['time'].ndim != 1:
+        return None
+    return ds['time'].dims[0]
+
+
+def _time_sample_indices(
+    n_timesteps: int,
+    n_particles: int,
+    max_plot_points: int | None,
+) -> np.ndarray | None:
+    """Return evenly spaced time indices that keep the rendering point budget bounded."""
+    if max_plot_points is None or n_timesteps <= 1:
+        return None
+    if max_plot_points < 1:
+        raise ValueError("'max_plot_points' must be at least 1 or None.")
+
+    target = min(n_timesteps, max(1, int(max_plot_points) // max(1, n_particles)))
+    if target >= n_timesteps:
+        return None
+    if target == 1:
+        return np.array([0], dtype=int)
+    return np.linspace(0, n_timesteps - 1, num=target, dtype=int)
+
+
+def _trajectory_shape(ds: xr.Dataset) -> tuple[int, int]:
+    """Return plotting-shape dimensions without loading coordinate values."""
+    x_var = ds['x']
+    y_var = ds['y']
+    if x_var.ndim == 1 and y_var.ndim == 1 and x_var.shape == y_var.shape:
+        return int(x_var.shape[0]), 1
+    if (
+        x_var.ndim == 2
+        and y_var.ndim == 2
+        and 'time' in ds
+        and ds['time'].ndim == 1
+        and x_var.dims[0] == ds['time'].dims[0]
+        and y_var.dims[0] == ds['time'].dims[0]
+        and x_var.shape == y_var.shape
+    ):
+        return int(x_var.shape[1]), int(x_var.shape[0])
+    raise ValueError(
+        'Expected SedTRAILS time-major trajectory arrays shaped as '
+        '(n_timesteps, n_particles), or 1D checkpoint arrays.'
+    )
+
+
+def _trajectory_time_values(ds: xr.Dataset, n_timesteps: int) -> np.ndarray:
+    """Return one shared time vector in seconds without particle-sized broadcasting."""
+    if 'time' not in ds:
+        return np.arange(n_timesteps, dtype=float)
+    if ds['time'].ndim == 0:
+        return np.full(n_timesteps, float(_time_values_as_seconds(ds, ds['time'])), dtype=float)
+    if ds['time'].ndim == 1:
+        time_values = _time_values_as_seconds(ds, ds['time'])
+        if time_values.size == n_timesteps:
+            return time_values
+        raise ValueError("'time' length does not match the timestep dimension.")
+    raise ValueError("Unsupported 'time' variable shape for trajectory plotting.")
 def _select_sample_indices(
     n_particles: int,
     population_ids: np.ndarray | None = None,
@@ -224,30 +389,56 @@ def _select_sample_indices(
 def _sample_dataset(
     ds: xr.Dataset,
     *,
-    max_particles: int | None = None,
+    max_particles: int | None = DEFAULT_MAX_PLOT_PARTICLES,
     sample_fraction: float | None = None,
     sample_seed: int = 0,
+    max_plot_points: int | None = DEFAULT_MAX_PLOT_POINTS,
 ) -> tuple[xr.Dataset, int, int]:
-    """Return a dataset sampled along the particle dimension before materialization."""
+    """Sample particles and timesteps before loading trajectory coordinates.
+
+    ``max_particles=None`` disables particle sampling. ``max_plot_points=None``
+    disables time decimation; both opt-outs are explicit because they can create
+    a large Matplotlib workload.
+    """
     n_total = _particle_count(ds)
-    population_ids = None
-    if 'population_id' in ds:
-        population_ids = np.asarray(ds['population_id'].values)
-
-    indices = _select_sample_indices(
-        n_total,
-        population_ids,
-        max_particles=max_particles,
-        sample_fraction=sample_fraction,
-        sample_seed=sample_seed,
-    )
-    if len(indices) == n_total:
-        return ds, n_total, n_total
-
     particle_dim = _infer_particle_dim(ds)
     if particle_dim is None:
         return ds, n_total, n_total
-    return ds.isel({particle_dim: indices}), n_total, len(indices)
+
+    _, n_timesteps = _trajectory_shape(ds)
+    target = _sample_target(
+        n_total,
+        max_particles=max_particles,
+        sample_fraction=sample_fraction,
+    )
+    if max_plot_points is not None:
+        if max_plot_points < 1:
+            raise ValueError("'max_plot_points' must be at least 1 or None.")
+        minimum_points_per_particle = 2 if n_timesteps > 1 else 1
+        target = min(target, max(1, int(max_plot_points) // minimum_points_per_particle))
+
+    selection = {}
+    if target < n_total:
+        ranges = _population_ranges_from_metadata(ds, n_total)
+        if ranges is None:
+            rng = np.random.default_rng(sample_seed)
+            particle_indices = np.sort(rng.choice(n_total, size=target, replace=False))
+        else:
+            particle_indices = _stratified_indices_from_ranges(
+                ranges[0],
+                ranges[1],
+                target,
+                sample_seed,
+            )
+        selection[particle_dim] = particle_indices
+
+    time_dim = _trajectory_time_dimension(ds)
+    time_indices = _time_sample_indices(n_timesteps, target, max_plot_points)
+    if time_indices is not None and time_dim is not None:
+        selection[time_dim] = time_indices
+
+    sampled_ds = ds.isel(selection) if selection else ds
+    return sampled_ds, n_total, target
 
 
 def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -291,6 +482,23 @@ def _trajectory_arrays(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarr
         raise ValueError("Unsupported 'time' variable shape for trajectory plotting.")
 
     return x_data, y_data, time_data
+
+
+def _iter_trajectory_chunks(ds: xr.Dataset, chunk_size: int = DEFAULT_RENDER_PARTICLE_CHUNK):
+    """Yield bounded plotting arrays for consecutive selected particle chunks."""
+    if chunk_size < 1:
+        raise ValueError("'chunk_size' must be at least 1.")
+
+    n_particles, _ = _trajectory_shape(ds)
+    particle_dim = _infer_particle_dim(ds)
+    if particle_dim is None:
+        return
+
+    for start in range(0, n_particles, chunk_size):
+        stop = min(start + chunk_size, n_particles)
+        chunk_ds = ds.isel({particle_dim: slice(start, stop)})
+        x_data, y_data, time_data = _trajectory_arrays(chunk_ds)
+        yield start, x_data, y_data, time_data
 
 
 def _decode_population_names(ds: xr.Dataset, n_populations: int) -> list[str]:
@@ -337,6 +545,8 @@ def _particle_colors(n_particles: int):
 def _line_segments(
     x_data: np.ndarray,
     y_data: np.ndarray,
+    *,
+    geographic: bool = False,
 ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     segments = []
     plotted_indices = []
@@ -351,8 +561,15 @@ def _line_segments(
             y_traj = y_data[i, mask]
             points = np.column_stack((x_traj, y_traj))
             if len(points) >= 2:
-                segments.append(points)
-                plotted_indices.append(i)
+                if geographic:
+                    split_indices = np.flatnonzero(np.abs(np.diff(x_traj)) > 180.0) + 1
+                    for segment in np.split(points, split_indices):
+                        if len(segment) >= 2:
+                            segments.append(segment)
+                            plotted_indices.append(i)
+                else:
+                    segments.append(points)
+                    plotted_indices.append(i)
             endpoint_indices.append(i)
             starts.append(points[0])
             ends.append(points[-1])
@@ -371,6 +588,9 @@ def _distance_line_segments(
     y_data: np.ndarray,
     time_data: np.ndarray,
     min_time: float,
+    *,
+    geographic: bool = False,
+    earth_radius_m: float = EARTH_MEAN_RADIUS_M,
 ) -> tuple[list[np.ndarray], np.ndarray, dict[int, tuple[np.ndarray, np.ndarray]]]:
     distance_segments = []
     distance_indices = []
@@ -383,7 +603,16 @@ def _distance_line_segments(
             y_traj = y_data[i, mask]
             time_traj = time_data[i, mask]
             time_hours = (time_traj - min_time) / 3600.0
-            distances = np.sqrt((x_traj - x_traj[0]) ** 2 + (y_traj - y_traj[0]) ** 2)
+            if geographic:
+                distances = spherical_distance(
+                    x_traj[0],
+                    y_traj[0],
+                    x_traj,
+                    y_traj,
+                    radius=earth_radius_m,
+                )
+            else:
+                distances = np.sqrt((x_traj - x_traj[0]) ** 2 + (y_traj - y_traj[0]) ** 2)
             particle_distances[i] = (time_hours, distances)
             if len(time_hours) >= 2:
                 distance_segments.append(np.column_stack((time_hours, distances)))
@@ -472,13 +701,14 @@ def _create_panel_axes(panels: list[str]):
 def plot_trajectories(
     ds,
     output=None,
-    max_particles: int | None = None,
+    max_particles: int | None = DEFAULT_MAX_PLOT_PARTICLES,
     sample_fraction: float | None = None,
     sample_seed: int = 0,
     markers: str = 'start-end',
     marker_size: float = 12.0,
     panels: str | list[str] | tuple[str, ...] = 'spatial',
     show: bool | None = None,
+    max_plot_points: int | None = DEFAULT_MAX_PLOT_POINTS,
 ):
     """Plot particle trajectories from a SedTRAILS dataset.
 
@@ -494,13 +724,17 @@ def plot_trajectories(
         the default output is ``particle_trajectories.png`` in the source
         dataset directory when available.
     max_particles : int, optional
-        Maximum number of particles to plot. Sampling is deterministic and
-        stratified by population when population IDs are available.
+        Maximum number of particles to plot. Defaults to 10,000. Sampling is
+        deterministic and stratified when static population metadata is available.
+        Set to ``None`` to retain all particles.
     sample_fraction : float, optional
-        Fraction of particles to plot. Mutually exclusive with
-        ``max_particles``.
+        Fraction of particles to plot. This overrides the default particle cap.
     sample_seed : int, optional
         Seed used for deterministic particle sampling.
+    max_plot_points : int, optional
+        Maximum selected particle-time coordinates to render. Defaults to
+        2,000,000 and evenly decimates time before coordinate loading. Set to
+        ``None`` to retain every selected timestep.
     markers : {'none', 'end', 'start-end'}, optional
         Which endpoint markers to draw.
     marker_size : float, optional
@@ -539,11 +773,18 @@ def plot_trajectories(
         max_particles=max_particles,
         sample_fraction=sample_fraction,
         sample_seed=sample_seed,
+        max_plot_points=max_plot_points,
     )
-
-    x_data, y_data, time_data = _trajectory_arrays(sampled_ds)
-
-    n_particles, n_timesteps = x_data.shape
+    n_particles, n_timesteps = _trajectory_shape(sampled_ds)
+    time_values = _trajectory_time_values(sampled_ds, n_timesteps)
+    geographic = str(sampled_ds.attrs.get('coordinate_system', 'projected')).lower() in {
+        'geographic',
+        'spherical',
+        'lonlat',
+        'longlat',
+        'latitude_longitude',
+    }
+    earth_radius_m = float(sampled_ds.attrs.get('earth_radius_m', EARTH_MEAN_RADIUS_M))
 
     if n_sampled_particles != n_total_particles:
         print(
@@ -554,212 +795,219 @@ def plot_trajectories(
         print(f'\nPlotting trajectories for {n_particles} particles over {n_timesteps} timesteps...')
 
     fig, axes_by_panel = _create_panel_axes(selected_panels)
-
-    # Extract population information for color coding
     population_ids = (
         np.asarray(sampled_ds['population_id'].values, dtype=int)
         if 'population_id' in sampled_ds
         else np.zeros(n_particles, dtype=int)
     )
     n_populations = int(sampled_ds.sizes['n_populations']) if 'n_populations' in sampled_ds.sizes else 1
+    population_names = _decode_population_names(sampled_ds, n_populations)
+    pop_colors = _population_colors(n_populations)
+    colors = np.asarray(_particle_colors(n_particles))
 
-    # Plot 1: All trajectories on spatial map (individual particle colors)
     ax1 = axes_by_panel['spatial']
     ax1.set_title(f'(a) Particle Trajectories - Individual Colors (n={n_particles})')
-    ax1.set_xlabel('X [m]')
-    ax1.set_ylabel('Y [m]')
+    ax1.set_xlabel('Longitude [degrees east]' if geographic else 'X [m]')
+    ax1.set_ylabel('Latitude [degrees north]' if geographic else 'Y [m]')
 
-    # Plot each particle trajectory
-    colors = np.asarray(_particle_colors(n_particles))
-    spatial_segments, spatial_indices, endpoint_indices, starts, ends = _line_segments(x_data, y_data)
-    if spatial_segments:
-        ax1.add_collection(LineCollection(spatial_segments, colors=colors[spatial_indices], alpha=0.7, linewidths=1))
-        ax1.autoscale()
-    endpoint_colors = colors[endpoint_indices] if len(starts) else []
-    _add_endpoint_markers(ax1, starts, ends, colors=endpoint_colors, markers=markers, marker_size=marker_size)
-
-    # Add legend if few particles
-    if n_particles <= 10:
-        for i, color in enumerate(colors):
-            ax1.plot([], [], color=color, alpha=0.7, linewidth=1, label=f'Particle {i}')
-        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-
-    ax1.grid(True, alpha=0.3)
-    ax1.set_aspect('equal', adjustable='box')
-
-    if selected_panels == ['spatial']:
-        plt.tight_layout()
-
-        if output_path is not None:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(output_path, dpi=300, bbox_inches='tight')
-            print(f'Plot saved to: {output_path}')
-
-        if show:
-            plt.show()
-        elif output_path is not None:
-            plt.close(fig)
-
-        return fig, axes_by_panel
-
-    # Plot 2: Time series of distances from initial position
     ax2 = axes_by_panel.get('distance')
-    ax4 = axes_by_panel.get('population-distance')
-
     if ax2 is not None:
         ax2.set_title('(b) Distance from Initial Position vs Time')
         ax2.set_xlabel('Time [hours]')
         ax2.set_ylabel('Distance from Initial Position [m]')
 
-    # Find the minimum time across all particles to use as reference
-    min_time = np.nanmin(time_data) if np.any(np.isfinite(time_data)) else 0.0
-
-    particle_distances = {}
-    if ax2 is not None or ax4 is not None:
-        distance_segments, distance_indices, particle_distances = _distance_line_segments(
-            x_data, y_data, time_data, min_time
-        )
-        if ax2 is not None and distance_segments:
-            ax2.add_collection(
-                LineCollection(distance_segments, colors=colors[distance_indices], alpha=0.7, linewidths=1)
-            )
-            ax2.autoscale()
-
-    if ax2 is not None:
-        ax2.grid(True, alpha=0.3)
-
-    # if 'population' in selected_panels or 'population-distance' in selected_panels:
-    population_names = _decode_population_names(sampled_ds, n_populations)
-    pop_colors = _population_colors(n_populations)
-
-    # Plot 3: Trajectories colored by population
     ax3 = axes_by_panel.get('population')
     if ax3 is not None:
         ax3.set_title('(c) Particle Trajectories - Colored by Population')
-        ax3.set_xlabel('X [m]')
-        ax3.set_ylabel('Y [m]')
+        ax3.set_xlabel('Longitude [degrees east]' if geographic else 'X [m]')
+        ax3.set_ylabel('Latitude [degrees north]' if geographic else 'Y [m]')
 
-    # Plot trajectories grouped by population
-    if ax3 is not None:
-        for pop_idx in range(n_populations):
-            particles_in_pop = np.flatnonzero(population_ids == pop_idx)
-            pop_segments = []
-            pop_starts = []
-            pop_ends = []
-            for i in particles_in_pop:
-                mask = ~(np.isnan(x_data[i, :]) | np.isnan(y_data[i, :]))
-                if np.any(mask):
-                    points = np.column_stack((x_data[i, mask], y_data[i, mask]))
-                    if len(points) >= 2:
-                        pop_segments.append(points)
-                    pop_starts.append(points[0])
-                    pop_ends.append(points[-1])
-
-            if pop_segments:
-                ax3.add_collection(LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1))
-                ax3.plot([], [], color=pop_colors[pop_idx], alpha=0.7, linewidth=1, label=population_names[pop_idx])
-            if pop_starts:
-                marker_colors = [pop_colors[pop_idx]] * len(pop_starts)
-                _add_endpoint_markers(
-                    ax3,
-                    np.asarray(pop_starts, dtype=float),
-                    np.asarray(pop_ends, dtype=float),
-                    colors=marker_colors,
-                    markers=markers,
-                    marker_size=marker_size,
-                )
-
-        ax3.legend()
-        ax3.autoscale()
-        ax3.grid(True, alpha=0.3)
-        ax3.set_aspect('equal', adjustable='box')
-
-    # Plot 4: Distance from initial position by population with statistics
+    ax4 = axes_by_panel.get('population-distance')
     if ax4 is not None:
         ax4.set_title('(d) Distance from Initial Position by Population')
         ax4.set_xlabel('Time [hours]')
         ax4.set_ylabel('Distance from Initial Position [m]')
 
-    # Create containers for population statistics
-    population_stats = {}
+    spatial_has_segments = False
+    population_has_segments = np.zeros(n_populations, dtype=bool)
+    population_time_bounds = np.full((n_populations, 2), np.nan, dtype=float)
+    for particle_start, x_data, y_data, _time_data in _iter_trajectory_chunks(sampled_ds):
+        spatial_segments, spatial_indices, endpoint_indices, starts, ends = _line_segments(
+            x_data,
+            y_data,
+            geographic=geographic,
+        )
+        if spatial_segments:
+            ax1.add_collection(
+                LineCollection(
+                    spatial_segments,
+                    colors=colors[particle_start + spatial_indices],
+                    alpha=0.7,
+                    linewidths=1,
+                )
+            )
+            spatial_has_segments = True
+        if len(starts):
+            _add_endpoint_markers(
+                ax1,
+                starts,
+                ends,
+                colors=colors[particle_start + endpoint_indices],
+                markers=markers,
+                marker_size=marker_size,
+            )
 
-    # First pass: collect all data for each population
-    if ax4 is not None:
-        for pop_idx in range(n_populations):
-            population_stats[pop_idx] = {
-                'times': [],
-                'distances': [],
-                'name': population_names[pop_idx],
-                'color': pop_colors[pop_idx],
-            }
+        chunk_population_ids = population_ids[particle_start:particle_start + x_data.shape[0]]
+        valid_positions = np.isfinite(x_data) & np.isfinite(y_data)
+        if ax3 is not None:
+            for pop_idx in range(n_populations):
+                in_population = chunk_population_ids == pop_idx
+                if not np.any(in_population):
+                    continue
+                pop_segments, _, _, pop_starts, pop_ends = _line_segments(
+                    x_data[in_population],
+                    y_data[in_population],
+                    geographic=geographic,
+                )
+                if pop_segments:
+                    ax3.add_collection(
+                        LineCollection(pop_segments, colors=[pop_colors[pop_idx]], alpha=0.7, linewidths=1)
+                    )
+                    population_has_segments[pop_idx] = True
+                if len(pop_starts):
+                    _add_endpoint_markers(
+                        ax3,
+                        pop_starts,
+                        pop_ends,
+                        colors=[pop_colors[pop_idx]] * len(pop_starts),
+                        markers=markers,
+                        marker_size=marker_size,
+                    )
 
-            particles_in_pop = np.flatnonzero(population_ids == pop_idx)
+        if ax4 is not None:
+            for pop_idx in range(n_populations):
+                in_population = chunk_population_ids == pop_idx
+                if not np.any(in_population):
+                    continue
+                active_times = np.any(valid_positions[in_population], axis=0)
+                if not np.any(active_times):
+                    continue
+                first_time = float(time_values[np.flatnonzero(active_times)[0]])
+                last_time = float(time_values[np.flatnonzero(active_times)[-1]])
+                if np.isnan(population_time_bounds[pop_idx, 0]):
+                    population_time_bounds[pop_idx] = (first_time, last_time)
+                else:
+                    population_time_bounds[pop_idx, 0] = min(population_time_bounds[pop_idx, 0], first_time)
+                    population_time_bounds[pop_idx, 1] = max(population_time_bounds[pop_idx, 1], last_time)
 
-            # Plot individual particle distances for this population
-            pop_distance_segments = []
-            for i in particles_in_pop:
-                if i in particle_distances:
-                    time_hours, distances = particle_distances[i]
-                    if len(time_hours) >= 2:
-                        pop_distance_segments.append(np.column_stack((time_hours, distances)))
-                    population_stats[pop_idx]['times'].append(time_hours)
-                    population_stats[pop_idx]['distances'].append(distances)
-            if pop_distance_segments:
-                ax4.add_collection(
-                    LineCollection(pop_distance_segments, colors=[pop_colors[pop_idx]], alpha=0.3, linewidths=0.8)
+    if spatial_has_segments:
+        ax1.autoscale()
+    if n_particles <= 10:
+        for particle_idx, color in enumerate(colors):
+            ax1.plot([], [], color=color, alpha=0.7, linewidth=1, label=f'Particle {particle_idx}')
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.grid(True, alpha=0.3)
+    if not geographic:
+        ax1.set_aspect('equal', adjustable='box')
+
+    if ax3 is not None:
+        if np.any(population_has_segments):
+            for pop_idx in np.flatnonzero(population_has_segments):
+                ax3.plot([], [], color=pop_colors[pop_idx], alpha=0.7, linewidth=1, label=population_names[pop_idx])
+            ax3.legend()
+            ax3.autoscale()
+        ax3.grid(True, alpha=0.3)
+        if not geographic:
+            ax3.set_aspect('equal', adjustable='box')
+
+    if ax2 is not None or ax4 is not None:
+        min_time = float(np.nanmin(time_values)) if np.any(np.isfinite(time_values)) else 0.0
+        common_times = {}
+        distance_sums = {}
+        distance_sums_sq = {}
+        distance_counts = {}
+        if ax4 is not None:
+            for pop_idx in range(n_populations):
+                start_time, end_time = population_time_bounds[pop_idx]
+                if not (np.isfinite(start_time) and np.isfinite(end_time)):
+                    continue
+                common_times[pop_idx] = np.linspace(
+                    (start_time - min_time) / 3600.0,
+                    (end_time - min_time) / 3600.0,
+                    100,
+                )
+                distance_sums[pop_idx] = np.zeros(100, dtype=float)
+                distance_sums_sq[pop_idx] = np.zeros(100, dtype=float)
+                distance_counts[pop_idx] = 0
+
+        for particle_start, x_data, y_data, time_data in _iter_trajectory_chunks(sampled_ds):
+            distance_segments, distance_indices, particle_distances = _distance_line_segments(
+                x_data,
+                y_data,
+                time_data,
+                min_time,
+                geographic=geographic,
+                earth_radius_m=earth_radius_m,
+            )
+            if ax2 is not None and distance_segments:
+                ax2.add_collection(
+                    LineCollection(
+                        distance_segments,
+                        colors=colors[particle_start + distance_indices],
+                        alpha=0.7,
+                        linewidths=1,
+                    )
                 )
 
-    # Second pass: compute and plot population statistics
-    if ax4 is not None:
-        for pop_idx in range(n_populations):
-            if population_stats[pop_idx]['times']:
-                # Create a common time grid for interpolation
-                all_times = np.concatenate(population_stats[pop_idx]['times'])
-                min_t, max_t = np.min(all_times), np.max(all_times)
-                common_time = np.linspace(min_t, max_t, 100)
+            if ax4 is not None:
+                per_population_segments = {pop_idx: [] for pop_idx in range(n_populations)}
+                for local_idx, (time_hours, distances) in particle_distances.items():
+                    pop_idx = int(population_ids[particle_start + local_idx])
+                    if pop_idx not in common_times or time_hours.size < 2:
+                        continue
+                    per_population_segments[pop_idx].append(np.column_stack((time_hours, distances)))
+                    interpolated = np.interp(common_times[pop_idx], time_hours, distances)
+                    distance_sums[pop_idx] += interpolated
+                    distance_sums_sq[pop_idx] += interpolated * interpolated
+                    distance_counts[pop_idx] += 1
+                for pop_idx, segments in per_population_segments.items():
+                    if segments:
+                        ax4.add_collection(
+                            LineCollection(segments, colors=[pop_colors[pop_idx]], alpha=0.3, linewidths=0.8)
+                        )
 
-                # Interpolate all particle distances onto common time grid
-                interpolated_distances = []
-                for time_arr, dist_arr in zip(
-                    population_stats[pop_idx]['times'], population_stats[pop_idx]['distances'], strict=True
-                ):
-                    if len(time_arr) > 1:  # Need at least 2 points for interpolation
-                        interp_dist = np.interp(common_time, time_arr, dist_arr)
-                        interpolated_distances.append(interp_dist)
-
-                if interpolated_distances:
-                    # Convert to array for easy statistics
-                    distances_array = np.array(interpolated_distances)
-
-                    # Compute mean and standard deviation
-                    mean_distances = np.mean(distances_array, axis=0)
-                    std_distances = np.std(distances_array, axis=0)
-
-                    # Plot mean line (thick)
-                    ax4.plot(
-                        common_time,
-                        mean_distances,
-                        color=pop_colors[pop_idx],
-                        linewidth=3,
-                        label=f'{population_names[pop_idx]} (mean)',
-                    )
-
-                    # Plot standard deviation bands
-                    ax4.fill_between(
-                        common_time,
-                        mean_distances - std_distances,
-                        mean_distances + std_distances,
-                        color=pop_colors[pop_idx],
-                        alpha=0.2,
-                        label=f'{population_names[pop_idx]} (+/-1 std)',
-                    )
-
-        ax4.legend()
-        ax4.autoscale()
-        ax4.grid(True, alpha=0.3)
+        if ax2 is not None:
+            ax2.autoscale()
+            ax2.grid(True, alpha=0.3)
+        if ax4 is not None:
+            for pop_idx, common_time in common_times.items():
+                count = distance_counts[pop_idx]
+                if count <= 0:
+                    continue
+                mean_distances = distance_sums[pop_idx] / count
+                variance = np.maximum(distance_sums_sq[pop_idx] / count - mean_distances**2, 0.0)
+                std_distances = np.sqrt(variance)
+                ax4.plot(
+                    common_time,
+                    mean_distances,
+                    color=pop_colors[pop_idx],
+                    linewidth=3,
+                    label=f'{population_names[pop_idx]} (mean)',
+                )
+                ax4.fill_between(
+                    common_time,
+                    mean_distances - std_distances,
+                    mean_distances + std_distances,
+                    color=pop_colors[pop_idx],
+                    alpha=0.2,
+                    label=f'{population_names[pop_idx]} (+/-1 std)',
+                )
+            if common_times:
+                ax4.legend()
+                ax4.autoscale()
+            ax4.grid(True, alpha=0.3)
 
     plt.tight_layout()
-
     # Save plot if requested
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)

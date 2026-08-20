@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 import yaml
+from pyproj import CRS
 
 from sedtrails.application_interfaces.validator import SedtrailsYamlLoader
 from sedtrails.particle_tracer.timer import convert_duration_string_to_seconds
@@ -37,6 +38,20 @@ class RestartParticleState:
     pop_ids: np.ndarray
     alive_mask: np.ndarray
     in_domain_mask: np.ndarray
+    restart_seconds: float | None
+
+
+RESTART_SEED_WRITE_CHUNK_SIZE = 65_536
+
+
+@dataclass(frozen=True)
+class _RestartStreamContext:
+    """Describe the final particle state that is streamed for a restart."""
+
+    particle_dim: str
+    time_dim: str | None
+    time_index: int | None
+    n_particles: int
     restart_seconds: float | None
 
 
@@ -129,7 +144,7 @@ def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[st
     if not input_path.is_absolute():
         input_path = config_path.parent / input_path
 
-    return {
+    format_config = {
         'input_file': str(input_path),
         'input_format': input_format,
         'reference_date': input_model.get('reference_date', '1970-01-01'),
@@ -137,6 +152,94 @@ def _restart_format_config(config: dict[str, Any], config_path: Path) -> dict[st
         'sediment_fraction_index': input_model.get('sediment_fraction_index', 0),
         'sediment_fraction_name': input_model.get('sediment_fraction_name'),
     }
+    for name in (
+        'coordinate_system',
+        'source_crs',
+        'metric_crs',
+        'runtime_geometry',
+        'surface_model',
+        'earth_radius_m',
+        'longitude_wrap',
+        'velocity_basis',
+    ):
+        if name in input_model:
+            format_config[name] = input_model[name]
+    return format_config
+
+
+def _validate_restart_coordinate_compatibility(ds: xr.Dataset, config: dict[str, Any]) -> None:
+    """Reject checkpoint and base configurations with incompatible geometry."""
+    dataset_system = ds.attrs.get('coordinate_system')
+    if dataset_system is None:
+        return
+
+    input_model = config.get('general', {}).get('input_model', {})
+    config_system = input_model.get('coordinate_system')
+    if config_system not in (None, 'auto'):
+        dataset_normalized = _normalized_coordinate_label(dataset_system)
+        config_normalized = _normalized_coordinate_label(config_system)
+        if dataset_normalized != config_normalized:
+            raise ValueError(
+                'Restart coordinate_system does not match the base configuration: '
+                f'{dataset_system!r} versus {config_system!r}.'
+            )
+
+    for name in ('runtime_geometry', 'surface_model', 'velocity_basis'):
+        dataset_value = ds.attrs.get(name)
+        config_value = input_model.get(name)
+        if dataset_value is None or config_value in (None, 'auto'):
+            continue
+        if str(dataset_value).strip().lower() != str(config_value).strip().lower():
+            raise ValueError(
+                f'Restart {name} does not match the base configuration: '
+                f'{dataset_value!r} versus {config_value!r}.'
+            )
+
+    for name in ('source_crs', 'metric_crs'):
+        dataset_value = ds.attrs.get(name)
+        config_value = input_model.get(name)
+        if dataset_value in (None, '') or config_value in (None, '', 'auto', 'auto_utm'):
+            continue
+        try:
+            compatible = CRS.from_user_input(dataset_value) == CRS.from_user_input(config_value)
+        except Exception:
+            compatible = str(dataset_value).strip() == str(config_value).strip()
+        if not compatible:
+            raise ValueError(
+                f'Restart {name} does not match the base configuration: '
+                f'{dataset_value!r} versus {config_value!r}.'
+            )
+
+    dataset_radius = ds.attrs.get('earth_radius_m')
+    config_radius = input_model.get('earth_radius_m')
+    if dataset_radius is not None and config_radius is not None and not np.isclose(
+        float(dataset_radius),
+        float(config_radius),
+        rtol=0.0,
+        atol=1.0e-6,
+    ):
+        raise ValueError(
+            'Restart earth_radius_m does not match the base configuration: '
+            f'{dataset_radius!r} versus {config_radius!r}.'
+        )
+
+
+def _normalized_coordinate_label(value: Any) -> str:
+    """Normalize public projected/geographic coordinate labels."""
+    normalized = str(value).strip().lower().replace('_', '-')
+    if normalized in {
+        'geo',
+        'geographic',
+        'spherical',
+        'lon-lat',
+        'lonlat',
+        'longlat',
+        'latitude-longitude',
+    }:
+        return 'geographic'
+    if normalized in {'projected', 'cartesian'}:
+        return 'projected'
+    return normalized
 
 
 def _validate_restart_time_matches_input(
@@ -296,6 +399,179 @@ def _extract_restart_state(ds: xr.Dataset) -> RestartParticleState:
     )
 
 
+def _checkpoint_restart_seconds(ds: xr.Dataset) -> float | None:
+    """Return the latest finite checkpoint time without loading a long time axis."""
+    if 'time' not in ds:
+        return None
+
+    time_var = ds['time']
+    if time_var.ndim == 0:
+        value = float(np.asarray(time_var.values))
+        return value if np.isfinite(value) else None
+    if time_var.ndim != 1:
+        return None
+
+    latest = -np.inf
+    time_dim = time_var.dims[0]
+    for start in range(0, int(time_var.size), RESTART_SEED_WRITE_CHUNK_SIZE):
+        stop = min(start + RESTART_SEED_WRITE_CHUNK_SIZE, int(time_var.size))
+        values = np.asarray(time_var.isel({time_dim: slice(start, stop)}).values, dtype=float)
+        if np.any(np.isfinite(values)):
+            latest = max(latest, float(np.nanmax(values)))
+    return None if not np.isfinite(latest) else latest
+
+
+def _restart_stream_context(ds: xr.Dataset) -> _RestartStreamContext:
+    """Describe the final state to stream for restart generation."""
+    is_checkpoint = (
+        ds.attrs.get('sedtrails_file_kind') == 'checkpoint'
+        or (ds['x'].ndim == 1 and ds['y'].ndim == 1)
+    )
+    if is_checkpoint:
+        if ds['x'].ndim != 1 or ds['y'].ndim != 1 or ds['x'].shape != ds['y'].shape:
+            raise ValueError("Checkpoint output must contain matching 1D 'x' and 'y' particle arrays.")
+        return _RestartStreamContext(
+            particle_dim=ds['x'].dims[0],
+            time_dim=None,
+            time_index=None,
+            n_particles=int(ds['x'].shape[0]),
+            restart_seconds=_checkpoint_restart_seconds(ds),
+        )
+
+    if _is_time_particle_layout(ds):
+        time_dim = ds['time'].dims[0]
+        particle_dim = ds['x'].dims[1]
+        if ds['x'].dims[1] != ds['y'].dims[1] or ds['x'].shape != ds['y'].shape:
+            raise ValueError("Expected matching time-major 'x' and 'y' particle arrays.")
+        time_index = _last_written_time_index(ds)
+        time_value = float(np.asarray(ds['time'].isel({time_dim: time_index}).values))
+        return _RestartStreamContext(
+            particle_dim=particle_dim,
+            time_dim=time_dim,
+            time_index=time_index,
+            n_particles=int(ds['x'].shape[1]),
+            restart_seconds=time_value if np.isfinite(time_value) else None,
+        )
+
+    raise ValueError(
+        'Restart generation requires SedTRAILS time-major trajectory output '
+        "('x'/'y' shaped as n_timesteps x n_particles with 1D 'time') "
+        'or sedtrails_checkpoint.nc. Legacy particle-major trajectory files are not supported.'
+    )
+
+
+def _restart_chunk_variable(
+    ds: xr.Dataset,
+    name: str,
+    context: _RestartStreamContext,
+    particle_slice: slice,
+) -> np.ndarray:
+    """Read one particle-sized field chunk at the restart timestep."""
+    variable = ds[name]
+    if context.particle_dim not in variable.dims:
+        raise ValueError(f"Restart field '{name}' does not use the particle dimension.")
+    indexers = {context.particle_dim: particle_slice}
+    if context.time_dim is not None and context.time_dim in variable.dims:
+        indexers[context.time_dim] = context.time_index
+    values = np.asarray(variable.isel(indexers).values)
+    expected_shape = (particle_slice.stop - particle_slice.start,)
+    if values.shape != expected_shape:
+        raise ValueError(f"Restart field '{name}' does not resolve to a particle vector.")
+    return values
+
+
+def _stream_restart_chunks(ds: xr.Dataset, context: _RestartStreamContext):
+    """Yield valid-mask restart chunks without materializing all particle arrays."""
+    for start in range(0, context.n_particles, RESTART_SEED_WRITE_CHUNK_SIZE):
+        particle_slice = slice(start, min(start + RESTART_SEED_WRITE_CHUNK_SIZE, context.n_particles))
+        x_values = np.asarray(_restart_chunk_variable(ds, 'x', context, particle_slice), dtype=float)
+        y_values = np.asarray(_restart_chunk_variable(ds, 'y', context, particle_slice), dtype=float)
+        if 'population_id' in ds:
+            pop_ids = np.asarray(
+                _restart_chunk_variable(ds, 'population_id', context, particle_slice),
+                dtype=int,
+            )
+        else:
+            pop_ids = np.zeros(x_values.size, dtype=int)
+
+        alive_mask = np.ones(x_values.size, dtype=bool)
+        if 'status_alive' in ds:
+            alive_mask = _status_values_to_mask(
+                _restart_chunk_variable(ds, 'status_alive', context, particle_slice)
+            )
+        in_domain_mask = np.ones(x_values.size, dtype=bool)
+        if 'status_domain' in ds:
+            in_domain_mask = _status_values_to_mask(
+                _restart_chunk_variable(ds, 'status_domain', context, particle_slice)
+            )
+        if alive_mask.shape != x_values.shape or in_domain_mask.shape != x_values.shape:
+            raise ValueError('Restart status fields must resolve to particle vectors.')
+
+        keep_mask = np.isfinite(x_values) & np.isfinite(y_values) & alive_mask & in_domain_mask
+        yield x_values, y_values, pop_ids, keep_mask
+
+
+def _write_streamed_restart_seed_files(
+    ds: xr.Dataset,
+    context: _RestartStreamContext,
+    populations: list[dict[str, Any]],
+    seeds_dir: Path,
+) -> tuple[dict[int, Path], np.ndarray, int]:
+    """Stream final-state chunks once into temporary per-population restart CSVs."""
+    seed_files: dict[int, Path] = {}
+    temporary_files: dict[int, Path] = {}
+    handles: dict[int, Any] = {}
+    population_counts = np.zeros(len(populations), dtype=np.int64)
+    retained_particles = 0
+    completed = False
+    try:
+        for pop_idx, population in enumerate(populations):
+            pop_name = str(population.get('name', f'population_{pop_idx + 1}'))
+            points_file = seeds_dir / f'{pop_name}.restart_points.csv'
+            temporary_file = points_file.with_name(f'{points_file.name}.tmp')
+            temporary_file.unlink(missing_ok=True)
+            handle = open(temporary_file, 'w', encoding='utf-8')
+            handle.write('x,y\n')
+            seed_files[pop_idx] = points_file
+            temporary_files[pop_idx] = temporary_file
+            handles[pop_idx] = handle
+
+        for x_values, y_values, pop_ids, keep_mask in _stream_restart_chunks(ds, context):
+            retained_particles += int(np.count_nonzero(keep_mask))
+            configured = keep_mask & (pop_ids >= 0) & (pop_ids < len(populations))
+            if not np.any(configured):
+                continue
+            population_counts += np.bincount(
+                pop_ids[configured],
+                minlength=len(populations),
+            )[:len(populations)]
+            for pop_idx, handle in handles.items():
+                selected = configured & (pop_ids == pop_idx)
+                if np.any(selected):
+                    np.savetxt(
+                        handle,
+                        np.column_stack((x_values[selected], y_values[selected])),
+                        fmt='%.8f,%.8f',
+                    )
+
+        for handle in handles.values():
+            handle.close()
+        handles.clear()
+        for pop_idx, temporary_file in temporary_files.items():
+            if population_counts[pop_idx] <= 0:
+                temporary_file.unlink(missing_ok=True)
+                seed_files.pop(pop_idx)
+            else:
+                temporary_file.replace(seed_files[pop_idx])
+        completed = True
+        return seed_files, population_counts, retained_particles
+    finally:
+        for handle in handles.values():
+            handle.close()
+        if not completed:
+            for temporary_file in temporary_files.values():
+                temporary_file.unlink(missing_ok=True)
+
 def _path_relative_to_cwd(path: Path) -> str:
     """Return path as POSIX text relative to current working directory when possible."""
     try:
@@ -409,19 +685,14 @@ def create_restart_from_netcdf(
     ds = _open_restart_dataset(netcdf_path)
     try:
         _validate_restart_dataset_schema(ds, netcdf_path)
+        _validate_restart_coordinate_compatibility(ds, config)
 
-        restart_state = _extract_restart_state(ds)
-        n_particles = restart_state.x.shape[0]
-        keep_mask = (
-            np.isfinite(restart_state.x)
-            & np.isfinite(restart_state.y)
-            & restart_state.alive_mask
-            & restart_state.in_domain_mask
+        restart_context = _restart_stream_context(ds)
+        restart_dt = _infer_restart_datetime(
+            config,
+            restart_context.restart_seconds,
+            _dataset_reference_date(ds, config),
         )
-        if not np.any(keep_mask):
-            raise ValueError('No valid particle positions available to seed restart.')
-
-        restart_dt = _infer_restart_datetime(config, restart_state.restart_seconds, _dataset_reference_date(ds, config))
         _validate_restart_time_matches_input(config, config_path, restart_dt)
         restart_time = _format_datetime(restart_dt)
 
@@ -444,35 +715,29 @@ def create_restart_from_netcdf(
             seeds_dir = Path(seed_points_dir)
         seeds_dir.mkdir(parents=True, exist_ok=True)
 
-        seed_files: dict[str, Path] = {}
+        streamed_seed_files, population_counts, retained_particles = _write_streamed_restart_seed_files(
+            ds,
+            restart_context,
+            populations,
+            seeds_dir,
+        )
+        if retained_particles <= 0:
+            raise ValueError('No valid particle positions available to seed restart.')
+        if not streamed_seed_files:
+            raise ValueError('No populations had active particles to include in restart files.')
 
         for pop_idx, population in enumerate(populations):
-            pop_name = str(population.get('name', f'population_{pop_idx + 1}'))
-
-            selected = [
-                (float(restart_state.x[i]), float(restart_state.y[i]))
-                for i in range(n_particles)
-                if keep_mask[i] and int(restart_state.pop_ids[i]) == pop_idx
-            ]
-
             population.setdefault('seeding', {})
             population['seeding']['release_start'] = restart_time
-
-            if not selected:
+            if population_counts[pop_idx] <= 0:
                 # Disable seeding for this population on restart (avoid reseeding new particles).
                 population['seeding']['quantity'] = 0
                 continue
 
-            points_file = seeds_dir / f'{pop_name}.restart_points.csv'
-            with open(points_file, 'w', encoding='utf-8') as handle:
-                handle.write('x,y\n')
-                for x_coord, y_coord in selected:
-                    handle.write(f'{x_coord:.8f},{y_coord:.8f}\n')
-
             population['seeding']['quantity'] = 1
             population['seeding']['strategy'] = {
                 'file_points': {
-                    'path': _path_relative_to_cwd(points_file),
+                    'path': _path_relative_to_cwd(streamed_seed_files[pop_idx]),
                     'x_col': 'x',
                     'y_col': 'y',
                     'has_header': True,
@@ -480,19 +745,17 @@ def create_restart_from_netcdf(
                 }
             }
 
-            seed_files[pop_name] = points_file
-
-        if not seed_files:
-            raise ValueError('No populations had active particles to include in restart files.')
-
+        seed_files = {
+            str(population.get('name', f'population_{pop_idx + 1}')): streamed_seed_files[pop_idx]
+            for pop_idx, population in enumerate(populations)
+            if pop_idx in streamed_seed_files
+        }
         config.setdefault('time', {})
         config['time']['start'] = restart_time
         config['time']['duration'] = remaining_duration
 
         with open(output_path, 'w', encoding='utf-8') as handle:
             yaml.safe_dump(config, handle, sort_keys=False)
-
-        retained_particles = int(np.count_nonzero(keep_mask))
         return RestartSummary(
             output_config=output_path,
             seed_files=seed_files,

@@ -8,12 +8,40 @@ import pytest
 import xarray as xr
 
 from sedtrails.pathway_visualizer.trajectories import (
+    _distance_line_segments,
+    _line_segments,
     _sample_dataset,
     _select_sample_indices,
     _trajectory_arrays,
     plot_trajectories,
     read_netcdf,
 )
+
+
+def test_geographic_trajectory_segments_split_at_antimeridian():
+    """A map line must not draw the long way across the longitude seam."""
+    segments, indices, _, _, _ = _line_segments(
+        np.array([[179.0, 179.8, -179.8, -179.0]]),
+        np.array([[0.0, 0.0, 0.0, 0.0]]),
+        geographic=True,
+    )
+
+    assert len(segments) == 2
+    np.testing.assert_array_equal(indices, [0, 0])
+
+
+def test_geographic_trajectory_distance_is_reported_in_metres():
+    """Geographic distance panels use great-circle metres."""
+    _, _, particle_distances = _distance_line_segments(
+        np.array([[179.9, -179.9]]),
+        np.array([[0.0, 0.0]]),
+        np.array([[0.0, 60.0]]),
+        0.0,
+        geographic=True,
+    )
+
+    _, distance = particle_distances[0]
+    assert distance[-1] == pytest.approx(22_239.0, rel=2.0e-4)
 
 
 def test_plot_trajectories_accepts_fixed_width_population_names(monkeypatch, tmp_path):
@@ -408,3 +436,133 @@ def test_plot_trajectories_validates_sampling_options(monkeypatch):
 
     with pytest.raises(ValueError, match='marker_size'):
         plot_trajectories(ds, marker_size=0)
+def test_sample_dataset_applies_default_particle_and_point_budgets():
+    """The low-level API is bounded unless callers explicitly opt out."""
+    import sedtrails.pathway_visualizer.trajectories as trajectory_module
+
+    n_particles = trajectory_module.DEFAULT_MAX_PLOT_PARTICLES + 1
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.zeros((2, n_particles))),
+            'y': (('n_timesteps', 'n_particles'), np.zeros((2, n_particles))),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+        }
+    )
+
+    sampled, total, selected = _sample_dataset(ds)
+
+    assert total == n_particles
+    assert selected == trajectory_module.DEFAULT_MAX_PLOT_PARTICLES
+    assert sampled.sizes['n_particles'] == trajectory_module.DEFAULT_MAX_PLOT_PARTICLES
+
+    time_ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.zeros((11, 5))),
+            'y': (('n_timesteps', 'n_particles'), np.zeros((11, 5))),
+            'time': (('n_timesteps',), np.arange(11, dtype=float)),
+        }
+    )
+    decimated, _, _ = _sample_dataset(
+        time_ds,
+        max_particles=None,
+        max_plot_points=20,
+    )
+    np.testing.assert_array_equal(decimated['time'].values, np.array([0.0, 3.0, 6.0, 10.0]))
+
+    full_resolution, _, _ = _sample_dataset(
+        time_ds,
+        max_particles=None,
+        max_plot_points=None,
+    )
+    assert full_resolution.sizes['n_timesteps'] == 11
+
+
+def test_plot_trajectories_renders_selected_particles_in_bounded_batches(tmp_path, monkeypatch):
+    """Rendering must not materialize one coordinate or segment batch for all tracks."""
+    import sedtrails.pathway_visualizer.trajectories as trajectory_module
+
+    n_particles = trajectory_module.DEFAULT_RENDER_PARTICLE_CHUNK + 1
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.zeros((2, n_particles))),
+            'y': (('n_timesteps', 'n_particles'), np.zeros((2, n_particles))),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+            'population_id': (('n_particles',), np.zeros(n_particles, dtype=int)),
+        },
+        coords={'n_populations': np.arange(1)},
+    )
+    original_arrays = trajectory_module._trajectory_arrays
+    observed_batch_sizes = []
+
+    def recording_arrays(chunk_ds):
+        arrays = original_arrays(chunk_ds)
+        observed_batch_sizes.append(arrays[0].shape[0])
+        return arrays
+
+    monkeypatch.setattr(trajectory_module, '_trajectory_arrays', recording_arrays)
+    fig, _ = plot_trajectories(
+        ds,
+        output=tmp_path / 'batched.png',
+        max_particles=None,
+        max_plot_points=None,
+        panels='all',
+        markers='none',
+    )
+    try:
+        assert max(observed_batch_sizes) <= trajectory_module.DEFAULT_RENDER_PARTICLE_CHUNK
+        assert len(observed_batch_sizes) >= 4
+    finally:
+        plt.close(fig)
+
+def test_sample_dataset_caps_particle_selection_to_the_point_budget():
+    """A point budget also bounds explicitly unbounded particle requests."""
+    time_ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.zeros((11, 5))),
+            'y': (('n_timesteps', 'n_particles'), np.zeros((11, 5))),
+            'time': (('n_timesteps',), np.arange(11, dtype=float)),
+        }
+    )
+
+    sampled, total, selected = _sample_dataset(
+        time_ds,
+        max_particles=None,
+        max_plot_points=4,
+    )
+
+    assert total == 5
+    assert selected == 2
+    assert sampled.sizes['n_particles'] * sampled.sizes['n_timesteps'] <= 4
+    np.testing.assert_array_equal(sampled['time'].values, np.array([0.0, 10.0]))
+
+
+def test_plotting_public_entrypoints_preserve_existing_positional_arguments(monkeypatch):
+    """Adding the point budget must not shift established positional parameters."""
+    from sedtrails.application_interfaces import api as api_module
+    import sedtrails.pathway_visualizer as visualizer_module
+
+    ds = xr.Dataset(
+        data_vars={
+            'x': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'y': (('n_timesteps', 'n_particles'), np.array([[0.0], [1.0]])),
+            'time': (('n_timesteps',), np.array([0.0, 60.0])),
+        }
+    )
+    fig, _ = plot_trajectories(ds, None, 1, None, 0, 'none', 7.0, 'spatial', False)
+    plt.close(fig)
+
+    observed = {}
+
+    def fake_plot(*args, **kwargs):
+        observed['args'] = args
+        observed['kwargs'] = kwargs
+
+    monkeypatch.setattr(visualizer_module, 'read_netcdf', lambda _: ds)
+    monkeypatch.setattr(visualizer_module, 'plot_trajectories', fake_plot)
+    api_module.plot_trajectories('results.nc', None, 1, None, 0, 'none', 7.0, 'spatial', False)
+
+    assert observed['args'] == (ds,)
+    assert observed['kwargs']['markers'] == 'none'
+    assert observed['kwargs']['marker_size'] == 7.0
+    assert observed['kwargs']['panels'] == 'spatial'
+    assert observed['kwargs']['show'] is False

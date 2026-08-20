@@ -30,3 +30,22 @@ class BaseFormatPlugin(ABC):
             Additional keyword arguments passed through to the implementation.
         """
         pass
+
+    def _add_runtime_coordinate_metadata(self, metadata) -> None:
+        """Add explicitly configured runtime geometry metadata.
+
+        Parameters
+        ----------
+        metadata : object
+            SedTRAILS metadata container exposing ``add(name, value)``.
+        """
+        for name in (
+            'runtime_geometry',
+            'surface_model',
+            'earth_radius_m',
+            'longitude_wrap',
+            'velocity_basis',
+        ):
+            value = getattr(self, name, None)
+            if value is not None:
+                metadata.add(name, value)

@@ -10,12 +10,15 @@ ncFormat=4
 ```
 """
 
+import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import xarray as xr
 
+from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
@@ -24,6 +27,21 @@ from sedtrails.transport_converter.time_utils import decompress_time_info
 
 class FormatPlugin(BaseFormatPlugin):
     """Plugin for converting Delft3D4 NetCDF format to SedTRAILS format."""
+
+    SELECTABLE_FIELDS = frozenset(
+        {
+            'bed_level',
+            'depth_avg_flow_velocity',
+            'bed_load_transport',
+            'suspended_transport',
+            'water_depth',
+            'mean_bed_shear_stress',
+            'max_bed_shear_stress',
+            'sediment_concentration',
+            'nonlinear_wave_velocity',
+        }
+    )
+    _CENTERING_PEAK_ARRAYS = 12
 
     def __init__(self, input_file: str, morfac: float = 1.0):
         """
@@ -46,6 +64,15 @@ class FormatPlugin(BaseFormatPlugin):
         self.sediment_fraction_labels: list[str] | None = None
         self.input_data: Optional[xr.Dataset] = None
         self._input_variables: List[str] = []
+        self.coordinate_system: str | None = None
+        self.source_crs: str | None = None
+        self.metric_crs: str | None = None
+        self.runtime_geometry: str | None = None
+        self.surface_model: str | None = None
+        self.earth_radius_m: float | None = None
+        self.longitude_wrap: str | None = None
+        self.velocity_basis: str | None = None
+        self._structured_topology_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -72,7 +99,12 @@ class FormatPlugin(BaseFormatPlugin):
         return self._input_variables
 
     def convert(
-        self, current_time=None, reading_interval=None, reference_date: Optional[np.datetime64] = None
+        self,
+        current_time=None,
+        reading_interval=None,
+        reference_date: Optional[np.datetime64] = None,
+        required_fields=None,
+        max_memory_bytes: int | None = None,
     ) -> SedtrailsData:
         """
         Delft3D4 NetCDF to SedtrailsData.
@@ -85,6 +117,11 @@ class FormatPlugin(BaseFormatPlugin):
             Reading interval in seconds
         reference_date : np.datetime64, optional
             Reference date for converting time values
+        required_fields : sequence of str, optional
+            SedTRAILS source fields to materialize. Omission preserves the
+            historical all-fields conversion.
+        max_memory_bytes : int, optional
+            Estimated byte limit for time-varying fields in this window.
 
         Returns
         -------
@@ -100,53 +137,62 @@ class FormatPlugin(BaseFormatPlugin):
 
         time_info = self._decompress_time(time_info)
 
+        selected_fields = self._selectable_required_fields(required_fields)
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
+        time_start_idx, time_end_idx = self._limit_time_slice_by_memory(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            current_time=current_time,
+            selected_fields=selected_fields,
+            max_memory_bytes=max_memory_bytes,
+        )
 
         if time_start_idx is not None or time_end_idx is not None:
             time_slice = slice(time_start_idx, time_end_idx)
             time_info = self._slice_time_info(time_info, time_slice)
 
-        mapped_data = self._map_delft3d4_variables(time_info, time_start_idx, time_end_idx)
+        mapped_data = self._map_delft3d4_variables(
+            time_info,
+            time_start_idx,
+            time_end_idx,
+            required_fields=selected_fields,
+        )
         seconds_since_ref = time_info['seconds_since_reference']
         self.reference_date = time_info['reference_date']
 
-        depth_avg_velocity_magnitude = np.sqrt(
-            mapped_data['flow_velocity_x'] ** 2 + mapped_data['flow_velocity_y'] ** 2
+        depth_avg_flow_velocity = self._mapped_vector_field(
+            mapped_data,
+            'flow_velocity',
+            selected='depth_avg_flow_velocity' in selected_fields,
         )
-
-        bed_load_magnitude = np.sqrt(
-            mapped_data['bed_load_transport_x'] ** 2 + mapped_data['bed_load_transport_y'] ** 2
+        bed_load_transport = self._mapped_vector_field(
+            mapped_data,
+            'bed_load_transport',
+            selected='bed_load_transport' in selected_fields,
         )
-
-        suspended_transport_magnitude = np.sqrt(
-            mapped_data['suspended_transport_x'] ** 2 + mapped_data['suspended_transport_y'] ** 2
+        suspended_transport = self._mapped_vector_field(
+            mapped_data,
+            'suspended_transport',
+            selected='suspended_transport' in selected_fields,
         )
+        if 'mean_bed_shear_stress' in selected_fields:
+            mean_bed_shear_stress = np.hypot(
+                mapped_data['bed_shear_stress_x'],
+                mapped_data['bed_shear_stress_y'],
+            )
+        else:
+            mean_bed_shear_stress = None
 
-        mean_bed_shear_stress = np.sqrt(mapped_data['bed_shear_stress_x'] ** 2 + mapped_data['bed_shear_stress_y'] ** 2)
-
-        depth_avg_flow_velocity = {
-            'x': mapped_data['flow_velocity_x'],
-            'y': mapped_data['flow_velocity_y'],
-            'magnitude': depth_avg_velocity_magnitude,
-        }
-
-        bed_load_transport = {
-            'x': mapped_data['bed_load_transport_x'],
-            'y': mapped_data['bed_load_transport_y'],
-            'magnitude': bed_load_magnitude,
-        }
-
-        suspended_transport = {
-            'x': mapped_data['suspended_transport_x'],
-            'y': mapped_data['suspended_transport_y'],
-            'magnitude': suspended_transport_magnitude,
-        }
-
-        nonlinear_wave_velocity = {
-            'x': np.zeros_like(mapped_data['flow_velocity_x']),
-            'y': np.zeros_like(mapped_data['flow_velocity_y']),
-            'magnitude': np.zeros_like(depth_avg_velocity_magnitude),
-        }
+        if 'nonlinear_wave_velocity' in selected_fields:
+            zero_shape = (len(seconds_since_ref), mapped_data['x'].size)
+            nonlinear_wave_velocity = {
+                'x': np.zeros(zero_shape, dtype=float),
+                'y': np.zeros(zero_shape, dtype=float),
+                'magnitude': np.zeros(zero_shape, dtype=float),
+            }
+        else:
+            nonlinear_wave_velocity = None
 
         metadata = SedtrailsMetadata(
             flowfield_domain={
@@ -156,6 +202,7 @@ class FormatPlugin(BaseFormatPlugin):
                 'y_max': np.max(mapped_data['y']),
             }
         )
+        self._add_coordinate_metadata(metadata)
 
         fractions = 1
         for candidate_name in ('bed_load_transport_x', 'suspended_transport_x', 'sediment_concentration'):
@@ -167,22 +214,48 @@ class FormatPlugin(BaseFormatPlugin):
         if mapped_data.get('sediment_fraction_labels'):
             metadata.add('sediment_fraction_labels', mapped_data['sediment_fraction_labels'])
 
+        triangles = self._active_structured_triangles_from_dataset()
         return SedtrailsData(
             times=seconds_since_ref,
             reference_date=self.reference_date,
             x=mapped_data['x'],
             y=mapped_data['y'],
-            bed_level=mapped_data['bed_level'],
+            bed_level=mapped_data.get('bed_level'),
             depth_avg_flow_velocity=depth_avg_flow_velocity,
             fractions=fractions,
             bed_load_transport=bed_load_transport,
             suspended_transport=suspended_transport,
-            water_depth=mapped_data['water_depth'],
+            water_depth=mapped_data.get('water_depth'),
             mean_bed_shear_stress=mean_bed_shear_stress,
-            max_bed_shear_stress=mapped_data['max_bed_shear_stress'],
-            sediment_concentration=mapped_data['sediment_concentration'],
+            max_bed_shear_stress=mapped_data.get('max_bed_shear_stress'),
+            sediment_concentration=mapped_data.get('sediment_concentration'),
             nonlinear_wave_velocity=nonlinear_wave_velocity,
+            node_x=mapped_data['x'],
+            node_y=mapped_data['y'],
+            face_node_connectivity=triangles,
+            particle_face_connectivity=triangles,
             metadata=metadata,
+        )
+
+    def get_seeding_field_data(self):
+        """Return active Delft3D4 coordinates, topology, and CRS metadata."""
+        self.load()
+        x_values, y_values = self.get_seeding_coordinates()
+        triangles = self._active_structured_triangles_from_dataset()
+        return SimpleNamespace(
+            x=x_values,
+            y=y_values,
+            face_node_connectivity=triangles,
+            particle_face_connectivity=triangles,
+            face_node_fill_value=-1,
+            coordinate_system=self._coordinate_system(),
+            source_crs=self.source_crs,
+            metric_crs=self.metric_crs,
+            runtime_geometry=self.runtime_geometry,
+            surface_model=self.surface_model,
+            earth_radius_m=self.earth_radius_m,
+            longitude_wrap=self.longitude_wrap,
+            velocity_basis=self._velocity_basis(),
         )
 
     def get_seeding_coordinates(self):
@@ -214,6 +287,106 @@ class FormatPlugin(BaseFormatPlugin):
             return x_values[valid], y_values[valid]
 
         raise KeyError("Required variables 'XZ'/'YZ' or 'XCOR'/'YCOR' not found in dataset")
+
+    def _coordinate_variables(self):
+        """Return the selected Delft3D4 horizontal coordinate variables."""
+        if self.input_data is None:
+            return None, None
+        if 'XZ' in self.input_data and 'YZ' in self.input_data:
+            return self.input_data['XZ'], self.input_data['YZ']
+        if 'XCOR' in self.input_data and 'YCOR' in self.input_data:
+            return self.input_data['XCOR'], self.input_data['YCOR']
+        return None, None
+
+    def _coordinate_system(self) -> str:
+        """Return the configured or inferred horizontal coordinate system."""
+        if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
+            return str(self.coordinate_system)
+        x_variable, y_variable = self._coordinate_variables()
+        return infer_coordinate_system_from_attrs(x_variable, y_variable)
+
+    def _velocity_basis(self) -> str:
+        """Return the vector basis after Delft3D4 ALFAS rotation."""
+        if self.velocity_basis is not None and str(self.velocity_basis).lower() != 'auto':
+            return str(self.velocity_basis)
+        return 'east_north' if self._coordinate_system() == 'geographic' else 'source_xy'
+
+    def _add_coordinate_metadata(self, metadata: SedtrailsMetadata) -> None:
+        """Add normalized coordinate configuration to converted metadata."""
+        metadata.add('coordinate_system', self._coordinate_system())
+        values = {
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
+            'runtime_geometry': self.runtime_geometry,
+            'surface_model': self.surface_model,
+            'earth_radius_m': self.earth_radius_m,
+            'longitude_wrap': self.longitude_wrap,
+            'velocity_basis': self._velocity_basis(),
+        }
+        for key, value in values.items():
+            if value is not None:
+                metadata.add(key, value)
+
+    def _active_structured_triangles_from_dataset(self) -> np.ndarray:
+        """Return active triangles remapped to flattened valid coordinates."""
+        x_variable, y_variable = self._coordinate_variables()
+        if x_variable is None or y_variable is None:
+            return np.empty((0, 3), dtype=np.int32)
+        x_values = np.asarray(x_variable.values)
+        y_values = np.asarray(y_variable.values)
+        if x_values.ndim != 2 or y_values.shape != x_values.shape:
+            return np.empty((0, 3), dtype=np.int32)
+
+        valid = self._valid_face_mask(x_values, y_values)
+        signature = self._structured_topology_signature(valid)
+        cache = self._structured_topology_cache
+        if cache is not None and cache.get('signature') == signature:
+            return cache['connectivity']
+
+        triangles = self._build_active_structured_triangles(valid)
+        self._structured_topology_cache = {
+            'signature': signature,
+            'connectivity': triangles,
+        }
+        return triangles
+
+    @staticmethod
+    def _structured_topology_signature(valid: np.ndarray) -> tuple[tuple[int, ...], bytes]:
+        """Return a content signature for the structured active-cell layout."""
+        contiguous = np.ascontiguousarray(valid, dtype=np.bool_)
+        digest = hashlib.sha256(memoryview(contiguous).cast('B')).digest()
+        return contiguous.shape, digest
+
+    @classmethod
+    def _build_active_structured_triangles(cls, valid: np.ndarray) -> np.ndarray:
+        """Build compact triangles for one structured active-cell layout."""
+        active_count = int(np.count_nonzero(valid))
+        index_dtype = np.int32 if active_count <= np.iinfo(np.int32).max else np.int64
+        mapping = np.full(valid.size, -1, dtype=index_dtype)
+        mapping[valid.ravel()] = np.arange(active_count, dtype=index_dtype)
+        rows, columns = valid.shape
+        if rows < 2 or columns < 2:
+            return np.empty((0, 3), dtype=index_dtype)
+        mapped = mapping.reshape(rows, columns)
+        lower_left = mapped[:-1, :-1].ravel()
+        lower_right = mapped[:-1, 1:].ravel()
+        upper_left = mapped[1:, :-1].ravel()
+        upper_right = mapped[1:, 1:].ravel()
+        cell_count = lower_left.size
+        triangles = np.empty((2 * cell_count, 3), dtype=index_dtype)
+        triangles[0::2] = np.column_stack((lower_left, upper_left, upper_right))
+        triangles[1::2] = np.column_stack((lower_left, upper_right, lower_right))
+        return cls._filter_active_triangles(triangles)
+
+    @staticmethod
+    def _filter_active_triangles(triangles: np.ndarray) -> np.ndarray:
+        """Return the candidate table directly when every triangle is active."""
+        active = np.all(triangles >= 0, axis=1)
+        if np.all(active):
+            return triangles
+        if not np.any(active):
+            return np.empty((0, 3), dtype=triangles.dtype)
+        return triangles[active]
 
     def load(self) -> Any:
         """Load the Delft3D4 NetCDF input dataset with xarray.
@@ -370,19 +543,189 @@ class FormatPlugin(BaseFormatPlugin):
         if current_time is None or reading_interval is None:
             return None, None
 
-        if reading_interval <= 0 or reading_interval >= time_info['seconds_since_reference'][-1]:
+        if reading_interval <= 0:
             return None, None
 
-        times_array = time_info['seconds_since_reference']
-        current_idx = np.searchsorted(times_array, current_time)
+        times_array = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        if times_array.size <= 2:
+            return None, None
 
-        netcdf_timestep = times_array[1] - times_array[0] if len(times_array) > 1 else 1.0
-        chunk_steps = max(10, int(reading_interval / netcdf_timestep))
-
-        start_idx = max(0, current_idx - chunk_steps // 4)
-        end_idx = min(len(times_array), current_idx + chunk_steps)
-
+        start_idx, bracket_end_idx = self._interpolation_bracket(times_array, current_time)
+        requested_end_time = float(current_time) + float(reading_interval)
+        requested_upper_idx = int(np.searchsorted(times_array, requested_end_time, side='left'))
+        requested_upper_idx = min(times_array.size - 1, max(bracket_end_idx - 1, requested_upper_idx))
+        end_idx = requested_upper_idx + 1
         return start_idx, end_idx
+
+    @classmethod
+    def _selectable_required_fields(cls, required_fields) -> set[str]:
+        """Return supported source fields selected for materialization."""
+        if required_fields is None:
+            return set(cls.SELECTABLE_FIELDS)
+        return set(required_fields).intersection(cls.SELECTABLE_FIELDS)
+
+    @staticmethod
+    def _mapped_vector_field(data: Dict, prefix: str, *, selected: bool) -> Dict | None:
+        """Build one selected vector field and its magnitude."""
+        if not selected:
+            return None
+        x_values = data[f'{prefix}_x']
+        y_values = data[f'{prefix}_y']
+        return {
+            'x': x_values,
+            'y': y_values,
+            'magnitude': np.hypot(x_values, y_values),
+        }
+
+    @staticmethod
+    def _interpolation_bracket(times: np.ndarray, current_time: float | None) -> tuple[int, int]:
+        """Return a two-plane slice bracketing the requested time."""
+        num_times = int(times.size)
+        if num_times <= 1:
+            return 0, num_times
+        if current_time is None:
+            return 0, 2
+
+        lower = int(np.searchsorted(times, current_time, side='right')) - 1
+        lower = min(max(lower, 0), num_times - 2)
+        return lower, lower + 2
+
+    def _limit_time_slice_by_memory(
+        self,
+        time_info: Dict,
+        start_idx: int | None,
+        end_idx: int | None,
+        *,
+        current_time: float | None,
+        selected_fields: set[str],
+        max_memory_bytes: int | None,
+    ) -> tuple[int | None, int | None]:
+        """Cap a time window by estimated retained field bytes."""
+        if max_memory_bytes is None:
+            return start_idx, end_idx
+
+        try:
+            memory_limit = int(max_memory_bytes)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('max_memory_bytes must be an integer byte count') from exc
+
+        times = np.asarray(time_info['seconds_since_reference'], dtype=float)
+        num_times = int(times.size)
+        bytes_per_plane = self._estimate_bytes_per_time_plane(selected_fields)
+        if num_times == 0 or bytes_per_plane == 0:
+            return start_idx, end_idx
+
+        required_planes = min(2, num_times)
+        required_bytes = required_planes * bytes_per_plane
+        if memory_limit < required_bytes:
+            fields_text = ', '.join(sorted(selected_fields)) or '<none>'
+            raise MemoryError(
+                f'Delft3D4 forcing requires at least {required_bytes} bytes for '
+                f'{required_planes} interpolation planes ({bytes_per_plane} bytes/plane) '
+                f'for fields [{fields_text}], but max_memory_bytes={memory_limit}. '
+                'Increase inputs.max_eulerian_memory_mb or request fewer fields.'
+            )
+
+        max_planes = min(num_times, max(required_planes, memory_limit // bytes_per_plane))
+        desired_start = 0 if start_idx is None else int(start_idx)
+        desired_end = num_times if end_idx is None else int(end_idx)
+        if desired_end - desired_start <= max_planes:
+            return start_idx, end_idx
+
+        bracket_start, bracket_end = self._interpolation_bracket(times, current_time)
+        latest_start = desired_end - max_planes
+        bounded_start = min(max(bracket_start, desired_start), latest_start)
+        bounded_start = max(desired_start, bounded_start)
+        if bracket_end > bounded_start + max_planes:
+            bounded_start = bracket_end - max_planes
+        return bounded_start, bounded_start + max_planes
+
+    def _estimate_bytes_per_time_plane(self, selected_fields: set[str]) -> int:
+        """Estimate peak float-array working bytes for one selected time plane."""
+        if self.input_data is None or not selected_fields:
+            return 0
+
+        x_variable, _ = self._coordinate_variables()
+        if x_variable is None:
+            return 0
+        spatial_size = int(np.prod(x_variable.shape, dtype=np.int64))
+        scalar_components = 0
+        if 'bed_level' in selected_fields:
+            # Include static bed memory as one plane rather than amortizing it
+            # over an arbitrarily large requested window.
+            scalar_components += 1
+        if 'water_depth' in selected_fields:
+            scalar_components += 1
+        if 'max_bed_shear_stress' in selected_fields:
+            scalar_components += 1
+        if 'sediment_concentration' in selected_fields:
+            scalar_components += self._source_fraction_count('R1')
+
+        vector_widths = []
+        if 'depth_avg_flow_velocity' in selected_fields:
+            vector_widths.append(('U1', 'V1', 1))
+        if 'mean_bed_shear_stress' in selected_fields:
+            vector_widths.append(('TAUKSI', 'TAUETA', 1))
+        if 'bed_load_transport' in selected_fields:
+            vector_widths.append(
+                ('SBUU', 'SBVV', self._source_fraction_count('SBUU', 'SBVV'))
+            )
+        if 'suspended_transport' in selected_fields:
+            vector_widths.append(
+                ('SSUU', 'SSVV', self._source_fraction_count('SSUU', 'SSVV'))
+            )
+
+        # Final vectors retain x, y, and magnitude. Bed-shear x/y remain in
+        # mapped_data while its magnitude is attached to SedtrailsData.
+        retained_components = scalar_components + 3 * sum(
+            width for _, _, width in vector_widths
+        )
+        if 'nonlinear_wave_velocity' in selected_fields:
+            retained_components += 3
+
+        peak_components = retained_components
+
+        # S1 fallback can simultaneously retain the original water-depth
+        # array, S1, dynamic/static bed, the replacement result, and the
+        # all-zero comparison mask. Four extra float-equivalent arrays are a
+        # conservative bound for that overlap.
+        if 'water_depth' in selected_fields and 'S1' in self.input_data:
+            peak_components = max(peak_components, scalar_components + 4)
+
+        selected_source_vectors = any(
+            u_name in self.input_data or v_name in self.input_data
+            for u_name, v_name, _ in vector_widths
+        )
+        shared_mask_components = 2 if selected_source_vectors else 0
+        prior_vector_outputs = 0
+        for _, _, width in vector_widths:
+            # _center_staggered_component retains source U/V, rolled values
+            # and masks, wet contributions, denominator/numerator, centered
+            # results, and rotation expressions. Twelve arrays per component
+            # width conservatively bounds the observed expression working set.
+            working_components = (
+                scalar_components
+                + shared_mask_components
+                + prior_vector_outputs
+                + self._CENTERING_PEAK_ARRAYS * width
+            )
+            peak_components = max(peak_components, working_components)
+            prior_vector_outputs += 2 * width
+
+        return peak_components * spatial_size * np.dtype(np.float64).itemsize
+
+    def _source_fraction_count(self, *variable_names: str) -> int:
+        """Return the largest source fraction count for candidate variables."""
+        if self.input_data is None:
+            return 1
+        count = 1
+        for variable_name in variable_names:
+            if variable_name not in self.input_data:
+                continue
+            variable = self.input_data[variable_name]
+            for dimension in ('LSED', 'LSEDTOT', 'LSTSCI'):
+                count = max(count, int(variable.sizes.get(dimension, 1)))
+        return count
 
     def _resolve_fraction_index(self, var: xr.DataArray, dim: str) -> int:
         """Resolve the configured sediment fraction index for a given fraction dimension."""
@@ -709,12 +1052,17 @@ class FormatPlugin(BaseFormatPlugin):
         )
 
     def _map_delft3d4_variables(
-        self, time_info: Dict, time_start_idx: Optional[int] = None, time_end_idx: Optional[int] = None
+        self,
+        time_info: Dict,
+        time_start_idx: Optional[int] = None,
+        time_end_idx: Optional[int] = None,
+        required_fields=None,
     ) -> Dict:
         """Map Delft3D4 variables to SedtrailsData structure."""
         if self.input_data is None:
             raise ValueError('Dataset not loaded. Call load() first.')
 
+        selected_fields = self._selectable_required_fields(required_fields)
         num_times = time_info['num_times']
         time_slice = (
             slice(time_start_idx, time_end_idx)
@@ -726,7 +1074,12 @@ class FormatPlugin(BaseFormatPlugin):
         sediment_keys = {'sediment_concentration'}
         fraction_labels = None
 
-        if 'NAMCON' in self.input_data:
+        needs_fraction_metadata = bool(
+            selected_fields.intersection(
+                {'bed_load_transport', 'suspended_transport', 'sediment_concentration'}
+            )
+        )
+        if needs_fraction_metadata and 'NAMCON' in self.input_data:
             fraction_labels = self._decode_fraction_labels(self.input_data['NAMCON'].values)
             self.sediment_fraction_labels = fraction_labels
 
@@ -744,30 +1097,41 @@ class FormatPlugin(BaseFormatPlugin):
         grid_shape = data['x'].shape
         valid_face_mask = self._valid_face_mask(data['x'], data['y'])
 
-        if 'DPS0' in self.input_data:
-            bottom_depth_var = self.input_data['DPS0']
-        elif 'DP0' in self.input_data:
-            bottom_depth_var = self.input_data['DP0']
-            bottom_depth_dims = tuple(bottom_depth_var.dims[-2:])
-            bottom_depth_location = str(bottom_depth_var.attrs.get('location', '')).lower()
-            is_node_centered = bottom_depth_location == 'node' or tuple(dim.upper() for dim in bottom_depth_dims) == (
-                'MC',
-                'NC',
-            )
-            has_non_face_location = bottom_depth_location not in {'', 'face'}
-            if is_node_centered or has_non_face_location or bottom_depth_dims != tuple(grid_coordinate_dims):
-                raise ValueError(
-                    'DP0 must be face-located and align with selected map coordinates. Use face-centered DPS0.'
+        bed_level_requested = 'bed_level' in selected_fields
+        needs_bed_level = bed_level_requested or (
+            'water_depth' in selected_fields
+            and 'S1' in self.input_data
+        )
+        if needs_bed_level:
+            if 'DPS0' in self.input_data:
+                bottom_depth_var = self.input_data['DPS0']
+            elif 'DP0' in self.input_data:
+                bottom_depth_var = self.input_data['DP0']
+                bottom_depth_dims = tuple(bottom_depth_var.dims[-2:])
+                bottom_depth_location = str(bottom_depth_var.attrs.get('location', '')).lower()
+                is_node_centered = bottom_depth_location == 'node' or tuple(
+                    dim.upper() for dim in bottom_depth_dims
+                ) == (
+                    'MC',
+                    'NC',
                 )
-        else:
-            bottom_depth_var = None
+                has_non_face_location = bottom_depth_location not in {'', 'face'}
+                if is_node_centered or has_non_face_location or bottom_depth_dims != tuple(grid_coordinate_dims):
+                    raise ValueError(
+                        'DP0 must be face-located and align with selected map coordinates. Use face-centered DPS0.'
+                    )
+            else:
+                bottom_depth_var = None
 
-        if bottom_depth_var is not None:
-            bed_level_vals = self._select_first_dims(bottom_depth_var).values
-            data['bed_level'] = -self._ensure_grid_shape(bed_level_vals, grid_shape)
-        else:
-            data['bed_level'] = np.zeros(grid_shape)
-            print("Warning: Variables 'DPS0' and 'DP0' not found, using zeros for bed level")
+            if bottom_depth_var is not None:
+                selected_bed_level = self._select_first_dims(bottom_depth_var)
+                if 'time' in selected_bed_level.dims:
+                    selected_bed_level = selected_bed_level.isel(time=time_slice)
+                bed_level_vals = selected_bed_level.values
+                data['bed_level'] = -self._ensure_grid_shape(bed_level_vals, grid_shape)
+            else:
+                data['bed_level'] = np.zeros(grid_shape)
+                print("Warning: Variables 'DPS0' and 'DP0' not found, using zeros for bed level")
 
         variable_map = {
             'water_depth': 'DPS',
@@ -776,6 +1140,8 @@ class FormatPlugin(BaseFormatPlugin):
         }
 
         for key, var_name in variable_map.items():
+            if key not in selected_fields:
+                continue
             if var_name in self.input_data:
                 select_fraction_dims = key not in sediment_keys
                 var = self._select_first_dims(self.input_data[var_name], select_fraction_dims=select_fraction_dims)
@@ -808,8 +1174,19 @@ class FormatPlugin(BaseFormatPlugin):
             'bed_load_transport': ('SBUU', 'SBVV', True),
             'suspended_transport': ('SSUU', 'SSVV', True),
         }
-        has_u_components = any(pair[0] in self.input_data for pair in vector_pairs.values())
-        has_v_components = any(pair[1] in self.input_data for pair in vector_pairs.values())
+        selected_vector_keys = {
+            'flow_velocity': 'depth_avg_flow_velocity',
+            'bed_shear_stress': 'mean_bed_shear_stress',
+            'bed_load_transport': 'bed_load_transport',
+            'suspended_transport': 'suspended_transport',
+        }
+        selected_vector_pairs = {
+            key: value
+            for key, value in vector_pairs.items()
+            if selected_vector_keys[key] in selected_fields
+        }
+        has_u_components = any(pair[0] in self.input_data for pair in selected_vector_pairs.values())
+        has_v_components = any(pair[1] in self.input_data for pair in selected_vector_pairs.values())
         if has_u_components or has_v_components:
             u_mask_variable = next(
                 (candidate for candidate in ('KFU', 'KCU') if candidate in self.input_data),
@@ -850,7 +1227,7 @@ class FormatPlugin(BaseFormatPlugin):
             cos_angle = None
             sin_angle = None
 
-        for key, (u_variable, v_variable, preserve_fraction_dims) in vector_pairs.items():
+        for key, (u_variable, v_variable, preserve_fraction_dims) in selected_vector_pairs.items():
             data[f'{key}_x'], data[f'{key}_y'] = self._map_vector_pair(
                 u_variable=u_variable,
                 v_variable=v_variable,
@@ -886,6 +1263,9 @@ class FormatPlugin(BaseFormatPlugin):
             else:
                 s1_vals = np.broadcast_to(s1.values, (num_times, *s1.shape))
             data['water_depth'] = self._ensure_grid_shape(s1_vals - data['bed_level'], grid_shape)
+
+        if not bed_level_requested:
+            data.pop('bed_level', None)
 
         spatial_mask = valid_face_mask.reshape(-1)
         data['x'], data['y'] = self._flatten_xy(data['x'], data['y'])

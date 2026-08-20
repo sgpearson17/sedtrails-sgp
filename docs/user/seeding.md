@@ -113,6 +113,8 @@ Useful keywords:
 
 The GUI saves release locations through the existing `file_points` strategy. This means points created with manual clicks, transects, random polygons, or grids all become ordinary text files referenced from the generated YAML.
 
+For geographic input grids, the **coordinates** control can switch the map from native longitude/latitude degrees to projected metres. Enter a suitable projected CRS in **metre CRS** before selecting `metres`; the configured `metric_crs` is used initially, and `auto_utm` is supported only for safely regional grids. The GUI always transforms clicks and generated points back to the native input coordinates before saving the point file. For wide, polar, or antimeridian-crossing domains, configure an explicit suitable projected CRS rather than relying on a single UTM zone.
+
 ### GUI seeding modes
 
 - **Points**: left click on the map to add release points. Right click near an existing point to remove it.

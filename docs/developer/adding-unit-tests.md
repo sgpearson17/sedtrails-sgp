@@ -1,6 +1,6 @@
 # Adding Unit Tests
 
-All new plugins and features should include documentation of the new features and unit tests to ensure that everything is working as expected. This document explains how to add unit tests for the ``physics_lib.py`` functions, and has been prepared with input from Copilot (Claude Sonnet 4).
+All new plugins and features should include documentation of the new features and unit tests to ensure that everything is working as expected. This document explains how to add unit tests for the ``physics_lib.py`` functions.
 
 ## Test Structure
 

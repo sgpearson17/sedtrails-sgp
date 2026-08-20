@@ -1,6 +1,6 @@
 # Code Review Checklist
 
-When reviewing code contributions keep in mind the following checklist. Not all items are relevat for every case. Please contact the SedTRAILS team if you have question about this list or items not consideres on this list.
+When reviewing code contributions, keep in mind the following checklist. Not all items are relevant for every case. Please contact the SedTRAILS team if you have a question about this list or items not considered on this list.
 
 ## Requirements
 

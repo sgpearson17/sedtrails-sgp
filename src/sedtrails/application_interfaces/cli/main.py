@@ -475,6 +475,11 @@ def plot_trajectories_cmd(
         '--sample-seed',
         help='Seed for deterministic particle sampling.',
     ),
+    max_plot_points: int | None = typer.Option(
+        2_000_000,
+        '--max-plot-points',
+        help='Maximum selected particle-time coordinates to render. Use None only through the Python API for full resolution.',
+    ),
     markers: str = typer.Option(
         'end',
         '--markers',
@@ -511,6 +516,8 @@ def plot_trajectories_cmd(
         Fraction of particles to plot.
     sample_seed : int
         Seed for deterministic sampling.
+    max_plot_points : int | None
+        Maximum selected particle-time coordinates to render.
     markers : str
         Endpoint marker mode.
     marker_size : float
@@ -529,6 +536,7 @@ def plot_trajectories_cmd(
             max_particles=max_particles,
             sample_fraction=sample_fraction,
             sample_seed=sample_seed,
+            max_plot_points=max_plot_points,
             markers=markers,
             marker_size=marker_size,
             panels=panels,

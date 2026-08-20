@@ -64,7 +64,7 @@ def _update_particles_rk4(
     dt : np.float32
         Time step for RK4 integration.
     igeo : int
-        If 1, apply geographic coordinate correction to velocity components.
+        Must be 0. Legacy local geographic scaling is unsupported.
     geofac : np.float32
         Geographic scaling factor (e.g., Earth's radius in meters).
 
@@ -84,14 +84,10 @@ def _update_particles_rk4(
     x_new = np.empty(n, dtype=np.float64)
     y_new = np.empty(n, dtype=np.float64)
 
-    # adjust for geographic coords?
-    u_adj = grid_u.copy()
-    v_adj = grid_v.copy()
     if igeo == 1:
-        for k in range(grid_v.shape[0]):
-            coslat = np.cos(np.deg2rad(grid_y[k]))
-            u_adj[k] = grid_u[k] / (geofac * coslat)
-            v_adj[k] = grid_v[k] / geofac
+        raise ValueError('igeo=1 local geographic scaling is no longer supported; use projected metric coordinates.')
+    u_adj = grid_u
+    v_adj = grid_v
 
     for i in range(n):
         xi, yi = x0[i], y0[i]
@@ -189,7 +185,7 @@ def _update_particles_rk4_parallel(
     dt : np.float32
         Time step for RK4 integration.
     igeo : int
-        If 1, apply geographic coordinate correction to velocity components.
+        Must be 0. Legacy local geographic scaling is unsupported.
     geofac : np.float32
         Geographic scaling factor (e.g., Earth's radius in meters).
 
@@ -209,13 +205,10 @@ def _update_particles_rk4_parallel(
     x_new = np.empty(n, dtype=np.float64)
     y_new = np.empty(n, dtype=np.float64)
 
-    u_adj = grid_u.copy()
-    v_adj = grid_v.copy()
     if igeo == 1:
-        for k in range(grid_v.shape[0]):
-            coslat = np.cos(np.deg2rad(grid_y[k]))
-            u_adj[k] = grid_u[k] / (geofac * coslat)
-            v_adj[k] = grid_v[k] / geofac
+        raise ValueError('igeo=1 local geographic scaling is no longer supported; use projected metric coordinates.')
+    u_adj = grid_u
+    v_adj = grid_v
 
     for i in prange(n):
         xi, yi = x0[i], y0[i]
@@ -336,13 +329,18 @@ class ParticlePositionCalculator:
         triangles : ndarray of shape (K, 3), optional
             Triangle connectivity array for the grid. If None, it is computed via Delaunay triangulation.
         igeo : int, default=0
-            If 1, assumes geographic coordinates (degrees), scaled using Earth's radius.
+            Must be 0. Legacy local geographic scaling has been removed; use
+            projected metric coordinates for particle advection.
         """
         self.grid_x = np.asarray(grid_x, dtype=np.float64)
         self.grid_y = np.asarray(grid_y, dtype=np.float64)
         self.grid_u = np.asarray(grid_u, dtype=np.float64)
         self.grid_v = np.asarray(grid_v, dtype=np.float64)
         self.igeo = int(igeo)
+        if self.igeo == 1:
+            raise ValueError(
+                'igeo=1 local geographic scaling is no longer supported; use projected metric coordinates.'
+            )
         self.geofac = 6378137.0
 
         if triangles is None:

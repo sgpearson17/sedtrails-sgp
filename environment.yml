@@ -22,6 +22,7 @@ dependencies:
   - jsonschema
   - xugrid
   - tqdm
+  - pyproj>=3.6,<4
   - referencing>=0.36.2
   - pip:
     - sphinx-autodoc2>=0.5.0
