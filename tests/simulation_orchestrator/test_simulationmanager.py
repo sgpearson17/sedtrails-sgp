@@ -193,6 +193,58 @@ class TestSimulationManagerPreflight:
 
         Simulation._validate_reverse_tracking_configuration(True, populations_config)
 
+    def test_reverse_tracking_allows_release_at_simulation_start(self):
+        """Backtracking from an observed endpoint should allow immediate release."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:20:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
+    def test_reverse_tracking_allows_release_before_simulation_start(self):
+        """Reverse runs may delay release until the backward clock reaches release_start."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:10:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
+    def test_reverse_tracking_rejects_release_after_simulation_start(self):
+        """Reverse runs cannot release particles after the configured start time."""
+        populations_config = [
+            {
+                'name': 'passive',
+                'seeding': {'release_start': '2016-09-22 19:30:00'},
+            }
+        ]
+        simulation_time = Time(
+            _start='2016-09-22 19:20:00',
+            duration=Duration('1D'),
+            reference_date='1970-01-01',
+            reverse_tracking=True,
+        )
+
+        with pytest.raises(ConfigurationError, match='release_start.*at or before time.start'):
+            Simulation._validate_reverse_tracking_configuration(True, populations_config, simulation_time)
+
     @pytest.mark.parametrize('example_name', ['config.example_sfincs.yaml', 'sedtrails-example-passive.yaml'])
     def test_passive_examples_pass_runtime_preflight(self, example_name):
         """Committed passive examples must satisfy their runtime-only constraints."""
@@ -912,6 +964,24 @@ class TestSimulationManagerTimeConfig:
         np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
         np.testing.assert_array_equal(population.particles['status_transported'], np.array([False, False]))
         np.testing.assert_array_equal(population.particles['status_mobile'], np.array([False, False]))
+
+    def test_initialize_population_output_status_uses_reverse_release_direction(self):
+        """Initial output status should respect release times in reverse simulations."""
+
+        class Population:
+            particles = {
+                'x': np.array([1.0, 2.0]),
+                'y': np.array([3.0, 4.0]),
+                'release_time': np.array([10.0, 0.0]),
+                'burial_depth': np.array([0.0, 0.0]),
+            }
+            _particle_simplices = np.array([5, 5])
+
+        population = Population()
+
+        Simulation._initialize_population_output_status([population], current_time=5.0, time_direction=-1)
+
+        np.testing.assert_array_equal(population.particles['status_released'], np.array([True, False]))
 
 
 class TestSimulationManagerNetCDFOutputOptions:

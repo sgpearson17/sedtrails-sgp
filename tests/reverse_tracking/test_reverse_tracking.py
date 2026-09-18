@@ -140,7 +140,7 @@ def _static_velocity_data(gx, gy, u, v, total_time, dt):
     return make_sedtrails_data(times, gx, gy, u_time, v_time)
 
 
-def _make_passive_population(field_x, field_y, x0, y0):
+def _make_passive_population(field_x, field_y, x0, y0, release_start=0.0):
     locations = [f'{float(x)},{float(y)}' for x, y in zip(x0, y0, strict=True)]
     population_config = {
         'name': 'passive_reverse_test',
@@ -151,7 +151,7 @@ def _make_passive_population(field_x, field_y, x0, y0):
         'tracer_methods': {'passive_tracer': {}},
         'seeding': {
             'quantity': 1,
-            'release_start': 0.0,
+            'release_start': release_start,
             'strategy': {'point': {'locations': locations}},
         },
     }
@@ -168,7 +168,8 @@ def _make_passive_population(field_x, field_y, x0, y0):
 
 def _run_passive_pipeline(data, initial_x, initial_y, total_time, dt, reverse=False, history_stride=1):
     retriever = FieldDataRetriever(data)
-    population, runtime_plan = _make_passive_population(data.x, data.y, initial_x, initial_y)
+    release_start = total_time if reverse else 0.0
+    population, runtime_plan = _make_passive_population(data.x, data.y, initial_x, initial_y, release_start)
     flow_field_name = runtime_plan.tracer.flow_field_names[0]
     xs = [population.particles['x'].copy()]
     ys = [population.particles['y'].copy()]
@@ -184,7 +185,7 @@ def _run_passive_pipeline(data, initial_x, initial_y, total_time, dt, reverse=Fa
             transport_probability=1.0,
             bed_level=0.0,
         )
-        population.update_status()
+        population.update_status(time_direction=-1 if reverse else 1)
         flow = retriever.get_flow_field_bounds(field_time, flow_field_name)
         if reverse:
             flow = Simulation._reverse_flow_field(flow)

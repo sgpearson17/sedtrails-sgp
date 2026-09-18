@@ -15,6 +15,11 @@ from sedtrails.application_interfaces.configuration_controller import Configurat
 from sedtrails.data_manager import DataManager
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer import ParticleSeeder
+from sedtrails.particle_tracer.particle_seeder import (
+    DEFAULT_RELEASE_START,
+    _release_time_to_seconds,
+    release_status_mask,
+)
 from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
@@ -618,6 +623,7 @@ class Simulation:
         cls,
         reverse_tracking: bool,
         population_configs: list[dict],
+        simulation_time: Time | None = None,
     ) -> None:
         """Validate constraints that are specific to reverse particle tracking."""
         if not reverse_tracking:
@@ -631,6 +637,23 @@ class Simulation:
                     'time.reverse_tracking=true is incompatible with diffusion.coefficient > 0.0. '
                     'Reverse stochastic diffusion requires an adjoint/weighted stochastic model and is not '
                     f'implemented. Population {name!r} has effective diffusion coefficient {coefficient:g}.'
+                )
+            if simulation_time is None:
+                continue
+
+            seeding_config = population_config.get('seeding', {})
+            release_start = seeding_config.get('release_start', DEFAULT_RELEASE_START)
+            if release_start == DEFAULT_RELEASE_START:
+                continue
+
+            release_seconds = _release_time_to_seconds(release_start, simulation_time.reference_date)
+            simulation_start = float(simulation_time.start)
+            if release_seconds > simulation_start:
+                name = population_config.get('name', f'population_{population_index + 1}')
+                raise ConfigurationError(
+                    'time.reverse_tracking=true requires seeding.release_start to be at or before time.start. '
+                    f'Population {name!r} has release_start={release_start!r}, which is later than '
+                    f'time.start={getattr(simulation_time, "_start", simulation_start)!r}.'
                 )
 
     @staticmethod
@@ -1027,7 +1050,11 @@ class Simulation:
         )
 
     @staticmethod
-    def _initialize_population_output_status(populations, current_time: int | float) -> None:
+    def _initialize_population_output_status(
+        populations,
+        current_time: int | float,
+        time_direction: int = 1,
+    ) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
             particles = population.particles
@@ -1048,7 +1075,11 @@ class Simulation:
                 if release_time is None:
                     particles['status_released'] = np.ones(n_particles, dtype=bool)
                 else:
-                    particles['status_released'] = float(current_time) >= np.asarray(release_time, dtype=float)
+                    particles['status_released'] = release_status_mask(
+                        current_time,
+                        release_time,
+                        time_direction,
+                    )
 
             particles['status_mobile'] = (
                 np.asarray(particles['status_domain'], dtype=bool)
@@ -1460,10 +1491,10 @@ class Simulation:
         populations_config = self._controller.get('particles.populations', [])
         validate_population_runtime_configurations(populations_config)
         reverse_tracking = bool(self._controller.get('time.reverse_tracking', False))
-        self._validate_reverse_tracking_configuration(reverse_tracking, populations_config)
 
         # Time configuration
         simulation_time = self._create_simulation_time()
+        self._validate_reverse_tracking_configuration(reverse_tracking, populations_config, simulation_time)
 
         timer = Timer(simulation_time=simulation_time, cfl_condition=self._controller.get('time.cfl_condition'))
         repeat_eulerian_fields = self._controller.get('inputs.repeat_eulerian_fields', False)
@@ -1571,7 +1602,8 @@ class Simulation:
         netcdf_options['coordinate_metadata'] = coordinate_metadata
         checkpoint_options.setdefault('writer_kwargs', {})['coordinate_metadata'] = coordinate_metadata
 
-        self._initialize_population_output_status(populations, timer.current)
+        direction = self._simulation_time_direction(simulation_time)
+        self._initialize_population_output_status(populations, timer.current, direction)
         nc_handle = None
         slot_idx = 0
         last_saved_time = None
@@ -1766,7 +1798,7 @@ class Simulation:
 
 
                         with self._profile_section('update_status'):
-                            population.update_status()
+                            population.update_status(time_direction=direction)
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
                             flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)

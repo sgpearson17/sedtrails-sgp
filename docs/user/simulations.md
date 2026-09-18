@@ -127,6 +127,8 @@ visualization:
 
 Set `time.reverse_tracking: true` to integrate particles backward from the configured `time.start`. SedTRAILS keeps the timestep positive, steps the simulation clock backward for `time.duration`, and reverses advective vector fields at sampling time. This applies to all tracer modes because the time direction is handled outside the tracer-specific field selection.
 
+Particle release timing follows the same integration direction: in reverse runs, particles are released once the backward-moving simulation clock reaches or passes `seeding.release_start`. For backtracking from observed end positions, set `seeding.release_start` equal to `time.start`. A reverse run raises a configuration error if `seeding.release_start` is later than `time.start`.
+
 Reverse tracking is deterministic advection-only. SedTRAILS raises a configuration error if any population has active diffusion with coefficient greater than zero, because backward stochastic diffusion needs an adjoint or weighted stochastic formulation rather than simple velocity reversal.
 
 For source-attribution studies, treat backward results as sensitivity-tested estimates. Reijnders et al. (2026) show that numerical errors can be amplified differently in forward and backward runs in non-zero-divergence flows, especially around convergent and divergent zones. Recommended checks are:
