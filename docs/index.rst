@@ -54,6 +54,7 @@ Features
 
    user/installation
    user/simulations
+   user/mangroves
    user/output
    user/visualization
    user/dashboard

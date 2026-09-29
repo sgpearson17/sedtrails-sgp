@@ -57,6 +57,21 @@
                 "size"
             ]
         },
+        "mangrove_characteristics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "species": {
+                    "type": "string",
+                    "description": "Optional mangrove species label for diagnostics and scenario management"
+                },
+                "diffusion_coefficient": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "Random walk diffusion coefficient (horizontal diffusivity K_h) for mangrove propagules"
+                }
+            }
+        },
         "van_westen_method": {
             "type": "object",
             "additionalProperties": false,
@@ -156,6 +171,134 @@
                 }
             },
             "description": "Passive tracer method for particle tracking"
+        },
+        "mangrove_method": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "flow_field_name": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "depth_avg_flow_velocity"
+                    ],
+                    "description": "List of flow field names to use for mangrove propagule advection"
+                },
+                "settlement": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "method": {
+                            "type": "string",
+                            "enum": ["sticky_depth"],
+                            "default": "sticky_depth"
+                        },
+                        "depth_threshold": {
+                            "type": "number",
+                            "minimum": 0.0
+                        },
+                        "depth_mode": {
+                            "type": "string",
+                            "enum": ["instantaneous", "max_over_simulation"],
+                            "default": "instantaneous"
+                        }
+                    },
+                    "required": ["enabled"]
+                },
+                "lifespan": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "duration": {
+                            "type": "string",
+                            "description": "Particle lifespan duration string, for example '7D' or '12H'"
+                        }
+                    },
+                    "required": ["enabled"]
+                },
+                "windage": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "coefficient": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.0
+                        },
+                        "direction_convention": {
+                            "type": "string",
+                            "enum": ["from_meteorological", "to_oceanographic"],
+                            "default": "from_meteorological"
+                        },
+                        "forcing": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["constant", "timeseries_point", "field"]
+                                },
+                                "speed": { "type": "number" },
+                                "direction": { "type": "number" },
+                                "u": { "type": "number" },
+                                "v": { "type": "number" },
+                                "times": {
+                                    "type": "array",
+                                    "items": {
+                                        "oneOf": [
+                                            { "type": "number" },
+                                            { "type": "string" }
+                                        ]
+                                    }
+                                },
+                                "u_values": {
+                                    "type": "array",
+                                    "items": { "type": "number" }
+                                },
+                                "v_values": {
+                                    "type": "array",
+                                    "items": { "type": "number" }
+                                },
+                                "speed_values": {
+                                    "type": "array",
+                                    "items": { "type": "number" }
+                                },
+                                "direction_values": {
+                                    "type": "array",
+                                    "items": { "type": "number" }
+                                },
+                                "flow_field_name": {
+                                    "type": "string"
+                                },
+                                "u_field_name": {
+                                    "type": "string"
+                                },
+                                "v_field_name": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": ["type"]
+                        }
+                    },
+                    "required": ["enabled"]
+                }
+            },
+            "description": "Mangrove propagule tracer method"
         }
     },
     "properties": {
@@ -169,10 +312,11 @@
             "enum": [
                 "passive",
                 "sand",
-                "mud"
+                "mud",
+                "mangrove"
             ],
             "default": "passive",
-            "description": "type of particles for population (supported values: 'passive', 'sand', 'mud')"
+            "description": "type of particles for population (supported values: 'passive', 'sand', 'mud', 'mangrove')"
         },
         "characteristics": {
             "type": "object",
@@ -213,6 +357,9 @@
                 },
                 "passive_tracer": {
                     "$ref": "#/$defs/passive_method"
+                },
+                "mangrove": {
+                    "$ref": "#/$defs/mangrove_method"
                 }
             },
             "minProperties": 1,
@@ -639,6 +786,22 @@
                 "properties": {
                     "characteristics": {
                         "$ref": "#/$defs/mud_characteristics"
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "particle_type": {
+                        "const": "mangrove"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "characteristics": {
+                        "$ref": "#/$defs/mangrove_characteristics"
                     }
                 }
             }

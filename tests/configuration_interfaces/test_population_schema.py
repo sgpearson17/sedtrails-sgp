@@ -57,6 +57,47 @@ def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
     assert tracer_methods == {'passive_tracer': {'flow_field_name': ['depth_avg_flow_velocity']}}
 
 
+def test_population_schema_accepts_mangrove_default_flow_field(tmp_path):
+    """Accept mangrove configs and apply the default depth-averaged flow field."""
+    config = _base_config()
+    population = config['particles']['populations'][0]
+    population['name'] = 'avicennia_sources'
+    population['particle_type'] = 'mangrove'
+    population['characteristics'] = {
+        'species': 'avicennia_marina',
+        'diffusion_coefficient': 0.0,
+    }
+    population['tracer_methods'] = {
+        'mangrove': {
+            'settlement': {
+                'enabled': True,
+                'method': 'sticky_depth',
+                'depth_threshold': 0.1,
+                'depth_mode': 'instantaneous',
+            },
+            'lifespan': {
+                'enabled': True,
+                'duration': '7D',
+            },
+            'windage': {
+                'enabled': True,
+                'coefficient': 0.02,
+                'direction_convention': 'from_meteorological',
+                'forcing': {
+                    'type': 'constant',
+                    'speed': 4.4,
+                    'direction': 292.5,
+                },
+            },
+        }
+    }
+
+    validated = _validate_config(tmp_path, config)
+
+    tracer_methods = validated['particles']['populations'][0]['tracer_methods']
+    assert tracer_methods['mangrove']['flow_field_name'] == ['depth_avg_flow_velocity']
+
+
 def test_population_schema_rejects_vanwesten_bl(tmp_path):
     """Reject stale tracer methods that are not implemented at runtime."""
     config = _base_config()

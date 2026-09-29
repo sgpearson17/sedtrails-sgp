@@ -369,6 +369,27 @@ class Passive(Particle):
 
 
 @dataclass
+class Mangrove(Particle):
+    """Class representing mangrove propagules."""
+
+    physical_properties: PhysicalProperties = field(
+        default_factory=lambda: PhysicalProperties(
+            density=1000.0,
+            diameter=1e-2,
+        )
+    )
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not isinstance(self.physical_properties, PhysicalProperties):
+            raise TypeError(f'Expected PhysicalProperties, got {type(self.physical_properties).__name__}')
+
+    def particle_velocity(self) -> float:
+        """Return the particle velocity placeholder for mangrove propagules."""
+        pass
+
+
+@dataclass
 class InterpolatedValue:
     """
     Class for storing interpolated values of a Particle.

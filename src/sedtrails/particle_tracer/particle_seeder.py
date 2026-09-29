@@ -45,7 +45,11 @@ from sedtrails.particle_tracer.position_calculator_numba import (
     BOUNDARY_CLASS_OPEN,
     create_grid_geometry,
 )
-from sedtrails.particle_tracer.timer import convert_datetime_string_to_datetime64, convert_reference_date_to_datetime64
+from sedtrails.particle_tracer.timer import (
+    convert_datetime_string_to_datetime64,
+    convert_duration_string_to_seconds,
+    convert_reference_date_to_datetime64,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -548,6 +552,36 @@ def _is_temporal_field(field_value: Any) -> bool:
 
 def _is_temporal_flow_field(flow_field: Dict) -> bool:
     return _is_temporal_field(flow_field) and isinstance(flow_field.get('lower'), dict)
+
+
+def _mangrove_method_config(config: 'PopulationConfig | Dict[str, Any]') -> Dict[str, Any]:
+    if hasattr(config, 'population_config'):
+        population_config = getattr(config, 'population_config')
+    else:
+        population_config = config
+    tracer_methods = find_value(population_config, 'tracer_methods', {})
+    if not isinstance(tracer_methods, dict):
+        return {}
+    method_config = tracer_methods.get('mangrove', {})
+    return method_config if isinstance(method_config, dict) else {}
+
+
+def _mangrove_lifespan_seconds(config: 'PopulationConfig | Dict[str, Any]') -> float:
+    method_config = _mangrove_method_config(config)
+    lifespan_config = method_config.get('lifespan', {}) if isinstance(method_config, dict) else {}
+    if not isinstance(lifespan_config, dict) or not lifespan_config.get('enabled', False):
+        return np.inf
+
+    duration = lifespan_config.get('duration')
+    if not duration:
+        return np.inf
+    return float(convert_duration_string_to_seconds(str(duration)))
+
+
+def _mangrove_settlement_config(config: 'PopulationConfig | Dict[str, Any]') -> Dict[str, Any]:
+    method_config = _mangrove_method_config(config)
+    settlement_config = method_config.get('settlement', {}) if isinstance(method_config, dict) else {}
+    return settlement_config if isinstance(settlement_config, dict) else {}
 
 
 @dataclass
@@ -1183,7 +1217,7 @@ class ParticleFactory:
             'file_points': FilePointsStrategy(),
         }
         particle_type = getattr(config, 'particle_type', '').lower()
-        if particle_type not in {'sand', 'mud', 'passive'}:
+        if particle_type not in {'sand', 'mud', 'passive', 'mangrove'}:
             raise ValueError(f'Unknown particle type: {particle_type}')
         strategy_name = getattr(config, 'strategy', '').lower()
         if strategy_name not in strategy_map:
@@ -1195,6 +1229,14 @@ class ParticleFactory:
             'release_time': np.empty(0, dtype=np.float64),
             'burial_depth': np.empty(0, dtype=np.float64),
         }
+        if particle_type == 'mangrove':
+            empty.update(
+                {
+                    'lifespan': np.empty(0, dtype=np.float64),
+                    'status_settled': np.empty(0, dtype=bool),
+                    'settlement_time': np.empty(0, dtype=np.float64),
+                }
+            )
         if int(config.quantity) <= 0:
             return empty
 
@@ -1229,12 +1271,21 @@ class ParticleFactory:
             getattr(config, 'release_start', None),
             reference_date,
         )
-        return {
+        particles = {
             'x': x_values,
             'y': y_values,
             'release_time': np.full(size, release_seconds, dtype=np.float64),
             'burial_depth': burial_values,
         }
+        if particle_type == 'mangrove':
+            particles.update(
+                {
+                    'lifespan': np.full(size, _mangrove_lifespan_seconds(config), dtype=np.float64),
+                    'status_settled': np.zeros(size, dtype=bool),
+                    'settlement_time': np.full(size, np.nan, dtype=np.float64),
+                }
+            )
+        return particles
 
     @staticmethod
     def create_particles(config: PopulationConfig) -> list[Particle]:
@@ -1251,9 +1302,9 @@ class ParticleFactory:
         list[Particle]
             List of created particles with positions and release times set.
         """
-        from sedtrails.particle_tracer.particle import Mud, Passive, Sand
+        from sedtrails.particle_tracer.particle import Mangrove, Mud, Passive, Sand
 
-        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive}
+        PARTICLE_MAP = {'sand': Sand, 'mud': Mud, 'passive': Passive, 'mangrove': Mangrove}
         STRATEGY_MAP = {
             'point': PointStrategy(),
             'random': RandomStrategy(),
@@ -1581,7 +1632,13 @@ class ParticlePopulation:
         self._mark_particle_simplices_current()
 
     def update_information(
-        self, current_time: Union[int, float], mixing_depth: Any, transport_probability: Any, bed_level: Any
+        self,
+        current_time: Union[int, float],
+        mixing_depth: Any,
+        transport_probability: Any,
+        bed_level: Any,
+        water_depth: Any = None,
+        max_water_depth: Any = None,
     ) -> None:
         """
         Updates field data information for particles in the population.
@@ -1609,6 +1666,8 @@ class ParticlePopulation:
             ('mixing_depth', mixing_depth),
             ('transport_probability', transport_probability),
             ('bed_level', bed_level),
+            ('water_depth', water_depth),
+            ('max_water_depth', max_water_depth),
         ):
             if self._can_batch_particle_field(field_value):
                 batched_names.append(name)
@@ -1627,6 +1686,9 @@ class ParticlePopulation:
 
         if 'bed_level_previous' not in self.particles and 'bed_level' in self.particles:
             self.particles['bed_level_previous'] = self.particles['bed_level'].copy()
+
+        if self._is_mangrove_population():
+            self._update_mangrove_vertical_position()
 
     @staticmethod
     def _can_batch_particle_field(field_value) -> bool:
@@ -1750,7 +1812,7 @@ class ParticlePopulation:
         self.particles['burial_depth'] = np.maximum(self.particles['burial_depth'], 0.0)
         self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
 
-    def update_bed_level_change_after_movement(self, bed_level) -> None:
+    def update_bed_level_change_after_movement(self, bed_level, water_depth=None) -> None:
         """Re-sample bed level at the new particle positions after movement.
 
         Parameters
@@ -1771,7 +1833,80 @@ class ParticlePopulation:
             return
 
         self._update_particle_field('bed_level', bed_level)
-        self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+        if self._is_mangrove_population():
+            self._update_particle_field('water_depth', water_depth)
+            self._update_mangrove_vertical_position()
+        else:
+            self.particles['z'] = self.particles['bed_level'] - self.particles['burial_depth']
+
+    def _is_mangrove_population(self) -> bool:
+        return str(getattr(self.population_config, 'particle_type', '')).lower() == 'mangrove'
+
+    def _update_mangrove_vertical_position(self) -> None:
+        if len(self.particles['x']) == 0:
+            return
+        if 'bed_level' not in self.particles:
+            return
+
+        bed_level = np.asarray(self.particles['bed_level'], dtype=float)
+        water_depth = np.asarray(self.particles.get('water_depth', np.zeros_like(bed_level)), dtype=float)
+        water_surface = bed_level + water_depth
+        settled = np.asarray(self.particles.get('status_settled', np.zeros(len(bed_level), dtype=bool)), dtype=bool)
+        self.particles['z'] = np.where(settled, bed_level, water_surface)
+
+    def _update_mangrove_status(self, n_particles: int, left_domain: np.ndarray) -> None:
+        self.particles['status_transported'] = np.ones(n_particles, dtype=bool)
+
+        if not self._particle_simplices_match_positions():
+            self._refresh_particle_simplices()
+        self._particle_simplices[left_domain] = -1
+        self._mark_particle_simplices_current()
+        self.particles['status_domain'] = (self._particle_simplices >= 0) & ~left_domain
+
+        self.particles['status_released'] = self._current_time >= self.particles['release_time']
+
+        lifespan = np.asarray(self.particles.get('lifespan', np.full(n_particles, np.inf)), dtype=float)
+        alive_before_expiry = self._current_time < (self.particles['release_time'] + lifespan)
+        self.particles['status_alive'] = (~left_domain) & alive_before_expiry
+
+        previous_settled = np.asarray(
+            self.particles.get('status_settled', np.zeros(n_particles, dtype=bool)),
+            dtype=bool,
+        )
+        settled = previous_settled.copy()
+
+        settlement = _mangrove_settlement_config(self.population_config)
+        if settlement.get('enabled', False) and settlement.get('method', 'sticky_depth') == 'sticky_depth':
+            depth_mode = settlement.get('depth_mode', 'instantaneous')
+            depth_threshold = float(settlement.get('depth_threshold', 0.0))
+            depth_field_name = 'max_water_depth' if depth_mode == 'max_over_simulation' else 'water_depth'
+            if depth_field_name in self.particles:
+                depth_values = np.asarray(self.particles[depth_field_name], dtype=float)
+                eligible = (
+                    self.particles['status_released']
+                    & self.particles['status_alive']
+                    & self.particles['status_domain']
+                    & np.isfinite(depth_values)
+                )
+                settled |= eligible & (depth_values <= depth_threshold)
+
+        newly_settled = settled & ~previous_settled
+        self.particles['status_settled'] = settled
+        settlement_time = np.asarray(
+            self.particles.get('settlement_time', np.full(n_particles, np.nan)),
+            dtype=float,
+        )
+        settlement_time[newly_settled] = float(self._current_time)
+        self.particles['settlement_time'] = settlement_time
+        self.particles['status_buried'] = settled
+        self.particles['status_mobile'] = (
+            self.particles['status_domain']
+            & self.particles['status_alive']
+            & ~self.particles['status_buried']
+            & self.particles['status_released']
+            & self.particles['status_transported']
+        )
+        self._update_mangrove_vertical_position()
 
 
     def update_status(self) -> None:
@@ -1795,8 +1930,15 @@ class ParticlePopulation:
                 'status_released',
                 'status_transported',
                 'status_mobile',
+                'status_settled',
             ):
                 self.particles[status_name] = np.zeros(0, dtype=bool)
+            if self._is_mangrove_population():
+                self.particles['settlement_time'] = np.empty(0, dtype=np.float64)
+            return
+
+        if self._is_mangrove_population():
+            self._update_mangrove_status(n_particles, left_domain)
             return
 
         transport_probability_method = self.population_config.population_config.get('transport_probability', 'no_probability')

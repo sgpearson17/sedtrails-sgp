@@ -8,6 +8,7 @@ This directory contains tracked example inputs and scripts for local testing and
 - `sedtrails-example-multisource.yaml`: D-Flow FM/van Westen simulation using seed points from `sources_xy_inlet.txt`.
 - `config.example_soulsby.yaml`: D-Flow FM/Soulsby simulation with two sand populations.
 - `config.example_sfincs.yaml`: SFINCS/passive-tracer simulation.
+- `sedtrails-example-mangrove.yaml`: D-Flow FM/mangrove tracer simulation with sticky-depth settlement, lifespan, and constant windage.
 
 The NetCDF forcing files referenced by these examples are not stored in this directory. Download or create the required files locally and update each configuration's `inputs.data` path before running.
 

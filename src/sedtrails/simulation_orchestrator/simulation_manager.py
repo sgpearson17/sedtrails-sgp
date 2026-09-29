@@ -18,6 +18,7 @@ from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever  # Updated import
 from sedtrails.particle_tracer.particle import Particle
 from sedtrails.particle_tracer.timer import Duration, Time, Timer
+from sedtrails.particle_tracer.windage import combine_velocity_bounds, get_wind_bounds
 from sedtrails.pathway_visualizer import SimulationDashboard
 from sedtrails.simulation_orchestrator.global_logger import log_simulation_state, setup_logging
 from sedtrails.simulation_orchestrator.runtime_plan import (
@@ -47,8 +48,8 @@ class Simulation:
 
     _DASHBOARD_FULL_GRID_CELL_LIMIT = 100_000
     _DASHBOARD_LARGE_GRID_UPDATE_STRIDE = 10
-    _OUTPUT_COORDINATE_FIELD_COUNT = 5
-    _OUTPUT_STATUS_FIELD_COUNT = 8
+    _OUTPUT_COORDINATE_FIELD_COUNT = 6
+    _OUTPUT_STATUS_FIELD_COUNT = 9
     _DEFAULT_COMPRESSION_AUTO_THRESHOLD_MB = 1024
     _OUTPUT_DTYPE_BYTES = {
         'float32': 4,
@@ -906,6 +907,34 @@ class Simulation:
         )
 
     @staticmethod
+    def _mangrove_requires_max_water_depth(tracer_plan) -> bool:
+        settlement = tracer_plan.method_config.get('settlement', {})
+        if not isinstance(settlement, dict) or not settlement.get('enabled', False):
+            return False
+        return settlement.get('depth_mode', 'instantaneous') == 'max_over_simulation'
+
+    @staticmethod
+    def _effective_mangrove_flow_field(tracer_plan, retriever, field_time_seconds: float, flow_field):
+        if tracer_plan.method_name != 'mangrove':
+            return flow_field
+
+        windage = tracer_plan.method_config.get('windage', {})
+        if not isinstance(windage, dict) or not windage.get('enabled', False):
+            return flow_field
+
+        forcing = windage.get('forcing', {})
+        if not isinstance(forcing, dict):
+            return flow_field
+
+        wind_bounds = get_wind_bounds(
+            field_time_seconds,
+            forcing,
+            retriever,
+            direction_convention=windage.get('direction_convention', 'from_meteorological'),
+        )
+        return combine_velocity_bounds(flow_field, wind_bounds, windage.get('coefficient', 0.0))
+
+    @staticmethod
     def _initialize_population_output_status(populations, current_time: int | float) -> None:
         """Populate required status arrays before the initial trajectory sample is written."""
         for population in populations:
@@ -914,6 +943,8 @@ class Simulation:
             particles.setdefault('status_alive', np.ones(n_particles, dtype=bool))
             particles.setdefault('status_buried', np.zeros(n_particles, dtype=bool))
             particles.setdefault('status_transported', np.zeros(n_particles, dtype=bool))
+            particles.setdefault('status_settled', np.zeros(n_particles, dtype=bool))
+            particles.setdefault('settlement_time', np.full(n_particles, np.nan, dtype=float))
 
             if 'status_domain' not in particles:
                 simplices = getattr(population, '_particle_simplices', None)
@@ -1610,6 +1641,17 @@ class Simulation:
                             mixing_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'mixing_layer_thickness')
                     with self._profile_section('get_scalar_field_bounds.bed_level'):
                         bed_level = retriever.get_scalar_field_bounds(field_time_seconds, 'bed_level')
+                    if tracer_plan.method_name == 'mangrove':
+                        with self._profile_section('get_scalar_field_bounds.water_depth'):
+                            water_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'water_depth')
+                        if self._mangrove_requires_max_water_depth(tracer_plan):
+                            with self._profile_section('get_scalar_field_bounds.max_water_depth'):
+                                max_water_depth = retriever.get_scalar_field_bounds(field_time_seconds, 'max_water_depth')
+                        else:
+                            max_water_depth = None
+                    else:
+                        water_depth = None
+                        max_water_depth = None
 
                     for flow_field_name in tracer_plan.flow_field_names:
                         if tracer_plan.method_name == 'vanwesten':
@@ -1626,6 +1668,8 @@ class Simulation:
                                 mixing_depth=mixing_depth,
                                 bed_level=bed_level,
                                 transport_probability=transport_prob,
+                                water_depth=water_depth,
+                                max_water_depth=max_water_depth,
                             )
 
                         if tracer_plan.method_name == 'vanwesten':
@@ -1640,6 +1684,12 @@ class Simulation:
 
                         with self._profile_section('get_flow_field_bounds.update_position'):
                             flow_field = retriever.get_flow_field_bounds(field_time_seconds, flow_field_name)
+                        flow_field = self._effective_mangrove_flow_field(
+                            tracer_plan,
+                            retriever,
+                            field_time_seconds,
+                            flow_field,
+                        )
                         if (
                             dashboard_update_due
                             and runtime_plan.population_index == 0
@@ -1674,7 +1724,7 @@ class Simulation:
                         # level after advection.
                         if self._should_update_bed_level_after_movement(tracer_plan):
                             with self._profile_section('update_bed_level_after_movement'):
-                                population.update_bed_level_change_after_movement(bed_level)
+                                population.update_bed_level_change_after_movement(bed_level, water_depth)
 
                 # Update dashboard if enabled
                 if dashboard_update_due and dashboard_flow_field is not None:

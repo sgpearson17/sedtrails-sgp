@@ -126,12 +126,14 @@ visualization:
 
 Each population must define exactly one tracer method under `particles.populations[].tracer_methods`.
 
-- There is **no default tracer method**. You must explicitly choose one of: `vanwesten`, `soulsby`, or `passive_tracer`.
-- For `passive_tracer`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
+- There is **no default tracer method**. You must explicitly choose one of: `vanwesten`, `soulsby`, `passive_tracer`, or `mangrove`.
+- For `passive_tracer` and `mangrove`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
 - For `vanwesten` and `soulsby`, you should provide `flow_field_name` explicitly.
 - If you use `passive_tracer`, set `particle_type: passive`.
+- If you use `mangrove`, set `particle_type: mangrove`.
 - If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
 - If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.
+- If you use `mangrove`, see [Mangrove Tracers](./mangroves.md) for sticky-depth settlement, lifespan, windage, and vertical-position behaviour.
 
 Use the following minimal keyword blocks inside each population:
 
@@ -153,6 +155,11 @@ tracer_methods:
 ```yaml
 tracer_methods:
   passive_tracer: {}
+```
+
+```yaml
+tracer_methods:
+  mangrove: {}
 ```
 
 Minimal passive population example:
@@ -188,6 +195,7 @@ Repository examples by mode:
 - Van Westen: `examples/sedtrails-example.yaml`
 - Soulsby: `examples/config.example_soulsby.yaml`
 - Passive tracer: `examples/sedtrails-example-passive.yaml` (FM) and `examples/config.example_sfincs.yaml` (SFINCS)
+- Mangrove tracer: `examples/sedtrails-example-mangrove.yaml`
 
 Run any mode the same way by selecting the config file:
 

@@ -2985,6 +2985,123 @@ def _single_particle_population(release_start):
     )
 
 
+def _single_mangrove_population(*, release_start='1970-01-01 00:00:00', lifespan='1H', settlement_enabled=True):
+    config = PopulationConfig(
+        {
+            'name': 'Mangrove Config',
+            'particle_type': 'mangrove',
+            'characteristics': {
+                'species': 'avicennia_marina',
+                'diffusion_coefficient': 0.0,
+            },
+            'tracer_methods': {
+                'mangrove': {
+                    'settlement': {
+                        'enabled': settlement_enabled,
+                        'method': 'sticky_depth',
+                        'depth_threshold': 0.1,
+                        'depth_mode': 'instantaneous',
+                    },
+                    'lifespan': {
+                        'enabled': True,
+                        'duration': lifespan,
+                    },
+                }
+            },
+            'transport_probability': 'no_probability',
+            'seeding': {
+                'strategy': {'point': {'locations': ['0.5,0.5']}},
+                'quantity': 1,
+                'release_start': release_start,
+            },
+        }
+    )
+    return ParticlePopulation(
+        field_x=np.array([0.0, 1.0, 0.0, 1.0]),
+        field_y=np.array([0.0, 0.0, 1.0, 1.0]),
+        population_config=config,
+        reference_date=np.datetime64('1970-01-01T00:00:00', 's'),
+    )
+
+
+def test_mangrove_status_respects_release_time_and_lifespan():
+    population = _single_mangrove_population(release_start='1970-01-01 00:10:00', lifespan='1H', settlement_enabled=False)
+    population.update_information(
+        current_time=0.0,
+        mixing_depth=None,
+        transport_probability=1.0,
+        bed_level=1.25,
+        water_depth=0.75,
+    )
+
+    population._current_time = 599.0
+    population.update_status()
+    assert population.particles['status_released'].tolist() == [False]
+    assert population.particles['status_alive'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [False]
+
+    population._current_time = 600.0
+    population.update_status()
+    assert population.particles['status_released'].tolist() == [True]
+    assert population.particles['status_alive'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [True]
+
+    population._current_time = 4200.0
+    population.update_status()
+    assert population.particles['status_alive'].tolist() == [False]
+    assert population.particles['status_mobile'].tolist() == [False]
+
+
+def test_mangrove_sticky_depth_settles_and_prevents_movement():
+    population = _single_mangrove_population(settlement_enabled=True)
+    population.update_information(
+        current_time=0.0,
+        mixing_depth=None,
+        transport_probability=1.0,
+        bed_level=1.25,
+        water_depth=0.05,
+    )
+    start_x = population.particles['x'].copy()
+    start_y = population.particles['y'].copy()
+
+    population._current_time = 0.0
+    population.update_status()
+
+    assert population.particles['status_settled'].tolist() == [True]
+    assert population.particles['status_buried'].tolist() == [True]
+    assert population.particles['status_mobile'].tolist() == [False]
+    np.testing.assert_allclose(population.particles['settlement_time'], np.array([0.0]))
+    np.testing.assert_allclose(population.particles['z'], np.array([1.25]))
+
+    flow_field = {
+        'x': np.array([0.0, 1.0, 0.0, 1.0]),
+        'y': np.array([0.0, 0.0, 1.0, 1.0]),
+        'lower': {'u': np.full(4, 1.0), 'v': np.full(4, 0.0), 'magnitude': np.full(4, 1.0)},
+        'upper': {'u': np.full(4, 1.0), 'v': np.full(4, 0.0), 'magnitude': np.full(4, 1.0)},
+        'weight': 0.0,
+    }
+    population.update_position(flow_field=flow_field, current_timestep=60.0)
+
+    np.testing.assert_allclose(population.particles['x'], start_x)
+    np.testing.assert_allclose(population.particles['y'], start_y)
+
+
+def test_mangrove_floating_z_uses_water_surface():
+    population = _single_mangrove_population(settlement_enabled=False)
+    population.update_information(
+        current_time=0.0,
+        mixing_depth=None,
+        transport_probability=1.0,
+        bed_level=1.25,
+        water_depth=0.75,
+    )
+    population._current_time = 0.0
+    population.update_status()
+
+    assert population.particles['status_settled'].tolist() == [False]
+    np.testing.assert_allclose(population.particles['z'], np.array([2.0]))
+
+
 def _diffusion_population(particle_type, tracer_methods, characteristics, diffusion):
     """Build a one-particle population using the canonical diffusion config."""
     config = {

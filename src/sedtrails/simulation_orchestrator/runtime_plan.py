@@ -13,11 +13,13 @@ from sedtrails.transport_converter.physics_converter import PhysicsConfig, Physi
 
 
 DEFAULT_PASSIVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
-SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten'})
+DEFAULT_MANGROVE_TRACER_FLOW_FIELDS = ('depth_avg_flow_velocity',)
+SUPPORTED_TRACER_METHODS = frozenset({'passive_tracer', 'soulsby', 'vanwesten', 'mangrove'})
 DEFAULT_TRANSPORT_PROBABILITY_METHOD = 'no_probability'
 _BASE_RUNTIME_INPUT_FIELDS = ('bed_level',)
 _METHOD_RUNTIME_INPUT_FIELDS = {
     'passive_tracer': ('depth_avg_flow_velocity',),
+    'mangrove': ('depth_avg_flow_velocity',),
     'soulsby': (
         'depth_avg_flow_velocity',
         'mean_bed_shear_stress',
@@ -33,6 +35,7 @@ _METHOD_RUNTIME_INPUT_FIELDS = {
 }
 _METHOD_TRANSIENT_ARRAY_COUNTS = {
     'passive_tracer': 0,
+    'mangrove': 0,
     'soulsby': 40,
     'vanwesten': 32,
 }
@@ -128,6 +131,11 @@ def validate_population_runtime_configurations(
         if not isinstance(tracer_methods, Mapping) or len(tracer_methods) != 1:
             continue
         if 'passive_tracer' not in tracer_methods:
+            if 'mangrove' not in tracer_methods:
+                continue
+
+        if 'mangrove' in tracer_methods:
+            _validate_mangrove_configuration(population_index, population_config)
             continue
 
         transport_probability_method = population_config.get(
@@ -192,6 +200,8 @@ def required_input_fields(
             == 'macdonald_2006'
         ):
             fields.append('water_depth')
+        if tracer_plan.method_name == 'mangrove':
+            fields.extend(_mangrove_runtime_input_fields(tracer_plan.method_config))
     return tuple(_unique_preserving_order(fields))
 
 
@@ -291,6 +301,8 @@ def _build_population_runtime_plan(
             population_config,
             transport_probability_method,
         )
+    elif method_name == 'mangrove':
+        _validate_mangrove_configuration(population_index, population_config)
     physics_config = build_physics_config(base_physics_config, population_config, method_name, method_config)
     tracer_config = {method_name: dict(method_config)}
     converter = PhysicsConverter(physics_config, tracer_config)
@@ -304,7 +316,7 @@ def _build_population_runtime_plan(
             method_config=method_config,
             flow_field_names=flow_field_names,
             transport_probability_method=transport_probability_method,
-            required_physics_fields=required_physics_fields(method_name, flow_field_names),
+            required_physics_fields=required_physics_fields(method_name, flow_field_names, method_config),
             converter=converter,
         ),
     )
@@ -351,7 +363,11 @@ def build_physics_config(
     return PhysicsConfig.from_dict(config=base_config, tracer_config={method_name: dict(method_config)})
 
 
-def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -> tuple[str, ...]:
+def required_physics_fields(
+    method_name: str,
+    flow_field_names: Sequence[str],
+    method_config: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
     """
     Return physics fields that must be preserved for a method plan.
 
@@ -385,6 +401,12 @@ def required_physics_fields(method_name: str, flow_field_names: Sequence[str]) -
     if method_name == 'passive_tracer':
         return tuple(_unique_preserving_order(flow_field_names))
 
+    if method_name == 'mangrove':
+        fields = list(flow_field_names)
+        if _mangrove_requires_max_water_depth(method_config or {}):
+            fields.append('max_water_depth')
+        return tuple(_unique_preserving_order(fields))
+
     raise ConfigurationError(f'Unsupported tracer method {method_name!r}.')
 
 
@@ -394,6 +416,8 @@ def _get_flow_field_names(
     flow_field_names = method_config.get('flow_field_name')
     if method_name == 'passive_tracer' and flow_field_names is None:
         return DEFAULT_PASSIVE_TRACER_FLOW_FIELDS
+    if method_name == 'mangrove' and flow_field_names is None:
+        return DEFAULT_MANGROVE_TRACER_FLOW_FIELDS
 
     if not isinstance(flow_field_names, Sequence) or isinstance(flow_field_names, str) or not flow_field_names:
         raise ConfigurationError(
@@ -435,6 +459,42 @@ def _validate_passive_tracer_configuration(
             f'transport_probability={transport_probability_method!r}. Only "no_probability" is allowed '
             'for passive_tracer.'
         )
+
+
+def _validate_mangrove_configuration(
+    population_index: int,
+    population_config: Mapping[str, Any],
+) -> None:
+    particle_type = population_config.get('particle_type')
+    if particle_type != 'mangrove':
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "mangrove" but particle_type is '
+            f'{particle_type!r}. Set particle_type to "mangrove".'
+        )
+
+    transport_probability_method = population_config.get(
+        'transport_probability', DEFAULT_TRANSPORT_PROBABILITY_METHOD
+    )
+    if transport_probability_method != DEFAULT_TRANSPORT_PROBABILITY_METHOD:
+        raise ConfigurationError(
+            f'Population {population_index} uses tracer method "mangrove" with '
+            f'transport_probability={transport_probability_method!r}. Only "no_probability" is allowed '
+            'for mangrove.'
+        )
+
+
+def _mangrove_runtime_input_fields(method_config: Mapping[str, Any]) -> tuple[str, ...]:
+    fields = ['bed_level', 'water_depth']
+    if _mangrove_requires_max_water_depth(method_config):
+        fields.append('max_water_depth')
+    return tuple(_unique_preserving_order(fields))
+
+
+def _mangrove_requires_max_water_depth(method_config: Mapping[str, Any]) -> bool:
+    settlement = method_config.get('settlement', {}) if isinstance(method_config, Mapping) else {}
+    if not isinstance(settlement, Mapping) or not settlement.get('enabled', False):
+        return False
+    return settlement.get('depth_mode', 'instantaneous') == 'max_over_simulation'
 
 
 def _physics_config_to_dict(config: PhysicsConfig | Mapping[str, Any]) -> dict[str, Any]:

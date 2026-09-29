@@ -44,6 +44,7 @@ _STATUS_DEFAULTS = {
     'status_mobile': 0,
     'status_beached': 0,
     'status_left_domain': 0,
+    'status_settled': 0,
 }
 
 
@@ -224,6 +225,8 @@ class NetCDFWriter:
         if 'z' in ds.variables:
             ds['z'].units = 'm'
             ds['z'].positive = 'up'
+        if 'settlement_time' in ds.variables:
+            ds['settlement_time'].units = 'seconds since reference_date'
 
     @staticmethod
     def _needs_native_coordinate_output(coordinate_metadata: dict | None) -> bool:
@@ -294,6 +297,12 @@ class NetCDFWriter:
         h['y'][destination] = output_y
         h['z'][destination] = self._particle_field_slice(particles, 'z', 0.0, source_slice)
         h['burial_depth'][destination] = np.asarray(particles['burial_depth'])[source_slice]
+        h['settlement_time'][destination] = self._particle_field_slice(
+            particles,
+            'settlement_time',
+            np.nan,
+            source_slice,
+        )
         h['mixing_depth'][destination] = self._particle_field_slice(
             particles,
             'mixing_depth',
@@ -486,7 +495,7 @@ class NetCDFWriter:
             chunksizes=(time_particle_chunks[0],),
             **compression_kwargs,
         )
-        for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+        for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth', 'settlement_time'):
             ds.createVariable(
                 var_name,
                 coordinate_dtype,
@@ -678,7 +687,7 @@ class NetCDFWriter:
             ds.createVariable('time', 'f8', (), fill_value=np.nan)
             ds['time'][...] = float(current_time)
 
-            for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth'):
+            for var_name in ('x', 'y', 'z', 'burial_depth', 'mixing_depth', 'settlement_time'):
                 ds.createVariable(
                     var_name,
                     coordinate_dtype,

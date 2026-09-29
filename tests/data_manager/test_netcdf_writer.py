@@ -24,6 +24,7 @@ class MockPopulation:
             'x': np.array([1.0, 2.0, 3.0]),
             'y': np.array([1.5, 2.5, 3.5]),
             'burial_depth': np.array([0.1, 0.2, 0.0]),
+            'settlement_time': np.array([np.nan, np.nan, np.nan]),
             'mixing_depth': np.array([0.5, 0.6, 0.4]),
             'status_mobile': np.array([1, 0, 1], dtype=np.int32),
             'status_alive': np.array([1, 1, 1], dtype=np.int32),
@@ -31,6 +32,7 @@ class MockPopulation:
             'status_domain': np.array([1, 1, 1], dtype=np.int32),
             'status_transported': np.array([0, 1, 0], dtype=np.int32),
             'status_released': np.array([1, 1, 1], dtype=np.int32),
+            'status_settled': np.array([0, 0, 0], dtype=np.int32),
         }
 
 
@@ -95,8 +97,9 @@ class TestNetCDFWriterStreaming:
 
     def test_open_creates_all_trajectory_variables(self, open_handle):
         expected = {'x', 'y', 'z', 'time', 'burial_depth', 'mixing_depth',
+                    'settlement_time',
                     'status_alive', 'status_buried', 'status_domain',
-                    'status_transported', 'status_released', 'status_mobile'}
+                    'status_transported', 'status_released', 'status_mobile', 'status_settled'}
         assert expected.issubset(set(open_handle.variables))
         assert 'covered_distance' not in open_handle.variables
         assert open_handle['time'].dimensions == ('n_timesteps',)
@@ -304,6 +307,9 @@ class TestNetCDFWriterStreaming:
 
         np.testing.assert_array_equal(
             handle['status_mobile'][0, :], population.particles['status_mobile']
+        )
+        np.testing.assert_array_equal(
+            handle['status_settled'][0, :], population.particles['status_settled']
         )
         handle.close()
 

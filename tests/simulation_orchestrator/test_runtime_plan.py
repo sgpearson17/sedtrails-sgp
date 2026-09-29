@@ -65,6 +65,32 @@ def test_required_input_fields_include_macdonald_water_depth():
     assert 'water_depth' in required_input_fields((plan,))
 
 
+def test_required_input_fields_include_mangrove_support_fields():
+    """Mangrove runtime plans should request the scalar support fields they need."""
+    plan = SimpleNamespace(
+        tracer=SimpleNamespace(
+            method_name='mangrove',
+            method_config={
+                'settlement': {
+                    'enabled': True,
+                    'method': 'sticky_depth',
+                    'depth_threshold': 0.1,
+                    'depth_mode': 'max_over_simulation',
+                }
+            },
+            flow_field_names=('depth_avg_flow_velocity',),
+            converter=SimpleNamespace(config=SimpleNamespace()),
+        )
+    )
+
+    assert required_input_fields((plan,)) == (
+        'bed_level',
+        'depth_avg_flow_velocity',
+        'water_depth',
+        'max_water_depth',
+    )
+
+
 def _population_config(
     tracer_methods,
     *,
@@ -171,6 +197,25 @@ def test_passive_tracer_population_defaults_to_depth_averaged_velocity():
     runtime_plan = build_population_runtime_plans([population_config], [object()], {})[0]
 
     assert runtime_plan.tracer.method_name == 'passive_tracer'
+    assert runtime_plan.tracer.flow_field_names == ('depth_avg_flow_velocity',)
+    assert runtime_plan.tracer.required_physics_fields == ('depth_avg_flow_velocity',)
+
+
+def test_mangrove_population_defaults_to_depth_averaged_velocity():
+    """Build a mangrove plan with the default depth-averaged flow field."""
+    population_config = _population_config(
+        {'mangrove': {}},
+        particle_type='mangrove',
+        characteristics={'species': 'avicennia_marina', 'diffusion_coefficient': 0.0},
+        seeding={
+            'quantity': 1,
+            'strategy': {'point': {'locations': ['0,0']}},
+        },
+    )
+
+    runtime_plan = build_population_runtime_plans([population_config], [object()], {})[0]
+
+    assert runtime_plan.tracer.method_name == 'mangrove'
     assert runtime_plan.tracer.flow_field_names == ('depth_avg_flow_velocity',)
     assert runtime_plan.tracer.required_physics_fields == ('depth_avg_flow_velocity',)
 
