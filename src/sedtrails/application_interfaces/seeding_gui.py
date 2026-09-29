@@ -517,21 +517,21 @@ def _filter_finite_map_points(
     y_finite = y_array[finite]
     values_finite = value_array[finite]
 
-    # Some source files contain repeated/fill coordinates (often at origin), which
-    # can distort triangulation. Global duplicate detection is expensive for large
-    # maps, so only use it when the point count is bounded.
-    if x_finite.size > _MAX_GLOBAL_DEDUPLICATION_POINTS:
-        origin = (x_finite == 0.0) & (y_finite == 0.0)
-        origin_count = np.count_nonzero(origin)
-        if origin_count <= 1:
-            return x_finite, y_finite, values_finite
+    # Inactive/masked cells are commonly stored with (0, 0) fill coordinates
+    # (e.g. Delft3D). Drop them entirely so they don't distort the map bounds.
+    non_origin = ~((x_finite == 0.0) & (y_finite == 0.0))
+    if np.any(non_origin):
+        x_finite = x_finite[non_origin]
+        y_finite = y_finite[non_origin]
+        values_finite = values_finite[non_origin]
+    if x_finite.size == 0:
+        raise SeedingGuiError(f"No finite map points found for bathymetry variable '{variable_name}'.")
 
-        first_origin = int(np.argmax(origin))
-        keep = ~origin
-        keep[first_origin] = True
-        values_collapsed = values_finite[keep]
-        values_collapsed[first_origin] = np.mean(values_finite[origin])
-        return x_finite[keep], y_finite[keep], values_collapsed
+    # Some source files also contain repeated/duplicate coordinates elsewhere.
+    # Global duplicate detection is expensive for large maps, so only use it
+    # when the point count is bounded.
+    if x_finite.size > _MAX_GLOBAL_DEDUPLICATION_POINTS:
+        return x_finite, y_finite, values_finite
 
     xy = np.column_stack((x_finite, y_finite))
     unique_xy, inverse = np.unique(xy, axis=0, return_inverse=True)
