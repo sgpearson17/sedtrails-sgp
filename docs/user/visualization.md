@@ -4,6 +4,10 @@ This page is a placeholder for SedTRAILS visualization guidance beyond the live 
 
 For the real-time run dashboard, see [Monitoring Dashboard](dashboard.md). For output file inspection and trajectory plotting commands, see [Output](output.md).
 
+For an interactive map with configurable square seed patches, origin-coloured
+trajectories, JSON sessions and PNG export, run `sedtrails viz patches`. See
+[Patch-coloured trajectory GUI](patch-gui.md) for the workflow.
+
 ## Basic Visualization
 
 Use ``sedtrails viz trajectories`` to plot the saved ``x``, ``y``, and ``time`` trajectories:

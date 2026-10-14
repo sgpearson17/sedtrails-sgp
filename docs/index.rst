@@ -59,6 +59,7 @@ Features
    user/dashboard
    user/input-formats
    user/seeding
+   user/patch-gui
 
 .. toctree::
    :maxdepth: 2

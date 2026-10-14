@@ -117,6 +117,10 @@ For geographic input grids, the **coordinates** control can switch the map from 
 
 ### GUI seeding modes
 
+For post-processing with coloured square patches and trajectories, see
+[Patch-coloured trajectory GUI](patch-gui.md). Unlike the seeding setup GUI,
+that viewer does not modify release locations or write a simulation YAML.
+
 - **Points**: left click on the map to add release points. Right click near an existing point to remove it.
 - **Transect**: left click endpoint pairs, set `k`, then press **Generate**. Each pair becomes a straight transect with `k` generated release locations.
 - **Random**: left click polygon vertices, right click to close the polygon, set `n` and `seed`, then press **Generate**. The GUI generates `n` random points inside the polygon.

@@ -2135,7 +2135,14 @@ def _resolve_relative_path(path: str | Path, base_dir: Path) -> Path:
     config_relative = (base_dir / candidate).resolve()
     if config_relative.exists():
         return config_relative
-    return candidate.resolve()
+    cwd_relative = candidate.resolve()
+    if cwd_relative.exists():
+        return cwd_relative
+    for parent in base_dir.resolve().parents:
+        project_relative = parent / candidate
+        if project_relative.exists():
+            return project_relative
+    return cwd_relative
 
 
 # def _yaml_path_value(points_path: Path, output_config_dir: Path) -> str:

@@ -441,6 +441,22 @@ vizualizer_app = typer.Typer(
 app.add_typer(vizualizer_app, name='viz')
 
 
+@vizualizer_app.command('patches')
+def patch_gui_cmd(
+    config_file: str | None = typer.Option(None, '--config', '-c', help='SedTRAILS YAML to load.'),
+    session_file: str | None = typer.Option(None, '--session', help='Saved patch JSON to reopen.'),
+    results_file: str | None = typer.Option(None, '--file', '-f', help='Optional associated trajectory NetCDF.'),
+):
+    """Open the patch-coloured seed and trajectory analysis GUI."""
+    from sedtrails.application_interfaces.patch_gui import launch_patch_gui
+
+    try:
+        launch_patch_gui(config_path=config_file, session_path=session_file, results_path=results_file)
+    except Exception as exc:
+        typer.echo(f'Error opening patch GUI: {exc}', err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @vizualizer_app.command('trajectories')
 def plot_trajectories_cmd(
     results_file: str = typer.Option(
