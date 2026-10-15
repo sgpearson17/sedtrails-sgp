@@ -45,9 +45,21 @@ VINTAGE_BATHYMETRY_COLORS = np.array(
     dtype=float,
 ) / 255.0
 
+
+# Grayscale: a simple linear ramp where lower values are darker.
+GRAYSCALE_BATHYMETRY_LEVELS = np.array([0.0, 1.0])
+GRAYSCALE_BATHYMETRY_COLORS = np.array(
+    [
+        [0, 0, 0],
+        [255, 255, 255],
+    ],
+    dtype=float,
+) / 255.0
+
 BATHYMETRY_COLORMAPS = {
     'SEAWAD': (SEAWAD_BATHYMETRY_LEVELS, SEAWAD_BATHYMETRY_COLORS),
     'Vintage': (VINTAGE_BATHYMETRY_LEVELS, VINTAGE_BATHYMETRY_COLORS),
+    'Grayscale': (GRAYSCALE_BATHYMETRY_LEVELS, GRAYSCALE_BATHYMETRY_COLORS),
 }
 
 # Backward-compatible aliases for callers/tests that imported the original names.

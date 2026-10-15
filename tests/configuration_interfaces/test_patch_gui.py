@@ -262,6 +262,38 @@ def test_json_roundtrip_restores_plot_and_png(case, tmp_path):
         assert image.width > 500 and image.height > 500
 
 
+def test_colormap_option_selects_bathymetry_palette(case):
+    path, _ = case
+    model = PatchModel(PatchSession(config_path=path, colormap='Grayscale'))
+    plot = PatchPlot(Figure(), model)
+    assert plot.colormap_name == 'Grayscale'
+    plot.set_colormap('Vintage')
+    assert plot.colormap_name == 'Vintage'
+
+
+def test_invalid_colormap_is_rejected(case):
+    path, _ = case
+    with pytest.raises(ValueError, match='colormap'):
+        PatchSession(config_path=path, colormap='not-a-colormap').validate()
+
+
+def test_show_background_hides_unclassified_seeds_and_tracks(case):
+    path, output = case
+    session = PatchSession(
+        config_path=path,
+        results_path=output,
+        patches=[SquarePatch('p', 0, 0, 1, (255, 0, 0))],
+        show_background=False,
+    )
+    model = PatchModel(session)
+    plot = PatchPlot(Figure(), model)
+    labels = classify_points(model.seeds, session.patches)
+    assert np.count_nonzero(labels == -1) > 0
+    assert len(plot.seed_artist.get_offsets()) == np.count_nonzero(labels != -1)
+    track_labels = labels[model.track_seed_indices[plot.track_order]]
+    assert np.all(track_labels != -1)
+
+
 def test_relative_paths_in_json_are_relative_to_json(case, tmp_path):
     path, _ = case
     saved = tmp_path / 'relative.json'
@@ -329,6 +361,13 @@ def desktop(case, tk_root):
             widget.destroy()
 
 
+def test_default_fields_have_expected_values(desktop):
+    assert desktop.fields['size'].get() == '1.5'
+    assert desktop.fields['row_spacing'].get() == '1'
+    assert desktop.fields['column_spacing'].get() == '1'
+    assert desktop.colormap.get() == 'SEAWAD'
+
+
 def test_gui_add_series_edit_delete_and_layers(desktop):
     app = desktop
     app.fields['rows'].set('2')
@@ -349,6 +388,32 @@ def test_gui_add_series_edit_delete_and_layers(desktop):
     app.apply_layers()
     assert app.session.background == (10, 20, 30)
     assert app.plot.seed_artist is None
+
+
+def test_gui_series_spacing_is_independent_of_side_length(desktop):
+    app = desktop
+    app.fields['size'].set('2')
+    app.fields['row_spacing'].set('0.5')
+    app.fields['column_spacing'].set('3')
+    app.fields['rows'].set('2')
+    app.fields['columns'].set('2')
+    app.add_patches()
+    assert [(p.x, p.y) for p in app.session.patches] == [(0, 0), (3, 0), (0, 0.5), (3, 0.5)]
+
+
+def test_gui_colormap_dropdown_switches_bathymetry_palette(desktop):
+    app = desktop
+    app.colormap.set('Grayscale')
+    assert app.plot.colormap_name == 'Grayscale'
+    assert app.session.colormap == 'Grayscale'
+
+
+def test_gui_background_checkbox_hides_unclassified_layers(desktop):
+    app = desktop
+    app.visibility['show_background'].set(False)
+    app.apply_layers()
+    assert app.session.show_background is False
+    assert len(app.plot.seed_artist.get_offsets()) == 0
 
 
 def test_gui_load_save_reopen_and_export(desktop, case, tmp_path, monkeypatch):

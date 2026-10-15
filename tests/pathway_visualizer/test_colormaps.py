@@ -31,9 +31,9 @@ def test_sedtrails_bathymetry_colormap_uses_matlab_anchors():
 
 
 def test_named_bathymetry_colormap_registry_includes_seawad_and_vintage():
-    """The named palette registry exposes SEAWAD and Vintage with expected anchors."""
+    """The named palette registry exposes SEAWAD, Vintage and Grayscale with expected anchors."""
 
-    assert available_bathymetry_colormaps() == ('SEAWAD', 'Vintage')
+    assert available_bathymetry_colormaps() == ('SEAWAD', 'Vintage', 'Grayscale')
 
     _, seawad_norm = bathymetry_colormap('seawad')
     vintage_cmap, vintage_norm = bathymetry_colormap('Vintage')
@@ -58,3 +58,16 @@ def test_sedtrails_bathymetry_colormap_accepts_custom_limits():
 
     assert norm.vmin == -8.0
     assert norm.vmax == 4.0
+
+
+def test_grayscale_colormap_is_darker_at_lower_values():
+    """Grayscale colormap maps the lowest values to black and the highest to white."""
+
+    cmap, norm = bathymetry_colormap('Grayscale', vmin=-5.0, vmax=5.0)
+
+    low = cmap(norm(-5.0))
+    mid = cmap(norm(0.0))
+    high = cmap(norm(5.0))
+    assert low[:3] == (0.0, 0.0, 0.0)
+    assert high[:3] == (1.0, 1.0, 1.0)
+    assert low[0] < mid[0] < high[0]

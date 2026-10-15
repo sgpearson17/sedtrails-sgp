@@ -81,17 +81,24 @@ class PatchSession:
     show_seeds: bool = True
     show_tracks: bool = True
     show_patches: bool = True
+    show_background: bool = True
+    colormap: str = 'SEAWAD'
     max_particles: int = 10_000
     xlim: tuple[float, float] | None = None
     ylim: tuple[float, float] | None = None
 
     def validate(self) -> None:
+        from sedtrails.pathway_visualizer.colormaps import available_bathymetry_colormaps
+
         self.background = parse_rgb(self.background)
         if type(self.max_particles) is not int or self.max_particles < 1:
             raise ValueError('Maximum plotted trajectories must be a positive integer.')
-        for value in (self.show_seeds, self.show_tracks, self.show_patches):
+        for value in (self.show_seeds, self.show_tracks, self.show_patches, self.show_background):
             if type(value) is not bool:
                 raise ValueError('Layer visibility values must be true or false.')
+        available = available_bathymetry_colormaps()
+        if not isinstance(self.colormap, str) or self.colormap.lower() not in {name.lower() for name in available}:
+            raise ValueError(f"colormap must be one of: {', '.join(available)}.")
         names = [patch.name for patch in self.patches]
         if len(set(names)) != len(names):
             raise ValueError('Patch names must be unique.')
@@ -234,18 +241,18 @@ class PatchPlot:
 
     def __init__(self, figure: Any, model: PatchModel):
         import matplotlib.tri as mtri
-        from sedtrails.pathway_visualizer.colormaps import bathymetry_colormap
 
         self.figure = figure
         self.model = model
         self.ax = figure.add_subplot(111)
-        vmin, vmax = float(model.bathymetry.values.min()), float(model.bathymetry.values.max())
-        if vmin == vmax:
-            vmin, vmax = vmin - 0.5, vmax + 0.5
-        cmap, norm = bathymetry_colormap('SEAWAD', vmin=vmin, vmax=vmax)
-        triangulation = _create_masked_triangulation(model.map_x, model.map_y, mtri_module=mtri)
-        bathymetry = self.ax.tricontourf(triangulation, model.bathymetry.values, levels=32, cmap=cmap, norm=norm)
-        figure.colorbar(bathymetry, ax=self.ax, label=f'{model.bathymetry.variable} [m]')
+        self.vmin, self.vmax = float(model.bathymetry.values.min()), float(model.bathymetry.values.max())
+        if self.vmin == self.vmax:
+            self.vmin, self.vmax = self.vmin - 0.5, self.vmax + 0.5
+        self.colormap_name = ''
+        self.triangulation = _create_masked_triangulation(model.map_x, model.map_y, mtri_module=mtri)
+        self.bathymetry_artist: Any = None
+        self.colorbar: Any = None
+        self._draw_bathymetry(model.session.colormap)
         self.ax.set(xlabel='x [m]', ylabel='y [m]', title=model.config_path.name)
         self.ax.set_aspect('equal', adjustable='box')
         self.home_xlim, self.home_ylim = self.ax.get_xlim(), self.ax.get_ylim()
@@ -255,6 +262,31 @@ class PatchPlot:
             self.ax.set_xlim(model.session.xlim)
         if model.session.ylim is not None:
             self.ax.set_ylim(model.session.ylim)
+
+    def _draw_bathymetry(self, colormap_name: str) -> None:
+        from sedtrails.pathway_visualizer.colormaps import bathymetry_colormap
+
+        if colormap_name == self.colormap_name:
+            return
+        cmap, norm = bathymetry_colormap(colormap_name, vmin=self.vmin, vmax=self.vmax)
+        if self.colorbar is not None:
+            self.colorbar.remove()
+        if self.bathymetry_artist is not None:
+            self.bathymetry_artist.remove()
+        self.bathymetry_artist = self.ax.tricontourf(
+            self.triangulation, self.model.bathymetry.values, levels=32, cmap=cmap, norm=norm
+        )
+        self.colorbar = self.figure.colorbar(
+            self.bathymetry_artist, ax=self.ax, label=f'{self.model.bathymetry.variable} [m]'
+        )
+        self.colormap_name = colormap_name
+
+    def set_colormap(self, colormap_name: str) -> None:
+        xlim, ylim = self.ax.get_xlim(), self.ax.get_ylim()
+        self._draw_bathymetry(colormap_name)
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+        self.figure.canvas.draw_idle()
 
     def draw(self) -> None:
         from matplotlib.collections import LineCollection
@@ -283,7 +315,11 @@ class PatchPlot:
                 )
                 self.artists.append(self.ax.add_patch(rectangle))
         if session.show_tracks and model.tracks is not None:
-            self.track_order = np.argsort(labels[model.track_seed_indices], kind='stable')
+            track_labels = labels[model.track_seed_indices]
+            track_positions = np.arange(len(model.track_seed_indices))
+            if not session.show_background:
+                track_positions = track_positions[track_labels != -1]
+            self.track_order = track_positions[np.argsort(track_labels[track_positions], kind='stable')]
             self.track_artist = LineCollection(
                 np.ma.masked_invalid(model.tracks[self.track_order]),
                 colors=colours[model.track_seed_indices[self.track_order]],
@@ -293,18 +329,23 @@ class PatchPlot:
             self.ax.add_collection(self.track_artist, autolim=False)
             self.artists.append(self.track_artist)
         if session.show_seeds:
-            self.seed_artist = self.ax.scatter(*model.seeds.T, c=colours, s=9, edgecolors='none', zorder=4)
-            self.artists.append(self.seed_artist)
-        handles = [
-            Line2D(
-                [],
-                [],
-                marker='o',
-                linestyle='',
-                color=np.asarray(session.background) / 255,
-                label=f'Background ({np.count_nonzero(labels == -1)})',
+            seed_mask = np.ones(len(model.seeds), dtype=bool) if session.show_background else labels != -1
+            self.seed_artist = self.ax.scatter(
+                *model.seeds[seed_mask].T, c=colours[seed_mask], s=9, edgecolors='none', zorder=4
             )
-        ]
+            self.artists.append(self.seed_artist)
+        handles = []
+        if session.show_background:
+            handles.append(
+                Line2D(
+                    [],
+                    [],
+                    marker='o',
+                    linestyle='',
+                    color=np.asarray(session.background) / 255,
+                    label=f'Background ({np.count_nonzero(labels == -1)})',
+                )
+            )
         handles.extend(
             Line2D(
                 [],
@@ -388,17 +429,29 @@ class PatchGuiApp:
             ('name', 'Name / series prefix', 'Patch'),
             ('x', 'Lower-left x [m]', '0'),
             ('y', 'Lower-left y [m]', '0'),
-            ('size', 'Side length n [m]', '1'),
+            ('size', 'Side length n [m]', '1.5'),
             ('rgb', 'RGB (0..255)', '255, 0, 0'),
             ('rows', 'Series rows (+y)', '1'),
             ('columns', 'Series columns (+x)', '1'),
+            ('row_spacing', 'Series row spacing (+y) [m]', '1'),
+            ('column_spacing', 'Series column spacing (+x) [m]', '1'),
         )
         for row, (key, label, default) in enumerate(defaults):
             ttk.Label(editor, text=label).grid(row=row, column=0, sticky='w', pady=2)
             value = tk.StringVar(value=default)
-            ttk.Entry(editor, textvariable=value, width=22).grid(row=row, column=1, sticky='ew')
+            if key in ('x', 'y'):
+                ttk.Spinbox(
+                    editor,
+                    textvariable=value,
+                    from_=-1_000_000,
+                    to=1_000_000,
+                    increment=0.1,
+                    width=20,
+                ).grid(row=row, column=1, sticky='ew')
+            else:
+                ttk.Entry(editor, textvariable=value, width=22).grid(row=row, column=1, sticky='ew')
             self.fields[key] = value
-        button(patches, 'Add square / touching row-column series', self.add_patches)
+        button(patches, 'Add square / row-column series', self.add_patches)
         button(patches, 'Update selected square', self.update_patch)
         button(patches, 'Delete selected square(s)', self.delete_patches)
 
@@ -410,10 +463,25 @@ class PatchGuiApp:
         self.maximum = tk.StringVar(value=str(session.max_particles))
         ttk.Label(layers, text='Maximum plotted trajectories').pack(anchor='w')
         ttk.Entry(layers, textvariable=self.maximum).pack(fill='x')
+        from sedtrails.pathway_visualizer.colormaps import available_bathymetry_colormaps
+
+        self.colormap = tk.StringVar(value=session.colormap)
+        ttk.Label(layers, text='Bathymetry colour map').pack(anchor='w')
+        ttk.Combobox(
+            layers,
+            textvariable=self.colormap,
+            values=available_bathymetry_colormaps(),
+            state='readonly',
+        ).pack(fill='x')
+        self._colormap_trace_suspended = False
+        self.colormap.trace_add(
+            'write', lambda *_args: None if self._colormap_trace_suspended else self._run(self.apply_layers)
+        )
         for key, label in (
             ('show_seeds', 'Seeding points'),
             ('show_tracks', 'Trajectories'),
             ('show_patches', 'Patch squares'),
+            ('show_background', 'Background seeding points and trajectories'),
         ):
             value = tk.BooleanVar(value=getattr(session, key))
             self.visibility[key] = value
@@ -456,6 +524,9 @@ class PatchGuiApp:
         self.file_label.configure(text=str(self.session.config_path))
         self.background.set(', '.join(map(str, self.session.background)))
         self.maximum.set(str(self.session.max_particles))
+        self._colormap_trace_suspended = True
+        self.colormap.set(self.session.colormap)
+        self._colormap_trace_suspended = False
         for key, variable in self.visibility.items():
             variable.set(getattr(self.session, key))
         self._refresh_table()
@@ -505,6 +576,7 @@ class PatchGuiApp:
         candidate = deepcopy(self.session)
         candidate.background = parse_rgb(self.background.get())
         candidate.max_particles = int(self.maximum.get())
+        candidate.colormap = self.colormap.get()
         for key, variable in self.visibility.items():
             setattr(candidate, key, variable.get())
         candidate.validate()
@@ -523,6 +595,7 @@ class PatchGuiApp:
                 model.session = old_session
                 raise
         model.session = self.session = candidate
+        self.plot.set_colormap(candidate.colormap)
         self.plot.draw()
         self._report()
 
@@ -539,13 +612,16 @@ class PatchGuiApp:
         self._require_model()
         patch = self._read_patch()
         rows, columns = int(self.fields['rows'].get()), int(self.fields['columns'].get())
+        row_spacing, column_spacing = float(self.fields['row_spacing'].get()), float(self.fields['column_spacing'].get())
         if rows < 1 or columns < 1 or rows * columns > 10_000:
             raise ValueError('Series rows and columns must be positive, with at most 10,000 patches.')
+        if row_spacing <= 0 or column_spacing <= 0:
+            raise ValueError('Series row and column spacing must be positive.')
         additions = [
             SquarePatch(
                 patch.name if rows * columns == 1 else f'{patch.name}[{row + 1},{column + 1}]',
-                patch.x + column * patch.size,
-                patch.y + row * patch.size,
+                patch.x + column * column_spacing,
+                patch.y + row * row_spacing,
                 patch.size,
                 patch.rgb,
             )
@@ -569,6 +645,8 @@ class PatchGuiApp:
         self.fields['rgb'].set(', '.join(map(str, patch.rgb)))
         self.fields['rows'].set('1')
         self.fields['columns'].set('1')
+        self.fields['row_spacing'].set('1')
+        self.fields['column_spacing'].set('1')
 
     def update_patch(self) -> None:
         selection = self.table.selection()
