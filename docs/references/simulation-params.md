@@ -386,6 +386,49 @@ For `passive_tracer` populations:
 | `soulsby_gamma_e`         | number | Optional     | `0.1`    | Long-term equilibrium proportion of free particles [-].          |
 | `soulsby_mu_d`            | number | Optional     | `0.5`    | Dynamic friction coefficient [-].                                |
 | `soulsby_freedom_factor`  | number | Optional     | `1`      | Initial freedom factor (`0` = trapped, `1` = free).              |
+| `include_nonlinear_wave_velocity` | boolean | Optional | `false` | Add the nonlinear wave-transport vector to the flow used by Soulsby. |
+
+To include the input model's wave-driven sediment-advection velocity, opt in per
+population:
+
+```yaml
+tracer_methods:
+  soulsby:
+    flow_field_name: [grain_velocity]
+    include_nonlinear_wave_velocity: true
+```
+
+Soulsby then uses **U_effective = U_flow + U_wave**, recomputing its speed and
+direction from the summed x/y components before calculating velocity-reduction
+factors and grain velocity. This is not an unscaled addition to the final grain
+velocity: Soulsby's mobility and reduction calculations still apply. The shared
+input flow is not modified, and other populations retain their own settings.
+Shear stresses are unchanged; this option does not implement additional
+wave-induced stirring or calculate Ruessink-2012 skewness/asymmetry.
+
+For XBeach, the correction uses the saved **`ua_mean`**, following the waveform
+and calibration used by that XBeach run. It requires instantaneous `thetamean`
+and `hh` on `globaltime`, plus `_parameters.rotate = 1`, `eps` and `tstart`.
+Directions in rotated XBeach output are nautical-from degrees, converted to
+Cartesian-toward angles as `270 - thetamean`; some XBeach versions incorrectly
+label these values as radians. The potentially inconsistent `thetamean_mean`
+field is not used.
+
+The saved scalar magnitude is projected along a normalized, circular
+time-average of wet snapshot directions over each mean interval. Integration
+uses piecewise-linear snapshot unit vectors, starting at `tstart` for the first
+interval and the previous mean timestamp thereafter. **This is an approximation,
+not the exact time-average of the instantaneous velocity vector.** Save snapshots
+that bracket every mean interval, including simulation start. Snapshot loading
+is streamed one plane at a time, including for chunked or morfac-scaled reads.
+
+Snapshots at or below `eps`, and XBeach's declared dry-cell fill values, do not
+contribute to the direction. Entirely dry intervals get zero correction, even
+if XBeach saved nonzero `ua_mean` there. Missing required data, non-finite wet
+inputs, unbracketed intervals and undefined circular directions for nonzero wet
+corrections raise errors rather than silently substituting zeros. The source
+and approximate averaging method are recorded in input metadata. Without this
+option, normal Soulsby runs do not request the wave field.
 
 #### Passive Tracer Method
 

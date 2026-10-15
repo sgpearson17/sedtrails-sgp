@@ -129,6 +129,10 @@ Each population must define exactly one tracer method under `particles.populatio
 - There is **no default tracer method**. You must explicitly choose one of: `vanwesten`, `soulsby`, or `passive_tracer`.
 - For `passive_tracer`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
 - For `vanwesten` and `soulsby`, you should provide `flow_field_name` explicitly.
+- Soulsby can optionally add a model-supplied wave-transport velocity to its flow
+  vector with `include_nonlinear_wave_velocity: true` (default `false`). See the
+  [Soulsby parameter reference](../references/simulation-params.md#soulsby-method)
+  for the XBeach snapshot requirements and averaging approximation.
 - If you use `passive_tracer`, set `particle_type: passive`.
 - If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
 - If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.
@@ -359,4 +363,3 @@ The new simulation will:
 - **Duration Precision**: The remaining duration is calculated to second precision and formatted in SedTRAILS duration syntax (e.g., `4D15H57M12S` = 4 days, 15 hours, 57 minutes, 12 seconds).
 
 - **Edge Case - Full Completion**: If the output file shows that the original simulation ran to completion (all particles reached the end time), the restart will report "No remaining duration left" and decline to create a restart file.
-

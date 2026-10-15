@@ -65,6 +65,39 @@ def test_required_input_fields_include_macdonald_water_depth():
     assert 'water_depth' in required_input_fields((plan,))
 
 
+@pytest.mark.parametrize('enabled', [False, True])
+def test_soulsby_wave_coupling_requests_wave_input_only_when_enabled(enabled):
+    plan = SimpleNamespace(
+        tracer=SimpleNamespace(
+            method_name='soulsby',
+            flow_field_names=('grain_velocity',),
+            converter=SimpleNamespace(config=SimpleNamespace(include_nonlinear_wave_velocity=enabled)),
+        )
+    )
+    fields = required_input_fields((plan, plan))
+    assert ('nonlinear_wave_velocity' in fields) is enabled
+    assert len(fields) == len(set(fields))
+
+
+def test_soulsby_wave_coupling_is_population_scoped_and_increases_memory_reserve():
+    configs = [
+        _population_config(
+            {'soulsby': {'flow_field_name': ['grain_velocity'], 'include_nonlinear_wave_velocity': enabled}}
+        )
+        for enabled in (False, True)
+    ]
+    plans = build_population_runtime_plans(configs, [object(), object()], {})
+    assert plans[0].tracer.converter.config.include_nonlinear_wave_velocity is False
+    assert plans[1].tracer.converter.config.include_nonlinear_wave_velocity is True
+    ordinary = estimate_runtime_physics_reserve_bytes(
+        (plans[0],), spatial_size=10, time_planes=2
+    )
+    with_waves = estimate_runtime_physics_reserve_bytes(
+        (plans[1],), spatial_size=10, time_planes=2
+    )
+    assert with_waves > ordinary
+
+
 def _population_config(
     tracer_methods,
     *,

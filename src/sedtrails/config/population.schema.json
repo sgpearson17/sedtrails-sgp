@@ -108,6 +108,11 @@
                     "default": 0.0002,
                     "description": "Grain size of background sediment [m]"
                 },
+                "include_nonlinear_wave_velocity": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Add nonlinear_wave_velocity to the flow vector before Soulsby velocity calculations. Requires a valid wave-transport velocity input; does not modify shear stresses."
+                },
                 "soulsby_b_e": {
                     "type": "number",
                     "default": 1.7e-07,

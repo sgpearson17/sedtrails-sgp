@@ -1,5 +1,7 @@
 """Tests for physics converter configuration handling."""
 
+from dataclasses import asdict
+
 from sedtrails.transport_converter.physics_converter import PhysicsConfig, PhysicsConverter
 
 
@@ -61,3 +63,14 @@ def test_converter_instances_do_not_share_config_or_caches():
 
     assert second._grain_properties == {}
     assert second._physics_plugin is None
+
+
+def test_wave_coupling_config_survives_dataclass_copy_without_affecting_other_converters():
+    enabled = PhysicsConfig.from_dict(
+        {'tracer_method': 'soulsby'},
+        {'soulsby': {'include_nonlinear_wave_velocity': True}},
+    )
+    copied = PhysicsConfig.from_dict(asdict(enabled))
+    disabled = PhysicsConfig()
+    assert copied.include_nonlinear_wave_velocity is True
+    assert disabled.include_nonlinear_wave_velocity is False

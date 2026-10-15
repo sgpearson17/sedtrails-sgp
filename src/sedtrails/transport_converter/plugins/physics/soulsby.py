@@ -45,6 +45,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         """
         super().__init__()
         self.config = config
+        if type(config.include_nonlinear_wave_velocity) is not bool:
+            raise ValueError('include_nonlinear_wave_velocity must be true or false.')
 
     def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
@@ -105,6 +107,19 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         flow_velocity_x = sedtrails_data.depth_avg_flow_velocity['x']
         flow_velocity_y = sedtrails_data.depth_avg_flow_velocity['y']
         flow_velocity_magnitude = sedtrails_data.depth_avg_flow_velocity['magnitude']
+        if self.config.include_nonlinear_wave_velocity:
+            wave_velocity = sedtrails_data.nonlinear_wave_velocity
+            if wave_velocity is None or any(key not in wave_velocity for key in ('x', 'y')):
+                raise ValueError('Soulsby wave coupling requires nonlinear_wave_velocity x/y components.')
+            wave_x = np.asarray(wave_velocity['x'], dtype=float)
+            wave_y = np.asarray(wave_velocity['y'], dtype=float)
+            if wave_x.shape != flow_velocity_x.shape or wave_y.shape != flow_velocity_y.shape:
+                raise ValueError('Nonlinear wave velocity components must match the flow velocity shape.')
+            flow_velocity_x = flow_velocity_x + wave_x
+            flow_velocity_y = flow_velocity_y + wave_y
+            if not np.isfinite(flow_velocity_x).all() or not np.isfinite(flow_velocity_y).all():
+                raise ValueError('Soulsby effective flow velocity must contain finite x/y components.')
+            flow_velocity_magnitude = np.hypot(flow_velocity_x, flow_velocity_y)
 
         # Extract Soulsby et al. (2011) empirical parameters
         soulsby_b_e = self.config.soulsby_b_e

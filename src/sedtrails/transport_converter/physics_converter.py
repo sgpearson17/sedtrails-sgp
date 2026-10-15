@@ -54,6 +54,8 @@ class PhysicsConfig:
         Morphological acceleration factor.
     bertin_coefficient : float
         Empirical coefficient for Bertin-style mixing layer thickness.
+    include_nonlinear_wave_velocity : bool
+        Add the supplied wave-transport vector to the flow used by Soulsby.
     """
 
     # Physics methods
@@ -68,6 +70,7 @@ class PhysicsConfig:
     grain_diameter: float = GRAIN_DIAMETER
     morfac: float = MORFAC
     bertin_coefficient: float = BERTIN_COEFFICIENT
+    include_nonlinear_wave_velocity: bool = False
 
     @classmethod
     def from_dict(

@@ -44,6 +44,32 @@ def test_population_schema_accepts_one_method_with_flow_fields(tmp_path):
     }
 
 
+@pytest.mark.parametrize('enabled', [False, True])
+def test_population_schema_accepts_soulsby_wave_coupling(tmp_path, enabled):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {'flow_field_name': ['grain_velocity'], 'include_nonlinear_wave_velocity': enabled}
+    }
+    validated = _validate_config(tmp_path, config)
+    assert validated['particles']['populations'][0]['tracer_methods']['soulsby']['include_nonlinear_wave_velocity'] is enabled
+
+
+def test_population_schema_defaults_soulsby_wave_coupling_to_false(tmp_path):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {'soulsby': {'flow_field_name': ['grain_velocity']}}
+    validated = _validate_config(tmp_path, config)
+    assert validated['particles']['populations'][0]['tracer_methods']['soulsby']['include_nonlinear_wave_velocity'] is False
+
+
+@pytest.mark.parametrize('enabled', ['true', 1, None])
+def test_population_schema_rejects_non_boolean_wave_coupling(tmp_path, enabled):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {'flow_field_name': ['grain_velocity'], 'include_nonlinear_wave_velocity': enabled}
+    }
+    with pytest.raises(YamlValidationError):
+        _validate_config(tmp_path, config)
+
 def test_population_schema_accepts_passive_tracer_default_flow_field(tmp_path):
     """Accept passive tracer configs and apply the default flow field."""
     config = _base_config()

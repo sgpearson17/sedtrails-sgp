@@ -25,6 +25,7 @@ particles:
             - grain_velocity
           tracer_grain_size: 0.0001
           background_grain_size: 0.0001
+          include_nonlinear_wave_velocity: false  # Optional model-supplied wave-transport contribution
           soulsby_b_e: 1.7e-07
           soulsby_theta_s: 0.1
           soulsby_gamma_e: 0.1

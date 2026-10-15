@@ -182,6 +182,10 @@ def required_input_fields(
         tracer_plan = runtime_plan.tracer
         fields.extend(_METHOD_RUNTIME_INPUT_FIELDS[tracer_plan.method_name])
         fields.extend(tracer_plan.flow_field_names)
+        if tracer_plan.method_name == 'soulsby' and getattr(
+            tracer_plan.converter.config, 'include_nonlinear_wave_velocity', False
+        ):
+            fields.append('nonlinear_wave_velocity')
         if (
             tracer_plan.method_name == 'vanwesten'
             and getattr(
@@ -582,6 +586,11 @@ def estimate_runtime_physics_reserve_bytes(
             )
         )
         transient_arrays = _METHOD_TRANSIENT_ARRAY_COUNTS[method_name]
+        if method_name == 'soulsby' and getattr(
+            tracer_plan.converter.config, 'include_nonlinear_wave_velocity', False
+        ):
+            # Effective-flow arrays and streamed XBeach direction reconstruction.
+            transient_arrays += 10
         peak_arrays = max(
             peak_arrays,
             retained_arrays + retained_for_plan + transient_arrays,

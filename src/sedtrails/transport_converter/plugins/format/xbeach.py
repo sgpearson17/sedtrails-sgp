@@ -1,6 +1,7 @@
 """A plugin for converting XBeach NetCDF mean output to SedTRAILS format."""
 
 from pathlib import Path
+import logging
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,8 @@ from sedtrails.transport_converter.sedtrails_data import SedtrailsData
 from sedtrails.transport_converter.sedtrails_metadata import SedtrailsMetadata
 from sedtrails.transport_converter.time_utils import decompress_time_info
 
+logger = logging.getLogger(__name__)
+
 class FormatPlugin(BaseFormatPlugin):
     """
     Plugin for converting XBeach NetCDF mean variables to SedTRAILS format.
@@ -24,6 +27,8 @@ class FormatPlugin(BaseFormatPlugin):
     XBeach writes instantaneous variables on ``globaltime`` and averaged
     variables on ``meantime``. This plugin deliberately maps only ``*_mean``
     variables and uses ``meantime`` as the SedTRAILS time coordinate.
+    Native wave-transport velocities additionally use instantaneous directions
+    to avoid inconsistent ``thetamean_mean`` output in some XBeach versions.
 
     Parameters
     ----------
@@ -160,10 +165,21 @@ class FormatPlugin(BaseFormatPlugin):
             reference_date = np.datetime64('1970-01-01T00:00:00')
 
         self.load()
-        time_info = self._get_time_info(self.input_data, reference_date=reference_date)
+        dataset = self.input_data
+        if dataset is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+        time_info = self._get_time_info(dataset, reference_date=reference_date)
         time_info = self._decompress_time(time_info)
 
         selected_fields = self._selectable_required_fields(required_fields)
+        wave_inputs = ('ua_mean', 'thetamean', 'globaltime', 'hh', '_parameters')
+        if required_fields is None and any(name not in dataset for name in wave_inputs):
+            selected_fields.discard('nonlinear_wave_velocity')
+            logger.warning(
+                'Nonlinear wave velocity is unavailable: native XBeach reconstruction requires %s. '
+                'Explicitly requesting this field will raise an error instead of supplying zeros.',
+                ', '.join(wave_inputs),
+            )
         time_start_idx, time_end_idx = self._calculate_time_slice(current_time, reading_interval, time_info)
         time_start_idx, time_end_idx = self._limit_time_slice_by_memory(
             time_info,
@@ -225,6 +241,15 @@ class FormatPlugin(BaseFormatPlugin):
                 'max_bed_shear_stress_source': 'taubx_mean/tauby_mean magnitude',
             }
         )
+        if nonlinear_wave_velocity is not None:
+            metadata.update(
+                {
+                    'nonlinear_wave_velocity_source': 'ua_mean',
+                    'nonlinear_wave_direction_source': 'circular time average of wet thetamean/globaltime snapshots',
+                    'nonlinear_wave_velocity_averaging': 'approximate: saved scalar mean times mean unit direction',
+                    'nonlinear_wave_wet_depth_cutoff': float(dataset['_parameters'].attrs['eps']),
+                }
+            )
         metadata.add('coordinate_system', self._coordinate_system())
         self._add_crs_metadata(metadata)
         particle_connectivity = self._particle_face_connectivity(mapped_data['x'], mapped_data['y'])
@@ -385,19 +410,21 @@ class FormatPlugin(BaseFormatPlugin):
         """Apply morfac decompression to time values."""
         return decompress_time_info(time_info, self.morfac)
 
-    def _get_time_info(self, input_data: xr.Dataset, reference_date: np.datetime64) -> Dict:
-        """Get XBeach mean-time information in seconds since `reference_date`."""
+    def _get_time_info(
+        self, input_data: xr.Dataset, reference_date: np.datetime64, *, time_dim: str = TIME_DIM
+    ) -> Dict:
+        """Get XBeach time information in seconds since `reference_date`."""
         if not isinstance(reference_date, np.datetime64):
             raise TypeError('reference_date must be a numpy datetime64 object')
         if input_data is None:
             raise ValueError('Dataset not loaded. Call load() first.')
-        if self.TIME_DIM not in input_data:
+        if time_dim not in input_data:
             raise KeyError(
-                f"Required mean time coordinate '{self.TIME_DIM}' not found. "
+                f"Required time coordinate '{time_dim}' not found. "
                 'XBeach conversion requires *_mean output on the meantime axis.'
             )
 
-        time_var = input_data[self.TIME_DIM]
+        time_var = input_data[time_dim]
         raw_time_values = np.asarray(time_var.values)
         orig_units = time_var.attrs.get('units')
         orig_calendar = time_var.attrs.get('calendar', 'standard')
@@ -620,17 +647,127 @@ class FormatPlugin(BaseFormatPlugin):
             data['mean_bed_shear_stress'] = np.hypot(taubx, tauby)
 
         if 'nonlinear_wave_velocity' in selected_fields:
-            if 'ua_mean' in self.input_data and 'thetamean_mean' in self.input_data:
-                theta = self._mean_scalar('thetamean_mean', time_selector, num_times, grid_size)
-                ua = self._mean_scalar('ua_mean', time_selector, num_times, grid_size)
-                data['nonlinear_wave_velocity_x'] = ua * np.cos(np.deg2rad(theta))
-                data['nonlinear_wave_velocity_y'] = ua * np.sin(np.deg2rad(theta))
-            else:
-                data['nonlinear_wave_velocity_x'] = np.zeros((num_times, grid_size), dtype=float)
-                data['nonlinear_wave_velocity_y'] = np.zeros((num_times, grid_size), dtype=float)
-                print("Warning: Variable 'ua_mean' not found, using zeros for nonlinear wave velocity")
+            ua = self._mean_scalar('ua_mean', time_selector, num_times, grid_size)
+            data['nonlinear_wave_velocity_x'], data['nonlinear_wave_velocity_y'] = self._native_wave_velocity(
+                ua, time_selector, grid_size
+            )
 
         return data
+
+    def _native_wave_velocity(
+        self, speed: np.ndarray, time_selector: Any, grid_size: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Project saved ua_mean along a circular average of wet snapshot directions."""
+        dataset = self.input_data
+        if dataset is None:
+            raise ValueError('Dataset not loaded. Call load() first.')
+        for name in ('thetamean', 'globaltime', 'hh', '_parameters'):
+            if name not in dataset:
+                raise KeyError(f"Native XBeach nonlinear wave velocity requires '{name}'.")
+        parameters = dataset['_parameters'].attrs
+        for name in ('rotate', 'eps', 'tstart'):
+            if name not in parameters:
+                raise ValueError(f"Native XBeach wave reconstruction requires '_parameters.{name}'.")
+        if parameters['rotate'] != 1:
+            raise ValueError('Native XBeach wave reconstruction requires rotate=1 (global-coordinate output).')
+        cutoff = float(parameters['eps'])
+        tstart = float(parameters['tstart'])
+        if not np.isfinite(cutoff) or cutoff < 0 or not np.isfinite(tstart):
+            raise ValueError('XBeach eps must be finite and non-negative, and tstart must be finite.')
+        if not np.isfinite(speed).all() or np.any(speed < 0):
+            raise ValueError('XBeach ua_mean must contain finite, non-negative transport speeds.')
+        for name in ('meantime', 'globaltime'):
+            if not np.issubdtype(dataset[name].dtype, np.number):
+                raise ValueError('Native XBeach wave reconstruction requires numeric time coordinates.')
+            units = dataset[name].attrs.get('units', '')
+            if 'since' not in units and self._time_unit_seconds_scale(units) != 1:
+                raise ValueError('Native XBeach elapsed time coordinates must use seconds.')
+        reference = np.datetime64('1970-01-01')
+        means = self._get_time_info(dataset, reference)
+        snapshots = self._get_time_info(dataset, reference, time_dim='globaltime')
+        mean_times = means['seconds_since_reference']
+        times = snapshots['seconds_since_reference']
+        if np.any(np.diff(times) <= 0) or np.any(np.diff(mean_times) <= 0):
+            raise ValueError('XBeach wave time coordinates must be strictly increasing.')
+        raw_first = dataset.globaltime.values[snapshots['valid_time_indices'][0]]
+        origin = times[0] - float(raw_first) * self._time_unit_seconds_scale(dataset.globaltime.attrs.get('units'))
+        simulation_start = origin + tstart
+        raw_indices = np.arange(dataset.sizes[self.TIME_DIM])[time_selector]
+        positions = np.searchsorted(means['valid_time_indices'], raw_indices)
+        spatial_dims = dataset.globalx.dims
+        for name in ('thetamean', 'hh'):
+            if set(dataset[name].dims) != {'globaltime', *spatial_dims}:
+                raise ValueError(f"XBeach '{name}' must have globaltime and the grid's spatial dimensions.")
+        depth_fill = dataset.hh.encoding.get('_FillValue', dataset.hh.attrs.get('_FillValue'))
+        result_x, result_y = np.zeros_like(speed), np.zeros_like(speed)
+        for row, position in enumerate(positions):
+            end = mean_times[position]
+            start = mean_times[position - 1] if position else simulation_start
+            if start > end or start < times[0] or end > times[-1]:
+                raise ValueError(
+                    f'XBeach direction snapshots must bracket the full mean interval [{start}, {end}]. '
+                    'Save globaltime output from simulation start through the last mean interval.'
+                )
+            first = max(0, int(np.searchsorted(times, start, side='right')) - 1)
+            last = int(np.searchsorted(times, end, side='left'))
+            interval_times = times[first : last + 1]
+            weights = self._snapshot_average_weights(interval_times, start, end)
+            needed = speed[row] > 0
+            direction_x, direction_y = np.zeros(grid_size), np.zeros(grid_size)
+            wet_weight = np.zeros(grid_size)
+            for index, weight in zip(range(first, last + 1), weights, strict=True):
+                if weight == 0:
+                    continue
+                raw_index = int(snapshots['valid_time_indices'][index])
+                theta, depth = (
+                    self._reshape_static_spatial_values(
+                        dataset[name].isel(globaltime=raw_index).transpose(*spatial_dims).values, grid_size, name
+                    )
+                    for name in ('thetamean', 'hh')
+                )
+                if np.any(needed & np.isinf(depth)) or (
+                    depth_fill is None and np.any(needed & np.isnan(depth))
+                ):
+                    raise ValueError('Non-finite XBeach snapshot depth where ua_mean is nonzero.')
+                wet = (depth > cutoff) & needed
+                if np.any(wet & ~np.isfinite(theta)):
+                    raise ValueError('Non-finite XBeach snapshot direction at a wet cell where ua_mean is nonzero.')
+                # rotate=1 exports nautical-from degrees, even with misleading rad unit labels.
+                angle = np.deg2rad(270.0 - np.where(wet, theta, 270.0))
+                direction_x += weight * np.cos(angle) * wet
+                direction_y += weight * np.sin(angle) * wet
+                wet_weight += weight * wet
+            norm = np.hypot(direction_x, direction_y)
+            valid_direction = norm > 1e-12 * wet_weight
+            if np.any(needed & (wet_weight > 0) & ~valid_direction):
+                raise ValueError(
+                    'No well-defined wet snapshot direction for nonzero XBeach ua_mean. '
+                    'Increase snapshot frequency or provide trustworthy wave-velocity components.'
+                )
+            np.divide(direction_x, norm, out=result_x[row], where=valid_direction)
+            np.divide(direction_y, norm, out=result_y[row], where=valid_direction)
+            result_x[row] *= speed[row]
+            result_y[row] *= speed[row]
+        return result_x, result_y
+
+    @staticmethod
+    def _snapshot_average_weights(times: np.ndarray, start: float, end: float) -> np.ndarray:
+        """Integrate piecewise-linear snapshot unit vectors over clipped time intervals."""
+        weights = np.zeros(len(times))
+        if start == end:
+            if len(times) == 1:
+                weights[0] = 1
+            else:
+                fraction = (start - times[0]) / (times[1] - times[0])
+                weights[:] = (1 - fraction, fraction)
+        else:
+            dt = np.diff(times)
+            left, right = np.maximum(times[:-1], start), np.minimum(times[1:], end)
+            width = right - left
+            fraction = ((left + right) / 2 - times[:-1]) / dt
+            weights[:-1] += width * (1 - fraction)
+            weights[1:] += width * fraction
+        return weights
 
     @staticmethod
     def _time_selector_from_indices(time_indices: np.ndarray | None) -> Any:
