@@ -30,8 +30,12 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    particles appear. Bathymetry colours automatically span the input elevation
    range, including shallow laboratory domains. Seed strategies, quantities, population order and
    `file_points` filtering are evaluated using the simulation's own seeder.
+   Opening another YAML keeps your patch names, positions, sizes and colours,
+   background colour and rendering settings. The map refits the new grid and
+   previous trajectories are cleared; load the new run's trajectories separately.
 2. Set the patch **name**, lower-left **x/y**, **side length n** (defaults to
-   1.5 m), and **RGB**. The lower-left x/y fields are spin boxes: use their
+   1.5 m), and **RGB** using separate **R**, **G** and **B** boxes.
+   The lower-left x/y fields are spin boxes: use their
    up/down arrows to nudge the value by 0.1 m, or type any value directly.
    Coordinates and side lengths are in metres, not grid-cell indices.
    For geographic grids, the viewer uses the YAML's metric CRS (or safe regional
@@ -48,8 +52,19 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
 4. Select a patch row to edit its position, size or colour, then press
    **Update selected square**. Multiple rows can be selected for deletion.
    Names must be unique. Series members can be recoloured individually.
+   The update, delete and **Live update** controls sit above the series fields.
+   Enable **Live update**, select one row or click a square on the map, then
+   use the keyboard arrow keys while the table or map has focus to move the
+   square in **0.1 m increments**: left/right change x and down/up change y.
+   Seed and trajectory colours and legend counts update with each move.
+   The x/y spin-box arrows also apply immediately in live mode.
+   Text-entry keys keep their normal editing behavior. Turn off toolbar
+   pan/zoom to select or move squares on the map. Disable live mode to return
+   to manual updates. Overlapping squares are selected using the same
+   last-row-wins rule as classification.
 5. Enter **Background point RGB** and press **Apply colours / rendering**.
-   Every RGB value is an integer triplet in **0..255**, such as `255, 80, 0`.
+   It also has separate **R**, **G** and **B** boxes. Each channel must be an
+   integer in **0..255**, for example R = 255, G = 80, B = 0.
    This background colour applies to unclassified particles, not the map itself.
    Choose a **Bathymetry colour map** of **SEAWAD**, **Vintage** or
    **Grayscale** (darker at lower values); the map updates immediately.

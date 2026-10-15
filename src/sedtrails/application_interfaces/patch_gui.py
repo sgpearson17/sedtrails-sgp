@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from decimal import Decimal
 import json
 from pathlib import Path
 from typing import Any
@@ -98,7 +99,7 @@ class PatchSession:
                 raise ValueError('Layer visibility values must be true or false.')
         available = available_bathymetry_colormaps()
         if not isinstance(self.colormap, str) or self.colormap.lower() not in {name.lower() for name in available}:
-            raise ValueError(f"colormap must be one of: {', '.join(available)}.")
+            raise ValueError(f'colormap must be one of: {", ".join(available)}.')
         names = [patch.name for patch in self.patches]
         if len(set(names)) != len(names):
             raise ValueError('Patch names must be unique.')
@@ -404,6 +405,16 @@ class PatchGuiApp:
             widget.pack(fill='x', pady=2)
             return widget
 
+        def rgb_fields(parent, colour):
+            frame = ttk.Frame(parent)
+            variables = {}
+            for channel, initial in zip('rgb', colour, strict=True):
+                ttk.Label(frame, text=channel.upper()).pack(side='left', padx=(0, 2))
+                value = tk.StringVar(value=str(initial))
+                ttk.Entry(frame, textvariable=value, width=4).pack(side='left', padx=(0, 5))
+                variables[channel] = value
+            return frame, variables
+
         files = ttk.LabelFrame(panel, text='Files', padding=5)
         files.pack(fill='x')
         button(files, 'Open SedTRAILS YAML...', self.open_yaml)
@@ -423,6 +434,8 @@ class PatchGuiApp:
             self.table.column(column, width=60 if column != 'rgb' else 95)
         self.table.pack(fill='x')
         self.table.bind('<<TreeviewSelect>>', self.select_patch)
+        self.table.bind('<KeyPress>', self._on_patch_arrow)
+        self.live_update = tk.BooleanVar(value=False)
         editor = ttk.Frame(patches)
         editor.pack(fill='x')
         defaults = (
@@ -430,11 +443,6 @@ class PatchGuiApp:
             ('x', 'Lower-left x [m]', '0'),
             ('y', 'Lower-left y [m]', '0'),
             ('size', 'Side length n [m]', '1.5'),
-            ('rgb', 'RGB (0..255)', '255, 0, 0'),
-            ('rows', 'Series rows (+y)', '1'),
-            ('columns', 'Series columns (+x)', '1'),
-            ('row_spacing', 'Series row spacing (+y) [m]', '1'),
-            ('column_spacing', 'Series column spacing (+x) [m]', '1'),
         )
         for row, (key, label, default) in enumerate(defaults):
             ttk.Label(editor, text=label).grid(row=row, column=0, sticky='w', pady=2)
@@ -447,19 +455,43 @@ class PatchGuiApp:
                     to=1_000_000,
                     increment=0.1,
                     width=20,
+                    command=lambda: self._run(self._live_position_changed),
                 ).grid(row=row, column=1, sticky='ew')
             else:
                 ttk.Entry(editor, textvariable=value, width=22).grid(row=row, column=1, sticky='ew')
             self.fields[key] = value
-        button(patches, 'Add square / row-column series', self.add_patches)
+        ttk.Label(editor, text='RGB (0..255)').grid(row=4, column=0, sticky='w', pady=2)
+        rgb_frame, self.patch_rgb = rgb_fields(editor, (255, 0, 0))
+        rgb_frame.grid(row=4, column=1, sticky='ew')
         button(patches, 'Update selected square', self.update_patch)
         button(patches, 'Delete selected square(s)', self.delete_patches)
+        ttk.Checkbutton(
+            patches,
+            text='Live update (arrow keys: 0.1 m)',
+            variable=self.live_update,
+            command=lambda: self._run(self.toggle_live_update),
+        ).pack(fill='x', pady=2)
+        series = ttk.Frame(patches)
+        series.pack(fill='x')
+        for row, (key, label) in enumerate(
+            (
+                ('rows', 'Series rows (+y)'),
+                ('columns', 'Series columns (+x)'),
+                ('row_spacing', 'Series row spacing (+y) [m]'),
+                ('column_spacing', 'Series column spacing (+x) [m]'),
+            )
+        ):
+            ttk.Label(series, text=label).grid(row=row, column=0, sticky='w', pady=2)
+            value = tk.StringVar(value='1')
+            ttk.Entry(series, textvariable=value, width=22).grid(row=row, column=1, sticky='ew')
+            self.fields[key] = value
+        button(patches, 'Add square / row-column series', self.add_patches)
 
         layers = ttk.LabelFrame(panel, text='Layers and rendering', padding=5)
         layers.pack(fill='x')
-        self.background = tk.StringVar(value=', '.join(map(str, session.background)))
         ttk.Label(layers, text='Background point RGB (0..255)').pack(anchor='w')
-        ttk.Entry(layers, textvariable=self.background).pack(fill='x')
+        background_frame, self.background = rgb_fields(layers, session.background)
+        background_frame.pack(fill='x')
         self.maximum = tk.StringVar(value=str(session.max_particles))
         ttk.Label(layers, text='Maximum plotted trajectories').pack(anchor='w')
         ttk.Entry(layers, textvariable=self.maximum).pack(fill='x')
@@ -520,15 +552,19 @@ class PatchGuiApp:
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.map_frame, pack_toolbar=False)
         self.toolbar.pack(side='bottom', fill='x')
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.canvas.get_tk_widget().bind('<KeyPress>', self._on_patch_arrow, add='+')
+        self.canvas.mpl_connect('button_press_event', self._on_map_click)
         self.canvas.draw()
         self.file_label.configure(text=str(self.session.config_path))
-        self.background.set(', '.join(map(str, self.session.background)))
+        for channel, value in zip('rgb', self.session.background, strict=True):
+            self.background[channel].set(str(value))
         self.maximum.set(str(self.session.max_particles))
         self._colormap_trace_suspended = True
         self.colormap.set(self.session.colormap)
         self._colormap_trace_suspended = False
         for key, variable in self.visibility.items():
             variable.set(getattr(self.session, key))
+        self.table.selection_remove(*self.table.selection())
         self._refresh_table()
         self._report()
 
@@ -548,22 +584,25 @@ class PatchGuiApp:
         )
 
     def _refresh_table(self) -> None:
-        self.table.delete(*self.table.get_children())
+        for row in self.table.get_children()[len(self.session.patches) :]:
+            self.table.delete(row)
         for index, patch in enumerate(self.session.patches):
-            self.table.insert(
-                '',
-                'end',
-                iid=str(index),
-                text=patch.name,
-                values=(patch.x, patch.y, patch.size, ','.join(map(str, patch.rgb))),
-            )
+            values = (patch.x, patch.y, patch.size, ','.join(map(str, patch.rgb)))
+            if self.table.exists(str(index)):
+                self.table.item(str(index), text=patch.name, values=values)
+            else:
+                self.table.insert('', 'end', iid=str(index), text=patch.name, values=values)
 
     def open_yaml(self) -> None:
         from tkinter import filedialog
 
         path = filedialog.askopenfilename(parent=self.root, filetypes=[('SedTRAILS YAML', '*.yaml *.yml')])
         if path:
-            self._install_model(PatchModel(PatchSession(config_path=Path(path))))
+            candidate = self._read_layers()
+            candidate.config_path = Path(path)
+            candidate.results_path = None
+            candidate.xlim = candidate.ylim = None
+            self._install_model(PatchModel(candidate))
 
     def open_json(self) -> None:
         from tkinter import filedialog
@@ -574,7 +613,7 @@ class PatchGuiApp:
 
     def _read_layers(self) -> PatchSession:
         candidate = deepcopy(self.session)
-        candidate.background = parse_rgb(self.background.get())
+        candidate.background = parse_rgb(' '.join(value.get() for value in self.background.values()))
         candidate.max_particles = int(self.maximum.get())
         candidate.colormap = self.colormap.get()
         for key, variable in self.visibility.items():
@@ -605,14 +644,17 @@ class PatchGuiApp:
             float(self.fields['x'].get()),
             float(self.fields['y'].get()),
             float(self.fields['size'].get()),
-            parse_rgb(self.fields['rgb'].get()),
+            parse_rgb(' '.join(value.get() for value in self.patch_rgb.values())),
         )
 
     def add_patches(self) -> None:
         self._require_model()
         patch = self._read_patch()
         rows, columns = int(self.fields['rows'].get()), int(self.fields['columns'].get())
-        row_spacing, column_spacing = float(self.fields['row_spacing'].get()), float(self.fields['column_spacing'].get())
+        row_spacing, column_spacing = (
+            float(self.fields['row_spacing'].get()),
+            float(self.fields['column_spacing'].get()),
+        )
         if rows < 1 or columns < 1 or rows * columns > 10_000:
             raise ValueError('Series rows and columns must be positive, with at most 10,000 patches.')
         if row_spacing <= 0 or column_spacing <= 0:
@@ -642,7 +684,8 @@ class PatchGuiApp:
         patch = self.session.patches[int(selection[0])]
         for key in ('name', 'x', 'y', 'size'):
             self.fields[key].set(str(getattr(patch, key)))
-        self.fields['rgb'].set(', '.join(map(str, patch.rgb)))
+        for channel, value in zip('rgb', patch.rgb, strict=True):
+            self.patch_rgb[channel].set(str(value))
         self.fields['rows'].set('1')
         self.fields['columns'].set('1')
         self.fields['row_spacing'].set('1')
@@ -652,18 +695,81 @@ class PatchGuiApp:
         selection = self.table.selection()
         if len(selection) != 1:
             raise ValueError('Select one patch to update.')
+        self._commit_patch(int(selection[0]), self._read_patch())
+
+    def _commit_patch(self, index: int, patch: SquarePatch) -> None:
         candidate = deepcopy(self.session)
-        candidate.patches[int(selection[0])] = self._read_patch()
+        candidate.patches[index] = patch
         candidate.validate()
         self.session.patches = candidate.patches
         self._refresh_table()
         self.plot.draw()
+
+    def toggle_live_update(self) -> None:
+        if self.live_update.get():
+            self.table.focus_set()
+            self.status.configure(
+                text='Live update: select one patch row or click a square on the map, '
+                'then use arrow keys to move it by 0.1 m. Turn off toolbar pan/zoom first.'
+            )
+        elif self.model is not None:
+            self._report()
+
+    def _live_position_changed(self) -> None:
+        if self.live_update.get():
+            self.update_patch()
+
+    def _on_patch_arrow(self, event: Any) -> str | None:
+        offsets = {'Left': (-0.1, 0), 'Right': (0.1, 0), 'Down': (0, -0.1), 'Up': (0, 0.1)}
+        if not self.live_update.get() or event.keysym not in offsets:
+            return None
+        if self.toolbar is not None and self.toolbar.mode:
+            return None
+        self._run(lambda: self._move_selected_patch(*offsets[event.keysym]))
+        return 'break'
+
+    def _move_selected_patch(self, dx: float, dy: float) -> None:
+        selection = self.table.selection()
+        if len(selection) != 1:
+            raise ValueError('Select one patch for live movement.')
+        index = int(selection[0])
+        patch = self.session.patches[index]
+        moved = replace(
+            patch,
+            x=float(Decimal(str(patch.x)) + Decimal(str(dx))),
+            y=float(Decimal(str(patch.y)) + Decimal(str(dy))),
+        )
+        self._commit_patch(index, moved)
+        self.fields['x'].set(str(moved.x))
+        self.fields['y'].set(str(moved.y))
+
+    def _on_map_click(self, event: Any) -> None:
+        if (
+            not self.live_update.get()
+            or self.plot is None
+            or not self.session.show_patches
+            or self.toolbar.mode
+            or event.button != 1
+            or event.inaxes is not self.plot.ax
+            or event.xdata is None
+            or event.ydata is None
+        ):
+            return
+        index = classify_points(np.array([[event.xdata, event.ydata]]), self.session.patches)[0]
+        if index >= 0:
+            row = str(index)
+            self.table.selection_set(row)
+            self.table.focus(row)
+            self.table.see(row)
+            self.select_patch()
+            self.canvas.get_tk_widget().focus_set()
 
     def delete_patches(self) -> None:
         selected = {int(index) for index in self.table.selection()}
         if not selected:
             raise ValueError('Select the patch(es) to delete.')
         self.session.patches = [p for i, p in enumerate(self.session.patches) if i not in selected]
+        self.table.selection_remove(*self.table.selection())
         self._refresh_table()
         self.plot.draw()
 

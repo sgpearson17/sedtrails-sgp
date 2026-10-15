@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import matplotlib
 
@@ -23,7 +24,7 @@ from sedtrails.application_interfaces.patch_gui import (
     point_colours,
     save_session,
 )
-from sedtrails.application_interfaces.seeding_gui import _resolve_relative_path
+from sedtrails.application_interfaces.seeding_gui import SeedingGuiError, _resolve_relative_path
 
 
 @pytest.fixture
@@ -377,13 +378,15 @@ def test_gui_add_series_edit_delete_and_layers(desktop):
     assert [(p.x, p.y) for p in app.session.patches] == [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]
     app.table.selection_set('0')
     app.select_patch()
-    app.fields['rgb'].set('0,0,255')
+    for channel, value in zip('rgb', (0, 0, 255), strict=True):
+        app.patch_rgb[channel].set(str(value))
     app.update_patch()
     assert app.session.patches[0].rgb == (0, 0, 255)
     app.table.selection_set('1', '2')
     app.delete_patches()
     assert len(app.session.patches) == 4
-    app.background.set('10,20,30')
+    for channel, value in zip('rgb', (10, 20, 30), strict=True):
+        app.background[channel].set(str(value))
     app.visibility['show_seeds'].set(False)
     app.apply_layers()
     assert app.session.background == (10, 20, 30)
@@ -414,6 +417,255 @@ def test_gui_background_checkbox_hides_unclassified_layers(desktop):
     app.apply_layers()
     assert app.session.show_background is False
     assert len(app.plot.seed_artist.get_offsets()) == 0
+
+
+def test_gui_rgb_channels_and_action_layout(desktop):
+    from tkinter import ttk
+
+    app = desktop
+    assert {channel: value.get() for channel, value in app.patch_rgb.items()} == {'r': '255', 'g': '0', 'b': '0'}
+    assert {channel: value.get() for channel, value in app.background.items()} == {'r': '120', 'g': '120', 'b': '120'}
+    patches = app.table.master
+    children = patches.winfo_children()
+    actions = [widget for widget in children if isinstance(widget, (ttk.Button, ttk.Checkbutton))]
+    assert [widget.cget('text') for widget in actions] == [
+        'Update selected square',
+        'Delete selected square(s)',
+        'Live update (arrow keys: 0.1 m)',
+        'Add square / row-column series',
+    ]
+    series = next(
+        widget
+        for widget in children
+        if isinstance(widget, ttk.Frame)
+        and any(
+            isinstance(child, ttk.Label) and child.cget('text') == 'Series rows (+y)'
+            for child in widget.winfo_children()
+        )
+    )
+    assert all(children.index(widget) < children.index(series) for widget in actions[:3])
+
+
+@pytest.mark.parametrize('channel,value', [('r', '-1'), ('g', '256'), ('b', '1.5'), ('r', '')])
+def test_gui_rejects_invalid_patch_rgb_channel(desktop, channel, value):
+    desktop.patch_rgb[channel].set(value)
+    with pytest.raises(ValueError, match='RGB'):
+        desktop.add_patches()
+    assert desktop.session.patches == []
+
+
+def test_gui_live_movement_recolours_seeds_and_tracks_and_keeps_selection(desktop):
+    app = desktop
+    app.fields['size'].set('0.05')
+    app.add_patches()
+    app.load_associated()
+    app.table.selection_set('0')
+    app.select_patch()
+    app.live_update.set(True)
+    app.toggle_live_update()
+    app.plot.ax.set_xlim(-1, 4)
+    app.plot.ax.set_ylim(-1, 3)
+    np.testing.assert_allclose(app.plot.seed_artist.get_facecolors()[0, :3], [1, 0, 0])
+
+    assert app._on_patch_arrow(SimpleNamespace(keysym='Right')) == 'break'
+
+    assert app.session.patches[0].x == 0.1
+    assert app.fields['x'].get() == '0.1'
+    assert app.table.selection() == ('0',)
+    assert float(app.table.item('0', 'values')[0]) == 0.1
+    np.testing.assert_allclose(app.plot.seed_artist.get_facecolors()[:, :3], np.full((4, 3), 120 / 255))
+    np.testing.assert_allclose(app.plot.track_artist.get_colors()[:, :3], np.full((4, 3), 120 / 255))
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 4))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-1, 3))
+
+    app._on_patch_arrow(SimpleNamespace(keysym='Left'))
+    np.testing.assert_allclose(app.plot.seed_artist.get_facecolors()[0, :3], [1, 0, 0])
+    origin = np.flatnonzero(app.plot.track_order == 0)[0]
+    np.testing.assert_allclose(app.plot.track_artist.get_colors()[origin, :3], [1, 0, 0])
+
+
+@pytest.mark.parametrize(
+    'key,expected', [('Left', (-0.1, 0)), ('Right', (0.1, 0)), ('Down', (0, -0.1)), ('Up', (0, 0.1))]
+)
+def test_gui_live_arrow_directions(desktop, key, expected):
+    app = desktop
+    app.add_patches()
+    app.table.selection_set('0')
+    app.select_patch()
+    app.live_update.set(True)
+    app._on_patch_arrow(SimpleNamespace(keysym=key))
+    patch = app.session.patches[0]
+    assert (patch.x, patch.y) == expected
+
+
+def test_gui_live_steps_do_not_drift_at_classification_edges(desktop):
+    app = desktop
+    app.fields['size'].set('0.05')
+    app.add_patches()
+    app.table.selection_set('0')
+    app.select_patch()
+    app.live_update.set(True)
+    for _ in range(10):
+        app._on_patch_arrow(SimpleNamespace(keysym='Right'))
+    assert app.session.patches[0].x == 1
+    assert classify_points(app.model.seeds, app.session.patches)[1] == 0
+    for _ in range(10):
+        app._on_patch_arrow(SimpleNamespace(keysym='Left'))
+    assert app.session.patches[0].x == 0
+    assert classify_points(app.model.seeds, app.session.patches)[0] == 0
+
+
+def test_gui_live_arrows_do_not_interfere_when_disabled_or_navigating(desktop):
+    app = desktop
+    app.add_patches()
+    app.table.selection_set('0')
+    app.select_patch()
+    assert app._on_patch_arrow(SimpleNamespace(keysym='Right')) is None
+    app.live_update.set(True)
+    assert app._on_patch_arrow(SimpleNamespace(keysym='a')) is None
+    app.toolbar.pan()
+    assert app._on_patch_arrow(SimpleNamespace(keysym='Right')) is None
+    app.toolbar.pan()
+    app.toolbar.zoom()
+    assert app._on_patch_arrow(SimpleNamespace(keysym='Right')) is None
+    app.toolbar.zoom()
+    assert app.session.patches[0].x == 0
+
+
+@pytest.mark.parametrize('selection', [(), ('0', '1')])
+def test_gui_live_movement_reports_invalid_selection(desktop, monkeypatch, selection):
+    app = desktop
+    app.fields['columns'].set('2')
+    app.add_patches()
+    app.table.selection_set(*selection)
+    app.live_update.set(True)
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+    app._on_patch_arrow(SimpleNamespace(keysym='Right'))
+    assert len(errors) == 1
+    assert 'Select one patch' in app.status.cget('text')
+    assert [patch.x for patch in app.session.patches] == [0, 1]
+
+
+def test_gui_live_map_click_selects_last_overlapping_square(desktop):
+    from matplotlib.backend_bases import MouseEvent
+
+    app = desktop
+    app.fields['columns'].set('2')
+    app.fields['column_spacing'].set('0.5')
+    app.add_patches()
+    app.canvas.draw()
+    x, y = app.plot.ax.transData.transform((0.75, 0.5))
+    event = MouseEvent('button_press_event', app.canvas, x, y, button=1)
+    app.canvas.callbacks.process('button_press_event', event)
+    assert app.table.selection() == ()
+    app.live_update.set(True)
+    app.canvas.callbacks.process('button_press_event', event)
+    assert app.table.selection() == ('1',)
+    assert app.fields['name'].get() == 'Patch[1,2]'
+    app._on_patch_arrow(SimpleNamespace(keysym='Up'))
+    assert app.session.patches[0].y == 0
+    assert app.session.patches[1].y == 0.1
+
+    app.table.selection_remove('1')
+    app.toolbar.pan()
+    app.canvas.callbacks.process('button_press_event', event)
+    assert app.table.selection() == ()
+    app.toolbar.pan()
+    app.session.show_patches = False
+    app.canvas.callbacks.process('button_press_event', event)
+    assert app.table.selection() == ()
+
+
+@pytest.mark.parametrize('target', ['table', 'map', 'entry', 'spinbox'])
+def test_gui_live_key_bindings_respect_widget_focus(desktop, target):
+    from tkinter import ttk
+
+    app = desktop
+    app.add_patches()
+    app.table.selection_set('0')
+    app.select_patch()
+    app.live_update.set(True)
+    if target == 'table':
+        widget = app.table
+    elif target == 'map':
+        widget = app.canvas.get_tk_widget()
+    else:
+        editor = next(child for child in app.table.master.winfo_children() if isinstance(child, ttk.Frame))
+        variable = app.fields['name' if target == 'entry' else 'x']
+        widget = next(
+            child
+            for child in editor.winfo_children()
+            if isinstance(child, (ttk.Entry, ttk.Spinbox)) and child.cget('textvariable') == str(variable)
+        )
+    app.root.deiconify()
+    try:
+        app.root.update()
+        widget.focus_force()
+        widget.event_generate('<KeyPress-Up>' if target == 'spinbox' else '<KeyPress-Right>')
+        app.root.update()
+        assert app.session.patches[0].x == (0 if target == 'entry' else 0.1)
+        assert app.session.patches[0].y == 0
+        assert app.table.selection() == ('0',)
+    finally:
+        app.root.withdraw()
+
+
+def test_gui_open_yaml_preserves_patch_settings_but_replaces_run_data(desktop, case, monkeypatch):
+    app = desktop
+    path, _ = case
+    app.add_patches()
+    for channel, value in zip('rgb', (10, 20, 30), strict=True):
+        app.background[channel].set(str(value))
+    app.colormap.set('Grayscale')
+    app.visibility['show_background'].set(False)
+    app.maximum.set('2')
+    app.load_associated()
+    app.plot.ax.set_xlim(-50, 50)
+    app.plot.remember_view()
+    previous = app.session
+    new_path = path.parent / 'new.yaml'
+    config = yaml.safe_load(path.read_text())
+    config['particles']['populations'][0]['seeding']['strategy']['file_points']['path'] = 'new-seeds.txt'
+    (path.parent / 'new-seeds.txt').write_text('0.5 0\n1.5 0\n2.5 0\n', encoding='utf-8')
+    new_path.write_text(yaml.safe_dump(config), encoding='utf-8')
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(new_path))
+
+    app.open_yaml()
+
+    assert app.session.patches == previous.patches
+    assert app.session.patches is not previous.patches
+    assert app.session.background == previous.background
+    assert app.session.colormap == 'Grayscale'
+    assert app.session.max_particles == 2
+    assert app.session.show_background is False
+    assert app.session.config_path == new_path
+    assert app.session.results_path is None
+    assert app.model.tracks is None
+    assert app.session.xlim is None and app.session.ylim is None
+    assert app.plot.ax.get_xlim() != (-50, 50)
+    np.testing.assert_allclose(app.model.seeds, [[0.5, 0], [1.5, 0], [2.5, 0]])
+    assert len(app.plot.seed_artist.get_offsets()) == 2
+
+
+def test_gui_failed_or_cancelled_yaml_load_keeps_current_model(desktop, case, monkeypatch):
+    app = desktop
+    path, _ = case
+    app.add_patches()
+    app.load_associated()
+    original = app.model
+    invalid_path = path.parent / 'invalid.yaml'
+    invalid_path.write_text('invalid: [', encoding='utf-8')
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(invalid_path))
+    with pytest.raises(SeedingGuiError, match='Could not read configuration'):
+        app.open_yaml()
+    assert app.model is original
+    assert app.session is original.session
+    assert len(app.session.patches) == 1
+    assert app.model.tracks is not None
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: '')
+    app.open_yaml()
+    assert app.model is original
 
 
 def test_gui_load_save_reopen_and_export(desktop, case, tmp_path, monkeypatch):
@@ -447,7 +699,7 @@ def test_gui_rejects_duplicate_names_without_changing_patches(desktop):
 def test_gui_callback_reports_error(desktop, monkeypatch):
     errors = []
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
-    desktop.background.set('invalid')
+    desktop.background['r'].set('invalid')
     desktop._run(desktop.apply_layers)
     assert errors
     assert 'Error:' in desktop.status.cget('text')
