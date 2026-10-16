@@ -13,11 +13,14 @@ sedtrails viz patches
 sedtrails viz patches --config path/to/case.yaml
 sedtrails viz patches --config path/to/case.yaml --file path/to/sedtrails_results.nc
 sedtrails viz patches --session path/to/case-patches.json
+sedtrails viz patches --config path/to/another-case.yaml --session path/to/case-patches.json
 ```
 
-`--config` and `--session` are mutually exclusive. Without either option, open a
-YAML or saved JSON using the file buttons. `--file` optionally loads or overrides
-the output referenced by a saved session.
+Combine `--config` and `--session` to apply a saved patch layout to a run.
+Without either option, open a YAML or patch JSON using the file buttons.
+Portable patch JSONs do not reference source files: opening one without
+`--config` loads its patches, ready for you to choose a YAML.
+`--file` optionally loads trajectories; a YAML must also be available.
 
 Relative input, seed and output paths are looked up beside the YAML first, then
 in the current working directory, then in the YAML's ancestor directories. This
@@ -31,8 +34,10 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    range, including shallow laboratory domains. Seed strategies, quantities, population order and
    `file_points` filtering are evaluated using the simulation's own seeder.
    Opening another YAML keeps your patch names, positions, sizes and colours,
-   background colour and rendering settings. The map refits the new grid and
-   previous trajectories are cleared; load the new run's trajectories separately.
+   background colour, rendering settings, custom title and current x/y limits.
+   Previous trajectories are cleared; load the new run's trajectories separately.
+   The new run starts at bathymetry frame 0. Use **Fit map** if you want to
+   refit the view to its grid instead of keeping your existing field of view.
 2. Set the patch **name**, lower-left **x/y**, **side length n** (defaults to
    1.5 m), and **RGB** using separate **R**, **G** and **B** boxes.
    The lower-left x/y fields are spin boxes: use their
@@ -53,11 +58,15 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    **Update selected square**. Multiple rows can be selected for deletion.
    Names must be unique. Series members can be recoloured individually.
    The update, delete and **Live update** controls sit above the series fields.
-   Enable **Live update**, select one row or click a square on the map, then
-   use the keyboard arrow keys while the table or map has focus to move the
-   square in **0.1 m increments**: left/right change x and down/up change y.
-   Seed and trajectory colours and legend counts update with each move.
-   The x/y spin-box arrows also apply immediately in live mode.
+   Enable **Live update**, then select one or more rows: **Ctrl-click** toggles
+   individual rows and **Shift-click** selects a range. Use the keyboard arrow
+   keys while the table or map has focus to move **all selected squares together**
+   in **0.1 m increments**: left/right change x and down/up change y.
+   Their relative spacing, sizes and colours are preserved, and the selection
+   stays active for repeated nudges. Seed and trajectory colours and legend
+   counts update immediately. Clicking a square on the map selects that square
+   alone. The editor shows the first selected row; **Update selected square**
+   and the live x/y spin-box arrows still require a single selected row.
    Text-entry keys keep their normal editing behavior. Turn off toolbar
    pan/zoom to select or move squares on the map. Disable live mode to return
    to manual updates. Overlapping squares are selected using the same
@@ -68,6 +77,14 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    This background colour applies to unclassified particles, not the map itself.
    Choose a **Bathymetry colour map** of **SEAWAD**, **Vintage** or
    **Grayscale** (darker at lower values); the map updates immediately.
+   **Bathymetry colour range [m]** defaults to **Auto**, which scales colours to
+   the current bed frame and shows its limits in the disabled Min/Max fields.
+   Choose **Manual**, enter **Min** and **Max** elevations in metres, then press
+   **Apply colours / rendering**. Limits must be finite with Min < Max.
+   Manual limits stay fixed across bathymetry timesteps, palette changes and
+   YAML loads. Values outside the range remain visible in the endpoint colours;
+   colourbar end triangles indicate clipping. Switch back to **Auto** to resume
+   automatic scaling immediately.
    Uncheck **Background seeding points and trajectories** to hide unclassified
    (not patch-assigned) seeds and tracks, for example to focus on classified
    patches only.
@@ -75,15 +92,41 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    `outputs.directory/sedtrails_results.nc`, or choose a NetCDF manually.
 7. Pan/zoom with the Matplotlib toolbar. Toggle seeding points, trajectories,
    square overlays or background seeds/trajectories independently. The legend
-   reports seed-particle counts.
-8. **Save patch JSON** stores the YAML/output paths, patch geometry and colours,
-   background point colour, colour map choice, layer visibility, particle
-   limit and current map extent. **Open patch JSON** restores these and
-   reloads the source data.
-   JSON stores references, not copies of the underlying YAML or NetCDF files;
-   keep those files available. Relative paths in hand-edited JSON resolve beside
-   the JSON. The simulation YAML and seed files are never edited.
-9. **Export map PNG** exports the current map extent, visible layers, legend
+   reports seed-particle counts. The **Plot view** x/y limit fields follow
+   toolbar navigation. Type both endpoints for each axis and press
+   **Apply limits / title** to set an exact field of view. Limits must be finite
+   and different; reversed limits are allowed. Loading YAMLs or trajectories,
+   editing patches, or changing rendering settings does not reset the view.
+   **Fit map** deliberately resets the limits to the current run's grid.
+   Enter a custom **Plot title** and apply it; leave it blank to use the YAML
+   filename. Custom titles persist when changing YAMLs.
+8. Use **Bathymetry timestep (0-based)** to choose a saved bed frame. Spin-box
+   arrows update immediately; after typing an index, press Enter or
+   **Show bathymetry timestep**. The label shows the bathymetry variable,
+   its source time (when available), and the number of frames. For XBeach,
+   `zb_mean` is preferred over `zb`, so the selector follows `meantime` when
+   present, not the trajectory or `globaltime` axis. Static or single-frame
+   inputs have a disabled spin box. Each change loads just the selected bed
+   frame and, in **Auto** mode, rescales its colourbar to that frame's elevation
+   range. **Manual** colour limits remain unchanged. Seeds,
+   trajectories, their colours, title and zoom are unchanged; trajectories
+   are not truncated or animated by this control. Invalid frames report an
+   error and keep the previous display.
+9. **Save patch JSON** stores **only patch definitions** (names, geometry and
+   RGB colours) and the **background point RGB**, plus a format version.
+   YAML/trajectory paths, axis/colour limits, title, timestep, visibility and rendering
+   preferences are not saved. **Open patch JSON** replaces the current patches
+   and background colour without changing the loaded run or plot preferences.
+   You can open and save layouts before choosing a YAML.
+   Older version-1 JSONs remain readable: the GUI's **Open patch JSON** imports
+   only their patch data. For backward compatibility, launching with
+   `--session old-session.json` still opens its referenced run and rendering
+   settings. An explicit `--config` overrides those source paths; add `--file`
+   to load that run's trajectories. Relative legacy source paths resolve beside
+   the JSON. Saving always writes the portable version-2 format.
+   The simulation YAML and seed files are never edited.
+10. **Export map PNG** exports the current map extent, title, selected bathymetry,
+   visible layers, legend
    and bathymetry colourbar at 180 dpi, without desktop controls. The control
    panel has a scrollbar for smaller displays.
 

@@ -385,6 +385,9 @@ def test_load_bathymetry_view_data_supports_xbeach(tmp_path, monkeypatch):
     np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
     np.testing.assert_allclose(view_data.values, np.array([-1.0, -2.0, -3.0, -4.0]))
     assert view_data.variable == 'zb_mean'
+    later = load_bathymetry_view_data(config_file, time_index=1)
+    np.testing.assert_allclose(later.values, [-5, -6, -7, -8])
+    assert later.time_index == 1 and later.time_count == 2
 
 
 def test_load_bathymetry_view_data_supports_d3d4_netcdf(tmp_path, monkeypatch):
@@ -421,6 +424,53 @@ def test_load_bathymetry_view_data_supports_d3d4_netcdf(tmp_path, monkeypatch):
     np.testing.assert_allclose(view_data.y, np.array([10.0, 11.0, 12.0, 13.0]))
     np.testing.assert_allclose(view_data.values, np.array([-5.0, -6.0, -7.0, -8.0]))
     assert view_data.variable == 'DPS0'
+
+
+@pytest.mark.parametrize('time_dim', ['time', 'meantime', 'globaltime', None])
+@pytest.mark.parametrize('time_index', [0, 1, 2])
+def test_bathymetry_frame_selection_and_source_closure(tmp_path, monkeypatch, time_dim, time_index):
+    config_file, input_file = tmp_path / 'config.yaml', tmp_path / 'input.nc'
+    input_file.touch()
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                'general': {'input_model': {'format': 'xbeach'}},
+                'inputs': {'data': input_file.name},
+            }
+        )
+    )
+    first = np.array([[-1.0, -2.0], [-3.0, -4.0]])
+    frames = np.stack([first, first - 10])
+    layered = np.stack([frames, frames - 100], axis=1)
+    dims = (time_dim, 'layer', 'ny', 'nx') if time_dim else ('layer', 'ny', 'nx')
+    dataset = xr.Dataset(
+        {
+            'globalx': (('ny', 'nx'), [[0.0, 1.0], [0.0, 1.0]]),
+            'globaly': (('ny', 'nx'), [[0.0, 0.0], [1.0, 1.0]]),
+            'zb': (dims, layered if time_dim else layered[0]),
+        }
+    )
+    if time_dim:
+        dataset = dataset.assign_coords({time_dim: xr.DataArray([0.0, 600.0], dims=time_dim, attrs={'units': 's'})})
+    closed = []
+    dataset.set_close(lambda: closed.append(True))
+    monkeypatch.setattr(seeding_gui, '_open_netcdf_dataset', lambda _: dataset)
+    count = 2 if time_dim else 1
+    if time_index >= count:
+        with pytest.raises(SeedingGuiError, match=f'0..{count - 1}'):
+            load_bathymetry_view_data(config_file, time_index=time_index)
+    else:
+        data = load_bathymetry_view_data(config_file, time_index=time_index)
+        np.testing.assert_allclose(data.values, frames[time_index].reshape(-1))
+        assert data.time_count == count and data.time_index == time_index
+        assert data.time_label == (f'{time_dim}: {600.0 * time_index} s' if time_dim else 'Static bathymetry')
+    assert closed == [True]
+
+
+@pytest.mark.parametrize('time_index', [-1, 0.1, True, '1'])
+def test_bathymetry_rejects_invalid_timestep_types(time_index):
+    with pytest.raises(SeedingGuiError, match='nonnegative integer'):
+        load_bathymetry_view_data('unused.yaml', time_index=time_index)
 
 
 def test_create_masked_triangulation_masks_origin_outlier_bridge():

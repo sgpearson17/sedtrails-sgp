@@ -76,6 +76,27 @@ def case(tmp_path):
     return path, output
 
 
+@pytest.fixture
+def evolving_case(case):
+    path, output = case
+    x, y = np.meshgrid(np.arange(4.0), np.arange(3.0))
+    values = np.stack([-x - y, -x - y + 0.25, -x - y + 0.5])
+    values[2, 0, 0] = np.nan
+    xr.Dataset(
+        {
+            'globalx': (('ny', 'nx'), x),
+            'globaly': (('ny', 'nx'), y),
+            'zb_mean': (('meantime', 'ny', 'nx'), values),
+            'zb': (('globaltime', 'ny', 'nx'), np.zeros((4, 3, 4))),
+        },
+        coords={
+            'meantime': xr.DataArray([600.0, 1800.0, 3600.0], dims='meantime', attrs={'units': 's'}),
+            'globaltime': [0.0, 600.0, 1200.0, 1800.0],
+        },
+    ).to_netcdf(path.parent / 'bathy.nc', mode='w')
+    return path, output
+
+
 def test_classification_includes_edges_and_last_patch_wins():
     patches = [
         SquarePatch('red', 0, 0, 2, (255, 0, 0)),
@@ -248,11 +269,17 @@ def test_json_roundtrip_restores_plot_and_png(case, tmp_path):
         show_patches=False,
         xlim=(-1, 2),
         ylim=(-0.5, 2.5),
+        bathymetry_clim=(-4, 2),
     )
     saved = tmp_path / 'session.json'
     save_session(saved, session)
     reopened = load_session(saved)
-    assert reopened == session
+    payload = json.loads(saved.read_text())
+    assert set(payload) == {'version', 'patches', 'background'}
+    assert payload['version'] == 2
+    assert reopened == PatchSession(patches=session.patches, background=session.background)
+    reopened.config_path, reopened.results_path = path, output
+    reopened.xlim, reopened.ylim = session.xlim, session.ylim
     plot = PatchPlot(Figure(), PatchModel(reopened))
     np.testing.assert_allclose(plot.ax.get_xlim(), session.xlim)
     np.testing.assert_allclose(plot.ax.get_ylim(), session.ylim)
@@ -276,6 +303,31 @@ def test_invalid_colormap_is_rejected(case):
     path, _ = case
     with pytest.raises(ValueError, match='colormap'):
         PatchSession(config_path=path, colormap='not-a-colormap').validate()
+
+
+@pytest.mark.parametrize('colormap', ['SEAWAD', 'Vintage', 'Grayscale'])
+@pytest.mark.parametrize('limits', [(-4, -1), (-10, -6), (1, 3)])
+def test_manual_bathymetry_colour_limits_control_contours_and_colourbar(case, colormap, limits):
+    path, _ = case
+    model = PatchModel(PatchSession(config_path=path, colormap=colormap, bathymetry_clim=limits))
+    plot = PatchPlot(Figure(), model)
+    artist = plot.bathymetry_artist
+    np.testing.assert_allclose((artist.norm.vmin, artist.norm.vmax), limits)
+    np.testing.assert_allclose((artist.levels[0], artist.levels[-1]), limits)
+    np.testing.assert_allclose((plot.colorbar.vmin, plot.colorbar.vmax), limits)
+    np.testing.assert_allclose(artist.to_rgba([-100, 100]), artist.cmap([0.0, 1.0]))
+    assert artist.extend == 'both'
+    assert any(path.vertices.size for path in artist.get_paths())
+    assert len(plot.figure.axes) == 2
+
+
+@pytest.mark.parametrize(
+    'limits',
+    [(0, 0), (1, -1), (np.nan, 1), (0, np.inf), (-1e308, 1e308), (1, np.nextafter(1.0, np.inf)), (1,)],
+)
+def test_invalid_bathymetry_colour_limits_are_rejected(limits):
+    with pytest.raises(ValueError, match='Bathymetry colour limits'):
+        PatchSession(bathymetry_clim=limits).validate()
 
 
 def test_show_background_hides_unclassified_seeds_and_tracks(case):
@@ -305,7 +357,7 @@ def test_relative_paths_in_json_are_relative_to_json(case, tmp_path):
 @pytest.mark.parametrize(
     'changes',
     [
-        {'version': 2},
+        {'version': 3},
         {'background': [300, 0, 0]},
         {'max_particles': 0},
         {'show_tracks': 'false'},
@@ -362,6 +414,17 @@ def desktop(case, tk_root):
             widget.destroy()
 
 
+@pytest.fixture
+def evolving_desktop(evolving_case, tk_root):
+    path, _ = evolving_case
+    app = PatchGuiApp(tk_root, PatchSession(config_path=path))
+    try:
+        yield app
+    finally:
+        for widget in tk_root.winfo_children():
+            widget.destroy()
+
+
 def test_default_fields_have_expected_values(desktop):
     assert desktop.fields['size'].get() == '1.5'
     assert desktop.fields['row_spacing'].get() == '1'
@@ -409,6 +472,82 @@ def test_gui_colormap_dropdown_switches_bathymetry_palette(desktop):
     app.colormap.set('Grayscale')
     assert app.plot.colormap_name == 'Grayscale'
     assert app.session.colormap == 'Grayscale'
+
+
+def test_gui_manual_bathymetry_colour_limits_persist_and_can_return_to_auto(
+    evolving_desktop, evolving_case, tmp_path, monkeypatch
+):
+    app = evolving_desktop
+    app.add_patches()
+    app.load_associated()
+    seeds, tracks = app.model.seeds, app.model.tracks
+    app.plot.ax.set_xlim(-1, 4)
+    app.plot.ax.set_ylim(-1, 3)
+    assert app.bathymetry_scale.get() == 'Auto'
+    assert all(str(entry.cget('state')) == 'disabled' for entry in app.bathymetry_colour_entries.values())
+    app.bathymetry_scale.set('Manual')
+    app.bathymetry_scale_box.event_generate('<<ComboboxSelected>>')
+    assert app.session.bathymetry_clim == (-5, 0)
+    assert all(str(entry.cget('state')) == 'normal' for entry in app.bathymetry_colour_entries.values())
+    for key, value in (('min', '-3.5'), ('max', '0.5')):
+        app.bathymetry_colour_limits[key].set(value)
+    app.apply_layers()
+    app.bathymetry_index.set('1')
+    app.apply_bathymetry()
+    app.colormap.set('Grayscale')
+    assert app.session.bathymetry_clim == (-3.5, 0.5)
+    np.testing.assert_allclose((app.plot.colorbar.vmin, app.plot.colorbar.vmax), (-3.5, 0.5))
+    assert app.model.seeds is seeds and app.model.tracks is tracks
+    assert len(app.plot.figure.axes) == 2
+    png = tmp_path / 'manual-colours.png'
+    monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: str(png))
+    app.export_png()
+    assert png.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+    np.testing.assert_allclose((app.plot.colorbar.vmin, app.plot.colorbar.vmax), (-3.5, 0.5))
+    path, _ = evolving_case
+    other = tmp_path / 'other.yaml'
+    other.write_text(path.read_text())
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(other))
+    app.open_yaml()
+    assert app.session.bathymetry_clim == (-3.5, 0.5)
+    np.testing.assert_allclose((app.plot.colorbar.vmin, app.plot.colorbar.vmax), (-3.5, 0.5))
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 4))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-1, 3))
+    app.bathymetry_colour_limits['min'].set('discard this unapplied edit')
+    app.bathymetry_scale.set('Auto')
+    app.bathymetry_scale_box.event_generate('<<ComboboxSelected>>')
+    assert app.session.bathymetry_clim is None
+    np.testing.assert_allclose((app.plot.vmin, app.plot.vmax), (-5, 0))
+    app.bathymetry_index.set('2')
+    app.apply_bathymetry()
+    data = app.model.bathymetry.values
+    np.testing.assert_allclose((app.plot.vmin, app.plot.vmax), (data.min(), data.max()))
+    assert [float(app.bathymetry_colour_limits[key].get()) for key in ('min', 'max')] == [app.plot.vmin, app.plot.vmax]
+
+
+@pytest.mark.parametrize('minimum,maximum', [('bad', '1'), ('nan', '1'), ('0', 'inf'), ('1', '1'), ('2', '1')])
+def test_gui_invalid_bathymetry_colour_limits_preserve_session_and_plot(desktop, monkeypatch, minimum, maximum):
+    app = desktop
+    session, artist = app.session, app.plot.bathymetry_artist
+    app.bathymetry_scale.set('Manual')
+    app.bathymetry_colour_limits['min'].set(minimum)
+    app.bathymetry_colour_limits['max'].set(maximum)
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+    app._run(app.apply_layers)
+    assert len(errors) == 1 and 'Error:' in app.status.cget('text')
+    assert app.session is session and app.model.session is session
+    assert app.plot.bathymetry_artist is artist
+
+
+def test_gui_loading_tracks_applies_pending_bathymetry_colour_limits(desktop):
+    app = desktop
+    app.bathymetry_scale.set('Manual')
+    app.bathymetry_colour_limits['min'].set('-2')
+    app.bathymetry_colour_limits['max'].set('0')
+    app.load_associated()
+    assert app.session.bathymetry_clim == (-2, 0)
+    np.testing.assert_allclose((app.plot.colorbar.vmin, app.plot.colorbar.vmax), (-2, 0))
 
 
 def test_gui_background_checkbox_hides_unclassified_layers(desktop):
@@ -487,15 +626,90 @@ def test_gui_live_movement_recolours_seeds_and_tracks_and_keeps_selection(deskto
 @pytest.mark.parametrize(
     'key,expected', [('Left', (-0.1, 0)), ('Right', (0.1, 0)), ('Down', (0, -0.1)), ('Up', (0, 0.1))]
 )
-def test_gui_live_arrow_directions(desktop, key, expected):
+@pytest.mark.parametrize('selection', [('0',), ('0', '2')])
+def test_gui_live_arrow_directions(desktop, key, expected, selection):
     app = desktop
+    app.fields['columns'].set('3')
     app.add_patches()
-    app.table.selection_set('0')
+    original = list(app.session.patches)
+    app.table.selection_set(*selection)
     app.select_patch()
     app.live_update.set(True)
     app._on_patch_arrow(SimpleNamespace(keysym=key))
-    patch = app.session.patches[0]
-    assert (patch.x, patch.y) == expected
+    for index, (before, after) in enumerate(zip(original, app.session.patches, strict=True)):
+        dx, dy = expected if str(index) in selection else (0, 0)
+        assert (after.x, after.y) == (before.x + dx, before.y + dy)
+        assert (after.name, after.size, after.rgb) == (before.name, before.size, before.rgb)
+    assert app.table.selection() == selection
+
+
+def test_gui_live_group_movement_updates_colours_once_and_keeps_spacing(desktop, monkeypatch):
+    app = desktop
+    app.fields['size'].set('0.05')
+    app.fields['columns'].set('3')
+    app.add_patches()
+    app.table.selection_set('2')
+    app.select_patch()
+    app.patch_rgb['r'].set('0')
+    app.patch_rgb['b'].set('255')
+    app.update_patch()
+    app.table.selection_set('0', '2')
+    app.select_patch()
+    app.load_associated()
+    tracks, seeds = app.model.tracks, app.model.seeds
+    app.live_update.set(True)
+    app.toggle_live_update()
+    app.plot.ax.set_xlim(-1, 4)
+    app.plot.ax.set_ylim(-1, 3)
+    draw = app.plot.draw
+    draws = []
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+
+    def counted_draw():
+        draws.append(True)
+        draw()
+
+    monkeypatch.setattr(app.plot, 'draw', counted_draw)
+    app._on_patch_arrow(SimpleNamespace(keysym='Right'))
+    assert errors == []
+    assert draws == [True]
+    assert app.table.selection() == ('0', '2')
+    assert [patch.x for patch in app.session.patches] == [0.1, 1, 2.1]
+    assert app.session.patches[2].x - app.session.patches[0].x == 2
+    assert float(app.table.item('2', 'values')[0]) == 2.1
+    assert app.fields['x'].get() == '0.1'
+    expected = np.full((4, 3), 120 / 255)
+    expected[1] = [1, 0, 0]
+    np.testing.assert_allclose(app.plot.seed_artist.get_facecolors()[:, :3], expected)
+    np.testing.assert_allclose(app.plot.track_artist.get_colors()[np.argsort(app.plot.track_order), :3], expected)
+    app._on_patch_arrow(SimpleNamespace(keysym='Left'))
+    assert len(draws) == 2
+    expected[0], expected[2] = [1, 0, 0], [0, 0, 1]
+    np.testing.assert_allclose(app.plot.seed_artist.get_facecolors()[:, :3], expected)
+    np.testing.assert_allclose(app.plot.track_artist.get_colors()[np.argsort(app.plot.track_order), :3], expected)
+    assert app.model.tracks is tracks and app.model.seeds is seeds
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 4))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-1, 3))
+
+
+def test_gui_live_group_steps_do_not_drift_at_classification_edges(desktop):
+    app = desktop
+    app.fields['size'].set('0.05')
+    app.fields['columns'].set('2')
+    app.fields['column_spacing'].set('2')
+    app.add_patches()
+    app.table.selection_set('0', '1')
+    app.live_update.set(True)
+    for _ in range(10):
+        app._on_patch_arrow(SimpleNamespace(keysym='Right'))
+    assert [patch.x for patch in app.session.patches] == [1, 3]
+    np.testing.assert_array_equal(classify_points(app.model.seeds, app.session.patches), [-1, 0, -1, 1])
+    for _ in range(10):
+        app._on_patch_arrow(SimpleNamespace(keysym='Left'))
+    assert [patch.x for patch in app.session.patches] == [0, 2]
+    np.testing.assert_array_equal(classify_points(app.model.seeds, app.session.patches), [0, -1, 1, -1])
+    assert app.table.selection() == ('0', '1')
 
 
 def test_gui_live_steps_do_not_drift_at_classification_edges(desktop):
@@ -532,18 +746,17 @@ def test_gui_live_arrows_do_not_interfere_when_disabled_or_navigating(desktop):
     assert app.session.patches[0].x == 0
 
 
-@pytest.mark.parametrize('selection', [(), ('0', '1')])
-def test_gui_live_movement_reports_invalid_selection(desktop, monkeypatch, selection):
+def test_gui_live_movement_reports_empty_selection(desktop, monkeypatch):
     app = desktop
     app.fields['columns'].set('2')
     app.add_patches()
-    app.table.selection_set(*selection)
+    app.table.selection_remove(*app.table.selection())
     app.live_update.set(True)
     errors = []
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
     app._on_patch_arrow(SimpleNamespace(keysym='Right'))
     assert len(errors) == 1
-    assert 'Select one patch' in app.status.cget('text')
+    assert 'Select at least one patch' in app.status.cget('text')
     assert [patch.x for patch in app.session.patches] == [0, 1]
 
 
@@ -611,6 +824,45 @@ def test_gui_live_key_bindings_respect_widget_focus(desktop, target):
         app.root.withdraw()
 
 
+@pytest.mark.parametrize('modifier,selection', [('Shift', ('0', '1', '2')), ('Control', ('0', '2'))])
+@pytest.mark.parametrize('target', ['table', 'map'])
+def test_gui_live_group_selection_with_real_modifier_clicks_and_keys(desktop, modifier, selection, target):
+    app = desktop
+    app.fields['columns'].set('3')
+    app.add_patches()
+    app.live_update.set(True)
+    app.root.deiconify()
+    try:
+        app.root.update()
+        for row, prefix in (('0', ''), ('2', f'{modifier}-')):
+            x, y, _width, height = app.table.bbox(row, '#0')
+            app.table.event_generate(f'<{prefix}ButtonPress-1>', x=x + 20, y=y + height // 2)
+            app.table.event_generate(f'<{prefix}ButtonRelease-1>', x=x + 20, y=y + height // 2)
+            app.root.update()
+        assert app.table.selection() == selection
+        focus = app.table.focus()
+        widget = app.table if target == 'table' else app.canvas.get_tk_widget()
+        widget.focus_force()
+        widget.event_generate('<KeyPress-Down>')
+        app.root.update()
+        assert app.table.selection() == selection
+        assert app.table.focus() == focus
+        for index, patch in enumerate(app.session.patches):
+            assert patch.x == index
+            assert patch.y == (-0.1 if str(index) in selection else 0)
+    finally:
+        app.root.withdraw()
+
+
+def test_gui_patch_editor_still_requires_one_selected_patch(desktop):
+    app = desktop
+    app.fields['columns'].set('2')
+    app.add_patches()
+    app.table.selection_set('0', '1')
+    with pytest.raises(ValueError, match='Select one patch to update'):
+        app.update_patch()
+
+
 def test_gui_open_yaml_preserves_patch_settings_but_replaces_run_data(desktop, case, monkeypatch):
     app = desktop
     path, _ = case
@@ -622,7 +874,7 @@ def test_gui_open_yaml_preserves_patch_settings_but_replaces_run_data(desktop, c
     app.maximum.set('2')
     app.load_associated()
     app.plot.ax.set_xlim(-50, 50)
-    app.plot.remember_view()
+    app.plot.ax.set_ylim(-20, 20)
     previous = app.session
     new_path = path.parent / 'new.yaml'
     config = yaml.safe_load(path.read_text())
@@ -642,8 +894,9 @@ def test_gui_open_yaml_preserves_patch_settings_but_replaces_run_data(desktop, c
     assert app.session.config_path == new_path
     assert app.session.results_path is None
     assert app.model.tracks is None
-    assert app.session.xlim is None and app.session.ylim is None
-    assert app.plot.ax.get_xlim() != (-50, 50)
+    assert app.session.xlim == (-50, 50) and app.session.ylim == (-20, 20)
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-50, 50))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-20, 20))
     np.testing.assert_allclose(app.model.seeds, [[0.5, 0], [1.5, 0], [2.5, 0]])
     assert len(app.plot.seed_artist.get_offsets()) == 2
 
@@ -678,15 +931,251 @@ def test_gui_load_save_reopen_and_export(desktop, case, tmp_path, monkeypatch):
     saved = tmp_path / 'desktop.json'
     monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: str(saved))
     app.save_json()
+    model, tracks, seeds = app.model, app.model.tracks, app.model.seeds
     original_colours = app.plot.track_artist.get_colors().copy()
     monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(saved))
     app.open_json()
+    assert app.model is model and app.model.tracks is tracks and app.model.seeds is seeds
     np.testing.assert_allclose(app.plot.track_artist.get_colors(), original_colours)
     np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 4))
     png = tmp_path / 'desktop.png'
     monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: str(png))
     app.export_png()
     assert png.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+
+
+def test_gui_limits_follow_navigation_and_survive_tracks_layers_and_patches(desktop):
+    app = desktop
+    home = app.plot.ax.get_xlim(), app.plot.ax.get_ylim()
+    app.load_associated()
+    np.testing.assert_allclose((app.plot.ax.get_xlim(), app.plot.ax.get_ylim()), home)
+    app.plot.ax.set_xlim(-20, 30)
+    app.plot.ax.set_ylim(-10, 15)
+    assert [float(app.view_limits[key].get()) for key in ('xmin', 'xmax', 'ymin', 'ymax')] == [-20, 30, -10, 15]
+    assert app.session.xlim == (-20, 30) and app.session.ylim == (-10, 15)
+    app.load_associated()
+    app.add_patches()
+    app.colormap.set('Vintage')
+    app.maximum.set('2')
+    app.apply_layers()
+    assert len(app.model.tracks) == 2
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-20, 30))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-10, 15))
+    app.fit_map()
+    np.testing.assert_allclose((app.plot.ax.get_xlim(), app.plot.ax.get_ylim()), home)
+
+
+def test_gui_editable_limits_and_title_persist_across_yaml_load(desktop, case, monkeypatch):
+    app = desktop
+    for key, value in zip(('xmin', 'xmax', 'ymin', 'ymax'), (-1, 9, -3, 5), strict=True):
+        app.view_limits[key].set(str(value))
+    app.plot_title.set('Experiment A')
+    app.apply_view()
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 9))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-3, 5))
+    assert app.plot.ax.get_title() == 'Experiment A'
+    path, _ = case
+    other = path.parent / 'other.yaml'
+    other.write_text(path.read_text())
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(other))
+    app.open_yaml()
+    app.add_patches()
+    assert app.plot.ax.get_title() == 'Experiment A'
+    assert app.plot_title.get() == 'Experiment A'
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 9))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-3, 5))
+    app.plot_title.set('')
+    app.apply_view()
+    assert app.plot.ax.get_title() == 'other.yaml'
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(path))
+    app.open_yaml()
+    assert app.plot.ax.get_title() == 'case.yaml'
+
+
+@pytest.mark.parametrize('key,value', [('xmin', 'nan'), ('ymax', 'inf'), ('ymin', 'bad'), ('xmax', '0')])
+def test_gui_rejects_invalid_limits_atomically(desktop, key, value):
+    app = desktop
+    original = app.session
+    before = app.plot.ax.get_xlim(), app.plot.ax.get_ylim()
+    app.view_limits['xmin'].set('0')
+    app.view_limits[key].set(value)
+    app.plot_title.set('Should not apply')
+    with pytest.raises(ValueError):
+        app.apply_view()
+    assert app.session is original
+    np.testing.assert_allclose((app.plot.ax.get_xlim(), app.plot.ax.get_ylim()), before)
+    assert app.plot.ax.get_title() == 'case.yaml'
+
+
+def test_gui_selects_actual_bathymetry_frame_without_replacing_overlays(evolving_desktop):
+    app = evolving_desktop
+    app.add_patches()
+    app.load_associated()
+    app.plot.ax.set_xlim(-1, 4)
+    app.plot.ax.set_ylim(-1, 3)
+    app.plot_title.set('Evolving bed')
+    app.apply_view()
+    model, seeds, tracks = app.model, app.model.seeds, app.model.tracks
+    artists = tuple(app.plot.artists)
+    first_values = model.bathymetry.values.copy()
+    assert model.bathymetry.variable == 'zb_mean'
+    assert model.bathymetry.time_count == 3
+    app.bathymetry_index.set('1')
+    app.apply_bathymetry()
+    assert app.model is model and model.seeds is seeds and model.tracks is tracks
+    assert tuple(app.plot.artists) == artists
+    np.testing.assert_allclose(model.bathymetry.values, first_values + 0.25)
+    assert model.bathymetry.time_index == app.session.bathymetry_index == 1
+    assert 'meantime' in app.bathymetry_label.cget('text') and '1800' in app.bathymetry_label.cget('text')
+    assert app.plot.vmin == first_values.min() + 0.25
+    assert app.plot.vmax == first_values.max() + 0.25
+    app.bathymetry_index.set('2')
+    app.apply_bathymetry()
+    assert len(model.bathymetry.values) == len(first_values) - 1
+    assert len(app.plot.triangulation.x) == len(model.bathymetry.values)
+    app.colormap.set('Grayscale')
+    assert app.session.bathymetry_index == 2
+    assert len(app.plot.figure.axes) == 2
+    assert app.plot.ax.get_title() == 'Evolving bed'
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 4))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-1, 3))
+
+
+@pytest.mark.parametrize('kind', ['index', 'negative', 'fraction', 'empty', 'degenerate'])
+def test_gui_bad_bathymetry_frame_preserves_display(evolving_desktop, evolving_case, monkeypatch, kind):
+    app = evolving_desktop
+    if kind in ('empty', 'degenerate'):
+        path, _ = evolving_case
+        bathy_path = path.parent / 'bathy.nc'
+        with xr.open_dataset(bathy_path) as source:
+            data = source.load()
+        data['zb_mean'][1] = np.nan
+        if kind == 'degenerate':
+            data['zb_mean'][1, 0, :2] = [0, 1]
+        data.to_netcdf(bathy_path, mode='w')
+    before, artist = app.model.bathymetry, app.plot.bathymetry_artist
+    limits = app.plot.ax.get_xlim(), app.plot.ax.get_ylim()
+    app.bathymetry_index.set({'index': '99', 'negative': '-1', 'fraction': '0.1'}.get(kind, '1'))
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+    app._run(app.apply_bathymetry)
+    assert len(errors) == 1 and 'Error:' in app.status.cget('text')
+    assert app.model.bathymetry is before and app.plot.bathymetry_artist is artist
+    assert app.session.bathymetry_index == 0 and app.bathymetry_index.get() == '0'
+    np.testing.assert_allclose((app.plot.ax.get_xlim(), app.plot.ax.get_ylim()), limits)
+    assert len(app.plot.figure.axes) == 2
+
+
+def test_gui_single_frame_bathymetry_disables_spinner(desktop):
+    assert str(desktop.bathymetry_spinner.cget('state')) == 'disabled'
+    assert desktop.model.bathymetry.time_count == 1
+
+
+def test_new_yaml_starts_at_first_bathymetry_frame_and_keeps_zoom(evolving_desktop, evolving_case, monkeypatch):
+    app = evolving_desktop
+    app.bathymetry_index.set('2')
+    app.apply_bathymetry()
+    app.plot.ax.set_xlim(-8, 9)
+    app.plot.ax.set_ylim(-3, 4)
+    path, _ = evolving_case
+    config = yaml.safe_load(path.read_text())
+    config['inputs']['data'] = 'static.nc'
+    x, y = np.meshgrid(np.arange(4.0), np.arange(3.0))
+    xr.Dataset(
+        {
+            'globalx': (('ny', 'nx'), x),
+            'globaly': (('ny', 'nx'), y),
+            'zb': (('ny', 'nx'), -x - y),
+        }
+    ).to_netcdf(path.parent / 'static.nc')
+    other = path.parent / 'static.yaml'
+    other.write_text(yaml.safe_dump(config))
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(other))
+    app.open_yaml()
+    assert app.session.bathymetry_index == 0 and app.model.bathymetry.time_count == 1
+    assert app.model.bathymetry.time_label == 'Static bathymetry'
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-8, 9))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-3, 4))
+
+
+@pytest.mark.parametrize('version', [1, 2])
+def test_gui_imports_only_patch_data_and_keeps_current_run(evolving_desktop, tmp_path, monkeypatch, version):
+    app = evolving_desktop
+    app.load_associated()
+    app.bathymetry_index.set('1')
+    app.apply_bathymetry()
+    app.plot.ax.set_xlim(-1, 8)
+    app.plot.ax.set_ylim(-2, 6)
+    app.plot_title.set('Keep this title')
+    app.apply_view()
+    model, seeds, tracks, bathymetry = app.model, app.model.seeds, app.model.tracks, app.model.bathymetry
+    payload = {
+        'version': version,
+        'patches': [{'name': 'new', 'x': 0, 'y': 0, 'size': 0.5, 'rgb': [0, 0, 255]}],
+        'background': [10, 20, 30],
+    }
+    if version == 1:
+        payload.update(config_path='missing.yaml', results_path='missing.nc', show_seeds=False, xlim=[99, 100])
+    saved = tmp_path / 'layout.json'
+    saved.write_text(json.dumps(payload))
+    monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(saved))
+    app.open_json()
+    assert app.model is model and model.seeds is seeds and model.tracks is tracks
+    assert model.bathymetry is bathymetry
+    assert app.session.patches == [SquarePatch('new', 0, 0, 0.5, (0, 0, 255))]
+    assert app.session.background == (10, 20, 30)
+    assert app.session.show_seeds and app.session.bathymetry_index == 1
+    assert app.plot.ax.get_title() == 'Keep this title'
+    np.testing.assert_allclose(app.plot.ax.get_xlim(), (-1, 8))
+    np.testing.assert_allclose(app.plot.ax.get_ylim(), (-2, 6))
+
+
+def test_gui_can_import_and_save_layout_without_yaml(tk_root, tmp_path, monkeypatch):
+    patches = [SquarePatch('portable', 1, 2, 3, (20, 40, 60))]
+    source, target = tmp_path / 'source.json', tmp_path / 'target.json'
+    save_session(source, PatchSession(patches=patches, background=(10, 20, 30)))
+    app = PatchGuiApp(tk_root, PatchSession())
+    try:
+        monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(source))
+        app.open_json()
+        assert app.model is None and app.session.patches == patches
+        monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: str(target))
+        app.maximum.set('unrelated invalid rendering field')
+        app.save_json()
+        assert load_session(target) == PatchSession(patches=patches, background=(10, 20, 30))
+    finally:
+        for widget in tk_root.winfo_children():
+            widget.destroy()
+
+
+def test_legacy_json_retains_source_and_render_settings_on_startup(case, tmp_path):
+    path, output = case
+    saved = tmp_path / 'legacy.json'
+    saved.write_text(
+        json.dumps(
+            {
+                'version': 1,
+                'config_path': path.name,
+                'results_path': output.name,
+                'xlim': [-10, 10],
+                'ylim': [-5, 5],
+                'show_tracks': False,
+                'colormap': 'Vintage',
+                'max_particles': 2,
+            }
+        )
+    )
+    session = load_session(saved)
+    assert session.config_path == path and session.results_path == output
+    assert session.xlim == (-10, 10) and session.ylim == (-5, 5)
+    assert not session.show_tracks and session.colormap == 'Vintage' and session.max_particles == 2
+
+
+def test_portable_json_rejects_embedded_render_or_source_settings(tmp_path):
+    saved = tmp_path / 'bad.json'
+    saved.write_text(json.dumps({'version': 2, 'config_path': 'case.yaml'}))
+    with pytest.raises(ValueError, match='only patches and background'):
+        load_session(saved)
 
 
 def test_gui_rejects_duplicate_names_without_changing_patches(desktop):
@@ -706,9 +1195,22 @@ def test_gui_callback_reports_error(desktop, monkeypatch):
     assert desktop.session.background == (120, 120, 120)
 
 
-def test_launch_rejects_conflicting_inputs_before_opening_window():
-    with pytest.raises(Exception, match='either --config or --session'):
-        launch_patch_gui('config.yaml', 'session.json')
+def test_launch_combines_config_and_portable_layout(case, tmp_path, monkeypatch):
+    path, output = case
+    saved = tmp_path / 'patches.json'
+    patches = [SquarePatch('p', 0, 0, 1, (255, 0, 0))]
+    save_session(saved, PatchSession(patches=patches))
+    sessions = []
+    root = SimpleNamespace(protocol=lambda *args: None, mainloop=lambda: None, quit=lambda: None, destroy=lambda: None)
+    monkeypatch.setattr('tkinter.Tk', lambda: root)
+    monkeypatch.setattr(
+        'sedtrails.application_interfaces.patch_gui.PatchGuiApp',
+        lambda root, session: sessions.append(session),
+    )
+    launch_patch_gui(config_path=path, session_path=saved, results_path=output)
+    assert sessions[0].config_path == path
+    assert sessions[0].results_path == output
+    assert sessions[0].patches == patches
 
 
 def test_cli_options_and_errors(monkeypatch):

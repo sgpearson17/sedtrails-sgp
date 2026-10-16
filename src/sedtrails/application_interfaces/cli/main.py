@@ -444,7 +444,9 @@ app.add_typer(vizualizer_app, name='viz')
 @vizualizer_app.command('patches')
 def patch_gui_cmd(
     config_file: str | None = typer.Option(None, '--config', '-c', help='SedTRAILS YAML to load.'),
-    session_file: str | None = typer.Option(None, '--session', help='Saved patch JSON to reopen.'),
+    session_file: str | None = typer.Option(
+        None, '--session', help='Patch layout JSON; may be combined with --config.'
+    ),
     results_file: str | None = typer.Option(None, '--file', '-f', help='Optional associated trajectory NetCDF.'),
 ):
     """Open the patch-coloured seed and trajectory analysis GUI."""

@@ -85,6 +85,9 @@ class BathymetryViewData:
     coordinate_system: str = 'projected'
     source_crs: str | None = None
     metric_crs: str | None = None
+    time_index: int = 0
+    time_count: int = 1
+    time_label: str = 'Static bathymetry'
 
 
 @dataclass(frozen=True)
@@ -285,9 +288,10 @@ def load_bathymetry_view_data(
     *,
     format_override: str | None = None,
     variable: str | None = None,
+    time_index: int = 0,
 ) -> BathymetryViewData:
     """
-    Load first-timestep map data for the GUI from a SedTRAILS config.
+    Load one bathymetry frame for the GUI from a SedTRAILS config.
 
     Parameters
     ----------
@@ -297,6 +301,8 @@ def load_bathymetry_view_data(
         Optional input format override.
     variable : str | None
         Name of the variable to inspect or sample.
+    time_index : int
+        Zero-based frame on the selected variable's time axis; defaults to the first.
 
     Returns
     -------
@@ -304,6 +310,8 @@ def load_bathymetry_view_data(
         Computed value returned by the function.
     """
 
+    if type(time_index) is not int or time_index < 0:
+        raise SeedingGuiError('Bathymetry timestep must be a nonnegative integer.')
     config_file = Path(config_path)
     config = load_config(config_file)
     input_model = config.get('general', {}).get('input_model', {})
@@ -325,20 +333,38 @@ def load_bathymetry_view_data(
 
     dataset = _open_netcdf_dataset(input_file)
 
-    variable_name = _resolve_bathymetry_variable(
-        dataset,
-        variable,
-        default_candidates=format_spec['bathymetry_variables'],
-    )
-    coordinate_system = _resolve_gui_coordinate_system(
-        input_model,
-        dataset,
-        format_spec['coordinate_candidates'],
-    )
     source_crs = input_model.get('source_crs', DEFAULT_SOURCE_CRS)
     metric_crs = input_model.get('metric_crs', DEFAULT_METRIC_CRS)
     try:
-        values = _first_timestep_values(dataset[variable_name])
+        variable_name = _resolve_bathymetry_variable(
+            dataset,
+            variable,
+            default_candidates=format_spec['bathymetry_variables'],
+        )
+        coordinate_system = _resolve_gui_coordinate_system(
+            input_model,
+            dataset,
+            format_spec['coordinate_candidates'],
+        )
+        data = dataset[variable_name]
+        time_dim = next((dim for dim in ('time', 'meantime', 'globaltime') if dim in data.dims), None)
+        time_count = int(data.sizes[time_dim]) if time_dim else 1
+        if time_index >= time_count:
+            raise SeedingGuiError(f'Bathymetry timestep must be in 0..{time_count - 1} for {variable_name}.')
+        time_label = 'Static bathymetry'
+        if time_dim is not None:
+            time_label = f'{time_dim} index {time_index}'
+            if time_dim in data.coords:
+                coordinate = data[time_dim].isel({time_dim: time_index})
+                value = np.asarray(coordinate.values)
+                if np.issubdtype(value.dtype, np.timedelta64):
+                    label = f'{float(value / np.timedelta64(1, "s")):g} s'
+                else:
+                    units = coordinate.attrs.get('units', '')
+                    label = f'{value} {units}'.strip()
+                time_label = f'{time_dim}: {label}'
+            data = data.isel({time_dim: time_index})
+        values = _first_timestep_values(data)
         value_multiplier = float(format_spec.get('variable_multipliers', {}).get(variable_name, 1.0))
         if value_multiplier != 1.0:
             values = values * value_multiplier
@@ -371,6 +397,9 @@ def load_bathymetry_view_data(
         coordinate_system=coordinate_system,
         source_crs=str(source_crs) if source_crs else DEFAULT_SOURCE_CRS,
         metric_crs=str(metric_crs) if metric_crs else None,
+        time_index=time_index,
+        time_count=time_count,
+        time_label=time_label,
     )
 
 

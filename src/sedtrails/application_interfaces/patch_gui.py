@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from sedtrails.application_interfaces.seeding_gui import (
+    BathymetryViewData,
     SeedingGuiError,
     _build_gui_coordinate_display,
     _create_masked_triangulation,
@@ -87,11 +88,18 @@ class PatchSession:
     max_particles: int = 10_000
     xlim: tuple[float, float] | None = None
     ylim: tuple[float, float] | None = None
+    title: str = ''
+    bathymetry_index: int = 0
+    bathymetry_clim: tuple[float, float] | None = None
 
     def validate(self) -> None:
         from sedtrails.pathway_visualizer.colormaps import available_bathymetry_colormaps
 
         self.background = parse_rgb(self.background)
+        if not isinstance(self.title, str):
+            raise ValueError('Plot title must be text.')
+        if type(self.bathymetry_index) is not int or self.bathymetry_index < 0:
+            raise ValueError('Bathymetry timestep must be a nonnegative integer.')
         if type(self.max_particles) is not int or self.max_particles < 1:
             raise ValueError('Maximum plotted trajectories must be a positive integer.')
         for value in (self.show_seeds, self.show_tracks, self.show_patches, self.show_background):
@@ -106,29 +114,39 @@ class PatchSession:
         for limits in (self.xlim, self.ylim):
             if limits is not None and (len(limits) != 2 or not np.isfinite(limits).all() or limits[0] == limits[1]):
                 raise ValueError('Map limits must contain two different finite coordinates.')
+        if self.bathymetry_clim is not None:
+            limits = self.bathymetry_clim
+            if len(limits) != 2 or not np.isfinite(limits).all() or limits[0] >= limits[1]:
+                raise ValueError('Bathymetry colour limits must contain two finite values with minimum < maximum.')
+            if (
+                not np.isfinite(float(limits[1]) - float(limits[0]))
+                or not (np.diff(np.linspace(*limits, 33)) > 0).all()
+            ):
+                raise ValueError('Bathymetry colour limits must span 33 distinct finite contour levels.')
 
 
 def save_session(path: str | Path, session: PatchSession) -> None:
     session.validate()
-    payload = asdict(session)
-    for key in ('config_path', 'results_path'):
-        value = payload[key]
-        payload[key] = str(value.resolve()) if value is not None else None
-    payload['version'] = 1
+    payload = {'version': 2, 'patches': [asdict(patch) for patch in session.patches], 'background': session.background}
     Path(path).write_text(json.dumps(payload, indent=2, allow_nan=False) + '\n', encoding='utf-8')
 
 
 def load_session(path: str | Path) -> PatchSession:
     path = Path(path)
     payload = json.loads(path.read_text(encoding='utf-8'))
-    if not isinstance(payload, dict) or payload.pop('version', None) != 1:
-        raise ValueError('Unsupported patch session; expected a JSON object with version 1.')
+    if not isinstance(payload, dict):
+        raise ValueError('Unsupported patch session; expected a JSON object with version 1 or 2.')
+    version = payload.pop('version', None)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError('Unsupported patch session; expected version 1 or 2.')
     try:
+        if version == 2 and set(payload) - {'patches', 'background'}:
+            raise ValueError('Version 2 stores only patches and background RGB.')
         for key in ('config_path', 'results_path'):
             value = payload.get(key)
             payload[key] = (path.parent / value).resolve() if value is not None else None
         payload['patches'] = [SquarePatch(**item) for item in payload.get('patches', [])]
-        for key in ('xlim', 'ylim'):
+        for key in ('xlim', 'ylim', 'bathymetry_clim'):
             if payload.get(key) is not None:
                 payload[key] = tuple(payload[key])
         session = PatchSession(**payload)
@@ -150,7 +168,7 @@ class PatchModel:
         self.config_path = Path(session.config_path)
         self.session = session
         self.config = load_config(self.config_path)
-        self.bathymetry = load_bathymetry_view_data(self.config_path)
+        self.bathymetry = load_bathymetry_view_data(self.config_path, time_index=session.bathymetry_index)
         self.coordinates = _build_gui_coordinate_display(
             self.bathymetry.x,
             self.bathymetry.y,
@@ -246,17 +264,16 @@ class PatchPlot:
         self.figure = figure
         self.model = model
         self.ax = figure.add_subplot(111)
-        self.vmin, self.vmax = float(model.bathymetry.values.min()), float(model.bathymetry.values.max())
-        if self.vmin == self.vmax:
-            self.vmin, self.vmax = self.vmin - 0.5, self.vmax + 0.5
         self.colormap_name = ''
+        self._bathymetry_clim: tuple[float, float] | None = None
         self.triangulation = _create_masked_triangulation(model.map_x, model.map_y, mtri_module=mtri)
         self.bathymetry_artist: Any = None
         self.colorbar: Any = None
         self._draw_bathymetry(model.session.colormap)
-        self.ax.set(xlabel='x [m]', ylabel='y [m]', title=model.config_path.name)
+        self.ax.set(xlabel='x [m]', ylabel='y [m]')
         self.ax.set_aspect('equal', adjustable='box')
         self.home_xlim, self.home_ylim = self.ax.get_xlim(), self.ax.get_ylim()
+        self.ax.set_autoscale_on(False)
         self.artists: list[Any] = []
         self.draw()
         if model.session.xlim is not None:
@@ -264,23 +281,56 @@ class PatchPlot:
         if model.session.ylim is not None:
             self.ax.set_ylim(model.session.ylim)
 
-    def _draw_bathymetry(self, colormap_name: str) -> None:
+    def _draw_bathymetry(
+        self,
+        colormap_name: str,
+        *,
+        bathymetry: BathymetryViewData | None = None,
+        triangulation: Any = None,
+    ) -> None:
         from sedtrails.pathway_visualizer.colormaps import bathymetry_colormap
 
-        if colormap_name == self.colormap_name:
+        limits = self.model.session.bathymetry_clim
+        if colormap_name == self.colormap_name and limits == self._bathymetry_clim and bathymetry is None:
             return
-        cmap, norm = bathymetry_colormap(colormap_name, vmin=self.vmin, vmax=self.vmax)
+        data = self.model.bathymetry if bathymetry is None else bathymetry
+        mesh = self.triangulation if triangulation is None else triangulation
+        if limits is None:
+            vmin, vmax = float(data.values.min()), float(data.values.max())
+            if vmin == vmax:
+                vmin, vmax = vmin - 0.5, vmax + 0.5
+            levels = 32
+            extend = 'neither'
+        else:
+            vmin, vmax = limits
+            levels = np.linspace(vmin, vmax, 33)
+            extend = 'both'
+        cmap, norm = bathymetry_colormap(colormap_name, vmin=vmin, vmax=vmax)
+        artist = self.ax.tricontourf(mesh, data.values, levels=levels, cmap=cmap, norm=norm, extend=extend)
+        # Updating only the normalization leaves old contour boundaries and extension triangles.
         if self.colorbar is not None:
             self.colorbar.remove()
+        self.colorbar = self.figure.colorbar(artist, ax=self.ax, label=f'{data.variable} [m]')
         if self.bathymetry_artist is not None:
             self.bathymetry_artist.remove()
-        self.bathymetry_artist = self.ax.tricontourf(
-            self.triangulation, self.model.bathymetry.values, levels=32, cmap=cmap, norm=norm
-        )
-        self.colorbar = self.figure.colorbar(
-            self.bathymetry_artist, ax=self.ax, label=f'{self.model.bathymetry.variable} [m]'
-        )
+        self.bathymetry_artist = artist
+        self.triangulation = mesh
+        self.vmin, self.vmax = vmin, vmax
         self.colormap_name = colormap_name
+        self._bathymetry_clim = limits
+
+    def set_bathymetry(self, time_index: int) -> None:
+        import matplotlib.tri as mtri
+
+        model = self.model
+        data = load_bathymetry_view_data(model.config_path, time_index=time_index)
+        map_x, map_y = model.coordinates.source_to_display(data.x, data.y)
+        triangulation = _create_masked_triangulation(map_x, map_y, mtri_module=mtri)
+        self._draw_bathymetry(model.session.colormap, bathymetry=data, triangulation=triangulation)
+        model.bathymetry = data
+        model.map_x, model.map_y = map_x, map_y
+        model.session.bathymetry_index = time_index
+        self.figure.canvas.draw_idle()
 
     def set_colormap(self, colormap_name: str) -> None:
         xlim, ylim = self.ax.get_xlim(), self.ax.get_ylim()
@@ -296,6 +346,7 @@ class PatchPlot:
 
         model, session = self.model, self.model.session
         session.validate()
+        self.ax.set_title(session.title or model.config_path.name)
         labels = classify_points(model.seeds, session.patches)
         colours = point_colours(labels, session.patches, session.background)
         for artist in self.artists:
@@ -424,9 +475,26 @@ class PatchGuiApp:
         button(files, 'Load associated trajectories', self.load_associated)
         button(files, 'Choose trajectory NetCDF...', self.choose_tracks)
 
+        view = ttk.LabelFrame(panel, text='Plot view', padding=5)
+        view.pack(fill='x', pady=7)
+        limits = ttk.Frame(view)
+        limits.pack(fill='x')
+        self.view_limits: dict[str, Any] = {}
+        for row, axis in enumerate(('x', 'y')):
+            ttk.Label(limits, text=f'{axis} limits [m]').grid(row=row, column=0, sticky='w')
+            for column, endpoint in enumerate(('min', 'max'), start=1):
+                value = tk.StringVar()
+                ttk.Entry(limits, textvariable=value, width=13).grid(row=row, column=column, padx=2, pady=2)
+                self.view_limits[f'{axis}{endpoint}'] = value
+        ttk.Label(view, text='Plot title (blank = YAML filename)').pack(anchor='w')
+        self.plot_title = tk.StringVar(value=session.title)
+        ttk.Entry(view, textvariable=self.plot_title).pack(fill='x')
+        button(view, 'Apply limits / title', self.apply_view)
+        button(view, 'Fit map', self.fit_map)
+
         patches = ttk.LabelFrame(panel, text='Patches (last row wins overlaps)', padding=5)
         patches.pack(fill='x', pady=7)
-        self.table = ttk.Treeview(patches, columns=('x', 'y', 'n', 'rgb'), height=6)
+        self.table = ttk.Treeview(patches, columns=('x', 'y', 'n', 'rgb'), height=6, selectmode='extended')
         self.table.heading('#0', text='Name')
         self.table.column('#0', width=90)
         for column in ('x', 'y', 'n', 'rgb'):
@@ -509,6 +577,45 @@ class PatchGuiApp:
         self.colormap.trace_add(
             'write', lambda *_args: None if self._colormap_trace_suspended else self._run(self.apply_layers)
         )
+        ttk.Label(layers, text='Bathymetry colour range [m]').pack(anchor='w')
+        self.bathymetry_scale = tk.StringVar(value='Auto' if session.bathymetry_clim is None else 'Manual')
+        self.bathymetry_scale_box = ttk.Combobox(
+            layers, textvariable=self.bathymetry_scale, values=('Auto', 'Manual'), state='readonly'
+        )
+        self.bathymetry_scale_box.pack(fill='x')
+        self.bathymetry_scale_box.bind('<<ComboboxSelected>>', lambda _event: self._run(self._change_bathymetry_scale))
+        colour_limits = ttk.Frame(layers)
+        colour_limits.pack(fill='x')
+        self.bathymetry_colour_limits: dict[str, Any] = {}
+        self.bathymetry_colour_entries: dict[str, Any] = {}
+        for key, initial in zip(('min', 'max'), session.bathymetry_clim or ('', ''), strict=True):
+            ttk.Label(colour_limits, text=key.capitalize()).pack(side='left')
+            value = tk.StringVar(value=str(initial))
+            entry = ttk.Entry(
+                colour_limits,
+                textvariable=value,
+                width=13,
+                state='disabled' if session.bathymetry_clim is None else 'normal',
+            )
+            entry.pack(side='left', padx=(2, 5))
+            self.bathymetry_colour_limits[key] = value
+            self.bathymetry_colour_entries[key] = entry
+        ttk.Label(layers, text='Bathymetry timestep (0-based)').pack(anchor='w')
+        self.bathymetry_index = tk.StringVar(value='0')
+        self.bathymetry_spinner = ttk.Spinbox(
+            layers,
+            textvariable=self.bathymetry_index,
+            from_=0,
+            to=0,
+            increment=1,
+            state='disabled',
+            command=lambda: self._run(self.apply_bathymetry),
+        )
+        self.bathymetry_spinner.pack(fill='x')
+        self.bathymetry_spinner.bind('<Return>', lambda _event: self._run(self.apply_bathymetry))
+        button(layers, 'Show bathymetry timestep', self.apply_bathymetry)
+        self.bathymetry_label = ttk.Label(layers, text='No YAML loaded', wraplength=340)
+        self.bathymetry_label.pack(fill='x')
         for key, label in (
             ('show_seeds', 'Seeding points'),
             ('show_tracks', 'Trajectories'),
@@ -523,7 +630,7 @@ class PatchGuiApp:
         button(layers, 'Apply colours / rendering', self.apply_layers)
         button(panel, 'Save patch JSON...', self.save_json)
         button(panel, 'Export map PNG...', self.export_png)
-        self.status = ttk.Label(panel, text='Open a YAML file or a saved JSON session.', wraplength=350)
+        self.status = ttk.Label(panel, text='Open a YAML file or a patch layout JSON.', wraplength=350)
         self.status.pack(fill='x', pady=6)
         self._refresh_table()
         if session.config_path is not None:
@@ -548,6 +655,11 @@ class PatchGuiApp:
         for widget in self.map_frame.winfo_children():
             widget.destroy()
         self.model, self.session, self.plot = model, model.session, plot
+        plot.ax.callbacks.connect('xlim_changed', self._sync_view)
+        plot.ax.callbacks.connect('ylim_changed', self._sync_view)
+        self._sync_view()
+        self.plot_title.set(self.session.title)
+        self._update_bathymetry_controls()
         self.canvas = FigureCanvasTkAgg(figure, master=self.map_frame)
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.map_frame, pack_toolbar=False)
         self.toolbar.pack(side='bottom', fill='x')
@@ -572,6 +684,69 @@ class PatchGuiApp:
         if self.model is None:
             raise ValueError('Open a SedTRAILS YAML file first.')
         return self.model
+
+    def _require_plot(self) -> PatchPlot:
+        if self.plot is None:
+            raise ValueError('Open a SedTRAILS YAML file first.')
+        return self.plot
+
+    def _sync_view(self, _axes: Any = None) -> None:
+        if self.plot is None:
+            return
+        self.plot.remember_view()
+        for axis, values in (('x', self.plot.ax.get_xlim()), ('y', self.plot.ax.get_ylim())):
+            for endpoint, value in zip(('min', 'max'), values, strict=True):
+                self.view_limits[f'{axis}{endpoint}'].set(str(float(value)))
+
+    def apply_view(self) -> None:
+        model = self._require_model()
+        plot = self._require_plot()
+        candidate = deepcopy(self.session)
+        candidate.xlim = (float(self.view_limits['xmin'].get()), float(self.view_limits['xmax'].get()))
+        candidate.ylim = (float(self.view_limits['ymin'].get()), float(self.view_limits['ymax'].get()))
+        candidate.title = self.plot_title.get()
+        candidate.validate()
+        xlim, ylim = candidate.xlim, candidate.ylim
+        model.session = self.session = candidate
+        plot.ax.set_xlim(xlim)
+        plot.ax.set_ylim(ylim)
+        plot.ax.set_title(candidate.title or model.config_path.name)
+        self.canvas.draw_idle()
+
+    def fit_map(self) -> None:
+        plot = self._require_plot()
+        plot.ax.set_xlim(plot.home_xlim)
+        plot.ax.set_ylim(plot.home_ylim)
+        self.canvas.draw_idle()
+
+    def _update_bathymetry_controls(self) -> None:
+        data = self._require_model().bathymetry
+        self.bathymetry_index.set(str(data.time_index))
+        self.bathymetry_spinner.configure(to=data.time_count - 1, state='normal' if data.time_count > 1 else 'disabled')
+        self.bathymetry_label.configure(text=f'{data.variable}: {data.time_label} ({data.time_count} frames)')
+        self._update_bathymetry_colour_controls()
+
+    def _update_bathymetry_colour_controls(self) -> None:
+        plot = self._require_plot()
+        manual = self.session.bathymetry_clim is not None
+        self.bathymetry_scale.set('Manual' if manual else 'Auto')
+        for key, value in (('min', plot.vmin), ('max', plot.vmax)):
+            self.bathymetry_colour_limits[key].set(str(float(value)))
+            self.bathymetry_colour_entries[key].configure(state='normal' if manual else 'disabled')
+
+    def _change_bathymetry_scale(self) -> None:
+        for entry in self.bathymetry_colour_entries.values():
+            entry.configure(state='normal' if self.bathymetry_scale.get() == 'Manual' else 'disabled')
+        if self.model is not None:
+            self.apply_layers()
+
+    def apply_bathymetry(self) -> None:
+        plot = self._require_plot()
+        try:
+            plot.set_bathymetry(int(self.bathymetry_index.get()))
+        finally:
+            self._update_bathymetry_controls()
+        self._report()
 
     def _report(self) -> None:
         model = self._require_model()
@@ -601,21 +776,44 @@ class PatchGuiApp:
             candidate = self._read_layers()
             candidate.config_path = Path(path)
             candidate.results_path = None
-            candidate.xlim = candidate.ylim = None
+            candidate.bathymetry_index = 0
             self._install_model(PatchModel(candidate))
 
     def open_json(self) -> None:
         from tkinter import filedialog
 
-        path = filedialog.askopenfilename(parent=self.root, filetypes=[('Patch session', '*.json')])
+        path = filedialog.askopenfilename(parent=self.root, filetypes=[('Patch layout', '*.json')])
         if path:
-            self._install_model(PatchModel(load_session(path)))
+            layout = load_session(path)
+            candidate = deepcopy(self.session)
+            candidate.patches, candidate.background = layout.patches, layout.background
+            candidate.validate()
+            self.session = candidate
+            for channel, value in zip('rgb', candidate.background, strict=True):
+                self.background[channel].set(str(value))
+            self.table.selection_remove(*self.table.selection())
+            self._refresh_table()
+            if self.model is not None:
+                self.model.session = candidate
+                self._require_plot().draw()
+                self._report()
+            else:
+                self.status.configure(text='Patch layout loaded. Open a SedTRAILS YAML to display it.')
 
     def _read_layers(self) -> PatchSession:
         candidate = deepcopy(self.session)
         candidate.background = parse_rgb(' '.join(value.get() for value in self.background.values()))
         candidate.max_particles = int(self.maximum.get())
         candidate.colormap = self.colormap.get()
+        if self.bathymetry_scale.get() == 'Auto':
+            candidate.bathymetry_clim = None
+        elif self.bathymetry_scale.get() == 'Manual':
+            candidate.bathymetry_clim = (
+                float(self.bathymetry_colour_limits['min'].get()),
+                float(self.bathymetry_colour_limits['max'].get()),
+            )
+        else:
+            raise ValueError('Bathymetry colour range must be Auto or Manual.')
         for key, variable in self.visibility.items():
             setattr(candidate, key, variable.get())
         candidate.validate()
@@ -636,6 +834,7 @@ class PatchGuiApp:
         model.session = self.session = candidate
         self.plot.set_colormap(candidate.colormap)
         self.plot.draw()
+        self._update_bathymetry_colour_controls()
         self._report()
 
     def _read_patch(self) -> SquarePatch:
@@ -695,22 +894,23 @@ class PatchGuiApp:
         selection = self.table.selection()
         if len(selection) != 1:
             raise ValueError('Select one patch to update.')
-        self._commit_patch(int(selection[0]), self._read_patch())
+        self._commit_patches({int(selection[0]): self._read_patch()})
 
-    def _commit_patch(self, index: int, patch: SquarePatch) -> None:
+    def _commit_patches(self, patches: dict[int, SquarePatch]) -> None:
         candidate = deepcopy(self.session)
-        candidate.patches[index] = patch
+        for index, patch in patches.items():
+            candidate.patches[index] = patch
         candidate.validate()
         self.session.patches = candidate.patches
         self._refresh_table()
-        self.plot.draw()
+        self._require_plot().draw()
 
     def toggle_live_update(self) -> None:
         if self.live_update.get():
             self.table.focus_set()
             self.status.configure(
-                text='Live update: select one patch row or click a square on the map, '
-                'then use arrow keys to move it by 0.1 m. Turn off toolbar pan/zoom first.'
+                text='Live update: select patch rows with Ctrl/Shift-click, or click a square on the map. '
+                'Arrow keys move all selected patches by 0.1 m. Turn off toolbar pan/zoom first.'
             )
         elif self.model is not None:
             self._report()
@@ -725,21 +925,25 @@ class PatchGuiApp:
             return None
         if self.toolbar is not None and self.toolbar.mode:
             return None
-        self._run(lambda: self._move_selected_patch(*offsets[event.keysym]))
+        self._run(lambda: self._move_selected_patches(*offsets[event.keysym]))
         return 'break'
 
-    def _move_selected_patch(self, dx: float, dy: float) -> None:
+    def _move_selected_patches(self, dx: float, dy: float) -> None:
         selection = self.table.selection()
-        if len(selection) != 1:
-            raise ValueError('Select one patch for live movement.')
-        index = int(selection[0])
-        patch = self.session.patches[index]
-        moved = replace(
-            patch,
-            x=float(Decimal(str(patch.x)) + Decimal(str(dx))),
-            y=float(Decimal(str(patch.y)) + Decimal(str(dy))),
-        )
-        self._commit_patch(index, moved)
+        if not selection:
+            raise ValueError('Select at least one patch for live movement.')
+        delta_x, delta_y = Decimal(str(dx)), Decimal(str(dy))
+        patches = {}
+        for row in selection:
+            index = int(row)
+            patch = self.session.patches[index]
+            patches[index] = replace(
+                patch,
+                x=float(Decimal(str(patch.x)) + delta_x),
+                y=float(Decimal(str(patch.y)) + delta_y),
+            )
+        self._commit_patches(patches)
+        moved = patches[int(selection[0])]
         self.fields['x'].set(str(moved.x))
         self.fields['y'].set(str(moved.y))
 
@@ -795,22 +999,32 @@ class PatchGuiApp:
             model.session = old_session
             raise
         self.session = candidate
-        self.plot.draw()
+        plot = self._require_plot()
+        plot.set_colormap(candidate.colormap)
+        plot.draw()
+        self._update_bathymetry_colour_controls()
         self._report()
 
     def save_json(self) -> None:
         from tkinter import filedialog
 
-        self.apply_layers()
-        self.plot.remember_view()
+        candidate = deepcopy(self.session)
+        candidate.background = parse_rgb(' '.join(value.get() for value in self.background.values()))
+        candidate.validate()
         path = filedialog.asksaveasfilename(
             parent=self.root,
             defaultextension='.json',
-            filetypes=[('Patch session', '*.json')],
-            initialfile=self.session.config_path.stem + '-patches.json',
+            filetypes=[('Patch layout', '*.json')],
+            initialfile=(self.session.config_path.stem + '-patches.json')
+            if self.session.config_path
+            else 'patches.json',
         )
         if path:
-            save_session(path, self.session)
+            save_session(path, candidate)
+            self.session = candidate
+            if self.model is not None:
+                self.model.session = candidate
+                self._require_plot().draw()
             self.status.configure(text=f'Saved patch configuration: {path}')
 
     def export_png(self) -> None:
@@ -835,14 +1049,14 @@ def launch_patch_gui(
 ) -> None:
     import tkinter as tk
 
-    if config_path is not None and session_path is not None:
-        raise SeedingGuiError('Use either --config or --session, not both.')
-    session = (
-        load_session(session_path)
-        if session_path
-        else PatchSession(config_path=Path(config_path).resolve() if config_path else None)
-    )
+    session = load_session(session_path) if session_path else PatchSession()
+    if config_path is not None:
+        session.config_path = Path(config_path).resolve()
+        session.results_path = None
+        session.bathymetry_index = 0
     if results_path is not None:
+        if session.config_path is None:
+            raise SeedingGuiError('A SedTRAILS YAML (--config) is required to load trajectories.')
         session.results_path = Path(results_path).resolve()
     root = tk.Tk()
     root.protocol('WM_DELETE_WINDOW', root.quit)
