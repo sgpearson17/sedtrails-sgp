@@ -7,9 +7,115 @@ from sedtrails.transport_converter.domain_mask import (
     delaunay_connectivity,
     extract_boundary_edges,
     filter_connectivity_by_inner_polygons,
+    filter_connectivity_by_domain,
     triangulate_face_connectivity,
 )
 from sedtrails.transport_converter.tekal import read_tekal_polygons
+from sedtrails.transport_converter.plugins.format.plugin import BaseFormatPlugin
+
+
+class _FutureFormatPlugin(BaseFormatPlugin):
+    def convert(self, *args, **kwargs):
+        raise NotImplementedError
+
+
+@pytest.mark.parametrize('geometry', ['planar', 'geodetic'])
+def test_shared_extent_filter_supports_geographic_coordinates(geometry):
+    x = np.array([179.0, -179.0, 180.0, 0.0, 1.0, 0.0])
+    y = np.array([-1.0, -1.0, 1.0, 0.0, 0.0, 1.0])
+    triangles = np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int32)
+    if geometry == 'geodetic':
+        outer = np.array([[178, -2], [-178, -2], [-178, 2], [178, 2]])
+        expected = [True, False]
+    else:
+        x = np.array([4.0, 4.1, 4.0, 5.0, 5.1, 5.0])
+        y = np.array([52.0, 52.0, 52.1, 52.0, 52.0, 52.1])
+        outer = np.array([[4.9, 51.9], [5.2, 51.9], [5.2, 52.2], [4.9, 52.2]])
+        expected = [False, True]
+    result = filter_connectivity_by_domain(
+        x, y, triangles, outer_polygons=[outer],
+        coordinate_system='geographic', runtime_geometry=geometry,
+    )
+    np.testing.assert_array_equal(result.active_mask, expected)
+    assert result.connectivity.dtype == np.int32
+
+
+@pytest.mark.parametrize('config', [
+    {'subset_x': '0:1'},
+    {'subset_x': 'bad', 'subset_y': '0:1'},
+    {'subset_x': '1:0', 'subset_y': '0:1'},
+    {'subset_x': '0:inf', 'subset_y': '0:1'},
+    {'pol_file': 'unused.pol', 'subset_x': '0:1', 'subset_y': '0:1'},
+])
+def test_shared_domain_rejects_invalid_extent(config):
+    plugin = _FutureFormatPlugin()
+    plugin.domain_config = config
+    with pytest.raises(ValueError, match='domain'):
+        plugin._domain_polygons()
+
+
+def test_future_plugin_inherits_masks_and_boundary_cache(tmp_path, caplog):
+    polygon = tmp_path / 'open.pol'
+    polygon.write_text('open\n4 2\n-1 -1\n2 -1\n2 2\n-1 2\n')
+    plugin = _FutureFormatPlugin()
+    x = np.array([0.0, 1.0, 0.0])
+    y = np.array([0.0, 0.0, 1.0])
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+    assert plugin._filter_domain_connectivity(x, y, triangles).connectivity is triangles
+    plugin.domain_config = {'boundary_class_pol_files': {'open': [str(polygon)]}}
+    first = plugin._boundary_edge_classification(x, y, triangles)
+    assert first['class_counts']['open'] == 3
+    assert plugin._boundary_edge_classification(x.copy(), y.copy(), triangles.copy()) is first
+    plugin.domain_config = {'boundary_class_pol_files': {'land': [str(polygon)]}}
+    second = plugin._boundary_edge_classification(x, y, triangles)
+    assert second['class_counts']['land'] == 3
+    assert second is not first
+    plugin.runtime_geometry = 'geodetic'
+    assert plugin._boundary_edge_classification(x, y, triangles) is not second
+    plugin.domain_config = {'boundary_class_pol_files': {
+        'open': [str(polygon)], 'land': [str(polygon)],
+    }}
+    overlap = plugin._boundary_edge_classification(x, y, triangles)
+    assert overlap['class_counts']['open'] == 0
+    assert overlap['class_counts']['land'] == 3
+    assert 'No active boundary edges classified as open' in caplog.text
+    plugin.domain_config = {'subset_x': '10:20', 'subset_y': '10:20'}
+    with pytest.raises(ValueError, match='All particle-tracking faces'):
+        plugin._filter_domain_connectivity(x, y, triangles)
+
+
+def test_shared_filter_combines_extent_and_cutouts_in_bounded_chunks(monkeypatch):
+    x = np.array([0, 1, 0, 10, 11, 10, 20, 21, 20], dtype=float)
+    y = np.array([0, 0, 1] * 3, dtype=float)
+    triangles = np.arange(9, dtype=np.int32).reshape(3, 3)
+    inner = np.array([[9, -1], [12, -1], [12, 2], [9, 2]])
+    monkeypatch.setattr(domain_mask, '_CONNECTIVITY_CHUNK_SIZE', 1)
+    result = filter_connectivity_by_domain(
+        x, y, triangles, [inner], subset_bounds=(-1, 15, -1, 2),
+    )
+    np.testing.assert_array_equal(result.active_mask, [True, False, False])
+    assert result.inner_removed_count == 1
+    assert result.removed_count == 2
+    assert result.active_count == 1
+
+
+def test_shared_domain_rejects_empty_polygon_extent(tmp_path):
+    polygon = tmp_path / 'empty.pol'
+    polygon.write_text('* no polygon blocks\n')
+    plugin = _FutureFormatPlugin()
+    plugin.domain_config = {'pol_file': str(polygon)}
+    with pytest.raises(ValueError, match='at least one polygon'):
+        plugin._domain_polygons()
+
+
+def test_subset_point_mask_includes_limits():
+    plugin = _FutureFormatPlugin()
+    plugin.domain_config = {'subset_x': '0:1', 'subset_y': '0:1'}
+    active, inner = plugin._domain_point_mask(
+        np.array([0.0, 1.0, 1.1]), np.array([0.0, 1.0, 0.5]),
+    )
+    np.testing.assert_array_equal(active, [True, True, False])
+    assert not np.any(inner)
 
 
 def test_read_tekal_polygons_accepts_multiple_blocks_and_files(tmp_path):

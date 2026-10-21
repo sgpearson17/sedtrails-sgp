@@ -215,6 +215,8 @@ class FormatPlugin(BaseFormatPlugin):
             metadata.add('sediment_fraction_labels', mapped_data['sediment_fraction_labels'])
 
         triangles = self._active_structured_triangles_from_dataset()
+        self._add_inner_boundary_metadata(metadata)
+        self._add_boundary_edge_metadata(metadata, mapped_data['x'], mapped_data['y'], triangles)
         return SedtrailsData(
             times=seconds_since_ref,
             reference_date=self.reference_date,
@@ -247,6 +249,7 @@ class FormatPlugin(BaseFormatPlugin):
             y=y_values,
             face_node_connectivity=triangles,
             particle_face_connectivity=triangles,
+            boundary_edge_classification=self._boundary_edge_classification(x_values, y_values, triangles),
             face_node_fill_value=-1,
             coordinate_system=self._coordinate_system(),
             source_crs=self.source_crs,
@@ -338,15 +341,30 @@ class FormatPlugin(BaseFormatPlugin):
             return np.empty((0, 3), dtype=np.int32)
 
         valid = self._valid_face_mask(x_values, y_values)
+        x = x_values.ravel()[valid.ravel()]
+        y = y_values.ravel()[valid.ravel()]
         signature = self._structured_topology_signature(valid)
         cache = self._structured_topology_cache
-        if cache is not None and cache.get('signature') == signature:
+        if (
+            cache is not None and self._geometry_cache_matches(cache, x, y)
+            and cache['signature'] == signature
+        ):
+            self._last_inner_boundary_mask = cache['mask_result']
             return cache['connectivity']
 
         triangles = self._build_active_structured_triangles(valid)
+        mask_result = self._filter_domain_connectivity(x, y, triangles)
+        triangles = mask_result.connectivity
         self._structured_topology_cache = {
             'signature': signature,
             'connectivity': triangles,
+            'node_x': x,
+            'node_y': y,
+            'coordinate_system': self._coordinate_system(),
+            'source_crs': self.source_crs,
+            'metric_crs': self.metric_crs,
+            'domain_signature': self._domain_config_signature(),
+            'mask_result': mask_result,
         }
         return triangles
 

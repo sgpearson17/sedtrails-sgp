@@ -966,6 +966,9 @@ class Simulation:
         domain_config = dict(self._controller.get('domain', {}) or {})
         config_dir = Path(self._config_file).parent
 
+        if domain_config.get('pol_file'):
+            domain_config['pol_file'] = self._resolve_polygon_files(domain_config['pol_file'], config_dir)[0]
+
         inner_files = domain_config.get('inner_boundary_pol_files')
         if inner_files:
             domain_config['inner_boundary_pol_files'] = self._resolve_polygon_files(inner_files, config_dir)

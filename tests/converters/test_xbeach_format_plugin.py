@@ -16,6 +16,37 @@ def _existing_input_path():
     return __file__
 
 
+def test_xbeach_domain_clips_conversion_and_seeding_before_classifying(tmp_path):
+    x, y = np.meshgrid(np.arange(3.0), np.arange(3.0))
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    plugin.input_data = xr.Dataset(
+        {'zb_mean': (('meantime', 'ny', 'nx'), np.ones((2, 3, 3)))},
+        coords={
+            'globalx': (('ny', 'nx'), x),
+            'globaly': (('ny', 'nx'), y),
+            'meantime': [0.0, 10.0],
+        },
+    )
+    open_file = tmp_path / 'open.pol'
+    open_file.write_text('open\n4 2\n0.9 -1\n1.1 -1\n1.1 3\n0.9 3\n')
+    plugin.domain_config = {
+        'subset_x': '-0.1:1.1',
+        'subset_y': '-0.1:2.1',
+        'boundary_class_pol_files': {'open': [str(open_file)]},
+    }
+
+    seeding = plugin.get_seeding_field_data()
+    converted = plugin.convert(required_fields=('bed_level',))
+    triangles = converted.particle_face_connectivity
+
+    assert triangles.shape == (4, 3)
+    assert np.max(converted.x[triangles]) == 1.0
+    np.testing.assert_array_equal(seeding.particle_face_connectivity, triangles)
+    assert converted.metadata.boundary_edge_classification == seeding.boundary_edge_classification
+    assert seeding.boundary_edge_classification['class_counts']['open'] == 2
+    assert converted.bed_level.shape == (2, 9)
+
+
 def _native_wave_dataset():
     dataset = xr.Dataset(
         data_vars={

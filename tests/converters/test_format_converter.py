@@ -7,8 +7,9 @@ import pytest
 import xarray as xr
 
 from sedtrails.particle_tracer.position_calculator_numba import create_grid_geometry
+from sedtrails.particle_tracer.particle_seeder import ParticleSeeder
 from sedtrails.transport_converter.format_converter import FormatConverter
-from sedtrails.transport_converter.plugins.format import _xugrid_compat, fm_netcdf, sfincs
+from sedtrails.transport_converter.plugins.format import _xugrid_compat, d3d4_netcdf, fm_netcdf, sfincs, xbeach
 
 
 def _existing_input_path():
@@ -84,6 +85,91 @@ def _sfincs_dataset_from_face_centers(face_centers):
     ds['mesh2d_face_nodes'].attrs['start_index'] = 0
     ds['mesh2d_face_nodes'].encoding['_FillValue'] = -1
     return ds
+
+
+@pytest.mark.parametrize('model', [fm_netcdf, sfincs, xbeach, d3d4_netcdf], ids=['fm', 'sfincs', 'xbeach', 'd3d4'])
+@pytest.mark.parametrize('extent', ['polygon', 'subset'])
+@pytest.mark.parametrize('cutout', [False, True])
+@pytest.mark.parametrize('boundary_class', ['open', 'land'])
+def test_all_readers_share_domain_masks_for_conversion_seeding_and_exits(
+    tmp_path, model, extent, cutout, boundary_class,
+):
+    x, y = np.meshgrid(np.arange(3.0), np.arange(3.0))
+    times = np.array(['2024-01-01', '2024-01-02'], dtype='datetime64[ns]')
+    if model is sfincs:
+        dataset = _sfincs_dataset_from_face_centers(np.column_stack((x.ravel(), y.ravel())))
+    elif model is fm_netcdf:
+        dataset = xr.Dataset({
+            'net_xcc': ('face', x.ravel()), 'net_ycc': ('face', y.ravel()),
+            'bedlevel': (('time', 'face'), np.ones((2, 9))),
+        }, coords={'time': times})
+    elif model is xbeach:
+        dataset = xr.Dataset({
+            'globalx': (('ny', 'nx'), x), 'globaly': (('ny', 'nx'), y),
+            'zb_mean': (('meantime', 'ny', 'nx'), np.ones((2, 3, 3))),
+        }, coords={'meantime': [0.0, 10.0]})
+    else:
+        dataset = xr.Dataset({
+            'XZ': (('M', 'N'), x), 'YZ': (('M', 'N'), y),
+            'DP0': (('M', 'N'), np.ones((3, 3))),
+        }, coords={'time': times})
+    outer = tmp_path / 'extent.pol'
+    island = tmp_path / 'island.pol'
+    offshore = tmp_path / 'open.pol'
+    _write_square_pol(outer, -0.1, -0.1, 1.1, 2.1)
+    _write_square_pol(island, 0.1, 0.1, 0.9, 0.9)
+    _write_square_pol(offshore, 0.9, -0.1, 1.1, 2.1)
+    domain = {'boundary_class_pol_files': {boundary_class: [str(offshore)]}}
+    if extent == 'polygon':
+        domain['pol_file'] = str(outer)
+    else:
+        domain.update(subset_x='-0.1:1.1', subset_y='-0.1:2.1')
+    if cutout:
+        domain['inner_boundary_pol_files'] = [str(island)]
+    converter = FormatConverter({
+        'input_file': __file__,
+        'input_format': model.__name__.rsplit('.', 1)[-1],
+        'domain_config': domain,
+    })
+    converter.format_plugin.input_data = dataset
+
+    seeding = converter.get_seeding_field_data()
+    converted = converter.convert_to_sedtrails(required_fields=('bed_level',))
+    triangles = converted.particle_face_connectivity
+    assert triangles.shape == (2 if cutout else 4, 3)
+    assert np.max(converted.x[triangles]) == 1.0
+    np.testing.assert_array_equal(seeding.particle_face_connectivity, triangles)
+    assert converted.bed_level.shape[-1] == len(converted.x)
+    assert seeding.boundary_edge_classification == converted.metadata.boundary_edge_classification
+    assert seeding.boundary_edge_classification['class_counts'][boundary_class] == (1 if cutout else 2)
+
+    population = ParticleSeeder([{
+        'name': 'boundary-test',
+        'particle_type': 'sand',
+        'transport_probability': 'no_probability',
+        'seeding': {
+            'strategy': {'point': {'locations': ['0.8,1.5']}},
+            'quantity': 1, 'release_start': '0',
+            'burial_depth': {'constant': 0.0},
+        },
+    }]).seed(seeding)[0]
+    population._current_time = 0.0
+    population.particles['transport_probability'] = np.ones(1)
+    population.update_status()
+    population.update_position(
+        {'u': np.ones(len(seeding.x)), 'v': np.zeros(len(seeding.x))}, 0.5,
+    )
+    assert population.particles['status_left_domain'].tolist() == [boundary_class == 'open']
+    assert population.particles['status_beached'].tolist() == [boundary_class == 'land']
+    assert population.particles['status_mobile'].tolist() == [False]
+    if boundary_class == 'land':
+        np.testing.assert_allclose(population.particles['x'], [0.8])
+        np.testing.assert_allclose(population.particles['y'], [1.5])
+
+    converter.format_plugin.domain_config = {}
+    expanded = converter.get_seeding_field_data()
+    assert expanded.particle_face_connectivity.shape == (8, 3)
+    assert converter.convert_to_sedtrails(required_fields=('bed_level',)).particle_face_connectivity.shape == (8, 3)
 
 
 class _PluginWithCoordinateReader:
@@ -668,7 +754,10 @@ def test_fm_active_geometry_and_boundary_classification_are_cached(monkeypatch):
         return FakeClassification()
 
     monkeypatch.setattr(fm_netcdf, 'delaunay_connectivity', fake_delaunay)
-    monkeypatch.setattr(fm_netcdf, 'classify_boundary_edges_from_config', fake_classify)
+    monkeypatch.setattr(
+        'sedtrails.transport_converter.plugins.format.plugin.classify_boundary_edges_from_config',
+        fake_classify,
+    )
 
     first_connectivity = plugin._active_triangular_connectivity(node_x, node_y)
     second_connectivity = plugin._active_triangular_connectivity(node_x, node_y)
@@ -917,7 +1006,10 @@ def test_sfincs_active_face_mask_is_cached(monkeypatch, tmp_path):
         call_count += 1
         return np.array([False, True])
 
-    monkeypatch.setattr(sfincs, 'points_inside_any_polygon', fake_points_inside_any_polygon)
+    monkeypatch.setattr(
+        'sedtrails.transport_converter.domain_mask.points_inside_any_polygon',
+        fake_points_inside_any_polygon,
+    )
 
     first_mask = plugin._active_face_mask(np.array([0.0, 1.0]), np.array([0.0, 1.0]))
     second_mask = plugin._active_face_mask(np.array([0.0, 1.0]), np.array([0.0, 1.0]))

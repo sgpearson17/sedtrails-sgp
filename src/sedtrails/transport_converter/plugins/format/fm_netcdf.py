@@ -12,12 +12,7 @@ from sedtrails.transport_converter.plugins import BaseFormatPlugin
 from sedtrails.transport_converter.plugins.format._xugrid_compat import create_ugrid2d
 from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.domain_mask import (
-    ConnectivityMaskResult,
-    classify_boundary_edges_from_config,
     delaunay_connectivity,
-    filter_connectivity_by_inner_polygons,
-    inner_boundary_files_from_config,
-    load_inner_boundary_polygons,
     triangulate_face_connectivity,
 )
 from sedtrails.transport_converter.sedtrails_data import SedtrailsData
@@ -91,15 +86,10 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data = None  # holds Dataset after reading
         self._input_variables: List[str] = []
-        self.domain_config: Dict[str, Any] = {}
         self.coordinate_system: str | None = None
         self.source_crs: str | None = None
         self.metric_crs: str | None = None
-        self._inner_boundary_polygons: list[np.ndarray] | None = None
-        self._inner_boundary_polygons_signature: str | None = None
-        self._last_inner_boundary_mask: ConnectivityMaskResult | None = None
         self._active_triangular_connectivity_cache: dict[str, Any] | None = None
-        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     def __post_init__(self):
         # Check if the input file exists
@@ -282,6 +272,7 @@ class FormatPlugin(BaseFormatPlugin):
             node_x=mapped_data['x'],
             node_y=mapped_data['y'],
             face_node_connectivity=mapped_data.get('face_node_connectivity'),
+            particle_face_connectivity=mapped_data.get('face_node_connectivity'),
             face_node_fill_value=-1,
             metadata=metadata,
         )
@@ -329,6 +320,7 @@ class FormatPlugin(BaseFormatPlugin):
             x=x,
             y=y,
             face_node_connectivity=connectivity,
+            particle_face_connectivity=connectivity,
             boundary_edge_classification=boundary_edge_classification,
             face_node_fill_value=-1,
             coordinate_system=self._coordinate_system(),
@@ -818,7 +810,7 @@ class FormatPlugin(BaseFormatPlugin):
     def _active_triangular_connectivity(self, node_x: np.ndarray, node_y: np.ndarray) -> np.ndarray:
         coordinate_system = self._coordinate_system()
         cache = self._active_triangular_connectivity_cache
-        if self._geometry_cache_matches(cache, node_x, node_y):
+        if cache is not None and self._geometry_cache_matches(cache, node_x, node_y):
             self._last_inner_boundary_mask = cache['mask_result']
             return cache['triangles']
 
@@ -835,16 +827,7 @@ class FormatPlugin(BaseFormatPlugin):
         else:
             candidate_connectivity = source_connectivity
 
-        mask_result = filter_connectivity_by_inner_polygons(
-            node_x,
-            node_y,
-            candidate_connectivity,
-            self._get_inner_boundary_polygons(),
-            coordinate_system=coordinate_system,
-            source_crs=self.source_crs,
-            metric_crs=self.metric_crs,
-            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
-        )
+        mask_result = self._filter_domain_connectivity(node_x, node_y, candidate_connectivity)
         self._last_inner_boundary_mask = mask_result
         triangles = triangulate_face_connectivity(mask_result.connectivity)
         self._active_triangular_connectivity_cache = {
@@ -858,78 +841,6 @@ class FormatPlugin(BaseFormatPlugin):
             'triangles': triangles,
         }
         return triangles
-
-    def _get_inner_boundary_polygons(self) -> list[np.ndarray]:
-        domain_signature = self._domain_config_signature()
-        if self._inner_boundary_polygons is None or self._inner_boundary_polygons_signature != domain_signature:
-            self._inner_boundary_polygons = load_inner_boundary_polygons(getattr(self, 'domain_config', {}))
-            self._inner_boundary_polygons_signature = domain_signature
-        return self._inner_boundary_polygons
-
-    def _add_inner_boundary_metadata(self, metadata: SedtrailsMetadata) -> None:
-        inner_files = inner_boundary_files_from_config(getattr(self, 'domain_config', {}))
-        if not inner_files and not self._get_inner_boundary_polygons():
-            return
-
-        metadata.add('inner_boundary_pol_files', inner_files)
-        metadata.add('inner_boundary_polygon_count', len(self._get_inner_boundary_polygons()))
-        if self._last_inner_boundary_mask is not None:
-            metadata.add('inner_boundary_masked_face_count', self._last_inner_boundary_mask.removed_count)
-            metadata.add('inner_boundary_active_face_count', int(self._last_inner_boundary_mask.connectivity.shape[0]))
-
-    def _add_boundary_edge_metadata(
-        self,
-        metadata: SedtrailsMetadata,
-        node_x: np.ndarray,
-        node_y: np.ndarray,
-        connectivity: np.ndarray | None,
-    ) -> None:
-        if connectivity is None:
-            return
-
-        classification_metadata = self._boundary_edge_classification(node_x, node_y, connectivity)
-        if classification_metadata is not None:
-            metadata.add('boundary_edge_classification', classification_metadata)
-
-    def _boundary_edge_classification(
-        self,
-        node_x: np.ndarray,
-        node_y: np.ndarray,
-        connectivity: np.ndarray | None,
-    ) -> dict | None:
-        if connectivity is None:
-            return None
-
-        coordinate_system = self._coordinate_system()
-        cache = self._boundary_edge_classification_cache
-        if self._geometry_cache_matches(cache, node_x, node_y, connectivity):
-            return cache['metadata']
-
-        classification = classify_boundary_edges_from_config(
-            node_x,
-            node_y,
-            connectivity,
-            getattr(self, 'domain_config', {}),
-            coordinate_system=coordinate_system,
-            source_crs=self.source_crs,
-            metric_crs=self.metric_crs,
-            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
-        )
-        classification_metadata = None if classification is None else classification.to_metadata()
-        self._boundary_edge_classification_cache = {
-            'node_x': np.asarray(node_x),
-            'node_y': np.asarray(node_y),
-            'connectivity': np.asarray(connectivity),
-            'domain_signature': self._domain_config_signature(),
-            'coordinate_system': coordinate_system,
-            'source_crs': self.source_crs,
-            'metric_crs': self.metric_crs,
-            'metadata': classification_metadata,
-        }
-        return classification_metadata
-
-    def _domain_config_signature(self) -> str:
-        return repr(getattr(self, 'domain_config', {}) or {})
 
     def _coordinate_system(self) -> str:
         """Return the coordinate-system label inferred from D-Flow FM coordinates."""
@@ -951,32 +862,6 @@ class FormatPlugin(BaseFormatPlugin):
             metadata.add('source_crs', self.source_crs)
         if self.metric_crs is not None:
             metadata.add('metric_crs', self.metric_crs)
-
-    def _geometry_cache_matches(
-        self,
-        cache: dict[str, Any] | None,
-        node_x: np.ndarray,
-        node_y: np.ndarray,
-        connectivity: np.ndarray | None = None,
-    ) -> bool:
-        if cache is None or cache.get('domain_signature') != self._domain_config_signature():
-            return False
-        if cache.get('coordinate_system') != self._coordinate_system():
-            return False
-        if cache.get('source_crs') != self.source_crs or cache.get('metric_crs') != self.metric_crs:
-            return False
-        if not self._arrays_equal(cache.get('node_x'), node_x) or not self._arrays_equal(cache.get('node_y'), node_y):
-            return False
-        if connectivity is None:
-            return True
-        return self._arrays_equal(cache.get('connectivity'), connectivity)
-
-    @staticmethod
-    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
-        if left is None:
-            return False
-        right_array = np.asarray(right)
-        return left.shape == right_array.shape and np.array_equal(left, right_array)
 
     def _source_face_node_connectivity(
         self,

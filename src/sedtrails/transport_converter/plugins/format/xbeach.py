@@ -10,7 +10,6 @@ import xarray as xr
 
 from sedtrails.particle_tracer.coordinate_transform import infer_coordinate_system_from_attrs
 from sedtrails.transport_converter.domain_mask import (
-    classify_boundary_edges_from_config,
     delaunay_connectivity,
 )
 from sedtrails.transport_converter.plugins import BaseFormatPlugin
@@ -78,12 +77,10 @@ class FormatPlugin(BaseFormatPlugin):
         self.morfac = morfac
         self.input_data: xr.Dataset | None = None
         self._input_variables: List[str] = []
-        self.domain_config: Dict[str, Any] = {}
         self.coordinate_system: str | None = None
         self.source_crs: str | None = None
         self.metric_crs: str | None = None
         self._particle_connectivity_cache: dict[str, Any] | None = None
-        self._boundary_edge_classification_cache: dict[str, Any] | None = None
 
     @property
     def variables(self) -> List[str]:
@@ -260,6 +257,7 @@ class FormatPlugin(BaseFormatPlugin):
         )
         if boundary_edge_classification is not None:
             metadata.add('boundary_edge_classification', boundary_edge_classification)
+        self._add_inner_boundary_metadata(metadata)
 
         return SedtrailsData(
             times=seconds_since_ref,
@@ -822,7 +820,8 @@ class FormatPlugin(BaseFormatPlugin):
         """Return particle-tracking triangles for the active XBeach grid."""
         coordinate_system = self._coordinate_system()
         cache = self._particle_connectivity_cache
-        if self._geometry_cache_matches(cache, x, y):
+        if cache is not None and self._geometry_cache_matches(cache, x, y):
+            self._last_inner_boundary_mask = cache['mask_result']
             return cache['connectivity']
 
         connectivity = self._structured_grid_connectivity()
@@ -835,13 +834,17 @@ class FormatPlugin(BaseFormatPlugin):
                 metric_crs=self.metric_crs,
                 runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
             )
+        mask_result = self._filter_domain_connectivity(x, y, connectivity)
+        connectivity = mask_result.connectivity
         self._particle_connectivity_cache = {
-            'x': np.asarray(x),
-            'y': np.asarray(y),
+            'node_x': np.asarray(x),
+            'node_y': np.asarray(y),
+            'domain_signature': self._domain_config_signature(),
             'coordinate_system': coordinate_system,
             'source_crs': self.source_crs,
             'metric_crs': self.metric_crs,
             'connectivity': connectivity,
+            'mask_result': mask_result,
         }
         return connectivity
 
@@ -893,69 +896,6 @@ class FormatPlugin(BaseFormatPlugin):
             return np.empty((0, 3), dtype=candidate_triangles.dtype)
         return candidate_triangles[active_triangles]
 
-    def _geometry_cache_matches(self, cache: dict[str, Any] | None, x: np.ndarray, y: np.ndarray) -> bool:
-        """Return whether cached particle connectivity matches the active grid."""
-        if cache is None:
-            return False
-        return (
-            cache.get('coordinate_system') == self._coordinate_system()
-            and cache.get('source_crs') == self.source_crs
-            and cache.get('metric_crs') == self.metric_crs
-            and self._arrays_equal(cache.get('x'), x)
-            and self._arrays_equal(cache.get('y'), y)
-        )
-
-    def _boundary_edge_classification(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        connectivity: np.ndarray | None,
-    ) -> dict | None:
-        """Return optional boundary-edge class metadata for active triangles."""
-        if connectivity is None:
-            return None
-
-        coordinate_system = self._coordinate_system()
-        cache = self._boundary_edge_classification_cache
-        if (
-            cache is not None
-            and cache.get('domain_signature') == self._domain_config_signature()
-            and cache.get('coordinate_system') == coordinate_system
-            and cache.get('source_crs') == self.source_crs
-            and cache.get('metric_crs') == self.metric_crs
-            and self._arrays_equal(cache.get('x'), x)
-            and self._arrays_equal(cache.get('y'), y)
-            and self._arrays_equal(cache.get('connectivity'), connectivity)
-        ):
-            return cache['metadata']
-
-        classification = classify_boundary_edges_from_config(
-            x,
-            y,
-            connectivity,
-            getattr(self, 'domain_config', {}),
-            coordinate_system=coordinate_system,
-            source_crs=self.source_crs,
-            metric_crs=self.metric_crs,
-            runtime_geometry=getattr(self, 'runtime_geometry', 'planar'),
-        )
-        metadata = None if classification is None else classification.to_metadata()
-        self._boundary_edge_classification_cache = {
-            'x': np.asarray(x),
-            'y': np.asarray(y),
-            'connectivity': np.asarray(connectivity),
-            'domain_signature': self._domain_config_signature(),
-            'coordinate_system': coordinate_system,
-            'source_crs': self.source_crs,
-            'metric_crs': self.metric_crs,
-            'metadata': metadata,
-        }
-        return metadata
-
-    def _domain_config_signature(self) -> str:
-        """Return a cache signature for configured domain polygons."""
-        return repr(getattr(self, 'domain_config', {}) or {})
-
     def _coordinate_system(self) -> str:
         """Return the coordinate-system label inferred from XBeach coordinates."""
         if self.coordinate_system is not None and str(self.coordinate_system).lower() != 'auto':
@@ -976,14 +916,6 @@ class FormatPlugin(BaseFormatPlugin):
             metadata.add('source_crs', self.source_crs)
         if self.metric_crs is not None:
             metadata.add('metric_crs', self.metric_crs)
-
-    @staticmethod
-    def _arrays_equal(left: np.ndarray | None, right: np.ndarray) -> bool:
-        """Return whether two arrays have equal shape and values."""
-        if left is None:
-            return False
-        right_array = np.asarray(right)
-        return left.shape == right_array.shape and np.array_equal(left, right_array)
 
     def _mean_scalar(self, var_name: str, time_selector: Any, num_times: int, grid_size: int) -> np.ndarray:
         """Read a scalar ``*_mean`` variable as ``(time, spatial)``."""

@@ -68,6 +68,25 @@ def _simulation_with_plugin(plugin):
     return manager
 
 
+def test_domain_config_resolves_all_polygon_paths_relative_to_yaml(tmp_path):
+    manager = object.__new__(Simulation)
+    manager._config_file = str(tmp_path / 'run.yml')
+    domain = {
+        'pol_file': 'outer.pol',
+        'inner_boundary_pol_files': ['island.pol'],
+        'boundary_class_pol_files': {'open': ['open.pol'], 'land': ['land.pol']},
+    }
+    manager._controller = SimpleNamespace(get=lambda key, default=None: domain if key == 'domain' else default)
+
+    resolved = manager._get_domain_config()
+
+    assert Path(resolved['pol_file']) == tmp_path / 'outer.pol'
+    assert Path(resolved['inner_boundary_pol_files'][0]) == tmp_path / 'island.pol'
+    assert Path(resolved['boundary_class_pol_files']['open'][0]) == tmp_path / 'open.pol'
+    assert Path(resolved['boundary_class_pol_files']['land'][0]) == tmp_path / 'land.pol'
+    assert domain['pol_file'] == 'outer.pol'
+
+
 def _minimal_config():
     """Build a minimal valid configuration for controller-backed simulation tests."""
     return {

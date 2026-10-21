@@ -130,7 +130,9 @@ Do not include an empty `domain: {}` block. `inner_boundary_pol_files` and `boun
 
 ### Inner Boundaries and Boundary Actions
 
-For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/cutouts. For FM, SFINCS, and XBeach inputs, SedTRAILS can use Tekal polygon files to distinguish open offshore boundaries from land boundaries.
+FM, SFINCS, XBeach, and Delft3D-4 NetCDF readers share the same domain clipping, island/cutout masking, and open/land boundary classification.
+
+`pol_file` keeps candidate faces or tracking triangles whose centroids fall inside any polygon block in the file. Alternatively, `subset_x` and `subset_y` keep centroids within the inclusive source-coordinate ranges. These masks select existing mesh elements; they do not cut individual triangles at the exact polygon line. The effective boundary therefore follows mesh edges and may differ from the drawn polygon by approximately a local mesh spacing. Forcing coordinates and fields remain aligned; clipping does not retriangulate across source-grid gaps.
 
 `inner_boundary_pol_files` removes candidate faces or triangles whose centroids fall inside any configured polygon. This creates holes in the active particle mesh. Particles inside those holes are not treated as valid in-domain particles.
 
@@ -140,6 +142,8 @@ For FM and SFINCS inputs, SedTRAILS can use Tekal polygon files to mask islands/
 - `land`: particles crossing this edge are marked as beached for that timestep, remain at their last valid in-domain position, and can become mobile again on a later timestep if hydrodynamic and transport conditions permit.
 
 If an edge midpoint is selected by both `open` and `land` override polygons, `land` takes priority. The source match is still kept in diagnostics.
+
+Classification runs after extent clipping and cutout masking, on the same tracking mesh used for seeding and movement. A warning is logged if a configured class ends up with no active boundary edges. Boundary-class polygons do not create absorbing lines inside the mesh.
 
 Boundary-class polygons therefore do not need to be thin lines that exactly trace the boundary. A wider swath is allowed as long as it selects only the intended boundary-edge midpoints. Avoid polygons that are so wide they also contain midpoints from neighboring or unrelated open/land edges.
 

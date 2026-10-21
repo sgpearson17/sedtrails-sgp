@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -10,7 +11,7 @@ import numpy as np
 from matplotlib.path import Path as MplPath
 from scipy.spatial import ConvexHull, Delaunay
 
-from sedtrails.particle_tracer.coordinate_transform import build_coordinate_transform
+from sedtrails.particle_tracer.coordinate_transform import CoordinateTransform, build_coordinate_transform
 from sedtrails.particle_tracer.geodetic_geometry import ecef_to_lonlat, lonlat_to_ecef
 from sedtrails.transport_converter.tekal import read_tekal_polygons
 
@@ -19,6 +20,7 @@ DEFAULT_MAX_FALLBACK_TRIANGULATION_POINTS = 250_000
 """Maximum point count accepted by the global SciPy topology fallback."""
 
 _CONNECTIVITY_CHUNK_SIZE = 262_144
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,11 @@ class ConnectivityMaskResult:
     connectivity: np.ndarray
     active_mask: np.ndarray
     removed_count: int
+    inner_removed_count: int = 0
+
+    @property
+    def active_count(self) -> int:
+        return int(np.count_nonzero(self.active_mask))
 
 
 @dataclass(frozen=True)
@@ -302,6 +309,69 @@ def filter_connectivity_by_inner_polygons(
         and the number of removed faces or triangles.
     """
 
+    return filter_connectivity_by_domain(
+        node_x, node_y, connectivity, polygons,
+        coordinate_system=coordinate_system,
+        source_crs=source_crs,
+        metric_crs=metric_crs,
+        runtime_geometry=runtime_geometry,
+    )
+
+
+def domain_point_mask(
+    points: np.ndarray,
+    inner_polygons: Iterable[np.ndarray] = (),
+    outer_polygons: Iterable[np.ndarray] = (),
+    subset_bounds: tuple[float, float, float, float] | None = None,
+    *,
+    transform: CoordinateTransform,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return active and cutout masks in source coordinates for any model."""
+    points = np.asarray(points, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 2:
+        raise ValueError(f'points must have shape (n_points, 2), got {points.shape}')
+    inner_polygons = list(inner_polygons)
+    outer_polygons = list(outer_polygons)
+    if transform.is_geodetic:
+        test_points = points
+        contains = points_inside_geographic_polygons
+    else:
+        x, y = transform.source_to_metric(points[:, 0], points[:, 1])
+        test_points = np.column_stack((x, y))
+        inner_polygons = transform.polygons_to_metric(inner_polygons)
+        outer_polygons = transform.polygons_to_metric(outer_polygons)
+        contains = points_inside_any_polygon
+    inner = contains(test_points, inner_polygons)
+    active = np.isfinite(points).all(axis=1) & ~inner
+    if outer_polygons:
+        active &= contains(test_points, outer_polygons)
+    if subset_bounds is not None:
+        xmin, xmax, ymin, ymax = subset_bounds
+        active &= (
+            (points[:, 0] >= xmin) & (points[:, 0] <= xmax)
+            & (points[:, 1] >= ymin) & (points[:, 1] <= ymax)
+        )
+    return active, inner
+
+
+def filter_connectivity_by_domain(
+    node_x: np.ndarray,
+    node_y: np.ndarray,
+    connectivity: np.ndarray,
+    inner_polygons: Iterable[np.ndarray] = (),
+    outer_polygons: Iterable[np.ndarray] = (),
+    subset_bounds: tuple[float, float, float, float] | None = None,
+    coordinate_system: str | None = None,
+    source_crs: str | None = None,
+    metric_crs: str | None = None,
+    runtime_geometry: str = 'planar',
+) -> ConnectivityMaskResult:
+    """Keep faces with centroids in the extent and outside cutout polygons.
+
+    Filtering preserves source node indices and integer dtype. Centroids are
+    processed in bounded chunks; geodetic meshes use spherical centroids.
+    With no domain masks the input connectivity is returned by identity.
+    """
     faces = np.asarray(connectivity)
     if not np.issubdtype(faces.dtype, np.integer):
         faces = np.asarray(connectivity, dtype=np.int64)
@@ -309,8 +379,9 @@ def filter_connectivity_by_inner_polygons(
         empty_mask = np.zeros(faces.shape[0], dtype=bool)
         return ConnectivityMaskResult(connectivity=faces, active_mask=empty_mask, removed_count=0)
 
-    polygon_list = [np.asarray(polygon, dtype=float) for polygon in polygons if np.asarray(polygon).shape[0] >= 3]
-    if not polygon_list:
+    inner_polygons = list(inner_polygons)
+    outer_polygons = list(outer_polygons)
+    if not inner_polygons and not outer_polygons and subset_bounds is None:
         return ConnectivityMaskResult(
             connectivity=faces,
             active_mask=np.ones(faces.shape[0], dtype=bool),
@@ -325,7 +396,8 @@ def filter_connectivity_by_inner_polygons(
         metric_crs=metric_crs,
         runtime_geometry=runtime_geometry,
     )
-    inside = np.zeros(faces.shape[0], dtype=bool)
+    active_mask = np.zeros(faces.shape[0], dtype=bool)
+    inner_removed_count = 0
     if transform.is_geodetic:
         x = np.asarray(node_x, dtype=float).ravel()
         y = np.asarray(node_y, dtype=float).ravel()
@@ -334,40 +406,22 @@ def filter_connectivity_by_inner_polygons(
                 f'node_x and node_y must have the same shape, got {x.shape} and {y.shape}'
             )
         node_ecef = lonlat_to_ecef(x, y, radius=1.0)
-        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
-            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
-            centroids = _spherical_face_centroids_from_ecef(
-                node_ecef,
-                faces[start:stop],
-            )
-            inside[start:stop] = points_inside_geographic_polygons(
-                centroids,
-                polygon_list,
-            )
-    else:
-        metric_polygons = transform.polygons_to_metric(polygon_list)
-        for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
-            stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
-            centroids = face_centroids(
-                node_x,
-                node_y,
-                faces[start:stop],
-            )
-            centroid_x, centroid_y = transform.source_to_metric(
-                centroids[:, 0],
-                centroids[:, 1],
-            )
-            metric_centroids = np.column_stack((centroid_x, centroid_y))
-            inside[start:stop] = points_inside_any_polygon(
-                metric_centroids,
-                metric_polygons,
-            )
-    active_mask = ~inside
-    removed_count = int(np.count_nonzero(inside))
+    for start in range(0, faces.shape[0], _CONNECTIVITY_CHUNK_SIZE):
+        stop = min(start + _CONNECTIVITY_CHUNK_SIZE, faces.shape[0])
+        if transform.is_geodetic:
+            centroids = _spherical_face_centroids_from_ecef(node_ecef, faces[start:stop])
+        else:
+            centroids = face_centroids(node_x, node_y, faces[start:stop])
+        active_mask[start:stop], inner = domain_point_mask(
+            centroids, inner_polygons, outer_polygons, subset_bounds, transform=transform,
+        )
+        inner_removed_count += int(np.count_nonzero(inner))
+    removed_count = int(np.count_nonzero(~active_mask))
     return ConnectivityMaskResult(
         connectivity=faces if removed_count == 0 else faces[active_mask],
         active_mask=active_mask,
         removed_count=removed_count,
+        inner_removed_count=inner_removed_count,
     )
 
 
@@ -576,7 +630,7 @@ def classify_boundary_edges_from_config(
     if not any(class_files.values()):
         return None
     class_polygons = load_boundary_class_polygons(domain_config)
-    return classify_boundary_edges(
+    result = classify_boundary_edges(
         node_x,
         node_y,
         connectivity,
@@ -587,6 +641,14 @@ def classify_boundary_edges_from_config(
         metric_crs=metric_crs,
         runtime_geometry=runtime_geometry,
     )
+    for class_name, files in class_files.items():
+        if files and result.class_counts[class_name] == 0:
+            logger.warning(
+                'No active boundary edges classified as %s using %s. '
+                'Check the domain extent and polygon overlap; land takes priority over open.',
+                class_name, files,
+            )
+    return result
 
 
 def classify_boundary_edges(
