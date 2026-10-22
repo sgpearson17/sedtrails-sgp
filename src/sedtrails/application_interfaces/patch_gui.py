@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 import json
@@ -91,6 +91,9 @@ class PatchSession:
     title: str = ''
     bathymetry_index: int = 0
     bathymetry_clim: tuple[float, float] | None = None
+    population_visibility: dict[str, bool] = field(default_factory=dict)
+    population_marker_sizes: dict[str, float] = field(default_factory=dict)
+    show_endpoints: bool = False
 
     def validate(self) -> None:
         from sedtrails.pathway_visualizer.colormaps import available_bathymetry_colormaps
@@ -102,9 +105,17 @@ class PatchSession:
             raise ValueError('Bathymetry timestep must be a nonnegative integer.')
         if type(self.max_particles) is not int or self.max_particles < 1:
             raise ValueError('Maximum plotted trajectories must be a positive integer.')
-        for value in (self.show_seeds, self.show_tracks, self.show_patches, self.show_background):
+        for value in (self.show_seeds, self.show_tracks, self.show_patches, self.show_background, self.show_endpoints):
             if type(value) is not bool:
                 raise ValueError('Layer visibility values must be true or false.')
+        if any(not isinstance(name, str) or type(value) is not bool for name, value in self.population_visibility.items()):
+            raise ValueError('Population visibility must map names to true or false.')
+        for name, size in self.population_marker_sizes.items():
+            if (
+                not isinstance(name, str) or isinstance(size, bool)
+                or not isinstance(size, (int, float)) or not np.isfinite(size) or size <= 0
+            ):
+                raise ValueError('Population marker sizes must be finite positive numbers (points squared).')
         available = available_bathymetry_colormaps()
         if not isinstance(self.colormap, str) or self.colormap.lower() not in {name.lower() for name in available}:
             raise ValueError(f'colormap must be one of: {", ".join(available)}.')
@@ -181,6 +192,9 @@ class PatchModel:
         if not isinstance(populations, list) or not populations:
             raise ValueError('The YAML has no particles.populations entries.')
         seed_arrays = []
+        self.population_names = [population.get('name', f'Population {i + 1}') for i, population in enumerate(populations)]
+        if len(set(self.population_names)) != len(self.population_names):
+            raise ValueError('Population names must be unique for plotting.')
         for population in populations:
             config = PopulationConfig(deepcopy(population))
             for key in ('path', 'poly'):
@@ -197,10 +211,15 @@ class PatchModel:
             )
             seed_arrays.append(np.column_stack((arrays['x'], arrays['y'])))
         self.seeds = np.concatenate(seed_arrays)
+        self.seed_population_ids = np.repeat(np.arange(len(populations)), [len(points) for points in seed_arrays])
         if not len(self.seeds) or not np.isfinite(self.seeds).all():
             raise ValueError('The YAML did not produce finite seeding points.')
         self.tracks: np.ndarray | None = None
         self.track_seed_indices = np.empty(0, dtype=int)
+        self.track_population_ids = np.empty(0, dtype=int)
+        self.track_times = np.empty(0, dtype=float)
+        self.track_valid = np.empty((0, 0), dtype=bool)
+        self.track_reference: np.datetime64 | None = None
         self.total_tracks = 0
         if session.results_path is not None:
             self.load_tracks(session.results_path)
@@ -214,6 +233,7 @@ class PatchModel:
     def load_tracks(self, path: str | Path) -> None:
         from scipy.spatial import cKDTree
         from sedtrails.pathway_visualizer.trajectories import (
+            _decode_population_names,
             _reference_datetime64,
             _sample_dataset,
             _time_values_as_seconds,
@@ -234,13 +254,55 @@ class PatchModel:
                 times = _time_values_as_seconds(dataset, dataset['time'])
                 if not times.size or not np.isclose(times.flat[0], expected, rtol=0, atol=1e-6):
                     raise ValueError('Output must include the YAML simulation start, not a restart timestep.')
-            selected, total, _ = _sample_dataset(dataset, max_particles=self.session.max_particles)
-            x, y, _ = _trajectory_arrays(selected)
+            particle_dim = dataset['x'].dims[1]
+            indexed = dataset.assign_coords(_patch_particle_index=(particle_dim, np.arange(dataset.sizes[particle_dim])))
+            selected, total, _ = _sample_dataset(indexed, max_particles=self.session.max_particles)
+            x, y, time_values = _trajectory_arrays(selected)
             x, y = self.coordinates.source_to_display(x, y)
             origins = np.column_stack((x[:, 0], y[:, 0]))
             if not len(origins) or not np.isfinite(origins).all():
                 raise ValueError('Output must contain finite initial positions for all plotted particles.')
-            distances, indices = cKDTree(self.seeds).query(origins)
+            if 'population_id' in selected:
+                raw_ids = np.asarray(selected['population_id'].values)
+                if raw_ids.shape != (len(origins),) or not np.issubdtype(raw_ids.dtype, np.integer):
+                    raise ValueError('Output population_id must contain one integer per particle.')
+                if 'population_name' in dataset:
+                    count = dataset['population_name'].shape[0]
+                    names = _decode_population_names(dataset, count)
+                    if len(set(names)) != len(names):
+                        raise ValueError('Output population names must be unique.')
+                    if all(name in self.population_names for name in names):
+                        mapping = np.array([self.population_names.index(name) for name in names])
+                    elif names == [f'population_{i}' for i in range(len(self.population_names))]:
+                        # Some writers store generated names rather than YAML names.
+                        expected_counts = np.bincount(self.seed_population_ids, minlength=len(self.population_names))
+                        if 'population_count' not in dataset or not np.array_equal(
+                            dataset['population_count'].values, expected_counts,
+                        ):
+                            raise ValueError('Output population counts do not match the YAML populations.')
+                        mapping = np.arange(len(self.population_names))
+                    else:
+                        raise ValueError('Output population names do not match the YAML populations.')
+                else:
+                    mapping = np.arange(len(self.population_names))
+                if np.any(raw_ids < 0) or np.any(raw_ids >= len(mapping)):
+                    raise ValueError('Output contains an unknown population_id.')
+                population_ids = mapping[raw_ids]
+            elif total == len(self.seeds):
+                population_ids = self.seed_population_ids[selected['_patch_particle_index'].values]
+            elif len(self.population_names) == 1:
+                population_ids = np.zeros(len(origins), dtype=int)
+            else:
+                raise ValueError('Cannot identify trajectory populations: output needs population metadata or YAML seed order.')
+            distances = np.empty(len(origins))
+            indices = np.empty(len(origins), dtype=int)
+            for population_id in np.unique(population_ids):
+                rows = np.flatnonzero(population_ids == population_id)
+                seeds = np.flatnonzero(self.seed_population_ids == population_id)
+                if not seeds.size:
+                    raise ValueError('Output references a population with no YAML seeds.')
+                distances[rows], local_indices = cKDTree(self.seeds[seeds]).query(origins[rows])
+                indices[rows] = seeds[local_indices]
             # NetCDF coordinates may be float32: match back to exact YAML seeds before classifying.
             tolerance = np.maximum(1e-5, np.max(np.abs(origins), axis=1) * np.finfo(np.float32).eps * 4)
             if np.any(distances > tolerance):
@@ -249,10 +311,35 @@ class PatchModel:
                     'trajectory file, including its initial timestep (not a restart or a different run).'
                 )
             tracks = np.stack((x, y), axis=-1)
+            track_times = time_values[0].copy()
+            if not np.isfinite(track_times).all():
+                raise ValueError('Output trajectory times must be finite.')
+            track_reference = _reference_datetime64(dataset, dataset['time']) if 'time' in dataset else None
+            track_valid = np.isfinite(tracks).all(axis=-1)
+            for name in ('status_alive', 'status_domain', 'status_released', 'status_left_domain'):
+                if name not in selected:
+                    continue
+                status = selected[name]
+                if dict(status.sizes) != dict(selected['x'].sizes):
+                    raise ValueError(f'Output {name} must have the same dimensions as trajectory coordinates.')
+                values = status.transpose(*selected['x'].dims).values.T
+                track_valid &= values == (0 if name == 'status_left_domain' else 1)
         self.tracks = tracks
         self.track_seed_indices = indices
+        self.track_population_ids = population_ids
+        self.track_times = track_times
+        self.track_valid = track_valid
+        self.track_reference = track_reference
         self.total_tracks = total
         self.session.results_path = Path(path).resolve()
+
+    def population_mask(self, population_ids: np.ndarray) -> np.ndarray:
+        visible = np.array([self.session.population_visibility.get(name, True) for name in self.population_names])
+        return visible[population_ids]
+
+    def marker_sizes(self, population_ids: np.ndarray) -> np.ndarray:
+        sizes = np.array([self.session.population_marker_sizes.get(name, 9.0) for name in self.population_names])
+        return sizes[population_ids]
 
 
 class PatchPlot:
@@ -354,6 +441,9 @@ class PatchPlot:
         self.artists.clear()
         self.track_artist = None
         self.seed_artist = None
+        self.endpoint_artist = None
+        visible_seeds = model.population_mask(model.seed_population_ids)
+        self.track_order = np.empty(0, dtype=int)
         if session.show_patches:
             for patch in session.patches:
                 rectangle = Rectangle(
@@ -366,12 +456,13 @@ class PatchPlot:
                     zorder=2,
                 )
                 self.artists.append(self.ax.add_patch(rectangle))
-        if session.show_tracks and model.tracks is not None:
+        if (session.show_tracks or session.show_endpoints) and model.tracks is not None:
             track_labels = labels[model.track_seed_indices]
-            track_positions = np.arange(len(model.track_seed_indices))
+            track_positions = np.flatnonzero(model.population_mask(model.track_population_ids))
             if not session.show_background:
-                track_positions = track_positions[track_labels != -1]
+                track_positions = track_positions[track_labels[track_positions] != -1]
             self.track_order = track_positions[np.argsort(track_labels[track_positions], kind='stable')]
+        if session.show_tracks and model.tracks is not None:
             self.track_artist = LineCollection(
                 np.ma.masked_invalid(model.tracks[self.track_order]),
                 colors=colours[model.track_seed_indices[self.track_order]],
@@ -380,10 +471,19 @@ class PatchPlot:
             )
             self.ax.add_collection(self.track_artist, autolim=False)
             self.artists.append(self.track_artist)
+        if session.show_endpoints and model.tracks is not None:
+            endpoints = model.tracks[self.track_order, -1]
+            self.endpoint_artist = self.ax.scatter(
+                *endpoints.T, c=colours[model.track_seed_indices[self.track_order]],
+                s=model.marker_sizes(model.track_population_ids[self.track_order]),
+                edgecolors='none', zorder=5,
+            )
+            self.artists.append(self.endpoint_artist)
         if session.show_seeds:
-            seed_mask = np.ones(len(model.seeds), dtype=bool) if session.show_background else labels != -1
+            seed_mask = visible_seeds & (True if session.show_background else labels != -1)
             self.seed_artist = self.ax.scatter(
-                *model.seeds[seed_mask].T, c=colours[seed_mask], s=9, edgecolors='none', zorder=4
+                *model.seeds[seed_mask].T, c=colours[seed_mask],
+                s=model.marker_sizes(model.seed_population_ids[seed_mask]), edgecolors='none', zorder=4
             )
             self.artists.append(self.seed_artist)
         handles = []
@@ -395,7 +495,7 @@ class PatchPlot:
                     marker='o',
                     linestyle='',
                     color=np.asarray(session.background) / 255,
-                    label=f'Background ({np.count_nonzero(labels == -1)})',
+                    label=f'Background ({np.count_nonzero((labels == -1) & visible_seeds)})',
                 )
             )
         handles.extend(
@@ -405,7 +505,7 @@ class PatchPlot:
                 marker='s',
                 linestyle='',
                 color=np.asarray(p.rgb) / 255,
-                label=f'{p.name} ({np.count_nonzero(labels == i)})',
+                label=f'{p.name} ({np.count_nonzero((labels == i) & visible_seeds)})',
             )
             for i, p in enumerate(session.patches)
         )
@@ -418,6 +518,72 @@ class PatchPlot:
 
     def export_png(self, path: str | Path) -> None:
         self.figure.savefig(path, format='png', dpi=180, facecolor=self.figure.get_facecolor())
+
+    def draw_animation_frame(self, frame: int) -> tuple[Any, ...]:
+        """Update moving markers and optional growing trails on the existing map."""
+        model = self.model
+        if model.tracks is None:
+            raise ValueError('Load trajectories before exporting a GIF.')
+        order = self.track_order
+        visible = model.track_valid[order, frame]
+        labels = classify_points(model.seeds, model.session.patches)
+        colours = point_colours(labels, model.session.patches, model.session.background)
+        artists = []
+        if self.endpoint_artist is not None:
+            rows = order[visible]
+            self.endpoint_artist.set_offsets(model.tracks[rows, frame])
+            self.endpoint_artist.set_facecolors(colours[model.track_seed_indices[rows]])
+            self.endpoint_artist.set_sizes(model.marker_sizes(model.track_population_ids[rows]))
+            artists.append(self.endpoint_artist)
+        if self.track_artist is not None:
+            positions = model.tracks[order, :frame + 1]
+            valid = model.track_valid[order, :frame + 1]
+            self.track_artist.set_segments(np.where(valid[:, :, None], positions, np.nan))
+            artists.append(self.track_artist)
+        seconds = model.track_times[frame]
+        elapsed = (seconds - model.track_times[0]) / 3600
+        time_label = f't = {elapsed:.2f} h'
+        if model.track_reference is not None:
+            timestamp = model.track_reference + np.timedelta64(int(round(seconds * 1e9)), 'ns')
+            time_label = f'{np.datetime_as_string(timestamp, unit="s")}  ({time_label})'
+        title = self.ax.set_title(
+            f'{model.session.title or model.config_path.name}\n'
+            f'{time_label}; {np.count_nonzero(visible):,} plotted particles in domain'
+        )
+        return (*artists, title)
+
+    def export_gif(self, path: str | Path, *, frame_step: int = 5, fps: int = 10) -> None:
+        """Animate the sampled tracks on an isolated copy of the current map view."""
+        from matplotlib.animation import FuncAnimation, PillowWriter
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        if type(frame_step) is not int or frame_step < 1:
+            raise ValueError('GIF frame step must be a positive integer.')
+        if type(fps) is not int or not 1 <= fps <= 100:
+            raise ValueError('GIF frames per second must be an integer in 1..100.')
+        if self.model.tracks is None:
+            raise ValueError('Load trajectories before exporting a GIF.')
+        snapshot = copy(self.model)
+        snapshot.session = replace(deepcopy(self.model.session), show_endpoints=True)
+        figure = Figure(figsize=(8, 8), layout='constrained')
+        FigureCanvasAgg(figure)
+        try:
+            plot = PatchPlot(figure, snapshot)
+            plot.ax.set_xlim(self.ax.get_xlim())
+            plot.ax.set_ylim(self.ax.get_ylim())
+            if not plot.track_order.size:
+                raise ValueError('No trajectories match the selected populations and background filter.')
+            frames = np.arange(0, len(snapshot.track_times), frame_step)
+            if frames[-1] != len(snapshot.track_times) - 1:
+                frames = np.append(frames, len(snapshot.track_times) - 1)
+            animation = FuncAnimation(
+                figure, plot.draw_animation_frame, frames=frames, interval=1000 / fps,
+                blit=False, repeat=False,
+            )
+            animation.save(str(path), writer=PillowWriter(fps=fps), dpi=100)
+        finally:
+            figure.clear()
 
 
 class PatchGuiApp:
@@ -555,6 +721,12 @@ class PatchGuiApp:
             self.fields[key] = value
         button(patches, 'Add square / row-column series', self.add_patches)
 
+        self.population_controls = ttk.LabelFrame(panel, text='Populations', padding=5)
+        self.population_controls.pack(fill='x', pady=7)
+        self.population_visibility: dict[str, Any] = {}
+        self.population_marker_sizes: dict[str, Any] = {}
+        ttk.Label(self.population_controls, text='Open a YAML to select populations.').pack(anchor='w')
+
         layers = ttk.LabelFrame(panel, text='Layers and rendering', padding=5)
         layers.pack(fill='x')
         ttk.Label(layers, text='Background point RGB (0..255)').pack(anchor='w')
@@ -619,6 +791,7 @@ class PatchGuiApp:
         for key, label in (
             ('show_seeds', 'Seeding points'),
             ('show_tracks', 'Trajectories'),
+            ('show_endpoints', 'Trajectory endpoints'),
             ('show_patches', 'Patch squares'),
             ('show_background', 'Background seeding points and trajectories'),
         ):
@@ -630,6 +803,16 @@ class PatchGuiApp:
         button(layers, 'Apply colours / rendering', self.apply_layers)
         button(panel, 'Save patch JSON...', self.save_json)
         button(panel, 'Export map PNG...', self.export_png)
+        gif_controls = ttk.LabelFrame(panel, text='GIF animation', padding=5)
+        gif_controls.pack(fill='x', pady=7)
+        self.gif_frame_step = tk.StringVar(value='5')
+        self.gif_fps = tk.StringVar(value='10')
+        for text, variable in (('Frame step (loaded samples)', self.gif_frame_step), ('Frames per second', self.gif_fps)):
+            row = ttk.Frame(gif_controls)
+            row.pack(fill='x')
+            ttk.Label(row, text=text).pack(side='left')
+            ttk.Entry(row, textvariable=variable, width=8).pack(side='right')
+        button(gif_controls, 'Export animation GIF...', self.export_gif)
         self.status = ttk.Label(panel, text='Open a YAML file or a patch layout JSON.', wraplength=350)
         self.status.pack(fill='x', pady=6)
         self._refresh_table()
@@ -655,6 +838,7 @@ class PatchGuiApp:
         for widget in self.map_frame.winfo_children():
             widget.destroy()
         self.model, self.session, self.plot = model, model.session, plot
+        self._update_population_controls()
         plot.ax.callbacks.connect('xlim_changed', self._sync_view)
         plot.ax.callbacks.connect('ylim_changed', self._sync_view)
         self._sync_view()
@@ -684,6 +868,33 @@ class PatchGuiApp:
         if self.model is None:
             raise ValueError('Open a SedTRAILS YAML file first.')
         return self.model
+
+    def _update_population_controls(self) -> None:
+        import tkinter as tk
+        from tkinter import ttk
+
+        for widget in self.population_controls.winfo_children():
+            widget.destroy()
+        self.population_visibility.clear()
+        self.population_marker_sizes.clear()
+        ttk.Label(self.population_controls, text='Show population / marker area [pt²]').pack(anchor='w')
+        for name in self._require_model().population_names:
+            row = ttk.Frame(self.population_controls)
+            row.pack(fill='x')
+            visible = tk.BooleanVar(value=self.session.population_visibility.get(name, True))
+            size = tk.StringVar(value=str(self.session.population_marker_sizes.get(name, 9.0)))
+            self.population_visibility[name] = visible
+            self.population_marker_sizes[name] = size
+            ttk.Checkbutton(
+                row, text=name, variable=visible, command=lambda: self._run(self.apply_layers),
+            ).pack(side='left', fill='x', expand=True)
+            entry = ttk.Entry(row, textvariable=size, width=8)
+            entry.pack(side='right')
+            entry.bind('<Return>', lambda _event: self._run(self.apply_layers))
+        ttk.Label(
+            self.population_controls, text='Sizes apply to seeds and endpoints. Enter or Apply to update.',
+            wraplength=340,
+        ).pack(anchor='w')
 
     def _require_plot(self) -> PatchPlot:
         if self.plot is None:
@@ -751,9 +962,13 @@ class PatchGuiApp:
     def _report(self) -> None:
         model = self._require_model()
         shown = 0 if model.tracks is None else len(model.tracks)
+        visible_seeds = np.count_nonzero(model.population_mask(model.seed_population_ids))
+        visible_tracks = np.count_nonzero(model.population_mask(model.track_population_ids))
         crs = model.coordinates.metric_crs or 'native projected coordinates'
         self.status.configure(
-            text=f'{len(model.seeds):,} seeds; {shown:,}/{model.total_tracks:,} trajectories loaded.\n'
+            text=f'{visible_seeds:,}/{len(model.seeds):,} seeds in selected populations; '
+            f'{visible_tracks:,}/{shown:,} loaded trajectories in selected populations '
+            f'({model.total_tracks:,} total).\n'
             f'{crs}. Trajectories retain their seed colour. Large outputs are sampled '
             'deterministically (at most 2,000,000 plotted track points).'
         )
@@ -805,6 +1020,9 @@ class PatchGuiApp:
         candidate.background = parse_rgb(' '.join(value.get() for value in self.background.values()))
         candidate.max_particles = int(self.maximum.get())
         candidate.colormap = self.colormap.get()
+        for name, variable in self.population_visibility.items():
+            candidate.population_visibility[name] = variable.get()
+            candidate.population_marker_sizes[name] = float(self.population_marker_sizes[name].get())
         if self.bathymetry_scale.get() == 'Auto':
             candidate.bathymetry_clim = None
         elif self.bathymetry_scale.get() == 'Manual':
@@ -1040,6 +1258,32 @@ class PatchGuiApp:
         if path:
             self.plot.export_png(path)
             self.status.configure(text=f'Exported current map view: {path}')
+
+    def export_gif(self) -> None:
+        from tkinter import filedialog
+
+        self.apply_layers()
+        plot = self._require_plot()
+        if self._require_model().tracks is None:
+            raise ValueError('Load trajectories before exporting a GIF.')
+        frame_step, fps = int(self.gif_frame_step.get()), int(self.gif_fps.get())
+        if frame_step < 1 or not 1 <= fps <= 100:
+            raise ValueError('GIF frame step must be >= 1 and frames per second must be in 1..100.')
+        path = filedialog.asksaveasfilename(
+            parent=self.root, defaultextension='.gif', filetypes=[('GIF animation', '*.gif')],
+            initialfile=self.session.config_path.stem + '-patches.gif',
+        )
+        if not path:
+            return
+        self.status.configure(text='Exporting GIF; please wait. Large animations may take several minutes.')
+        self.root.configure(cursor='watch')
+        self.root.update_idletasks()
+        try:
+            plot.export_gif(path, frame_step=frame_step, fps=fps)
+        finally:
+            self.root.configure(cursor='')
+            self._report()
+        self.status.configure(text=f'Exported animation: {path}')
 
 
 def launch_patch_gui(

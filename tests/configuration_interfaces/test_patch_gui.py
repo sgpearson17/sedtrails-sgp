@@ -97,6 +97,283 @@ def evolving_case(case):
     return path, output
 
 
+@pytest.fixture
+def population_case(case):
+    path, output = case
+    config = yaml.safe_load(path.read_text())
+    first = config['particles']['populations'][0]
+    first['name'] = 'fine'
+    second = json.loads(json.dumps(first))
+    second['name'] = 'coarse'
+    config['particles']['populations'].append(second)
+    path.write_text(yaml.safe_dump(config))
+    # Both populations start at identical points; output population order is reversed.
+    origins = np.tile(np.arange(4.0), 2)
+    xr.Dataset(
+        {
+            'x': (('time', 'n_particles'), np.stack((origins, origins + 0.5))),
+            'y': (('time', 'n_particles'), np.stack((np.zeros(8), np.repeat([1.0, 2.0], 4)))),
+            'population_id': ('n_particles', np.repeat([0, 1], 4)),
+            'population_name': ('n_populations', ['coarse', 'fine']),
+            'population_start_idx': ('n_populations', [0, 4]),
+            'population_count': ('n_populations', [4, 4]),
+        },
+        coords={'time': [0.0, 60.0]},
+        attrs={'reference_date': '2000-01-01'},
+    ).to_netcdf(output, mode='w')
+    return path, output
+
+
+def test_population_identity_survives_shared_origins_and_sampling(population_case):
+    path, output = population_case
+    model = PatchModel(PatchSession(config_path=path, results_path=output, max_particles=4))
+    assert model.population_names == ['fine', 'coarse']
+    assert set(model.track_population_ids) == {0, 1}
+    np.testing.assert_array_equal(
+        model.seed_population_ids[model.track_seed_indices], model.track_population_ids,
+    )
+    np.testing.assert_array_equal(model.tracks[:, -1, 1], np.where(model.track_population_ids == 1, 1, 2))
+
+
+def test_population_filter_sizes_endpoints_and_export(population_case, tmp_path):
+    path, output = population_case
+    session = PatchSession(
+        config_path=path, results_path=output, show_endpoints=True,
+        population_visibility={'fine': False},
+        population_marker_sizes={'fine': 4, 'coarse': 36},
+        patches=[SquarePatch('origin', 0, 0, 0.5, (255, 0, 0))],
+    )
+    model = PatchModel(session)
+    plot = PatchPlot(Figure(), model)
+    assert len(plot.seed_artist.get_offsets()) == 4
+    np.testing.assert_array_equal(plot.seed_artist.get_sizes(), [36] * 4)
+    np.testing.assert_array_equal(model.track_population_ids[plot.track_order], [1] * 4)
+    np.testing.assert_array_equal(plot.endpoint_artist.get_sizes(), [36] * 4)
+    np.testing.assert_allclose(plot.endpoint_artist.get_offsets()[:, 1], 1)
+    assert [t.get_text() for t in plot.ax.get_legend().get_texts()] == ['Background (3)', 'origin (1)']
+    session.show_background = False
+    plot.draw()
+    assert len(plot.seed_artist.get_offsets()) == 1
+    assert len(plot.track_order) == 1
+    assert len(plot.endpoint_artist.get_offsets()) == 1
+    session.show_tracks = False
+    plot.draw()
+    assert plot.track_artist is None
+    assert len(plot.endpoint_artist.get_offsets()) == 1
+    png = tmp_path / 'population.png'
+    plot.export_png(png)
+    assert png.stat().st_size > 1000
+    session.population_visibility['coarse'] = False
+    plot.draw()
+    assert len(plot.seed_artist.get_offsets()) == 0
+    assert len(plot.endpoint_artist.get_offsets()) == 0
+    session.population_visibility = {}
+    session.show_background = True
+    plot.draw()
+    assert len(plot.seed_artist.get_offsets()) == 8
+    np.testing.assert_array_equal(plot.seed_artist.get_sizes(), [4] * 4 + [36] * 4)
+
+
+def test_population_legacy_output_uses_yaml_order_not_nearest_shared_seed(population_case):
+    path, output = population_case
+    with xr.open_dataset(output) as dataset:
+        legacy = dataset.drop_vars(
+            ['population_id', 'population_name', 'population_start_idx', 'population_count'],
+        ).load()
+    legacy.to_netcdf(output, mode='w')
+    model = PatchModel(PatchSession(config_path=path, results_path=output))
+    np.testing.assert_array_equal(model.track_population_ids, [0] * 4 + [1] * 4)
+    np.testing.assert_array_equal(model.seed_population_ids[model.track_seed_indices], model.track_population_ids)
+
+
+def test_generated_output_population_names_use_verified_yaml_order(population_case):
+    path, output = population_case
+    with xr.open_dataset(output) as dataset:
+        generated = dataset.load()
+    generated['population_name'] = ('n_populations', ['population_0', 'population_1'])
+    generated.to_netcdf(output, mode='w')
+    model = PatchModel(PatchSession(config_path=path, results_path=output))
+    np.testing.assert_array_equal(model.track_population_ids, [0] * 4 + [1] * 4)
+    generated['population_count'] = ('n_populations', [3, 5])
+    generated.to_netcdf(output, mode='w')
+    old_tracks = model.tracks
+    with pytest.raises(ValueError, match='population counts'):
+        model.load_tracks(output)
+    assert model.tracks is old_tracks
+
+
+def test_animation_frames_use_status_flags_time_and_growing_trails(case):
+    path, output = case
+    with xr.open_dataset(output) as dataset:
+        data = dataset.load()
+    for name in ('status_domain', 'status_alive', 'status_released'):
+        flags = np.ones((3, 4), dtype=np.uint8)
+        flags[-1, {'status_domain': 0, 'status_alive': 1, 'status_released': 2}[name]] = 0
+        data[name] = (('n_particles', 'time'), flags.T)
+    data.to_netcdf(output, mode='w')
+    model = PatchModel(PatchSession(config_path=path, results_path=output, show_endpoints=True))
+    plot = PatchPlot(Figure(), model)
+    plot.draw_animation_frame(0)
+    assert len(plot.endpoint_artist.get_offsets()) == 4
+    assert all(len(segment) == 1 for segment in plot.track_artist.get_segments())
+    plot.draw_animation_frame(2)
+    np.testing.assert_allclose(plot.endpoint_artist.get_offsets(), [[1, 0]])
+    assert '2000-01-01T00:02:00' in plot.ax.get_title()
+    assert 't = 0.03 h' in plot.ax.get_title()
+    assert '1 plotted particles in domain' in plot.ax.get_title()
+    np.testing.assert_allclose(plot.track_artist.get_segments()[-1], model.tracks[-1])
+
+
+def test_gif_export_writes_first_and_final_frames_and_preserves_plot(population_case, tmp_path):
+    from PIL import Image
+
+    path, output = population_case
+    session = PatchSession(
+        config_path=path, results_path=output, show_tracks=False,
+        population_visibility={'fine': False}, population_marker_sizes={'coarse': 36},
+    )
+    model = PatchModel(session)
+    plot = PatchPlot(Figure(), model)
+    plot.ax.set_xlim(-1, 5)
+    plot.ax.set_ylim(-1, 3)
+    initial_title = plot.ax.get_title()
+    initial_artists = plot.artists.copy()
+    gif = tmp_path / 'sorting.gif'
+    plot.export_gif(gif, frame_step=5, fps=10)
+    with Image.open(gif) as image:
+        assert image.format == 'GIF'
+        assert image.n_frames == 2
+        assert image.size == (800, 800)
+        assert image.info['duration'] == 100
+        first = np.asarray(image.convert('RGB'))
+        image.seek(1)
+        assert not np.array_equal(first, np.asarray(image.convert('RGB')))
+    assert model.session is session
+    assert session.show_endpoints is False
+    assert plot.endpoint_artist is None
+    assert plot.ax.get_title() == initial_title
+    assert plot.artists == initial_artists
+    np.testing.assert_allclose(plot.ax.get_xlim(), [-1, 5])
+    np.testing.assert_allclose(plot.ax.get_ylim(), [-1, 3])
+
+
+@pytest.mark.parametrize('frame_step,fps', [(0, 10), (-1, 10), (1.5, 10), (True, 10), (1, 0), (1, 101)])
+def test_gif_export_rejects_invalid_settings(case, tmp_path, frame_step, fps):
+    path, output = case
+    plot = PatchPlot(Figure(), PatchModel(PatchSession(config_path=path, results_path=output)))
+    with pytest.raises(ValueError, match='GIF'):
+        plot.export_gif(tmp_path / 'invalid.gif', frame_step=frame_step, fps=fps)
+    assert not (tmp_path / 'invalid.gif').exists()
+
+
+def test_gif_export_requires_loaded_visible_trajectories(case, tmp_path):
+    path, output = case
+    model = PatchModel(PatchSession(config_path=path))
+    plot = PatchPlot(Figure(), model)
+    with pytest.raises(ValueError, match='Load trajectories'):
+        plot.export_gif(tmp_path / 'none.gif')
+    model.load_tracks(output)
+    model.session.population_visibility = {'sand': False}
+    with pytest.raises(ValueError, match='No trajectories match'):
+        plot.export_gif(tmp_path / 'none.gif')
+
+
+def test_animation_filters_populations_background_and_left_domain(population_case):
+    path, output = population_case
+    with xr.open_dataset(output) as dataset:
+        data = dataset.load()
+    left = np.zeros((2, 8), dtype=np.uint8)
+    left[-1, 0] = 1
+    data['status_left_domain'] = (('time', 'n_particles'), left)
+    data.to_netcdf(output, mode='w')
+    session = PatchSession(
+        config_path=path, results_path=output, show_endpoints=True, show_background=False,
+        population_visibility={'fine': False}, population_marker_sizes={'coarse': 36},
+        patches=[SquarePatch('red', 0, 0, 0.5, (255, 0, 0))],
+    )
+    model = PatchModel(session)
+    plot = PatchPlot(Figure(), model)
+    plot.draw_animation_frame(0)
+    assert len(plot.endpoint_artist.get_offsets()) == 1
+    np.testing.assert_array_equal(plot.endpoint_artist.get_sizes(), [36])
+    np.testing.assert_allclose(plot.endpoint_artist.get_facecolors()[0, :3], [1, 0, 0])
+    plot.draw_animation_frame(1)
+    assert len(plot.endpoint_artist.get_offsets()) == 0
+
+
+def test_gui_gif_export_settings_cancel_and_error_cleanup(desktop, case, monkeypatch, tmp_path):
+    app = desktop
+    with pytest.raises(ValueError, match='Load trajectories'):
+        app.export_gif()
+    app.load_associated()
+    calls = []
+    monkeypatch.setattr(app.plot, 'export_gif', lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: '')
+    app.export_gif()
+    assert not calls
+    target = tmp_path / 'test.gif'
+    monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kwargs: str(target))
+    app.gif_frame_step.set('2')
+    app.gif_fps.set('5')
+    app.export_gif()
+    assert calls == [((str(target),), {'frame_step': 2, 'fps': 5})]
+    assert 'Exported animation' in app.status.cget('text')
+    app.gif_frame_step.set('0')
+    with pytest.raises(ValueError, match='GIF frame step'):
+        app.export_gif()
+    app.gif_frame_step.set('2')
+
+    def fail_export(*args, **kwargs):
+        raise OSError('Cannot write GIF')
+
+    monkeypatch.setattr(app.plot, 'export_gif', fail_export)
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+    app._run(app.export_gif)
+    assert errors
+    assert app.root.cget('cursor') == ''
+    assert 'Cannot write GIF' in app.status.cget('text')
+
+
+@pytest.mark.parametrize('size', [0, -1, np.nan, np.inf, True, 'large'])
+def test_invalid_population_marker_size_is_rejected(size):
+    with pytest.raises(ValueError, match='marker sizes'):
+        PatchSession(population_marker_sizes={'sand': size}).validate()
+
+
+def test_gui_population_controls_apply_without_reloading(population_case, tk_root, monkeypatch):
+    path, output = population_case
+    app = PatchGuiApp(tk_root, PatchSession(config_path=path, results_path=output))
+    try:
+        original_tracks = app.model.tracks
+        app.population_visibility['fine'].set(False)
+        app.population_marker_sizes['coarse'].set('25')
+        app.visibility['show_endpoints'].set(True)
+        app.apply_layers()
+        assert app.model.tracks is original_tracks
+        assert len(app.plot.seed_artist.get_offsets()) == 4
+        np.testing.assert_array_equal(app.plot.endpoint_artist.get_sizes(), [25] * 4)
+        app.plot.ax.set_xlim(-2, 5)
+        old_session = app.session
+        app.population_marker_sizes['coarse'].set('-1')
+        errors = []
+        monkeypatch.setattr('tkinter.messagebox.showerror', lambda *args, **kwargs: errors.append(args))
+        app._run(app.apply_layers)
+        assert errors
+        assert app.session is old_session
+        np.testing.assert_array_equal(app.plot.endpoint_artist.get_sizes(), [25] * 4)
+        np.testing.assert_allclose(app.plot.ax.get_xlim(), [-2, 5])
+        app.population_marker_sizes['coarse'].set('25')
+        monkeypatch.setattr('tkinter.filedialog.askopenfilename', lambda **kwargs: str(path))
+        app.open_yaml()
+        assert app.population_visibility['fine'].get() is False
+        assert float(app.population_marker_sizes['coarse'].get()) == 25
+        assert app.model.tracks is None
+    finally:
+        for widget in tk_root.winfo_children():
+            widget.destroy()
+
+
 def test_classification_includes_edges_and_last_patch_wins():
     patches = [
         SquarePatch('red', 0, 0, 2, (255, 0, 0)),

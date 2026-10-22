@@ -90,6 +90,25 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    patches only.
 6. Choose **Load associated trajectories** to open
    `outputs.directory/sedtrails_results.nc`, or choose a NetCDF manually.
+   In **Populations**, use the checkboxes to show any combination of populations
+   (for example, only `d10` or `d90`). All populations are shown initially.
+   The selection applies to seeds, trajectories, endpoints and legend seed counts;
+   origin-patch colours remain unchanged so populations can be compared directly.
+   Each row also has a **marker area [pt²]** field (default 9). Enter a positive
+   finite value and press Enter or **Apply colours / rendering**. Marker area
+   affects both seed markers and endpoint markers, not trajectory line width.
+   Enable **Trajectory endpoints** to show the final saved position of each
+   sampled trajectory; this works even with the trajectory lines hidden.
+   Endpoints are off by default. For a sorting map, hide **Seeding points**,
+   enable **Trajectory endpoints**, and give coarser populations larger markers.
+   Population selection and sizes are retained by name when opening another YAML;
+   newly encountered names default to visible with marker area 9.
+   Selection filters the already sampled trajectories without reloading the output:
+   the maximum-trajectory budget is shared across all populations. Output population
+   IDs/names distinguish grains released at identical positions. Older outputs
+   without population metadata use YAML population/seed order when particle counts
+   match; ambiguous multi-population outputs are rejected rather than guessed.
+
 7. Pan/zoom with the Matplotlib toolbar. Toggle seeding points, trajectories,
    square overlays or background seeds/trajectories independently. The legend
    reports seed-particle counts. The **Plot view** x/y limit fields follow
@@ -115,7 +134,8 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
 9. **Save patch JSON** stores **only patch definitions** (names, geometry and
    RGB colours) and the **background point RGB**, plus a format version.
    YAML/trajectory paths, axis/colour limits, title, timestep, visibility and rendering
-   preferences are not saved. **Open patch JSON** replaces the current patches
+   preferences (including population selections, marker sizes and endpoint visibility)
+   are not saved. **Open patch JSON** replaces the current patches
    and background colour without changing the loaded run or plot preferences.
    You can open and save layouts before choosing a YAML.
    Older version-1 JSONs remain readable: the GUI's **Open patch JSON** imports
@@ -129,6 +149,35 @@ The existing seeding GUI bathymetry loader uses the same lookup order.
    visible layers, legend
    and bathymetry colourbar at 180 dpi, without desktop controls. The control
    panel has a scrollbar for smaller displays.
+
+## Export an animated GIF
+
+After loading trajectories, use **GIF animation** > **Export animation GIF...**.
+The exporter uses Matplotlib `FuncAnimation` and `PillowWriter`; no FFmpeg or
+notebook is required.
+
+- **Frame step (loaded samples)** defaults to 5; the first and final loaded
+  samples are always included.
+- **Frames per second** defaults to 10 (allowed range 1..100).
+- Moving particles use the current population selection, per-population marker
+  areas and patch-origin colours. The background-particle filter also applies.
+  Animation markers are always shown, independently of the static endpoint toggle.
+- **Trajectories** enables growing trails; uncheck it for moving markers only.
+  Seed points and patch squares follow their existing visibility controls.
+- The GIF keeps your current zoom, title, bathymetry frame, palette, colour
+  limits and patch legend. Bathymetry stays fixed during animation.
+- The frame title shows simulation time, elapsed hours since the first output
+  sample and the number of plotted particles still visible in-domain.
+  Unreleased, dead, exited/out-of-domain and non-finite particles are hidden
+  when their corresponding output status flags are available.
+
+Export uses the already loaded, deterministically sampled trajectories and
+timesteps, including the existing 2,000,000-track-point cap. The displayed
+particle count is for this selected sample, not the complete simulation.
+The map is rendered at 800 by 800 pixels in a separate figure, leaving the
+interactive plot unchanged. Export is synchronous: the GUI waits until it
+finishes. Pillow retains animation frames in memory, so increase frame step
+for large outputs. These GIF settings are not stored in patch-layout JSONs.
 
 ## Classification and trajectory identity
 
