@@ -133,7 +133,9 @@ Each population must define exactly one tracer method under `particles.populatio
   vector with `include_nonlinear_wave_velocity: true` (default `false`), scaled
   by the population's `facua` (default `1.0`). See the
   [Soulsby parameter reference](../references/simulation-params.md#soulsby-method)
-  for XBeach mean-direction conventions and required mean fields.
+  for XBeach direction conventions and required output: add `ua` to `nmeanvar`
+  and `thetamean` and `hh` to `nglobalvar`. XBeach supplies `globaltime` with
+  global output.
 - If you use `passive_tracer`, set `particle_type: passive`.
 - If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
 - If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.

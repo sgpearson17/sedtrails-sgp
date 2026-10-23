@@ -421,34 +421,44 @@ and calibration used by that XBeach run. SedTRAILS' `facua` is an **additional**
 multiplier, not a replacement for XBeach's own `facua` already included in
 `ua_mean`.
 
-The vector direction comes directly from **`thetamean_mean`** on the same
-`meantime` rows as `ua_mean`. `_parameters.rotate = 1` is required for
-global-coordinate output. These directions are interpreted as **nautical-from
-degrees**, even when XBeach labels them as radians or with a "to direction"
-standard name. Conversion to Cartesian-toward angles uses
-`angle = radians(270 - thetamean_mean)`:
+For XBeach, make sure the output-variable lists include the fields SedTRAILS
+needs. Add **`ua`** to the `nmeanvar` list so XBeach writes `ua_mean` on
+`meantime`. Add **`thetamean`** and **`hh`** to the `nglobalvar` list so XBeach
+writes direction and water-depth snapshots on `globaltime` (the global output
+time coordinate is written by XBeach; it is not an entry in the variable list).
+Keep the `nglobalvar` and `nmeanvar` counts in the XBeach parameters consistent
+with the names listed beneath them. Wave coupling requires
+`_parameters.rotate = 1` (global-coordinate output) and the `eps` and `tstart`
+parameters.
 
-| `thetamean_mean` | Waves come from | Wave velocity points toward |
+The speed comes from **`ua_mean`**. Direction is reconstructed from wet
+instantaneous **`thetamean`** snapshots on **`globaltime`**, circularly averaged
+over each mean interval. For `rotate=1`, directions are interpreted as
+**nautical-from degrees**, even when XBeach labels them as radians. Conversion
+to Cartesian-toward angles uses `angle = radians(270 - thetamean)`:
+
+| `thetamean` | Waves come from | Wave velocity points toward |
 | --- | --- | --- |
 | 0 or 360 | North | South (-y) |
 | 90 | East | West (-x) |
 | 180 | South | North (+y) |
 | 270 | West | East (+x) |
 
-The components are `ua_mean * cos(angle)` and `ua_mean * sin(angle)`.
-This replaces snapshot-based direction reconstruction; instantaneous
-`thetamean`, `hh`, `globaltime`, `eps` and `tstart` are no longer required.
-There is no snapshot-based dry-interval masking: the saved mean speed and
-direction determine the vector. **Projecting a scalar mean along a mean
-direction is still an approximation, not the exact time-average of the
-instantaneous velocity vector.**
+Wetness is determined from the `hh` snapshots using the configured `eps` cutoff.
+Within each interval, SedTRAILS integrates piecewise-linear snapshot unit
+vectors, starting at `tstart` for the first interval and the previous mean
+timestamp thereafter. Snapshot output must bracket every mean interval,
+including simulation start. The saved scalar speed is projected along the
+normalized circular mean direction. **This is an approximation, not the exact
+time-average of the instantaneous velocity vector.** Snapshot loading is
+streamed one plane at a time, including for chunked or morfac-scaled reads.
 
-Missing required fields, non-finite or negative speeds, and non-finite
-directions where `ua_mean` is nonzero raise errors rather than silently
-substituting zeros. A zero speed gives a zero vector even if its direction is
-undefined. The sources, direction convention and projection method are
-recorded in input metadata. Without wave coupling enabled, normal Soulsby runs
-do not request the wave field.
+Missing required fields, non-finite wet inputs, unbracketed intervals and
+undefined circular directions for nonzero wet speeds raise errors rather than
+silently substituting zeros. Entirely dry intervals get zero wave correction.
+The sources, wet-depth cutoff, direction convention and approximate projection
+method are recorded in input metadata. Without wave coupling enabled, normal
+Soulsby runs do not request the wave field.
 
 #### Passive Tracer Method
 

@@ -111,7 +111,7 @@
                 "include_nonlinear_wave_velocity": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Add facua * nonlinear_wave_velocity to the flow vector before Soulsby velocity calculations. Requires a valid wave-transport velocity input; does not modify shear stresses."
+                    "description": "Add facua * nonlinear_wave_velocity to the flow vector before Soulsby velocity calculations. For XBeach, output ua as a mean variable and thetamean and hh as global variables. Requires rotate=1; does not modify shear stresses."
                 },
                 "facua": {
                     "type": "number",
