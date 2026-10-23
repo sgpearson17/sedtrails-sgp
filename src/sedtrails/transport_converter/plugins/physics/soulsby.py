@@ -197,34 +197,24 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             )
         )
 
-        # VECTORIZE THESE LOOPS!
         # Compute the transition probability b [-] (Equations 3 and 4)
-        soulsby_b = np.zeros(theta_max.shape)
+        soulsby_b = np.zeros_like(theta_max, dtype=float)
         if transport_probability_method != 'no_probability':
-            for i in range(0, theta_max.shape[0]):
-                for j in range(0, theta_max.shape[1]):
-                    if background_theta_max[i][j] > background_theta_cr:
-                        soulsby_b[i][j] = soulsby_b_e * (
-                            1 - np.exp(-(background_theta_max[i][j] - background_theta_cr) / soulsby_theta_s)
-                        )
-                    else:
-                        soulsby_b[i][j] = 0
+            above_background_threshold = background_theta_max > background_theta_cr
+            excess_background_shields = background_theta_max[above_background_threshold] - background_theta_cr
+            soulsby_b[above_background_threshold] = soulsby_b_e * (
+                1 - np.exp(-excess_background_shields / soulsby_theta_s)
+            )
 
         # Compute the transition probability a [-] (Equation 5)
         soulsby_a = soulsby_gamma_e * soulsby_b / (1 - soulsby_gamma_e)
-
-
-        # VECTORIZE THESE LOOPS!
         # Compute probability/proportion of time a particle is moving P [-] (Equation 6)
-        soulsby_P = np.zeros(theta_max.shape)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    soulsby_P[i][j] = (1 + ((np.pi / (6 * soulsby_mu_d)) / (theta_max[i][j] - theta_cr_exp)) ** 4) ** (
-                        -1 / 4
-                    )
-                else:
-                    soulsby_P[i][j] = 0
+        soulsby_P = np.zeros_like(theta_max, dtype=float)
+        above_motion_threshold = theta_max > theta_cr_exp
+        excess_tracer_shields = theta_max[above_motion_threshold] - theta_cr_exp
+        soulsby_P[above_motion_threshold] = (
+            1 + ((np.pi / (6 * soulsby_mu_d)) / excess_tracer_shields) ** 4
+        ) ** (-1 / 4)
 
         # Compute a reduction factor which is applied on the flow velocities to obtain grain velocities
 
@@ -232,48 +222,38 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         Rs = np.zeros(bed_load_velocity.shape)  # Suspended load velocity reduction factor
         soulsby_R = np.zeros(bed_load_velocity.shape)  # Final velocity reduction factor
 
-        # VECTORIZE THESE LOOPS!
         # Compute Rb (Equation 8)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if theta_max[i][j] > theta_cr_exp:
-                    local_flow_velocity_magnitude = flow_velocity_magnitude[i][j]
-                    if not np.isfinite(local_flow_velocity_magnitude) or local_flow_velocity_magnitude <= 0.0:
-                        Rb[i][j] = 0
-                        continue
+        valid_bed_flow = (
+            above_motion_threshold
+            & np.isfinite(flow_velocity_magnitude)
+            & (flow_velocity_magnitude > 0.0)
+        )
+        np.divide(bed_load_velocity, flow_velocity_magnitude, out=Rb, where=valid_bed_flow)
+        Rb[Rb > 1] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
+        Rb[~np.isfinite(Rb)] = 0
 
-                    Rb[i][j] = bed_load_velocity[i][j] / local_flow_velocity_magnitude
-                    if Rb[i][j] > 1:
-                        Rb[i][j] = 1  # apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif not np.isfinite(Rb[i][j]):
-                        Rb[i][j] = 0
-
-        # VECTORIZE THESE LOOPS!
         # Compute Rs (Equation 11)
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if Rb[i][j] == 0:
-                    Rs[i][j] = 0
-                else:
-                    Rs[i][j] = (
-                        Rb[i][j] * (1 - rouse_number[i][j])
-                        / (8 / 7 - rouse_number[i][j])
-                        * ((8 / 7 * Rb[i][j]) ** (8 - 7 * rouse_number[i][j]) - 1)
-                        / ((8 / 7 * Rb[i][j]) ** (7 - 7 * rouse_number[i][j]) - 1)
-                    )
-                    if Rs[i][j] > 1:
-                        Rs[i][j] = 1  # Apply velocity limiter (grain velocity cannot exceed flow velocity)
-                    elif np.isnan(Rs[i][j]):
-                        Rs[i][j] = 0
+        positive_bed_reduction = Rb != 0
+        rb = Rb[positive_bed_reduction]
+        local_rouse_number = rouse_number[positive_bed_reduction]
+        with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+            relative_velocity = (8 / 7 * rb) ** (8 - 7 * local_rouse_number)
+            relative_velocity_lower = (8 / 7 * rb) ** (7 - 7 * local_rouse_number)
+            suspended_reduction = (
+                rb
+                * (1 - local_rouse_number)
+                / (8 / 7 - local_rouse_number)
+                * (relative_velocity - 1)
+                / (relative_velocity_lower - 1)
+            )
+        suspended_reduction[suspended_reduction > 1] = 1  # grain velocity cannot exceed flow velocity
+        suspended_reduction[np.isnan(suspended_reduction)] = 0
+        Rs[positive_bed_reduction] = suspended_reduction
 
-        # VECTORIZE THESE LOOPS!
         # Compute R
-        for i in range(0, theta_max.shape[0]):
-            for j in range(0, theta_max.shape[1]):
-                if rouse_number[i][j] < 2.5:  # if all material is in suspension use Rs (for suspended load)
-                    soulsby_R[i][j] = Rs[i][j]
-                else:  # otherwise use Rb (for bed load)
-                    soulsby_R[i][j] = Rb[i][j]
+        use_suspended_reduction = rouse_number < 2.5
+        soulsby_R[use_suspended_reduction] = Rs[use_suspended_reduction]
+        soulsby_R[~use_suspended_reduction] = Rb[~use_suspended_reduction]
 
         # Compute grain velocities
         grain_velocity_magnitude = soulsby_P * soulsby_R * flow_velocity_magnitude  # (Equation 1)

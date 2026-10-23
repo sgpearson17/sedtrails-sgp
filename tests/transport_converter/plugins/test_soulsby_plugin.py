@@ -75,6 +75,133 @@ def test_soulsby_zero_flow_magnitude_does_not_warn_or_emit_nan():
     assert grain_velocity['y'][0, 0] == 0.0
 
 
+def test_vectorized_soulsby_fields_match_scalar_equations():
+    config = _soulsby_config()
+    data = SedtrailsDataStub()
+    data.depth_avg_flow_velocity = {
+        'x': np.array([[0.0, 0.01], [0.03, 0.1]]),
+        'y': np.array([[0.0, 0.0], [0.04, -0.05]]),
+    }
+    data.depth_avg_flow_velocity['magnitude'] = np.hypot(
+        data.depth_avg_flow_velocity['x'], data.depth_avg_flow_velocity['y']
+    )
+    data.mean_bed_shear_stress = np.array([[0.0, 0.005], [0.03, 0.2]])
+    data.max_bed_shear_stress = np.array([[0.0, 0.01], [0.1, 1.0]])
+    properties = physics_lib.compute_grain_properties(
+        config.tracer_grain_size,
+        config.gravity,
+        config.particle_density,
+        config.water_density,
+        config.kinematic_viscosity,
+    )
+    PhysicsPlugin(config, tracer_config={}).add_physics(data, properties, 'stochastic_transport')
+
+    g = config.gravity
+    rho_s, rho_w = config.particle_density, config.water_density
+    grain_size = config.tracer_grain_size
+    background_grain_size = config.background_grain_size
+    grain_size_ratio = grain_size / background_grain_size
+    dimensionless_grain_size = properties['dimensionless_grain_size']
+    theta_cr = 0.3 / (1 + 1.2 * dimensionless_grain_size) + 0.055 * (
+        1 - np.exp(-0.020 * dimensionless_grain_size)
+    )
+    theta_cr_exp = (
+        theta_cr
+        * np.sqrt(8 / (3 * grain_size_ratio**2 + 6 * grain_size_ratio - 1))
+        * (3.2260 * grain_size_ratio)
+        / (
+            4 * grain_size_ratio
+            - 2 * (grain_size_ratio + 1 - np.sqrt(grain_size_ratio**2 + 2 * grain_size_ratio - 1 / 3))
+        )
+    )
+    background_dimensionless_size = (
+        g * (rho_s / rho_w - 1) / config.kinematic_viscosity**2
+    ) ** (1 / 3) * background_grain_size
+    background_theta_cr = 0.3 / (1 + 1.2 * background_dimensionless_size) + 0.055 * (
+        1 - np.exp(-0.020 * background_dimensionless_size)
+    )
+    denominator = g * (rho_s - rho_w) * grain_size
+    theta_max = np.abs(data.max_bed_shear_stress) / denominator
+    background_theta_max = np.abs(data.max_bed_shear_stress) / (
+        g * (rho_s - rho_w) * background_grain_size
+    )
+    bed_load_velocity = physics_lib.compute_bed_load_velocity(
+        theta_max,
+        properties['critical_shields'],
+        physics_lib.compute_shear_velocity(data.mean_bed_shear_stress, rho_w),
+    )
+    max_shear_velocity = physics_lib.compute_shear_velocity(data.max_bed_shear_stress, rho_w)
+    settling_velocity = properties['settling_velocity']
+    rouse_number = np.full_like(max_shear_velocity, np.inf)
+    np.divide(
+        settling_velocity,
+        0.4 * max_shear_velocity,
+        out=rouse_number,
+        where=max_shear_velocity > 0,
+    )
+
+    expected_b = np.zeros_like(theta_max)
+    expected_p = np.zeros_like(theta_max)
+    expected_rb = np.zeros_like(theta_max)
+    expected_rs = np.zeros_like(theta_max)
+    expected_r = np.zeros_like(theta_max)
+    expected_grain_magnitude = np.zeros_like(theta_max)
+    expected_grain_x = np.zeros_like(theta_max)
+    expected_grain_y = np.zeros_like(theta_max)
+    for i in range(theta_max.shape[0]):
+        for j in range(theta_max.shape[1]):
+            if background_theta_max[i, j] > background_theta_cr:
+                expected_b[i, j] = 1.7e-7 * (
+                    1 - np.exp(-(background_theta_max[i, j] - background_theta_cr) / 0.1)
+                )
+            if theta_max[i, j] > theta_cr_exp:
+                expected_p[i, j] = (
+                    1 + ((np.pi / (6 * config.soulsby_mu_d)) / (theta_max[i, j] - theta_cr_exp)) ** 4
+                ) ** (-1 / 4)
+                flow_speed = data.depth_avg_flow_velocity['magnitude'][i, j]
+                if np.isfinite(flow_speed) and flow_speed > 0:
+                    expected_rb[i, j] = bed_load_velocity[i, j] / flow_speed
+                    if expected_rb[i, j] > 1:
+                        expected_rb[i, j] = 1
+                    elif not np.isfinite(expected_rb[i, j]):
+                        expected_rb[i, j] = 0
+            if expected_rb[i, j] != 0:
+                with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+                    rb = expected_rb[i, j]
+                    rouse = rouse_number[i, j]
+                    expected_rs[i, j] = (
+                        rb * (1 - rouse) / (8 / 7 - rouse)
+                        * ((8 / 7 * rb) ** (8 - 7 * rouse) - 1)
+                        / ((8 / 7 * rb) ** (7 - 7 * rouse) - 1)
+                    )
+                if expected_rs[i, j] > 1:
+                    expected_rs[i, j] = 1
+                elif np.isnan(expected_rs[i, j]):
+                    expected_rs[i, j] = 0
+            expected_r[i, j] = expected_rs[i, j] if rouse_number[i, j] < 2.5 else expected_rb[i, j]
+            expected_grain_magnitude[i, j] = expected_p[i, j] * expected_r[i, j] * (
+                data.depth_avg_flow_velocity['magnitude'][i, j]
+            )
+            if data.depth_avg_flow_velocity['magnitude'][i, j] > 0:
+                expected_grain_x[i, j] = (
+                    data.depth_avg_flow_velocity['x'][i, j]
+                    / data.depth_avg_flow_velocity['magnitude'][i, j]
+                    * expected_grain_magnitude[i, j]
+                )
+                expected_grain_y[i, j] = (
+                    data.depth_avg_flow_velocity['y'][i, j]
+                    / data.depth_avg_flow_velocity['magnitude'][i, j]
+                    * expected_grain_magnitude[i, j]
+                )
+
+    expected_a = config.soulsby_gamma_e * expected_b / (1 - config.soulsby_gamma_e)
+    np.testing.assert_allclose(data.soulsby_b, expected_b, rtol=1e-13, atol=0)
+    np.testing.assert_allclose(data.soulsby_a, expected_a, rtol=1e-13, atol=0)
+    np.testing.assert_allclose(data.grain_velocity['magnitude'], expected_grain_magnitude, rtol=1e-13, atol=0)
+    np.testing.assert_allclose(data.grain_velocity['x'], expected_grain_x, rtol=1e-13, atol=0)
+    np.testing.assert_allclose(data.grain_velocity['y'], expected_grain_y, rtol=1e-13, atol=0)
+
+
 def _apply_soulsby(config, data):
     properties = physics_lib.compute_grain_properties(
         config.tracer_grain_size,
