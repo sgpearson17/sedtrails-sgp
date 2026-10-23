@@ -87,9 +87,11 @@ def _apply_soulsby(config, data):
 
 
 @pytest.mark.parametrize('wave_x,wave_y', [(0.0, 1.0), (3.0, 4.0), (-1.0, 0.0)])
-def test_optional_wave_coupling_matches_explicit_effective_flow_without_mutating_inputs(wave_x, wave_y):
+@pytest.mark.parametrize('facua', [0.0, 0.5, 1.0, 2.0])
+def test_optional_wave_coupling_matches_explicit_effective_flow_without_mutating_inputs(wave_x, wave_y, facua):
     config = _soulsby_config()
     config.include_nonlinear_wave_velocity = True
+    config.facua = facua
     data = SedtrailsDataStub()
     original = {name: values.copy() for name, values in data.depth_avg_flow_velocity.items()}
     data.nonlinear_wave_velocity = {
@@ -98,7 +100,7 @@ def test_optional_wave_coupling_matches_explicit_effective_flow_without_mutating
         'magnitude': np.full((2, 2), 999.0),
     }
     reference = SedtrailsDataStub()
-    x, y = original['x'] + wave_x, original['y'] + wave_y
+    x, y = original['x'] + facua * wave_x, original['y'] + facua * wave_y
     reference.depth_avg_flow_velocity = {'x': x, 'y': y, 'magnitude': np.hypot(x, y)}
     _apply_soulsby(_soulsby_config(), reference)
     with warnings.catch_warnings():
@@ -114,6 +116,8 @@ def test_optional_wave_coupling_matches_explicit_effective_flow_without_mutating
 def test_wave_coupling_is_disabled_by_default_even_with_wave_input():
     config = _soulsby_config()
     assert config.include_nonlinear_wave_velocity is False
+    assert config.facua == 1.0
+    config.facua = 2.0
     data, reference = SedtrailsDataStub(), SedtrailsDataStub()
     data.nonlinear_wave_velocity = {'x': np.full((2, 2), 10.0), 'y': np.full((2, 2), 20.0)}
     _apply_soulsby(config, data)
@@ -146,4 +150,12 @@ def test_wave_coupling_requires_a_boolean(value):
     config = _soulsby_config()
     config.include_nonlinear_wave_velocity = value
     with pytest.raises(ValueError, match='must be true or false'):
+        PhysicsPlugin(config, tracer_config={})
+
+
+@pytest.mark.parametrize('value', [-0.1, np.nan, np.inf, -np.inf, '1', True, None])
+def test_wave_calibration_requires_a_finite_non_negative_number(value):
+    config = _soulsby_config()
+    config.facua = value
+    with pytest.raises(ValueError, match='facua'):
         PhysicsPlugin(config, tracer_config={})

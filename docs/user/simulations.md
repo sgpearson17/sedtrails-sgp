@@ -130,9 +130,10 @@ Each population must define exactly one tracer method under `particles.populatio
 - For `passive_tracer`, `flow_field_name` is optional and defaults to `depth_avg_flow_velocity`.
 - For `vanwesten` and `soulsby`, you should provide `flow_field_name` explicitly.
 - Soulsby can optionally add a model-supplied wave-transport velocity to its flow
-  vector with `include_nonlinear_wave_velocity: true` (default `false`). See the
+  vector with `include_nonlinear_wave_velocity: true` (default `false`), scaled
+  by the population's `facua` (default `1.0`). See the
   [Soulsby parameter reference](../references/simulation-params.md#soulsby-method)
-  for the XBeach snapshot requirements and averaging approximation.
+  for XBeach mean-direction conventions and required mean fields.
 - If you use `passive_tracer`, set `particle_type: passive`.
 - If you use `passive_tracer`, `transport_probability` must be `no_probability` (the default). Using `stochastic_transport` or `reduced_velocity` raises a configuration error.
 - If you use `passive_tracer`, omit `seeding.burial_depth`. Passive tracer does not support burial depth and will raise a configuration error if it is set.

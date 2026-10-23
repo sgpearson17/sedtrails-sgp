@@ -68,9 +68,11 @@ def test_converter_instances_do_not_share_config_or_caches():
 def test_wave_coupling_config_survives_dataclass_copy_without_affecting_other_converters():
     enabled = PhysicsConfig.from_dict(
         {'tracer_method': 'soulsby'},
-        {'soulsby': {'include_nonlinear_wave_velocity': True}},
+        {'soulsby': {'include_nonlinear_wave_velocity': True, 'facua': 0.5}},
     )
     copied = PhysicsConfig.from_dict(asdict(enabled))
     disabled = PhysicsConfig()
     assert copied.include_nonlinear_wave_velocity is True
+    assert copied.facua == 0.5
     assert disabled.include_nonlinear_wave_velocity is False
+    assert disabled.facua == 1.0

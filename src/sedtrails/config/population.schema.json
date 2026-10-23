@@ -111,7 +111,13 @@
                 "include_nonlinear_wave_velocity": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Add nonlinear_wave_velocity to the flow vector before Soulsby velocity calculations. Requires a valid wave-transport velocity input; does not modify shear stresses."
+                    "description": "Add facua * nonlinear_wave_velocity to the flow vector before Soulsby velocity calculations. Requires a valid wave-transport velocity input; does not modify shear stresses."
+                },
+                "facua": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 1.0,
+                    "description": "Linear calibration factor for the supplied nonlinear wave velocity, applied only when include_nonlinear_wave_velocity is true. Additional to calibration already present in the input model's ua_mean."
                 },
                 "soulsby_b_e": {
                     "type": "number",

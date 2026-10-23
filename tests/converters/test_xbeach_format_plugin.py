@@ -7,6 +7,11 @@ import xarray as xr
 from sedtrails.exceptions.exceptions import ConfigurationError
 from sedtrails.particle_tracer.data_retriever import FieldDataRetriever
 from sedtrails.particle_tracer.particle_seeder import ParticleSeeder
+from sedtrails.simulation_orchestrator.runtime_plan import (
+    build_plan_sedtrails_data,
+    build_population_runtime_plans,
+    required_input_fields,
+)
 from sedtrails.transport_converter.format_converter import FormatConverter
 from sedtrails.transport_converter.plugins.format import xbeach
 
@@ -51,8 +56,8 @@ def _native_wave_dataset():
     dataset = xr.Dataset(
         data_vars={
             'ua_mean': (('meantime', 'ny', 'nx'), np.full((4, 2, 2), 0.1)),
-            'thetamean_mean': (('meantime', 'ny', 'nx'), np.full((4, 2, 2), 180.0)),
-            'thetamean': (('globaltime', 'ny', 'nx'), np.full((9, 2, 2), 270.0)),
+            'thetamean_mean': (('meantime', 'ny', 'nx'), np.full((4, 2, 2), 270.0)),
+            'thetamean': (('globaltime', 'ny', 'nx'), np.full((9, 2, 2), 180.0)),
             'hh': (('globaltime', 'ny', 'nx'), np.ones((9, 2, 2))),
             '_parameters': xr.DataArray(0, attrs={'rotate': 1, 'eps': 0.005, 'tstart': 0.0}),
         },
@@ -65,11 +70,11 @@ def _native_wave_dataset():
     )
     dataset.meantime.attrs['units'] = 's'
     dataset.globaltime.attrs['units'] = 's'
-    dataset.thetamean.attrs['units'] = 'rad'
+    dataset.thetamean_mean.attrs['units'] = 'rad'
     return dataset
 
 
-def test_native_wave_velocity_uses_snapshot_nautical_directions_not_inconsistent_mean_angle():
+def test_native_wave_velocity_uses_saved_mean_direction_not_snapshots():
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset()
     converted = plugin.convert(required_fields=('nonlinear_wave_velocity',))
@@ -78,47 +83,37 @@ def test_native_wave_velocity_uses_snapshot_nautical_directions_not_inconsistent
     np.testing.assert_allclose(converted.nonlinear_wave_velocity['magnitude'], 0.1)
 
 
-def test_native_wave_velocity_converts_all_four_nautical_directions():
+@pytest.mark.parametrize('units', ['rad', 'deg', 'degrees'])
+def test_native_wave_velocity_converts_all_four_nautical_from_directions(units):
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset()
-    plugin.input_data.thetamean.values[:] = [[270.0, 180.0], [90.0, 0.0]]
+    plugin.input_data.thetamean_mean.values[:] = [[270.0, 180.0], [90.0, 360.0]]
+    plugin.input_data.thetamean_mean.attrs['units'] = units
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
     np.testing.assert_allclose(result.nonlinear_wave_velocity['x'], [[0.1, 0, -0.1, 0]] * 4, atol=1e-15)
     np.testing.assert_allclose(result.nonlinear_wave_velocity['y'], [[0, 0.1, 0, -0.1]] * 4, atol=1e-15)
     assert result.metadata.nonlinear_wave_velocity_source == 'ua_mean'
-    assert 'approximate' in result.metadata.nonlinear_wave_velocity_averaging
+    assert result.metadata.nonlinear_wave_direction_source == 'thetamean_mean'
+    assert result.metadata.nonlinear_wave_direction_convention == 'nautical-from degrees'
+    assert result.metadata.nonlinear_wave_velocity_averaging == 'approximate: ua_mean projected along thetamean_mean'
 
 
-def test_native_wave_direction_average_is_circular_and_time_weighted():
+def test_native_wave_velocity_needs_no_snapshot_or_wet_interval_inputs():
     plugin = xbeach.FormatPlugin(_existing_input_path())
-    dataset = _native_wave_dataset()
-    dataset.thetamean.values[:3] = np.array([350.0, 0.0, 10.0])[:, None, None]
+    dataset = _native_wave_dataset().drop_vars(['thetamean', 'hh', 'globaltime'])
+    dataset['_parameters'].attrs = {'rotate': 1}
+    dataset.thetamean_mean.values[:] = 315.0
     plugin.input_data = dataset
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
-    np.testing.assert_allclose(result.nonlinear_wave_velocity['x'][0], 0, atol=1e-15)
-    np.testing.assert_allclose(result.nonlinear_wave_velocity['y'][0], -0.1, atol=1e-15)
-
-    dataset = _native_wave_dataset().assign_coords(globaltime=[0, 1, 10, 11, 20, 21, 30, 31, 40])
-    dataset.thetamean.values[1:] = 180
-    plugin.input_data = dataset
-    result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
-    norm = np.hypot(0.5, 9.5)
-    np.testing.assert_allclose(result.nonlinear_wave_velocity['x'][0], 0.1 * 0.5 / norm)
-    np.testing.assert_allclose(result.nonlinear_wave_velocity['y'][0], 0.1 * 9.5 / norm)
-
-
-def test_snapshot_average_weights_clip_intervals_and_support_initial_instant():
-    times = np.array([0.0, 5.0, 10.0])
-    np.testing.assert_allclose(xbeach.FormatPlugin._snapshot_average_weights(times, 2, 8), [0.9, 4.2, 0.9])
-    np.testing.assert_allclose(xbeach.FormatPlugin._snapshot_average_weights(times[:2], 2, 2), [0.6, 0.4])
-    np.testing.assert_array_equal(xbeach.FormatPlugin._snapshot_average_weights(times[:1], 0, 0), [1])
+    np.testing.assert_allclose(result.nonlinear_wave_velocity['x'], 0.1 / np.sqrt(2))
+    np.testing.assert_allclose(result.nonlinear_wave_velocity['y'], -0.1 / np.sqrt(2))
 
 
 def test_native_wave_velocity_is_consistent_across_windows_and_morfac():
     plugin = xbeach.FormatPlugin(_existing_input_path()), xbeach.FormatPlugin(_existing_input_path(), morfac=3)
     for reader in plugin:
         reader.input_data = _native_wave_dataset()
-        reader.input_data.thetamean.values[:] = np.linspace(245, 295, 9)[:, None, None]
+        reader.input_data.thetamean_mean.values[:] = np.linspace(245, 295, 4)[:, None, None]
     original = plugin[0].convert(required_fields=('nonlinear_wave_velocity',))
     full = plugin[1].convert(required_fields=('nonlinear_wave_velocity',))
     window = plugin[1].convert(
@@ -131,23 +126,20 @@ def test_native_wave_velocity_is_consistent_across_windows_and_morfac():
         np.testing.assert_allclose(window.nonlinear_wave_velocity[name], full.nonlinear_wave_velocity[name][selected])
 
 
-def test_native_wave_velocity_skips_fill_mean_times_and_masks_dry_snapshots():
+def test_native_wave_velocity_skips_fill_mean_times():
     plugin = xbeach.FormatPlugin(_existing_input_path())
     dataset = _native_wave_dataset()
     dataset = dataset.assign_coords(meantime=[10.0, 20.0, 30.0, 9.96920997e36])
-    dataset.hh.values[:, 0, 0] = 0.005
-    dataset.hh.values[:5, 0, 1] = np.nan
-    dataset.thetamean.values[:5, 0, 1] = np.nan
-    dataset.hh.encoding['_FillValue'] = -999.0
+    dataset.ua_mean.values[-1] = np.nan
+    dataset.thetamean_mean.values[-1] = np.nan
     plugin.input_data = dataset
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
     np.testing.assert_array_equal(result.times, [10, 20, 30])
-    np.testing.assert_array_equal(result.nonlinear_wave_velocity['magnitude'][:, 0], 0)
-    np.testing.assert_array_equal(result.nonlinear_wave_velocity['magnitude'][:2, 1], 0)
-    np.testing.assert_allclose(result.nonlinear_wave_velocity['x'][2, 1], 0.1)
+    np.testing.assert_allclose(result.nonlinear_wave_velocity['x'], 0.1)
+    np.testing.assert_allclose(result.nonlinear_wave_velocity['magnitude'], 0.1)
 
 
-@pytest.mark.parametrize('missing', ['ua_mean', 'thetamean', 'globaltime', 'hh', '_parameters'])
+@pytest.mark.parametrize('missing', ['ua_mean', 'thetamean_mean', '_parameters'])
 def test_explicit_wave_request_rejects_missing_source_instead_of_zero_fallback(missing):
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset().drop_vars(missing)
@@ -155,58 +147,113 @@ def test_explicit_wave_request_rejects_missing_source_instead_of_zero_fallback(m
         plugin.convert(required_fields=('nonlinear_wave_velocity',))
 
 
-@pytest.mark.parametrize('name,value', [('rotate', 0), ('eps', -0.1), ('eps', np.nan), ('tstart', np.nan)])
-def test_native_wave_velocity_rejects_invalid_source_parameters(name, value):
+@pytest.mark.parametrize('rotate', [0, None])
+def test_native_wave_velocity_requires_global_coordinate_output(rotate):
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset()
-    plugin.input_data['_parameters'].attrs[name] = value
-    with pytest.raises(ValueError, match='rotate|eps|tstart'):
+    plugin.input_data['_parameters'].attrs = {} if rotate is None else {'rotate': rotate}
+    with pytest.raises(ValueError, match='rotate'):
         plugin.convert(required_fields=('nonlinear_wave_velocity',))
 
 
-@pytest.mark.parametrize('field', ['ua_mean', 'thetamean', 'hh'])
-def test_native_wave_velocity_rejects_unencoded_invalid_wet_data(field):
+@pytest.mark.parametrize('field', ['ua_mean', 'thetamean_mean'])
+@pytest.mark.parametrize('value', [np.nan, np.inf])
+def test_native_wave_velocity_rejects_invalid_mean_data(field, value):
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset()
-    plugin.input_data[field].values[0, 0, 0] = np.nan
+    plugin.input_data[field].values[0, 0, 0] = value
     with pytest.raises(ValueError, match='finite|Non-finite'):
         plugin.convert(required_fields=('nonlinear_wave_velocity',))
 
 
-def test_native_wave_velocity_rejects_unbracketed_intervals_and_cancelled_directions():
+def test_native_wave_velocity_rejects_negative_speed():
     plugin = xbeach.FormatPlugin(_existing_input_path())
-    plugin.input_data = _native_wave_dataset().assign_coords(globaltime=np.arange(1.0, 42.0, 5.0))
-    with pytest.raises(ValueError, match='bracket the full mean interval'):
-        plugin.convert(required_fields=('nonlinear_wave_velocity',))
     plugin.input_data = _native_wave_dataset()
-    plugin.input_data.thetamean.values[1] = 90
-    with pytest.raises(ValueError, match='No well-defined wet snapshot direction'):
+    plugin.input_data.ua_mean.values[0, 0, 0] = -0.1
+    with pytest.raises(ValueError, match='non-negative'):
         plugin.convert(required_fields=('nonlinear_wave_velocity',))
+
+
+def test_native_wave_velocity_allows_undefined_direction_only_at_zero_speed():
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    plugin.input_data = _native_wave_dataset()
     plugin.input_data.ua_mean.values[:] = 0
+    plugin.input_data.thetamean_mean.values[:] = np.nan
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
-    np.testing.assert_array_equal(result.nonlinear_wave_velocity['magnitude'], 0)
+    for name in ('x', 'y', 'magnitude'):
+        np.testing.assert_array_equal(result.nonlinear_wave_velocity[name], 0)
 
 
-def test_native_wave_velocity_applies_cutout_mask_to_snapshot_planes():
+def test_native_wave_velocity_applies_cutout_mask_to_mean_planes():
     plugin = xbeach.FormatPlugin(_existing_input_path())
     plugin.input_data = _native_wave_dataset()
     plugin.input_data.globalx.values[1, 1] = np.nan
-    plugin.input_data.hh.values[:, 1, 1] = np.nan
+    plugin.input_data.ua_mean.values[:, 1, 1] = np.nan
+    plugin.input_data.thetamean_mean.values[:, 1, 1] = np.nan
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
     assert result.nonlinear_wave_velocity['x'].shape == (4, 3)
     np.testing.assert_allclose(result.nonlinear_wave_velocity['x'], 0.1)
 
 
-def test_native_wave_velocity_handles_different_cf_time_units():
+def test_native_wave_velocity_handles_cf_mean_time_units():
     plugin = xbeach.FormatPlugin(_existing_input_path())
     dataset = _native_wave_dataset()
-    dataset = dataset.assign_coords(globaltime=dataset.globaltime / 3600)
-    dataset.globaltime.attrs['units'] = 'hours since 1970-01-01 00:00:00'
-    dataset.meantime.attrs['units'] = 'seconds since 1970-01-01 00:00:00'
+    dataset = dataset.assign_coords(meantime=dataset.meantime / 3600)
+    dataset.meantime.attrs['units'] = 'hours since 1970-01-01 00:00:00'
     plugin.input_data = dataset
     result = plugin.convert(required_fields=('nonlinear_wave_velocity',))
     np.testing.assert_allclose(result.nonlinear_wave_velocity['x'], 0.1)
     np.testing.assert_allclose(result.nonlinear_wave_velocity['y'], 0, atol=1e-15)
+    np.testing.assert_allclose(result.times, [10, 20, 30, 40])
+
+
+def test_mean_wave_velocity_and_population_facua_reach_particle_advection():
+    plugin = xbeach.FormatPlugin(_existing_input_path())
+    dataset = _native_wave_dataset().drop_vars(['thetamean', 'hh', 'globaltime'])
+    for name, value in (
+        ('zb_mean', -1.0),
+        ('ue_mean', 0.0),
+        ('ve_mean', 0.1),
+        ('taubx_mean', 1.0),
+        ('tauby_mean', 0.0),
+    ):
+        dataset[name] = xr.full_like(dataset.ua_mean, value)
+    plugin.input_data = dataset
+    facuas = (0.0, 0.5, 2.0)
+    configs = [
+        {
+            'characteristics': {'grain_size': 0.0002, 'density': 2650.0},
+            'tracer_methods': {
+                'soulsby': {
+                    'flow_field_name': ['grain_velocity'],
+                    'include_nonlinear_wave_velocity': True,
+                    'facua': facua,
+                    'tracer_grain_size': 0.0002,
+                    'background_grain_size': 0.0002,
+                    'soulsby_b_e': 1.7e-7,
+                    'soulsby_theta_s': 0.1,
+                    'soulsby_gamma_e': 0.1,
+                    'soulsby_mu_d': 0.5,
+                }
+            },
+        }
+        for facua in facuas
+    ]
+    plans = build_population_runtime_plans(configs, [object() for _ in configs], {})
+    source = plugin.convert(required_fields=required_input_fields(plans))
+    identities = []
+    for facua, plan in zip(facuas, plans, strict=True):
+        plan_data = build_plan_sedtrails_data(source, plan.tracer)
+        identities.append(plan_data.forcing_identity)
+        velocity = FieldDataRetriever(plan_data).get_flow_field(15.0, 'grain_velocity')
+        assert np.all(velocity['magnitude'] > 0)
+        np.testing.assert_allclose(velocity['u'], facua * velocity['v'], atol=1e-15)
+    assert len(set(identities)) == len(facuas)
+    np.testing.assert_array_equal(source.depth_avg_flow_velocity['x'], 0.0)
+    np.testing.assert_array_equal(source.depth_avg_flow_velocity['y'], 0.1)
+    np.testing.assert_allclose(source.nonlinear_wave_velocity['x'], 0.1)
+    assert not source.has_physics_field('grain_velocity')
+
 
 def test_xbeach_unstructured_fallback_uses_shared_bounded_helper():
     """One-dimensional XBeach points use the runtime-compatible shared fallback."""
@@ -265,7 +312,7 @@ def test_xbeach_convert_uses_mean_variables_and_flattens_spatial_dims(monkeypatc
             'Svsg_mean': (('meantime', 'sediment_classes', 'ny', 'nx'), frac_y + 20.0),
             'cctot_mean': (('meantime', 'ny', 'nx'), scalar + 2.0),
             'ua_mean': (('meantime', 'ny', 'nx'), scalar + 3.0),
-            'thetamean_mean': (('meantime', 'ny', 'nx'), np.zeros((2, 2, 2))),
+            'thetamean_mean': (('meantime', 'ny', 'nx'), np.full((2, 2, 2), 270.0)),
             'thetamean': (('globaltime', 'ny', 'nx'), np.full((3, 2, 2), 270.0)),
             'hh': (('globaltime', 'ny', 'nx'), np.ones((3, 2, 2))),
             '_parameters': xr.DataArray(0, attrs={'rotate': 1, 'eps': 0.005, 'tstart': 0.0}),

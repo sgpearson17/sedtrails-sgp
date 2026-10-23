@@ -59,6 +59,27 @@ def test_population_schema_defaults_soulsby_wave_coupling_to_false(tmp_path):
     config['particles']['populations'][0]['tracer_methods'] = {'soulsby': {'flow_field_name': ['grain_velocity']}}
     validated = _validate_config(tmp_path, config)
     assert validated['particles']['populations'][0]['tracer_methods']['soulsby']['include_nonlinear_wave_velocity'] is False
+    assert validated['particles']['populations'][0]['tracer_methods']['soulsby']['facua'] == 1.0
+
+
+@pytest.mark.parametrize('facua', [0.0, 0.5, 1, 2.0])
+def test_population_schema_accepts_wave_calibration(tmp_path, facua):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {'flow_field_name': ['grain_velocity'], 'facua': facua}
+    }
+    validated = _validate_config(tmp_path, config)
+    assert validated['particles']['populations'][0]['tracer_methods']['soulsby']['facua'] == facua
+
+
+@pytest.mark.parametrize('facua', [-0.1, '1', True, None])
+def test_population_schema_rejects_invalid_wave_calibration(tmp_path, facua):
+    config = _base_config()
+    config['particles']['populations'][0]['tracer_methods'] = {
+        'soulsby': {'flow_field_name': ['grain_velocity'], 'facua': facua}
+    }
+    with pytest.raises(YamlValidationError):
+        _validate_config(tmp_path, config)
 
 
 @pytest.mark.parametrize('enabled', ['true', 1, None])

@@ -56,6 +56,8 @@ class PhysicsConfig:
         Empirical coefficient for Bertin-style mixing layer thickness.
     include_nonlinear_wave_velocity : bool
         Add the supplied wave-transport vector to the flow used by Soulsby.
+    facua : float
+        Non-negative linear multiplier for the supplied wave-transport vector.
     """
 
     # Physics methods
@@ -71,6 +73,7 @@ class PhysicsConfig:
     morfac: float = MORFAC
     bertin_coefficient: float = BERTIN_COEFFICIENT
     include_nonlinear_wave_velocity: bool = False
+    facua: float = 1.0
 
     @classmethod
     def from_dict(

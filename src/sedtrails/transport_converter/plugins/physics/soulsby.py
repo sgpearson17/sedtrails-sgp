@@ -1,6 +1,8 @@
 """A plugin for Soulsby et al. (2011) sediment transport physics calculations."""
 
 import logging
+from math import isfinite
+from numbers import Real
 
 import numpy as np
 from sedtrails.transport_converter import physics_lib
@@ -47,6 +49,13 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
         self.config = config
         if type(config.include_nonlinear_wave_velocity) is not bool:
             raise ValueError('include_nonlinear_wave_velocity must be true or false.')
+        if (
+            not isinstance(config.facua, Real)
+            or isinstance(config.facua, bool)
+            or not isfinite(config.facua)
+            or config.facua < 0
+        ):
+            raise ValueError('facua must be a finite, non-negative number.')
 
     def add_physics(self, sedtrails_data: SedtrailsData, grain_properties: dict[str, float], transport_probability_method: str) -> None:
         """
@@ -115,8 +124,8 @@ class PhysicsPlugin(BasePhysicsPlugin):  # all clases should be called the Physi
             wave_y = np.asarray(wave_velocity['y'], dtype=float)
             if wave_x.shape != flow_velocity_x.shape or wave_y.shape != flow_velocity_y.shape:
                 raise ValueError('Nonlinear wave velocity components must match the flow velocity shape.')
-            flow_velocity_x = flow_velocity_x + wave_x
-            flow_velocity_y = flow_velocity_y + wave_y
+            flow_velocity_x = flow_velocity_x + self.config.facua * wave_x
+            flow_velocity_y = flow_velocity_y + self.config.facua * wave_y
             if not np.isfinite(flow_velocity_x).all() or not np.isfinite(flow_velocity_y).all():
                 raise ValueError('Soulsby effective flow velocity must contain finite x/y components.')
             flow_velocity_magnitude = np.hypot(flow_velocity_x, flow_velocity_y)

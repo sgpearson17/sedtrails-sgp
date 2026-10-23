@@ -391,6 +391,7 @@ For `passive_tracer` populations:
 | `soulsby_mu_d`            | number | Optional     | `0.5`    | Dynamic friction coefficient [-].                                |
 | `soulsby_freedom_factor`  | number | Optional     | `1`      | Initial freedom factor (`0` = trapped, `1` = free).              |
 | `include_nonlinear_wave_velocity` | boolean | Optional | `false` | Add the nonlinear wave-transport vector to the flow used by Soulsby. |
+| `facua` | number >= 0 | Optional | `1.0` | Linear multiplier for the wave-transport vector when wave coupling is enabled. |
 
 To include the input model's wave-driven sediment-advection velocity, opt in per
 population:
@@ -400,39 +401,54 @@ tracer_methods:
   soulsby:
     flow_field_name: [grain_velocity]
     include_nonlinear_wave_velocity: true
+    facua: 1.0
 ```
 
-Soulsby then uses **U_effective = U_flow + U_wave**, recomputing its speed and
+Soulsby then uses **U_effective = U_flow + facua * U_wave**, recomputing its speed and
 direction from the summed x/y components before calculating velocity-reduction
 factors and grain velocity. This is not an unscaled addition to the final grain
 velocity: Soulsby's mobility and reduction calculations still apply. The shared
 input flow is not modified, and other populations retain their own settings.
 Shear stresses are unchanged; this option does not implement additional
-wave-induced stirring or calculate Ruessink-2012 skewness/asymmetry.
+wave-induced stirring or calculate Ruessink-2012 skewness/asymmetry. `facua` must
+be finite and non-negative: `0` removes the wave contribution, `1` uses it
+unchanged, and `2` doubles it. Setting `facua` alone does not enable coupling.
+Even with `facua: 0`, enabled coupling requires valid wave input; disable
+`include_nonlinear_wave_velocity` to run without that input.
 
 For XBeach, the correction uses the saved **`ua_mean`**, following the waveform
-and calibration used by that XBeach run. It requires instantaneous `thetamean`
-and `hh` on `globaltime`, plus `_parameters.rotate = 1`, `eps` and `tstart`.
-Directions in rotated XBeach output are nautical-from degrees, converted to
-Cartesian-toward angles as `270 - thetamean`; some XBeach versions incorrectly
-label these values as radians. The potentially inconsistent `thetamean_mean`
-field is not used.
+and calibration used by that XBeach run. SedTRAILS' `facua` is an **additional**
+multiplier, not a replacement for XBeach's own `facua` already included in
+`ua_mean`.
 
-The saved scalar magnitude is projected along a normalized, circular
-time-average of wet snapshot directions over each mean interval. Integration
-uses piecewise-linear snapshot unit vectors, starting at `tstart` for the first
-interval and the previous mean timestamp thereafter. **This is an approximation,
-not the exact time-average of the instantaneous velocity vector.** Save snapshots
-that bracket every mean interval, including simulation start. Snapshot loading
-is streamed one plane at a time, including for chunked or morfac-scaled reads.
+The vector direction comes directly from **`thetamean_mean`** on the same
+`meantime` rows as `ua_mean`. `_parameters.rotate = 1` is required for
+global-coordinate output. These directions are interpreted as **nautical-from
+degrees**, even when XBeach labels them as radians or with a "to direction"
+standard name. Conversion to Cartesian-toward angles uses
+`angle = radians(270 - thetamean_mean)`:
 
-Snapshots at or below `eps`, and XBeach's declared dry-cell fill values, do not
-contribute to the direction. Entirely dry intervals get zero correction, even
-if XBeach saved nonzero `ua_mean` there. Missing required data, non-finite wet
-inputs, unbracketed intervals and undefined circular directions for nonzero wet
-corrections raise errors rather than silently substituting zeros. The source
-and approximate averaging method are recorded in input metadata. Without this
-option, normal Soulsby runs do not request the wave field.
+| `thetamean_mean` | Waves come from | Wave velocity points toward |
+| --- | --- | --- |
+| 0 or 360 | North | South (-y) |
+| 90 | East | West (-x) |
+| 180 | South | North (+y) |
+| 270 | West | East (+x) |
+
+The components are `ua_mean * cos(angle)` and `ua_mean * sin(angle)`.
+This replaces snapshot-based direction reconstruction; instantaneous
+`thetamean`, `hh`, `globaltime`, `eps` and `tstart` are no longer required.
+There is no snapshot-based dry-interval masking: the saved mean speed and
+direction determine the vector. **Projecting a scalar mean along a mean
+direction is still an approximation, not the exact time-average of the
+instantaneous velocity vector.**
+
+Missing required fields, non-finite or negative speeds, and non-finite
+directions where `ua_mean` is nonzero raise errors rather than silently
+substituting zeros. A zero speed gives a zero vector even if its direction is
+undefined. The sources, direction convention and projection method are
+recorded in input metadata. Without wave coupling enabled, normal Soulsby runs
+do not request the wave field.
 
 #### Passive Tracer Method
 
